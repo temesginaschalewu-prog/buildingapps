@@ -1,10 +1,10 @@
 class Exam {
   final int id;
   final String title;
-  final String examType;
+  final String examType; // 'weekly', 'mid', 'final'
   final DateTime startDate;
   final DateTime endDate;
-  final int duration;
+  final int duration; // in minutes
   final int passingScore;
   final int maxAttempts;
   final String courseName;
@@ -12,7 +12,8 @@ class Exam {
   final String categoryName;
   final int attemptsTaken;
   final String? lastAttemptStatus;
-  final String status;
+  final String
+      status; // 'available', 'max_attempts_reached', 'in_progress', 'upcoming', 'ended'
   final String message;
 
   Exam({

@@ -2,13 +2,11 @@ import 'dart:io';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:uuid/uuid.dart';
 import '../utils/constants.dart';
 import '../utils/helpers.dart';
 
 class DeviceService {
   final DeviceInfoPlugin _deviceInfo = DeviceInfoPlugin();
-  final Uuid _uuid = const Uuid();
   late SharedPreferences _prefs;
 
   Future<void> init() async {
@@ -18,6 +16,7 @@ class DeviceService {
   }
 
   Future<String> getDeviceId() async {
+    // Try to get saved device ID
     String? savedDeviceId = _prefs.getString(AppConstants.deviceIdKey);
 
     if (savedDeviceId != null) {
@@ -25,25 +24,29 @@ class DeviceService {
       return savedDeviceId;
     }
 
+    // Generate new device ID
     String deviceId;
 
     try {
-      deviceId = _uuid.v4();
-
       if (Platform.isAndroid) {
-        deviceId = "ANDROID_$deviceId";
+        final androidInfo = await _deviceInfo.androidInfo;
+        deviceId =
+            'ANDROID_${androidInfo.id}_${DateTime.now().millisecondsSinceEpoch}';
       } else if (Platform.isIOS) {
-        deviceId = "IOS_$deviceId";
+        final iosInfo = await _deviceInfo.iosInfo;
+        deviceId =
+            'IOS_${iosInfo.identifierForVendor}_${DateTime.now().millisecondsSinceEpoch}';
+      } else {
+        deviceId = 'UNKNOWN_${DateTime.now().millisecondsSinceEpoch}';
       }
-
-      debugLog('DeviceService', 'Generated UUID deviceId: $deviceId');
     } catch (e) {
-      debugLog('DeviceService', 'Error generating UUID: $e');
-
+      debugLog('DeviceService', 'Error getting native device id: $e');
+      // Fallback to random ID
       deviceId =
-          '${AppConstants.deviceIdPrefix}${DateTime.now().millisecondsSinceEpoch}';
+          'FA_${DateTime.now().millisecondsSinceEpoch}_${_generateRandomString(8)}';
     }
 
+    // Save device ID
     debugLog('DeviceService', 'Saving generated deviceId: $deviceId');
     await _prefs.setString(AppConstants.deviceIdKey, deviceId);
 
@@ -100,14 +103,14 @@ class DeviceService {
     try {
       if (Platform.isAndroid) {
         final androidInfo = await _deviceInfo.androidInfo;
-
+        // Check for tablet using model name or other indicators
         final model = androidInfo.model?.toLowerCase() ?? '';
         return model.contains('tab') ||
             model.contains('pad') ||
             model.contains('tablet');
       } else if (Platform.isIOS) {
         final iosInfo = await _deviceInfo.iosInfo;
-
+        // iOS devices have known models for tablets
         return iosInfo.model?.toLowerCase().contains('ipad') ?? false;
       }
     } catch (e) {
@@ -120,7 +123,7 @@ class DeviceService {
     try {
       if (Platform.isAndroid) {
         final androidInfo = await _deviceInfo.androidInfo;
-
+        // Check for TV features
         return androidInfo.systemFeatures?.contains(
               'android.software.leanback',
             ) ??

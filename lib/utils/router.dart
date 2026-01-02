@@ -4,9 +4,16 @@ import 'package:familyacademyclient/screens/auth/login_screen.dart';
 import 'package:familyacademyclient/screens/auth/register_screen.dart';
 import 'package:familyacademyclient/screens/category/category_detail_screen.dart';
 import 'package:familyacademyclient/screens/chapter/chapter_content_screen.dart';
+import 'package:familyacademyclient/screens/chapter/chapter_list_screen.dart';
 import 'package:familyacademyclient/screens/course/course_detail_screen.dart';
+import 'package:familyacademyclient/screens/course/course_list_screen.dart';
+import 'package:familyacademyclient/screens/exam/exam_list_screen.dart';
 import 'package:familyacademyclient/screens/exam/exam_screen.dart';
+import 'package:familyacademyclient/screens/main/chatbot_screen.dart';
+import 'package:familyacademyclient/screens/main/home_screen.dart';
 import 'package:familyacademyclient/screens/main/main_navigation.dart';
+import 'package:familyacademyclient/screens/main/profile_screen.dart';
+import 'package:familyacademyclient/screens/main/progress_screen.dart';
 import 'package:familyacademyclient/screens/onboarding/school_selection_screen.dart';
 import 'package:familyacademyclient/screens/payment/payment_screen.dart';
 import 'package:familyacademyclient/screens/payment/payment_success_screen.dart';
@@ -23,31 +30,36 @@ class AppRouter {
 
   AppRouter() {
     router = GoRouter(
-      initialLocation: '/',
+      initialLocation: '/auth/login',
       redirect: (context, state) {
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
+        final isAuthenticated = authProvider.isAuthenticated;
 
-        // If user is not authenticated and trying to access protected routes
-        final isAuthRoute = state.uri.toString().startsWith('/auth');
-        final isOnboardingRoute =
-            state.uri.toString().startsWith('/school-selection');
-        final isProtectedRoute = !isAuthRoute && !isOnboardingRoute;
+        final isPublicRoute = [
+          '/auth/login',
+          '/auth/register',
+          '/device-change',
+        ].contains(state.uri.toString());
 
-        if (!authProvider.isAuthenticated && isProtectedRoute) {
+        if (!isAuthenticated && !isPublicRoute) {
           return '/auth/login';
         }
 
-        // If user is authenticated but hasn't selected school
-        if (authProvider.isAuthenticated &&
+        if (isAuthenticated &&
             authProvider.user?.schoolId == null &&
             state.uri.toString() != '/school-selection') {
           return '/school-selection';
         }
 
+        if (isAuthenticated &&
+            authProvider.user?.schoolId != null &&
+            state.uri.toString().startsWith('/auth/')) {
+          return '/';
+        }
+
         return null;
       },
       routes: [
-        // Auth Routes
         GoRoute(
           path: '/auth/register',
           name: 'register',
@@ -69,8 +81,6 @@ class AppRouter {
             child: DeviceChangeScreen(),
           ),
         ),
-
-        // Onboarding Routes
         GoRoute(
           path: '/school-selection',
           name: 'school-selection',
@@ -78,23 +88,29 @@ class AppRouter {
             child: SchoolSelectionScreen(),
           ),
         ),
-
-        // Payment Routes
         GoRoute(
           path: '/payment',
           name: 'payment',
-          pageBuilder: (context, state) => MaterialPage(
-            child: PaymentScreen(),
-          ),
+          pageBuilder: (context, state) {
+            final args = state.extra as Map<String, dynamic>?;
+            final amount = args != null && args['amount'] is double
+                ? args['amount'] as double
+                : 0.0;
+            return const MaterialPage(
+              child: PaymentScreen(),
+            );
+            //  return MaterialPage(
+            //    child: PaymentScreen(),
+            //  ); --- IGNORE ---
+          },
         ),
-
         GoRoute(
           path: '/payment-success',
           name: 'payment-success',
-          builder: (context, state) => const PaymentSuccessScreen(),
+          pageBuilder: (context, state) => const MaterialPage(
+            child: PaymentSuccessScreen(),
+          ),
         ),
-
-        // Settings Routes
         GoRoute(
           path: '/subscriptions',
           name: 'subscriptions',
@@ -123,66 +139,114 @@ class AppRouter {
             child: SupportScreen(),
           ),
         ),
-
-        // Main Navigation with nested routes
-        GoRoute(
-          path: '/',
-          name: 'home',
-          pageBuilder: (context, state) => const MaterialPage(
-            child: MainNavigation(),
-          ),
+        ShellRoute(
+          builder: (context, state, child) => const MainNavigation(),
           routes: [
-            // Category detail route
             GoRoute(
-              path: 'category/:categoryId',
-              name: 'category-detail',
-              pageBuilder: (context, state) {
-                final categoryId =
-                    int.tryParse(state.pathParameters['categoryId'] ?? '0') ??
-                        0;
-                return MaterialPage(
-                  child: CategoryDetailScreen(categoryId: categoryId),
-                );
-              },
+              path: '/',
+              name: 'home',
+              pageBuilder: (context, state) => const NoTransitionPage(
+                child: HomeScreen(),
+              ),
+              routes: [
+                GoRoute(
+                  path: 'category/:categoryId',
+                  name: 'category-detail',
+                  pageBuilder: (context, state) {
+                    final categoryId =
+                        int.parse(state.pathParameters['categoryId']!);
+                    return MaterialPage(
+                      child: CategoryDetailScreen(categoryId: categoryId),
+                    );
+                  },
+                ),
+                GoRoute(
+                  path: 'course-list/:categoryId',
+                  name: 'course-list',
+                  pageBuilder: (context, state) {
+                    final categoryId =
+                        int.parse(state.pathParameters['categoryId']!);
+                    return MaterialPage(
+                      child: CourseListScreen(categoryId: categoryId),
+                    );
+                  },
+                ),
+                GoRoute(
+                  path: 'course/:courseId',
+                  name: 'course-detail',
+                  pageBuilder: (context, state) {
+                    final courseId =
+                        int.parse(state.pathParameters['courseId']!);
+                    return MaterialPage(
+                      child: CourseDetailScreen(courseId: courseId),
+                    );
+                  },
+                ),
+                GoRoute(
+                  path: 'chapters/:courseId',
+                  name: 'chapter-list',
+                  pageBuilder: (context, state) {
+                    final courseId =
+                        int.parse(state.pathParameters['courseId']!);
+                    return MaterialPage(
+                      child: ChapterListScreen(courseId: courseId),
+                    );
+                  },
+                ),
+                GoRoute(
+                  path: 'chapter/:chapterId',
+                  name: 'chapter-content',
+                  pageBuilder: (context, state) {
+                    final chapterId =
+                        int.parse(state.pathParameters['chapterId']!);
+                    return MaterialPage(
+                      child: ChapterContentScreen(chapterId: chapterId),
+                    );
+                  },
+                ),
+                GoRoute(
+                  path: 'exams/:courseId',
+                  name: 'exam-list',
+                  pageBuilder: (context, state) {
+                    final courseId =
+                        int.parse(state.pathParameters['courseId']!);
+                    return MaterialPage(
+                      child: ExamListScreen(courseId: courseId),
+                    );
+                  },
+                ),
+                GoRoute(
+                  path: 'exam/:examId',
+                  name: 'exam',
+                  pageBuilder: (context, state) {
+                    final examId = int.parse(state.pathParameters['examId']!);
+                    return MaterialPage(
+                      child: ExamScreen(examId: examId),
+                    );
+                  },
+                ),
+              ],
             ),
-
-            // Course detail route
             GoRoute(
-              path: 'course/:courseId',
-              name: 'course-detail',
-              pageBuilder: (context, state) {
-                final courseId =
-                    int.tryParse(state.pathParameters['courseId'] ?? '0') ?? 0;
-                return MaterialPage(
-                  child: CourseDetailScreen(courseId: courseId),
-                );
-              },
+              path: '/progress',
+              name: 'progress',
+              pageBuilder: (context, state) => const NoTransitionPage(
+                child: ProgressScreen(),
+              ),
             ),
-
-            // Chapter content route
             GoRoute(
-              path: 'chapter/:chapterId',
-              name: 'chapter-content',
-              pageBuilder: (context, state) {
-                final chapterId =
-                    int.tryParse(state.pathParameters['chapterId'] ?? '0') ?? 0;
-                return MaterialPage(
-                  child: ChapterContentScreen(chapterId: chapterId),
-                );
-              },
+              path: '/chatbot',
+              name: 'chatbot',
+              pageBuilder: (context, state) => const NoTransitionPage(
+                child: ChatbotScreen(),
+              ),
             ),
-
-            // Exam route
             GoRoute(
-              path: 'exam/:examId',
-              name: 'exam',
-              pageBuilder: (context, state) {
-                final examId =
-                    int.tryParse(state.pathParameters['examId'] ?? '0') ?? 0;
-                return MaterialPage(
-                  child: ExamScreen(examId: examId),
-                );
-              },
+              path: '/profile',
+              name: 'profile',
+              pageBuilder: (context, state) => const NoTransitionPage(
+                child: ProfileScreen(),
+              ),
             ),
           ],
         ),

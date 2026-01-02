@@ -95,7 +95,7 @@ class CourseCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-              if (course.message.isNotEmpty)
+              if (course.message!.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
                   child: Text(

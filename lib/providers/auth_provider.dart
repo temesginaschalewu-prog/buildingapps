@@ -184,12 +184,15 @@ class AuthProvider with ChangeNotifier {
           }
 
           if (data['deviceToken'] != null) {
-            await storageService
-                .saveRefreshToken(data['deviceToken'].toString());
+            await storageService.saveRefreshToken(
+              data['deviceToken'].toString(),
+            );
           }
 
-          debugLog('AuthProvider',
-              '✅ User authenticated successfully. ID: ${_user!.id}');
+          debugLog(
+            'AuthProvider',
+            '✅ User authenticated successfully. ID: ${_user!.id}',
+          );
 
           notifyListeners();
         } else {
@@ -199,11 +202,13 @@ class AuthProvider with ChangeNotifier {
         throw Exception(response.message);
       }
     } on ApiError catch (e) {
-      if (e.action == 'device_change_required') {
+      if (e.data is Map && e.data['action'] == 'device_change_required') {
         _deviceChangeRequired = true;
         _currentDeviceId = e.data is Map ? e.data['currentDeviceId'] : null;
-        debugLog('AuthProvider',
-            '⚠️ Device change required. Current device: $_currentDeviceId');
+        debugLog(
+          'AuthProvider',
+          '⚠️ Device change required. Current device: $_currentDeviceId',
+        );
       } else {
         _error = e.message;
       }

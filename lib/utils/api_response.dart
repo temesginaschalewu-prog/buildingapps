@@ -33,7 +33,7 @@ class ApiResponse<T> {
   }
 }
 
-class ApiError implements Exception {
+class ApiError {
   final String message;
   final int? statusCode;
   final dynamic data;

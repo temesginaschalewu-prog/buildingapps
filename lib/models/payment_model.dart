@@ -1,4 +1,4 @@
-import '../utils/constants.dart';
+import 'package:familyacademyclient/utils/constants.dart';
 
 class Payment {
   final int id;

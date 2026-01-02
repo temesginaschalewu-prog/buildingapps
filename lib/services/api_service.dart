@@ -1,894 +1,1147 @@
 import 'dart:convert';
 import 'dart:io';
-
-import 'package:familyacademyclient/models/category_model.dart';
-import 'package:familyacademyclient/models/chapter_model.dart';
-import 'package:familyacademyclient/models/course_model.dart';
+import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
 import 'package:familyacademyclient/models/exam_model.dart';
+import 'package:familyacademyclient/models/exam_question_model.dart';
+import 'package:familyacademyclient/models/exam_result_model.dart';
+import 'package:familyacademyclient/models/notification_model.dart';
+import 'package:familyacademyclient/models/parent_link_model.dart';
 import 'package:familyacademyclient/models/payment_model.dart';
 import 'package:familyacademyclient/models/progress_model.dart';
-import 'package:familyacademyclient/models/question_model.dart';
 import 'package:familyacademyclient/models/school_model.dart';
+import 'package:familyacademyclient/models/setting_model.dart';
+import 'package:familyacademyclient/models/subscription_model.dart';
 import 'package:familyacademyclient/models/user_model.dart';
-import 'package:http/http.dart' as http;
+import 'package:familyacademyclient/utils/constants.dart' show AppConstants;
+import 'package:familyacademyclient/utils/helpers.dart';
+import 'package:flutter/foundation.dart' show kReleaseMode, kDebugMode;
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:familyacademyclient/models/category_model.dart';
+import '../utils/api_response.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://localhost:3000/api';
-  static String? _token;
-  static int? _userId;
+  late Dio _dio;
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+  bool _isRefreshingToken = false;
 
-  static Future<void> init() async {
+  ApiService() {
+    _dio = Dio(
+      BaseOptions(
+        baseUrl: AppConstants.apiBaseUrl,
+        connectTimeout: const Duration(seconds: AppConstants.apiTimeoutSeconds),
+        receiveTimeout: const Duration(seconds: AppConstants.apiTimeoutSeconds),
+        sendTimeout: const Duration(seconds: AppConstants.apiTimeoutSeconds),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        validateStatus: (status) {
+          return status! < 500;
+        },
+      ),
+    );
+
+    _dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: _onRequest,
+        onResponse: _onResponse,
+        onError: _onError,
+      ),
+    );
+
+    if (!kReleaseMode) {
+      (_dio.httpClientAdapter as IOHttpClientAdapter).createHttpClient = () {
+        final client = HttpClient();
+        client.badCertificateCallback = (cert, host, port) => true;
+        return client;
+      };
+    }
+  }
+
+  Future<void> _onRequest(
+      RequestOptions options, RequestInterceptorHandler handler) async {
+    final token = await _secureStorage.read(key: AppConstants.tokenKey);
+    if (token != null) {
+      options.headers['Authorization'] = 'Bearer $token';
+    }
+
     final prefs = await SharedPreferences.getInstance();
-    _token = prefs.getString('token');
-    _userId = prefs.getInt('userId');
-  }
-
-  static Map<String, String> get _headers {
-    return {
-      'Content-Type': 'application/json',
-      if (_token != null) 'Authorization': 'Bearer $_token',
-    };
-  }
-
-  static Map<String, String> get _headersWithAuth {
-    if (_token == null) {
-      throw Exception('No authentication token found');
+    final deviceId = prefs.getString(AppConstants.deviceIdKey);
+    if (deviceId != null) {
+      options.headers['X-Device-ID'] = deviceId;
     }
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $_token',
-    };
+
+    if (kDebugMode) {
+      debugLog(
+          'ApiService', '🌐 API Request: ${options.method} ${options.path}');
+      if (options.data != null) {
+        debugLog('ApiService', '📦 Request Body: ${options.data}');
+      }
+    }
+
+    handler.next(options);
   }
 
-  static Future<Map<String, dynamic>> register({
-    required String username,
-    required String password,
-  }) async {
+  void _onResponse(Response response, ResponseInterceptorHandler handler) {
+    debugLog('ApiService',
+        '✅ API Response: ${response.statusCode} ${response.requestOptions.path}');
+
+    if (kDebugMode && response.data != null) {
+      debugLog('ApiService', '📦 Response Body: ${response.data}');
+    }
+
+    handler.next(response);
+  }
+
+  void _onError(DioException error, ErrorInterceptorHandler handler) async {
+    debugLog('ApiService', '❌ API Error: ${error.type} - ${error.message}');
+    debugLog('ApiService', '📡 URL: ${error.requestOptions.path}');
+    debugLog('ApiService', '📦 Response: ${error.response?.data}');
+
+    if (error.response?.statusCode == 429) {
+      debugLog('ApiService', '⚠️ Rate limited, waiting before retry...');
+      await Future.delayed(const Duration(seconds: 2));
+
+      handler.next(error);
+      return;
+    }
+
+    if (error.response?.statusCode == 401) {
+      if (!_isRefreshingToken) {
+        _isRefreshingToken = true;
+        final refreshed = await _refreshToken();
+        _isRefreshingToken = false;
+
+        if (refreshed) {
+          try {
+            final request = error.requestOptions;
+            final retryResponse = await _dio.request(
+              request.path,
+              data: request.data,
+              queryParameters: request.queryParameters,
+              options:
+                  Options(method: request.method, headers: request.headers),
+            );
+            handler.resolve(retryResponse);
+            return;
+          } catch (retryError) {
+            debugLog('ApiService', '❌ Retry failed: $retryError');
+          }
+        }
+      }
+    }
+
+    handler.next(error);
+  }
+
+  Future<bool> _refreshToken() async {
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/auth/register'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
+      final refreshToken =
+          await _secureStorage.read(key: AppConstants.refreshTokenKey);
+      if (refreshToken == null) {
+        debugLog('ApiService', 'No refresh token found');
+        return false;
+      }
+
+      debugLog('ApiService', '🔄 Refreshing token...');
+      final response = await _dio.post(
+        AppConstants.refreshTokenEndpoint,
+        data: {'refreshToken': refreshToken},
+      );
+
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        final data = response.data['data'];
+        final newToken = data['token'];
+        final newRefreshToken = data['refreshToken'] ?? data['deviceToken'];
+
+        if (newToken != null) {
+          await _secureStorage.write(
+              key: AppConstants.tokenKey, value: newToken);
+
+          if (newRefreshToken != null) {
+            await _secureStorage.write(
+                key: AppConstants.refreshTokenKey, value: newRefreshToken);
+          }
+
+          debugLog('ApiService', '✅ Token refreshed successfully');
+          return true;
+        }
+      }
+
+      debugLog('ApiService', '❌ Token refresh failed: ${response.data}');
+      return false;
+    } catch (e) {
+      debugLog('ApiService', '❌ Token refresh failed: $e');
+      return false;
+    }
+  }
+
+  Future<ApiResponse<Map<String, dynamic>>> register(
+      String username, String password) async {
+    try {
+      final response = await _dio.post(
+        AppConstants.registerEndpoint,
+        data: {'username': username, 'password': password},
+      );
+
+      if (response.data is Map && response.data['success'] == true) {
+        final data = response.data['data'];
+
+        Map<String, dynamic> userData;
+        if (data is Map && data['user'] != null) {
+          userData = Map<String, dynamic>.from(data);
+        } else if (data is Map) {
+          userData = Map<String, dynamic>.from(data);
+        } else {
+          throw ApiError(message: 'Invalid response format from server');
+        }
+
+        final user = User.fromJson(userData['user'] ?? userData);
+        final token = userData['token'];
+
+        return ApiResponse<Map<String, dynamic>>(
+          success: true,
+          message: response.data['message'] ?? 'Registration successful',
+          data: {
+            'user': user,
+            'token': token,
+          },
+        );
+      } else {
+        throw ApiError(
+            message:
+                response.data['message']?.toString() ?? 'Registration failed');
+      }
+    } on DioException catch (e) {
+      throw ApiError(
+        message:
+            e.response?.data['message']?.toString() ?? 'Registration failed',
+        statusCode: e.response?.statusCode,
+        data: e.response?.data,
+      );
+    }
+  }
+
+  Future<ApiResponse<Map<String, dynamic>>> studentLogin(
+      String username, String password, String? deviceId) async {
+    try {
+      final response = await _dio.post(
+        AppConstants.studentLoginEndpoint,
+        data: {
           'username': username,
           'password': password,
-        }),
+          'deviceId': deviceId,
+        },
       );
 
-      final data = json.decode(response.body);
-      if (response.statusCode == 201) {
-        _token = data['token'];
-        _userId = data['user']['id'];
+      if (response.data is Map && response.data['success'] == true) {
+        final data = response.data['data'];
 
+        if (data is! Map<String, dynamic>) {
+          throw ApiError(message: 'Invalid response format from server');
+        }
+
+        await _secureStorage.write(
+            key: AppConstants.tokenKey, value: data['token']);
+        if (data['deviceToken'] != null) {
+          await _secureStorage.write(
+              key: AppConstants.refreshTokenKey, value: data['deviceToken']);
+        }
+
+        final user = User.fromJson(data['user']);
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('token', _token!);
-        await prefs.setInt('userId', _userId!);
+        await prefs.setString(
+            AppConstants.userDataKey, json.encode(user.toJson()));
 
-        return {'success': true, 'user': data['user']};
+        return ApiResponse(
+          success: true,
+          message: response.data['message']?.toString() ?? 'Login successful',
+          data: data,
+        );
       } else {
-        return {'success': false, 'message': data['message']};
+        throw ApiError(
+            message: response.data['message']?.toString() ?? 'Login failed');
       }
-    } catch (e) {
-      return {'success': false, 'message': 'Network error: $e'};
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message']?.toString() ?? 'Login failed',
+        statusCode: e.response?.statusCode,
+        data: e.response?.data,
+      );
     }
   }
 
-  static Future<Map<String, dynamic>> login({
+  Future<void> logout() async {
+    try {
+      await _dio.post(AppConstants.logoutEndpoint);
+    } catch (e) {
+      debugLog('ApiService', 'Logout error (ignored): $e');
+    } finally {
+      await _secureStorage.deleteAll();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+    }
+  }
+
+  Future<ApiResponse<List<School>>> getSchools() async {
+    try {
+      final response = await _dio.get(AppConstants.schoolsEndpoint);
+
+      if (response.data is Map && response.data['success'] == true) {
+        final data = response.data['data'];
+
+        List<School> schools;
+        if (data is List) {
+          schools = data.map((json) => School.fromJson(json)).toList();
+        } else {
+          schools = [];
+        }
+
+        return ApiResponse<List<School>>(
+          success: true,
+          message: response.data['message']?.toString() ??
+              'Schools fetched successfully',
+          data: schools,
+        );
+      } else {
+        throw ApiError(
+            message: response.data['message']?.toString() ??
+                'Failed to fetch schools');
+      }
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 429) {
+        throw ApiError(message: 'Too many requests. Please try again later.');
+      }
+      throw ApiError(
+        message: e.response?.data['message']?.toString() ??
+            'Failed to fetch schools',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<ApiResponse<void>> selectSchool(int schoolId) async {
+    try {
+      final response = await _dio.put(
+        AppConstants.updateProfileEndpoint,
+        data: {'school_id': schoolId},
+      );
+
+      if (response.data is Map && response.data['success'] == true) {
+        return ApiResponse(
+            success: true, message: response.data['message']!.toString());
+      } else {
+        throw ApiError(
+            message: response.data['message']?.toString() ??
+                'Failed to select school');
+      }
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        final refreshed = await _refreshToken();
+        if (refreshed) {
+          final retryResponse = await _dio.put(
+            AppConstants.updateProfileEndpoint,
+            data: {'school_id': schoolId},
+          );
+
+          if (retryResponse.data is Map &&
+              retryResponse.data['success'] == true) {
+            return ApiResponse(
+                success: true,
+                message: retryResponse.data['message']!.toString());
+          }
+        }
+      }
+
+      throw ApiError(
+        message: e.response?.data['message']?.toString() ??
+            'Failed to select school',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<ApiResponse<List<Category>>> getCategories() async {
+    try {
+      final response = await _dio.get(AppConstants.categoriesEndpoint);
+      return ApiResponse.fromJson(
+        response.data,
+        (data) => List<Category>.from(data.map((x) => Category.fromJson(x))),
+      );
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to fetch categories',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<ApiResponse<Map<String, dynamic>>> submitDeviceChangePayment({
     required String username,
     required String password,
+    required String paymentMethod,
+    required double amount,
+    required String proofImagePath,
+    required String deviceId,
   }) async {
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/auth/login'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
+      final response = await _dio.post(
+        AppConstants.submitPaymentEndpoint,
+        data: {
           'username': username,
           'password': password,
-        }),
+          'payment_method': paymentMethod,
+          'payment_type': 'device_change',
+          'amount': amount,
+          'proof_image_path': proofImagePath,
+          'device_id': deviceId,
+        },
       );
-
-      final data = json.decode(response.body);
-      if (response.statusCode == 200) {
-        _token = data['token'];
-        _userId = data['user']['id'];
-
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('token', _token!);
-        await prefs.setInt('userId', _userId!);
-        await prefs.setString('username', username);
-
-        return {'success': true, 'user': data['user']};
-      } else {
-        return {'success': false, 'message': data['message']};
-      }
-    } catch (e) {
-      return {'success': false, 'message': 'Network error: $e'};
+      return ApiResponse.fromJson(
+          response.data, (data) => data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ??
+            'Failed to submit device change payment',
+        statusCode: e.response?.statusCode,
+      );
     }
   }
 
-  static Future<Map<String, dynamic>> logout() async {
+  Future<ApiResponse<Map<String, dynamic>>> getCoursesByCategory(
+      int categoryId) async {
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/auth/logout'),
-        headers: _headersWithAuth,
+      final response =
+          await _dio.get(AppConstants.coursesByCategory(categoryId));
+      return ApiResponse.fromJson(
+        response.data,
+        (data) => data as Map<String, dynamic>,
       );
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.clear();
-      _token = null;
-      _userId = null;
-
-      if (response.statusCode == 200) {
-        return {'success': true};
-      } else {
-        return {'success': false, 'message': 'Logout failed'};
-      }
-    } catch (e) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.clear();
-      _token = null;
-      _userId = null;
-      return {'success': false, 'message': 'Network error: $e'};
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to fetch courses',
+        statusCode: e.response?.statusCode,
+      );
     }
   }
 
-  static Future<User> getCurrentUser() async {
+  Future<ApiResponse<Map<String, dynamic>>> getChaptersByCourse(
+      int courseId) async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/auth/me'),
-        headers: _headersWithAuth,
+      final response = await _dio.get(AppConstants.chaptersByCourse(courseId));
+      return ApiResponse.fromJson(
+        response.data,
+        (data) => data as Map<String, dynamic>,
       );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return User.fromJson(data);
-      } else {
-        throw Exception('Failed to load user');
-      }
-    } catch (e) {
-      throw Exception('Failed to load user: $e');
-    }
-  }
-
-  static Future<bool> isAuthenticated() async {
-    if (_token == null) {
-      final prefs = await SharedPreferences.getInstance();
-      _token = prefs.getString('token');
-      _userId = prefs.getInt('userId');
-    }
-    return _token != null;
-  }
-
-  static Future<List<School>> getSchools() async {
-    try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/schools'),
-        headers: _headers,
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to fetch chapters',
+        statusCode: e.response?.statusCode,
       );
-
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.map((school) => School.fromJson(school)).toList();
-      } else {
-        throw Exception('Failed to load schools');
-      }
-    } catch (e) {
-      throw Exception('Failed to load schools: $e');
     }
   }
 
-  static Future<void> selectSchool(int schoolId) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/auth/select-school'),
-        headers: _headersWithAuth,
-        body: json.encode({'schoolId': schoolId}),
-      );
-
-      if (response.statusCode != 200) {
-        throw Exception('Failed to select school');
-      }
-    } catch (e) {
-      throw Exception('Failed to select school: $e');
-    }
-  }
-
-  static Future<List<Category>> getCategories() async {
-    try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/categories'),
-        headers: _headers,
-      );
-
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.map((category) => Category.fromJson(category)).toList();
-      } else {
-        throw Exception('Failed to load categories');
-      }
-    } catch (e) {
-      throw Exception('Failed to load categories: $e');
-    }
-  }
-
-  static Future<Category> getCategoryById(int id) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/categories/$id'),
-        headers: _headers,
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return Category.fromJson(data);
-      } else {
-        throw Exception('Failed to load category');
-      }
-    } catch (e) {
-      throw Exception('Failed to load category: $e');
-    }
-  }
-
-  static Future<List<Course>> getCoursesByCategory(int categoryId) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/categories/$categoryId/courses'),
-        headers: _headers,
-      );
-
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.map((course) => Course.fromJson(course)).toList();
-      } else {
-        throw Exception('Failed to load courses');
-      }
-    } catch (e) {
-      throw Exception('Failed to load courses: $e');
-    }
-  }
-
-  static Future<Course> getCourseById(int id) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/courses/$id'),
-        headers: _headers,
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return Course.fromJson(data);
-      } else {
-        throw Exception('Failed to load course');
-      }
-    } catch (e) {
-      throw Exception('Failed to load course: $e');
-    }
-  }
-
-  static Future<List<Chapter>> getChaptersByCourse(int courseId) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/courses/$courseId/chapters'),
-        headers: _headers,
-      );
-
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.map((chapter) => Chapter.fromJson(chapter)).toList();
-      } else {
-        throw Exception('Failed to load chapters');
-      }
-    } catch (e) {
-      throw Exception('Failed to load chapters: $e');
-    }
-  }
-
-  static Future<Chapter> getChapterById(int id) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/chapters/$id'),
-        headers: _headers,
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return Chapter.fromJson(data);
-      } else {
-        throw Exception('Failed to load chapter');
-      }
-    } catch (e) {
-      throw Exception('Failed to load chapter: $e');
-    }
-  }
-
-  static Future<void> incrementVideoView(int videoId) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/videos/$videoId/view'),
-        headers: _headersWithAuth,
-      );
-
-      if (response.statusCode != 200) {
-        throw Exception('Failed to increment video view');
-      }
-    } catch (e) {
-      throw Exception('Failed to increment video view: $e');
-    }
-  }
-
-  static Future<List<Question>> getPracticeQuestionsByChapter(
+  Future<ApiResponse<Map<String, dynamic>>> getVideosByChapter(
       int chapterId) async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/chapters/$chapterId/practice-questions'),
-        headers: _headers,
+      final response = await _dio.get(AppConstants.videosByChapter(chapterId));
+      return ApiResponse.fromJson(
+        response.data,
+        (data) => data as Map<String, dynamic>,
       );
-
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.map((question) => Question.fromJson(question)).toList();
-      } else {
-        throw Exception('Failed to load practice questions');
-      }
-    } catch (e) {
-      throw Exception('Failed to load practice questions: $e');
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to fetch videos',
+        statusCode: e.response?.statusCode,
+      );
     }
   }
 
-  static Future<List<Exam>> getExamsByCourse(int courseId) async {
+  Future<ApiResponse<Map<String, dynamic>>> getNotesByChapter(
+      int chapterId) async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/courses/$courseId/exams'),
-        headers: _headers,
+      final response = await _dio.get(AppConstants.notesByChapter(chapterId));
+      return ApiResponse.fromJson(
+        response.data,
+        (data) => data as Map<String, dynamic>,
       );
-
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.map((exam) => Exam.fromJson(exam)).toList();
-      } else {
-        throw Exception('Failed to load exams');
-      }
-    } catch (e) {
-      throw Exception('Failed to load exams: $e');
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to fetch notes',
+        statusCode: e.response?.statusCode,
+      );
     }
   }
 
-  static Future<Exam> getExamById(int id) async {
+  Future<ApiResponse<Map<String, dynamic>>> getPracticeQuestions(
+      int chapterId) async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/exams/$id'),
-        headers: _headers,
+      final response =
+          await _dio.get(AppConstants.practiceQuestions(chapterId));
+      return ApiResponse.fromJson(
+        response.data,
+        (data) => data as Map<String, dynamic>,
       );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return Exam.fromJson(data);
-      } else {
-        throw Exception('Failed to load exam');
-      }
-    } catch (e) {
-      throw Exception('Failed to load exam: $e');
+    } on DioException catch (e) {
+      throw ApiError(
+        message:
+            e.response?.data['message'] ?? 'Failed to fetch practice questions',
+        statusCode: e.response?.statusCode,
+      );
     }
   }
 
-  static Future<List<Question>> getExamQuestions(int examId) async {
+  Future<ApiResponse<Map<String, dynamic>>> checkAnswer(
+      int questionId, String selectedOption) async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/exams/$examId/questions'),
-        headers: _headersWithAuth,
+      final response = await _dio.post(
+        AppConstants.checkAnswerEndpoint,
+        data: {'question_id': questionId, 'selected_option': selectedOption},
       );
-
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.map((question) => Question.fromJson(question)).toList();
-      } else {
-        throw Exception('Failed to load exam questions');
-      }
-    } catch (e) {
-      throw Exception('Failed to load exam questions: $e');
+      return ApiResponse.fromJson(
+          response.data, (data) => data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to check answer',
+        statusCode: e.response?.statusCode,
+      );
     }
   }
 
-  static Future<Map<String, dynamic>> submitExam({
-    required int examId,
-    required Map<int, int> answers,
-  }) async {
+  Future<ApiResponse<List<Exam>>> getAvailableExams({int? courseId}) async {
     try {
-      final List<Map<String, dynamic>> answerList =
-          answers.entries.map((entry) {
-        return {
-          'questionId': entry.key,
-          'selectedOption': entry.value,
-        };
-      }).toList();
-
-      final response = await http.post(
-        Uri.parse('$baseUrl/exams/$examId/submit'),
-        headers: _headersWithAuth,
-        body: json.encode({'answers': answerList}),
+      final response = await _dio.get(
+        AppConstants.availableExamsEndpoint,
+        queryParameters: courseId != null ? {'course_id': courseId} : null,
       );
 
-      final data = json.decode(response.body);
-      if (response.statusCode == 200) {
-        return {'success': true, 'result': data};
-      } else {
-        return {'success': false, 'message': data['message']};
-      }
-    } catch (e) {
-      return {'success': false, 'message': 'Network error: $e'};
+      return ApiResponse.fromJson(
+        response.data,
+        (data) {
+          if (data is List) {
+            return data.map<Exam>((item) => Exam.fromJson(item)).toList();
+          }
+          return <Exam>[];
+        },
+      );
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to fetch exams',
+        statusCode: e.response?.statusCode,
+      );
     }
   }
 
-  static Future<List<Payment>> getPayments() async {
+  Future<ApiResponse<Map<String, dynamic>>> startExam(int examId) async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/payments'),
-        headers: _headersWithAuth,
+      final response = await _dio.post(AppConstants.startExamEndpoint(examId));
+      return ApiResponse.fromJson(
+          response.data, (data) => data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to start exam',
+        statusCode: e.response?.statusCode,
       );
-
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.map((payment) => Payment.fromJson(payment)).toList();
-      } else {
-        throw Exception('Failed to load payments');
-      }
-    } catch (e) {
-      throw Exception('Failed to load payments: $e');
     }
   }
 
-  static Future<Map<String, dynamic>> createPayment({
+  Future<ApiResponse<List<ExamQuestion>>> getExamQuestions(int examId) async {
+    try {
+      final response =
+          await _dio.get(AppConstants.examQuestionsEndpoint(examId));
+      return ApiResponse.fromJson(
+        response.data,
+        (data) =>
+            List<ExamQuestion>.from(data.map((x) => ExamQuestion.fromJson(x))),
+      );
+    } on DioException catch (e) {
+      throw ApiError(
+        message:
+            e.response?.data['message'] ?? 'Failed to fetch exam questions',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<ApiResponse<Map<String, dynamic>>> saveExamProgress(
+      int examResultId, List<Map<String, dynamic>> answers) async {
+    try {
+      final response = await _dio.post(
+        AppConstants.examProgressEndpoint(examResultId),
+        data: {'answers': answers},
+      );
+      return ApiResponse.fromJson(
+          response.data, (data) => data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to save exam progress',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<ApiResponse<Map<String, dynamic>>> submitExam(
+      int examResultId, List<Map<String, dynamic>> answers) async {
+    try {
+      final response = await _dio.post(
+        AppConstants.submitExamEndpoint(examResultId),
+        data: {'answers': answers},
+      );
+      return ApiResponse.fromJson(
+          response.data, (data) => data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to submit exam',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<ApiResponse<List<ExamResult>>> getMyExamResults() async {
+    try {
+      final response = await _dio.get(AppConstants.myExamResultsEndpoint);
+
+      return ApiResponse.fromJson(
+        response.data,
+        (data) {
+          if (data is List) {
+            return data
+                .map<ExamResult>((item) => ExamResult.fromJson(item))
+                .toList();
+          }
+          return <ExamResult>[];
+        },
+      );
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to fetch exam results',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<ApiResponse<ExamResult>> getExamResult(int examResultId) async {
+    try {
+      final response =
+          await _dio.get(AppConstants.examResultByIdEndpoint(examResultId));
+      return ApiResponse.fromJson(
+          response.data, (data) => ExamResult.fromJson(data));
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to fetch exam result',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<ApiResponse<Map<String, dynamic>>> submitPayment({
     required int categoryId,
-    required String paymentMethod,
     required String paymentType,
-    required File proofImage,
-    required String password,
+    required String paymentMethod,
+    required double amount,
+    String? proofImagePath,
   }) async {
     try {
-      var request = http.MultipartRequest(
-        'POST',
-        Uri.parse('$baseUrl/payments'),
+      final response = await _dio.post(
+        AppConstants.submitPaymentEndpoint,
+        data: {
+          'category_id': categoryId,
+          'payment_type': paymentType,
+          'payment_method': paymentMethod,
+          'amount': amount,
+          'proof_image_path': proofImagePath,
+        },
       );
-
-      request.headers.addAll({
-        'Authorization': 'Bearer $_token',
-      });
-
-      request.fields['categoryId'] = categoryId.toString();
-      request.fields['paymentMethod'] = paymentMethod;
-      request.fields['paymentType'] = paymentType;
-      request.fields['password'] = password;
-
-      request.files.add(
-        await http.MultipartFile.fromPath(
-          'proofImage',
-          proofImage.path,
-          filename:
-              'payment_proof_${DateTime.now().millisecondsSinceEpoch}.jpg',
-        ),
+      return ApiResponse.fromJson(
+          response.data, (data) => data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to submit payment',
+        statusCode: e.response?.statusCode,
       );
-
-      final response = await request.send();
-      final responseBody = await response.stream.bytesToString();
-      final data = json.decode(responseBody);
-
-      if (response.statusCode == 201) {
-        return {'success': true, 'payment': Payment.fromJson(data)};
-      } else {
-        return {'success': false, 'message': data['message']};
-      }
-    } catch (e) {
-      return {'success': false, 'message': 'Network error: $e'};
     }
   }
 
-  static Future<void> uploadPaymentProof(int paymentId, File proofImage) async {
+  Future<ApiResponse<List<Payment>>> getMyPayments() async {
     try {
-      var request = http.MultipartRequest(
-        'POST',
-        Uri.parse('$baseUrl/payments/$paymentId/upload-proof'),
+      final response = await _dio.get(AppConstants.myPaymentsEndpoint);
+      return ApiResponse.fromJson(
+        response.data,
+        (data) => List<Payment>.from(data.map((x) => Payment.fromJson(x))),
       );
-
-      request.headers.addAll({
-        'Authorization': 'Bearer $_token',
-      });
-
-      request.files.add(
-        await http.MultipartFile.fromPath(
-          'proofImage',
-          proofImage.path,
-        ),
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to fetch payments',
+        statusCode: e.response?.statusCode,
       );
-
-      final response = await request.send();
-      if (response.statusCode != 200) {
-        throw Exception('Failed to upload payment proof');
-      }
-    } catch (e) {
-      throw Exception('Failed to upload payment proof: $e');
     }
   }
 
-  static Future<UserProgress> getProgress() async {
+  Future<ApiResponse<List<Subscription>>> getMySubscriptions() async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/progress'),
-        headers: _headersWithAuth,
+      final response = await _dio.get(AppConstants.mySubscriptionsEndpoint);
+      return ApiResponse.fromJson(
+        response.data,
+        (data) =>
+            List<Subscription>.from(data.map((x) => Subscription.fromJson(x))),
       );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return UserProgress.fromJson(data);
-      } else {
-        throw Exception('Failed to load progress');
-      }
-    } catch (e) {
-      throw Exception('Failed to load progress: $e');
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to fetch subscriptions',
+        statusCode: e.response?.statusCode,
+      );
     }
   }
 
-  static Future<void> updateStreak() async {
+  Future<ApiResponse<Map<String, dynamic>>> checkSubscriptionStatus(
+      int categoryId) async {
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/progress/streak'),
-        headers: _headersWithAuth,
+      final response = await _dio.get(
+        AppConstants.checkSubscriptionStatusEndpoint,
+        queryParameters: {'category_id': categoryId},
       );
-
-      if (response.statusCode != 200) {
-        throw Exception('Failed to update streak');
-      }
-    } catch (e) {
-      throw Exception('Failed to update streak: $e');
+      return ApiResponse.fromJson(
+          response.data, (data) => data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ??
+            'Failed to check subscription status',
+        statusCode: e.response?.statusCode,
+      );
     }
   }
 
-  static Future<Map<String, dynamic>> getCourseProgress(int courseId) async {
+  Future<ApiResponse<Map<String, dynamic>>> getMyStreak() async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/progress/course/$courseId'),
-        headers: _headersWithAuth,
+      final response = await _dio.get(AppConstants.myStreakEndpoint);
+      return ApiResponse.fromJson(
+          response.data, (data) => data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to fetch streak',
+        statusCode: e.response?.statusCode,
       );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return data;
-      } else {
-        throw Exception('Failed to load course progress');
-      }
-    } catch (e) {
-      throw Exception('Failed to load course progress: $e');
     }
   }
 
-  static Future<Map<String, dynamic>> sendChatMessage(String message) async {
+  Future<ApiResponse<void>> updateStreak() async {
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/chat/send'),
-        headers: _headersWithAuth,
-        body: json.encode({'message': message}),
+      final response = await _dio.post(AppConstants.updateStreakEndpoint);
+      return ApiResponse(success: true, message: response.data['message']);
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to update streak',
+        statusCode: e.response?.statusCode,
       );
-
-      final data = json.decode(response.body);
-      if (response.statusCode == 200) {
-        return {
-          'success': true,
-          'response': data['response'],
-          'remainingMessages': data['remainingMessages'],
-        };
-      } else {
-        return {'success': false, 'message': data['message']};
-      }
-    } catch (e) {
-      return {'success': false, 'message': 'Network error: $e'};
     }
   }
 
-  static Future<int> getRemainingChatMessages() async {
+  Future<ApiResponse<Map<String, dynamic>>> pairTvDevice(
+      String tvDeviceId) async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/chat/remaining'),
-        headers: _headersWithAuth,
+      final response = await _dio.post(
+        AppConstants.pairTvDeviceEndpoint,
+        data: {'tv_device_id': tvDeviceId},
       );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return data['remainingMessages'];
-      } else {
-        return 0;
-      }
-    } catch (e) {
-      return 0;
+      return ApiResponse.fromJson(
+          response.data, (data) => data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to pair TV device',
+        statusCode: e.response?.statusCode,
+      );
     }
   }
 
-  static Future<Map<String, dynamic>> updateProfile({
+  Future<ApiResponse<Map<String, dynamic>>> verifyTvPairing(
+      String pairingCode) async {
+    try {
+      final response = await _dio.post(
+        AppConstants.verifyTvPairingEndpoint,
+        data: {'pairing_code': pairingCode},
+      );
+      return ApiResponse.fromJson(
+          response.data, (data) => data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to verify pairing',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<ApiResponse<void>> unpairTvDevice() async {
+    try {
+      final response = await _dio.post(AppConstants.unpairTvDeviceEndpoint);
+      return ApiResponse(success: true, message: response.data['message']);
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to unpair TV device',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<ApiResponse<Map<String, dynamic>>> generateParentToken() async {
+    try {
+      final response =
+          await _dio.post(AppConstants.generateParentTokenEndpoint);
+      return ApiResponse.fromJson(
+          response.data, (data) => data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiError(
+        message:
+            e.response?.data['message'] ?? 'Failed to generate parent token',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<ApiResponse<ParentLink>> getParentLinkStatus() async {
+    try {
+      final response = await _dio.get(AppConstants.parentLinkStatusEndpoint);
+      return ApiResponse.fromJson(
+          response.data, (data) => ParentLink.fromJson(data));
+    } on DioException catch (e) {
+      throw ApiError(
+        message:
+            e.response?.data['message'] ?? 'Failed to fetch parent link status',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<ApiResponse<Map<String, dynamic>>> unlinkParent() async {
+    try {
+      final response = await _dio.post(AppConstants.unlinkParentEndpoint);
+      return ApiResponse.fromJson(
+          response.data, (data) => data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to unlink parent',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<ApiResponse<List<UserProgress>>> getUserProgressForCourse(
+      int courseId) async {
+    try {
+      final response = await _dio
+          .get('${AppConstants.userProgressEndpoint}/course/$courseId');
+      return ApiResponse.fromJson(
+        response.data,
+        (data) =>
+            List<UserProgress>.from(data.map((x) => UserProgress.fromJson(x))),
+      );
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to fetch user progress',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<ApiResponse<List<Notification>>> getMyNotifications() async {
+    try {
+      final response = await _dio.get(AppConstants.myNotificationsEndpoint);
+      return ApiResponse.fromJson(
+        response.data,
+        (data) =>
+            List<Notification>.from(data.map((x) => Notification.fromJson(x))),
+      );
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to fetch notifications',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<ApiResponse<User>> getMyProfile() async {
+    try {
+      final response = await _dio.get(AppConstants.myProfileEndpoint);
+      return ApiResponse.fromJson(response.data, (data) => User.fromJson(data));
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to fetch profile',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<ApiResponse<void>> updateMyProfile({
     String? email,
     String? phone,
+    String? profileImage,
   }) async {
     try {
-      final Map<String, dynamic> updateData = {};
-      if (email != null) updateData['email'] = email;
-      if (phone != null) updateData['phone'] = phone;
-
-      final response = await http.put(
-        Uri.parse('$baseUrl/profile'),
-        headers: _headersWithAuth,
-        body: json.encode(updateData),
+      final response = await _dio.put(
+        AppConstants.updateProfileEndpoint,
+        data: {
+          if (email != null) 'email': email,
+          if (phone != null) 'phone': phone,
+          if (profileImage != null) 'profile_image': profileImage,
+        },
       );
-
-      final data = json.decode(response.body);
-      if (response.statusCode == 200) {
-        return {'success': true, 'user': User.fromJson(data)};
-      } else {
-        return {'success': false, 'message': data['message']};
-      }
-    } catch (e) {
-      return {'success': false, 'message': 'Network error: $e'};
+      return ApiResponse(success: true, message: response.data['message']);
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to update profile',
+        statusCode: e.response?.statusCode,
+      );
     }
   }
 
-  static Future<Map<String, dynamic>> updateProfilePicture(
-      File imageFile) async {
+  Future<ApiResponse<void>> updateDevice(
+      String deviceType, String deviceId) async {
     try {
-      var request = http.MultipartRequest(
-        'POST',
-        Uri.parse('$baseUrl/profile/picture'),
+      final response = await _dio.put(
+        AppConstants.updateDeviceEndpoint,
+        data: {'device_type': deviceType, 'device_id': deviceId},
       );
+      return ApiResponse(success: true, message: response.data['message']);
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to update device',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
 
-      request.headers.addAll({
-        'Authorization': 'Bearer $_token',
+  Future<ApiResponse<List<Setting>>> getPublicSettings() async {
+    try {
+      final response = await _dio.get(AppConstants.publicSettingsEndpoint);
+      return ApiResponse.fromJson(
+        response.data,
+        (data) => List<Setting>.from(data.map((x) => Setting.fromJson(x))),
+      );
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to fetch settings',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<ApiResponse<List<Setting>>> getSettingsByCategory(
+      String category) async {
+    try {
+      final response =
+          await _dio.get(AppConstants.settingsByCategory(category));
+      return ApiResponse.fromJson(
+        response.data,
+        (data) => List<Setting>.from(data.map((x) => Setting.fromJson(x))),
+      );
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to fetch settings',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<ApiResponse<String>> uploadFile(File file, String type) async {
+    try {
+      final fileName = file.path.split('/').last;
+      final formData = FormData.fromMap({
+        'file': await MultipartFile.fromFile(file.path, filename: fileName),
       });
 
-      request.files.add(
-        await http.MultipartFile.fromPath(
-          'profilePicture',
-          imageFile.path,
-          filename: 'profile_${DateTime.now().millisecondsSinceEpoch}.jpg',
-        ),
+      final endpoint = type == 'image'
+          ? AppConstants.uploadImageEndpoint
+          : type == 'video'
+              ? AppConstants.uploadVideoEndpoint
+              : AppConstants.uploadFileEndpoint;
+
+      final response = await _dio.post(
+        endpoint,
+        data: formData,
+        options: Options(headers: {'Content-Type': 'multipart/form-data'}),
       );
 
-      final response = await request.send();
-      final responseBody = await response.stream.bytesToString();
-      final data = json.decode(responseBody);
-
-      if (response.statusCode == 200) {
-        return {'success': true, 'imageUrl': data['imageUrl']};
-      } else {
-        return {'success': false, 'message': data['message']};
-      }
-    } catch (e) {
-      return {'success': false, 'message': 'Network error: $e'};
+      return ApiResponse.fromJson(response.data, (data) => data['file_path']);
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to upload file',
+        statusCode: e.response?.statusCode,
+      );
     }
   }
 
-  static Future<Map<String, dynamic>> generatePairingCode() async {
+  Future<ApiResponse<String>> uploadImage(File imageFile) async {
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/tv/generate-code'),
-        headers: _headersWithAuth,
+      final response = await uploadFile(imageFile, 'image');
+      return response;
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to upload image',
+        statusCode: e.response?.statusCode,
+        data: e.response?.data,
       );
-
-      final data = json.decode(response.body);
-      if (response.statusCode == 200) {
-        return {'success': true, 'code': data['code']};
-      } else {
-        return {'success': false, 'message': data['message']};
-      }
-    } catch (e) {
-      return {'success': false, 'message': 'Network error: $e'};
     }
   }
 
-  static Future<Map<String, dynamic>> pairTV(String code) async {
+  Future<ApiResponse<String>> uploadPaymentProof(File imageFile) async {
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/tv/pair'),
-        headers: _headersWithAuth,
-        body: json.encode({'code': code}),
-      );
-
-      final data = json.decode(response.body);
-      if (response.statusCode == 200) {
-        return {'success': true, 'device': data['device']};
-      } else {
-        return {'success': false, 'message': data['message']};
-      }
+      return await uploadImage(imageFile);
     } catch (e) {
-      return {'success': false, 'message': 'Network error: $e'};
+      throw ApiError(message: 'Failed to upload payment proof: $e');
     }
   }
 
-  static Future<Map<String, dynamic>> unpairTV() async {
+  Future<ApiResponse<void>> incrementVideoViewCount(int videoId) async {
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/tv/unpair'),
-        headers: _headersWithAuth,
+      final response =
+          await _dio.post(AppConstants.incrementViewEndpoint(videoId));
+      return ApiResponse(
+          success: true,
+          message: response.data['message'] ?? 'View count updated');
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to update view count',
+        statusCode: e.response?.statusCode,
       );
-
-      final data = json.decode(response.body);
-      if (response.statusCode == 200) {
-        return {'success': true};
-      } else {
-        return {'success': false, 'message': data['message']};
-      }
-    } catch (e) {
-      return {'success': false, 'message': 'Network error: $e'};
     }
   }
 
-  static Future<Map<String, dynamic>> getPairedTV() async {
+  Future<ApiResponse<Map<String, dynamic>>> validateToken() async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/tv/paired'),
-        headers: _headersWithAuth,
+      final response = await _dio.get(AppConstants.validateTokenEndpoint);
+      return ApiResponse.fromJson(
+          response.data, (data) => data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Token validation failed',
+        statusCode: e.response?.statusCode,
       );
-
-      final data = json.decode(response.body);
-      if (response.statusCode == 200) {
-        return {'success': true, 'device': data['device']};
-      } else {
-        return {'success': false, 'message': data['message']};
-      }
-    } catch (e) {
-      return {'success': false, 'message': 'Network error: $e'};
     }
   }
 
-  static Future<Map<String, dynamic>> generateParentToken() async {
+  Future<ApiResponse<Map<String, dynamic>>> validateStudentToken() async {
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/parent/generate-token'),
-        headers: _headersWithAuth,
+      final response =
+          await _dio.get(AppConstants.validateStudentTokenEndpoint);
+      return ApiResponse.fromJson(
+          response.data, (data) => data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiError(
+        message:
+            e.response?.data['message'] ?? 'Student token validation failed',
+        statusCode: e.response?.statusCode,
       );
-
-      final data = json.decode(response.body);
-      if (response.statusCode == 200) {
-        return {'success': true, 'token': data['token']};
-      } else {
-        return {'success': false, 'message': data['message']};
-      }
-    } catch (e) {
-      return {'success': false, 'message': 'Network error: $e'};
     }
   }
 
-  static Future<Map<String, dynamic>> getParentLinkStatus() async {
+  Future<ApiResponse<Map<String, dynamic>>> getExamResultDetails(
+      int examResultId) async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/parent/status'),
-        headers: _headersWithAuth,
+      final response =
+          await _dio.get('${AppConstants.examResultsEndpoint}/$examResultId');
+      return ApiResponse.fromJson(
+          response.data, (data) => data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ??
+            'Failed to fetch exam result details',
+        statusCode: e.response?.statusCode,
       );
-
-      final data = json.decode(response.body);
-      if (response.statusCode == 200) {
-        return {
-          'success': true,
-          'linked': data['linked'],
-          'parent': data['parent']
-        };
-      } else {
-        return {'success': false, 'message': data['message']};
-      }
-    } catch (e) {
-      return {'success': false, 'message': 'Network error: $e'};
     }
   }
 
-  static Future<List<dynamic>> getNotifications() async {
+  Future<ApiResponse<UserProgress>> getUserProgress(int chapterId) async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/notifications'),
-        headers: _headersWithAuth,
+      final response =
+          await _dio.get(AppConstants.userProgressByChapterEndpoint(chapterId));
+      return ApiResponse.fromJson(
+          response.data, (data) => UserProgress.fromJson(data));
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to fetch user progress',
+        statusCode: e.response?.statusCode,
       );
-
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data;
-      } else {
-        throw Exception('Failed to load notifications');
-      }
-    } catch (e) {
-      throw Exception('Failed to load notifications: $e');
     }
   }
 
-  static Future<void> markNotificationAsRead(int notificationId) async {
+  Future<ApiResponse<void>> saveUserProgress(UserProgress progress) async {
     try {
-      final response = await http.put(
-        Uri.parse('$baseUrl/notifications/$notificationId/read'),
-        headers: _headersWithAuth,
+      final response = await _dio.post(
+        AppConstants.userProgressEndpoint,
+        data: progress.toJson(),
       );
-
-      if (response.statusCode != 200) {
-        throw Exception('Failed to mark notification as read');
-      }
-    } catch (e) {
-      throw Exception('Failed to mark notification as read: $e');
+      return ApiResponse(success: true, message: response.data['message']);
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to save user progress',
+        statusCode: e.response?.statusCode,
+      );
     }
   }
 
-  static Future<Map<String, dynamic>> requestDeviceChange({
-    required String password,
-    required String paymentMethod,
-    required File proofImage,
-  }) async {
+  Future<ApiResponse<List<String>>> getSettingsCategories() async {
     try {
-      var request = http.MultipartRequest(
-        'POST',
-        Uri.parse('$baseUrl/auth/device-change'),
+      final response = await _dio.get(AppConstants.settingsCategoriesEndpoint);
+      return ApiResponse.fromJson(
+          response.data, (data) => List<String>.from(data['data'] ?? []));
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ??
+            'Failed to fetch settings categories',
+        statusCode: e.response?.statusCode,
       );
-
-      request.headers.addAll({
-        'Authorization': 'Bearer $_token',
-      });
-
-      request.fields['password'] = password;
-      request.fields['paymentMethod'] = paymentMethod;
-
-      request.files.add(
-        await http.MultipartFile.fromPath(
-          'proofImage',
-          proofImage.path,
-          filename:
-              'device_change_${DateTime.now().millisecondsSinceEpoch}.jpg',
-        ),
-      );
-
-      final response = await request.send();
-      final responseBody = await response.stream.bytesToString();
-      final data = json.decode(responseBody);
-
-      if (response.statusCode == 200) {
-        return {'success': true, 'message': data['message']};
-      } else {
-        return {'success': false, 'message': data['message']};
-      }
-    } catch (e) {
-      return {'success': false, 'message': 'Network error: $e'};
     }
   }
 
-  static Future<void> clearAuth() async {
-    _token = null;
-    _userId = null;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
-  }
-
-  static String? getToken() => _token;
-  static int? getUserId() => _userId;
-
-  static Future<bool> hasCategoryAccess(int categoryId) async {
+  Future<ApiResponse<Setting>> getSettingByKey(String key) async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/categories/$categoryId/access'),
-        headers: _headersWithAuth,
+      final response = await _dio.get(AppConstants.settingByKeyEndpoint(key));
+      return ApiResponse.fromJson(
+          response.data, (data) => Setting.fromJson(data));
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to fetch setting',
+        statusCode: e.response?.statusCode,
       );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return data['hasAccess'] == true;
-      }
-      return false;
-    } catch (e) {
-      return false;
     }
   }
 
-  static Future<bool> hasCourseAccess(int courseId) async {
+  Future<ApiResponse<Map<String, dynamic>>> getDeviceInfo() async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/courses/$courseId/access'),
-        headers: _headersWithAuth,
+      final response = await _dio.get(AppConstants.deviceInfoEndpoint);
+      return ApiResponse.fromJson(
+          response.data, (data) => data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to fetch device info',
+        statusCode: e.response?.statusCode,
       );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return data['hasAccess'] == true;
-      }
-      return false;
-    } catch (e) {
-      return false;
     }
+  }
+
+  Future<ApiResponse<Map<String, dynamic>>> getCourseDetails(
+      int courseId) async {
+    try {
+      final response =
+          await _dio.get('${AppConstants.coursesEndpoint}/$courseId');
+      return ApiResponse.fromJson(
+        response.data,
+        (data) => data as Map<String, dynamic>,
+      );
+    } on DioException catch (e) {
+      throw ApiError(
+        message:
+            e.response?.data['message'] ?? 'Failed to fetch course details',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  T _parseResponseData<T>(dynamic data) {
+    if (data is T) {
+      return data;
+    }
+    throw FormatException('Invalid response format, expected $T');
   }
 }

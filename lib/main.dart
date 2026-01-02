@@ -24,7 +24,6 @@ import 'package:familyacademyclient/providers/parent_link_provider.dart';
 import 'package:familyacademyclient/services/api_service.dart';
 import 'package:familyacademyclient/services/storage_service.dart';
 import 'package:familyacademyclient/services/notification_service.dart';
-import 'package:familyacademyclient/services/device_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -76,10 +75,6 @@ Future<void> main() async {
   final storageService = StorageService();
   await storageService.init();
   debugPrint('Main: StorageService initialized');
-
-  final deviceService = DeviceService();
-  await deviceService.init();
-  debugPrint('Main: DeviceService initialized');
 
   final apiService = ApiService();
   debugPrint('Main: ApiService created');
