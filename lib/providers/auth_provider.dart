@@ -133,8 +133,6 @@ class AuthProvider with ChangeNotifier {
 
   Future<void> _reinitializeApiServiceWithToken(String token) async {
     try {
-      await storageService.clearTokens();
-
       await storageService.saveToken(token);
 
       debugLog('AuthProvider', 'ApiService token updated');
