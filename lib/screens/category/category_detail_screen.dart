@@ -26,6 +26,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
   @override
   void initState() {
     super.initState();
+    print(
+        '🏁 CategoryDetailScreen created for categoryId: ${widget.categoryId}');
     _loadCategory();
     _loadCourses();
   }
