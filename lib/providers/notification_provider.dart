@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
-
 import '../services/api_service.dart';
-import '../models/notification_model.dart'
-    as AppNotification; // Alias to avoid conflict
+import '../models/notification_model.dart' as AppNotification;
 import '../utils/helpers.dart';
 
 class NotificationProvider with ChangeNotifier {
@@ -25,6 +23,8 @@ class NotificationProvider with ChangeNotifier {
   List<AppNotification.Notification> get readNotifications {
     return _notifications.where((n) => n.isDelivered).toList();
   }
+
+  int get unreadCount => unreadNotifications.length;
 
   Future<void> loadNotifications() async {
     _isLoading = true;
@@ -50,49 +50,53 @@ class NotificationProvider with ChangeNotifier {
   }
 
   Future<void> markAsRead(int notificationId) async {
-    // Find the notification
-    final notification = _notifications.firstWhere(
-      (n) => n.id == notificationId,
-      orElse: () => AppNotification.Notification(
-        id: 0,
-        title: '',
-        message: '',
-        deliveryStatus: 'delivered',
-        receivedAt: DateTime.now(),
-      ),
-    );
-
-    if (notification.id != 0) {
-      // In a real app, you would call an API to mark as read
-      // For now, we'll just update locally
-      final index = _notifications.indexOf(notification);
-      _notifications[index] = AppNotification.Notification(
-        id: notification.id,
-        title: notification.title,
-        message: notification.message,
-        deliveryStatus: 'delivered', // Mark as delivered
-        receivedAt: notification.receivedAt,
-        sentAt: notification.sentAt,
-      );
-      notifyListeners();
+    try {
+      final index = _notifications.indexWhere((n) => n.id == notificationId);
+      if (index != -1) {
+        _notifications[index] = AppNotification.Notification(
+          id: _notifications[index].id,
+          title: _notifications[index].title,
+          message: _notifications[index].message,
+          deliveryStatus: 'delivered',
+          receivedAt: _notifications[index].receivedAt,
+          sentAt: _notifications[index].sentAt,
+        );
+        notifyListeners();
+        debugLog('NotificationProvider',
+            'Marked notification $notificationId as read');
+      }
+    } catch (e) {
+      debugLog('NotificationProvider', 'Error marking as read: $e');
     }
   }
 
   Future<void> markAllAsRead() async {
-    // In a real app, you would call an API to mark all as read
-    // For now, we'll just update locally
-    for (int i = 0; i < _notifications.length; i++) {
-      final notification = _notifications[i];
-      _notifications[i] = AppNotification.Notification(
-        id: notification.id,
-        title: notification.title,
-        message: notification.message,
-        deliveryStatus: 'delivered',
-        receivedAt: notification.receivedAt,
-        sentAt: notification.sentAt,
-      );
+    try {
+      _notifications = _notifications.map((notification) {
+        return AppNotification.Notification(
+          id: notification.id,
+          title: notification.title,
+          message: notification.message,
+          deliveryStatus: 'delivered',
+          receivedAt: notification.receivedAt,
+          sentAt: notification.sentAt,
+        );
+      }).toList();
+      notifyListeners();
+      debugLog('NotificationProvider', 'Marked all notifications as read');
+    } catch (e) {
+      debugLog('NotificationProvider', 'Error marking all as read: $e');
     }
-    notifyListeners();
+  }
+
+  Future<void> deleteNotification(int notificationId) async {
+    try {
+      _notifications.removeWhere((n) => n.id == notificationId);
+      notifyListeners();
+      debugLog('NotificationProvider', 'Deleted notification $notificationId');
+    } catch (e) {
+      debugLog('NotificationProvider', 'Error deleting notification: $e');
+    }
   }
 
   void addNotification(AppNotification.Notification notification) {
@@ -110,12 +114,26 @@ class NotificationProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // Fix for line 48: Check if user is not null before accessing id
   AppNotification.Notification? getNotificationById(int id) {
     try {
       return _notifications.firstWhere((n) => n.id == id);
     } catch (e) {
       return null;
     }
+  }
+
+  // Add test notification for debugging
+  void addTestNotification() {
+    final testNotification = AppNotification.Notification(
+      id: DateTime.now().millisecondsSinceEpoch,
+      title: 'Test Notification',
+      message: 'This is a test notification to verify the system is working.',
+      deliveryStatus: 'pending',
+      receivedAt: DateTime.now(),
+    );
+
+    _notifications.insert(0, testNotification);
+    notifyListeners();
+    debugLog('NotificationProvider', 'Added test notification');
   }
 }
