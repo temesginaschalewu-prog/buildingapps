@@ -51,6 +51,9 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen> {
     try {
       // Get token directly from storage
       final token = await storageService.getToken();
+      debugLog(
+          'SchoolSelection', 'Token to be used: ${token?.substring(0, 20)}...');
+      debugLog('SchoolSelection', 'Token length: ${token?.length}');
 
       if (token == null || token.isEmpty) {
         throw Exception('No authentication token found');
