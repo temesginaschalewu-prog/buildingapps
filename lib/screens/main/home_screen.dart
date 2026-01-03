@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../providers/category_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
+import '../../providers/notification_provider.dart';
 import '../../widgets/category/category_card.dart';
 import '../../widgets/common/loading_indicator.dart';
 import '../../widgets/common/empty_state.dart';
@@ -40,6 +41,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final categoryProvider = Provider.of<CategoryProvider>(context);
     final authProvider = Provider.of<AuthProvider>(context);
     final themeProvider = Provider.of<ThemeProvider>(context);
+    final notificationProvider = Provider.of<NotificationProvider>(context);
     final user = authProvider.user;
 
     if (_isInitialLoad && categoryProvider.isLoading) {
@@ -53,11 +55,41 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('Family Academy'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications),
-            onPressed: () {
-              // Navigate to notifications
-            },
+          Stack(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.notifications),
+                onPressed: () {
+                  context.push('/notifications');
+                },
+              ),
+              if (notificationProvider.unreadNotifications.isNotEmpty)
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 16,
+                      minHeight: 16,
+                    ),
+                    child: Text(
+                      notificationProvider.unreadNotifications.length
+                          .toString(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
           ),
           IconButton(
             icon: Icon(
@@ -127,9 +159,19 @@ class _HomeScreenState extends State<HomeScreen> {
                       return CategoryCard(
                         category: category,
                         onTap: () {
-                          context.push(
-                            '/category/${category.id}',
-                          );
+                          print(
+                              '📱 Category ${category.id} clicked: ${category.name}');
+
+                          // Method 1: Try go() with logging
+                          try {
+                            print(
+                                '🚀 Attempting navigation with go() to: /category/${category.id}');
+                            context.go('/category/${category.id}');
+                            print('✅ Navigation with go() completed');
+                          } catch (e, stackTrace) {
+                            print('❌ Navigation error with go(): $e');
+                            print('📋 Stack trace: $stackTrace');
+                          }
                         },
                       );
                     },

@@ -14,6 +14,7 @@ import 'package:familyacademyclient/screens/main/home_screen.dart';
 import 'package:familyacademyclient/screens/main/main_navigation.dart';
 import 'package:familyacademyclient/screens/main/profile_screen.dart';
 import 'package:familyacademyclient/screens/main/progress_screen.dart';
+import 'package:familyacademyclient/screens/notifications/notification_screen.dart';
 import 'package:familyacademyclient/screens/onboarding/school_selection_screen.dart';
 import 'package:familyacademyclient/screens/payment/payment_screen.dart';
 import 'package:familyacademyclient/screens/payment/payment_success_screen.dart';
@@ -137,6 +138,13 @@ class AppRouter {
           name: 'support',
           pageBuilder: (context, state) => const MaterialPage(
             child: SupportScreen(),
+          ),
+        ),
+        GoRoute(
+          path: '/notifications',
+          name: 'notifications',
+          pageBuilder: (context, state) => const MaterialPage(
+            child: NotificationsScreen(),
           ),
         ),
         ShellRoute(
