@@ -194,22 +194,45 @@ class AuthProvider with ChangeNotifier {
 
           notifyListeners();
         } else {
-          throw Exception('Invalid login response: missing user data or token');
+          throw ApiError(
+            message: 'Invalid login response: missing user data or token',
+          );
         }
       } else {
-        throw Exception(response.message);
+        // Check if this is a device change error
+        if (response.data != null && response.data is Map) {
+          final errorData = response.data as Map<String, dynamic>;
+          if (errorData['action'] == 'device_change_required') {
+            _deviceChangeRequired = true;
+            _currentDeviceId = errorData['currentDeviceId'];
+            _error = errorData['message'];
+
+            debugLog(
+              'AuthProvider',
+              '⚠️ Device change required. Current device: $_currentDeviceId',
+            );
+
+            notifyListeners();
+            return; // Don't throw, just return so login screen can handle it
+          }
+        }
+
+        _error = response.message;
+        notifyListeners();
+        throw ApiError(message: response.message);
       }
     } on ApiError catch (e) {
-      if (e.data is Map && e.data['action'] == 'device_change_required') {
+      _error = e.message;
+
+      if (e.action == 'device_change_required') {
         _deviceChangeRequired = true;
         _currentDeviceId = e.data is Map ? e.data['currentDeviceId'] : null;
         debugLog(
           'AuthProvider',
           '⚠️ Device change required. Current device: $_currentDeviceId',
         );
-      } else {
-        _error = e.message;
       }
+
       notifyListeners();
       rethrow;
     } catch (e) {
@@ -269,7 +292,8 @@ class AuthProvider with ChangeNotifier {
       await apiService.logout();
     } catch (e) {
     } finally {
-      await storageService.clearAll();
+      await storageService.clearTokens();
+      await storageService.clearUser();
 
       _user = null;
       _isAuthenticated = false;
@@ -320,6 +344,60 @@ class AuthProvider with ChangeNotifier {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  Future<void> handleSuccessfulLogin(Map<String, dynamic> data) async {
+    final userData = data['user'];
+    final token = data['token'];
+
+    if (userData != null && token != null) {
+      debugLog('AuthProvider', '👤 User data received');
+      _user = User.fromJson(userData);
+      _isAuthenticated = true;
+
+      await storageService.saveUser(_user!);
+      await storageService.saveToken(token.toString());
+
+      final deviceId = data['deviceId'];
+      if (deviceId != null) {
+        await storageService.saveDeviceId(deviceId);
+      }
+
+      if (data['deviceToken'] != null) {
+        await storageService.saveRefreshToken(
+          data['deviceToken'].toString(),
+        );
+      }
+
+      debugLog(
+        'AuthProvider',
+        '✅ User authenticated successfully. ID: ${_user!.id}',
+      );
+
+      notifyListeners();
+    } else {
+      throw Exception('Invalid login response: missing user data or token');
+    }
+  }
+
+  Future<void> updateAfterDeviceChange({
+    required Map<String, dynamic> userData,
+    required String token,
+    String? deviceToken,
+    required String deviceId,
+  }) async {
+    _user = User.fromJson(userData);
+    _isAuthenticated = true;
+
+    await storageService.saveUser(_user!);
+    await storageService.saveToken(token);
+    await storageService.saveDeviceId(deviceId);
+
+    if (deviceToken != null) {
+      await storageService.saveRefreshToken(deviceToken);
+    }
+
+    notifyListeners();
   }
 
   Future<void> refreshUserData() async {
