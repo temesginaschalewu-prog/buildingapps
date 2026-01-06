@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'package:dio/dio.dart';
+import 'package:familyacademyclient/services/api_service.dart';
 import 'package:familyacademyclient/utils/api_response.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -62,7 +64,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
-
     if (_deviceId == null) {
       showSnackBar(context, 'Device initialization failed', isError: true);
       return;
@@ -75,39 +76,76 @@ class _LoginScreenState extends State<LoginScreen> {
     final password = _passwordController.text;
 
     try {
+      debugLog('LoginScreen', 'Attempting login...');
+
+      // Use authProvider's method
       await authProvider.studentLogin(username, password, _deviceId!);
 
-      if (authProvider.error == null && authProvider.isAuthenticated) {
-        // Check if device change is required
-        if (authProvider.deviceChangeRequired) {
-          // Navigate to device change screen
-          context.go('/device-change', extra: {
-            'username': username,
-            'password': password,
-            'deviceId': _deviceId,
-            'currentDeviceId': authProvider.currentDeviceId,
-          });
-        } else {
-          // Check if school is selected
-          if (authProvider.user?.schoolId == null) {
-            context.go('/school-selection');
-          } else {
-            context.go('/');
-          }
-        }
-      } else {
-        showSnackBar(context, authProvider.error ?? 'Login failed',
-            isError: true);
-      }
-    } catch (e) {
-      if (e is ApiError && e.data?['action'] == 'device_change_required') {
+      debugLog('LoginScreen', 'Login attempt completed');
+      debugLog('LoginScreen', 'AuthProvider error: ${authProvider.error}');
+      debugLog('LoginScreen',
+          'AuthProvider authenticated: ${authProvider.isAuthenticated}');
+      debugLog('LoginScreen',
+          'Device change required: ${authProvider.deviceChangeRequired}');
+
+      if (authProvider.deviceChangeRequired) {
+        debugLog('LoginScreen', '⚠️ Device change required, redirecting...');
+
+        // Get current device ID from auth provider
+        final currentDeviceId = authProvider.currentDeviceId;
+
         // Navigate to device change screen
         context.go('/device-change', extra: {
           'username': username,
           'password': password,
           'deviceId': _deviceId,
-          'currentDeviceId': e.data?['currentDeviceId'],
+          'currentDeviceId': currentDeviceId,
+          'newDeviceId': _deviceId,
+          'changeCount': 0, // We'll get this from backend response
+          'maxChanges': 2,
+          'remainingChanges': 2,
+          'canChangeDevice': true,
         });
+      } else if (authProvider.isAuthenticated) {
+        debugLog('LoginScreen', '✅ Login successful');
+        // Check if school is selected
+        if (authProvider.user?.schoolId == null) {
+          context.go('/school-selection');
+        } else {
+          context.go('/');
+        }
+      } else {
+        debugLog('LoginScreen', '❌ Login failed');
+        showSnackBar(context, authProvider.error ?? 'Login failed',
+            isError: true);
+      }
+    } catch (e) {
+      debugLog('LoginScreen', '❌ Caught exception: $e');
+      debugLog('LoginScreen', 'Exception type: ${e.runtimeType}');
+
+      // Check if it's an ApiError
+      if (e is ApiError) {
+        debugLog('LoginScreen', 'ApiError action: ${e.action}');
+        debugLog('LoginScreen', 'ApiError data: ${e.data}');
+
+        if (e.action == 'device_change_required') {
+          debugLog('LoginScreen', 'Redirecting to device change screen...');
+
+          // Navigate to device change screen
+          context.go('/device-change', extra: {
+            'username': username,
+            'password': password,
+            'deviceId': _deviceId,
+            'currentDeviceId': e.data['currentDeviceId'],
+            'newDeviceId': e.data['newDeviceId'],
+            'changeCount': e.data['changeCount'] ?? 0,
+            'maxChanges': e.data['maxChanges'] ?? 2,
+            'remainingChanges': e.data['remainingChanges'] ?? 2,
+            'canChangeDevice': e.data['canChangeDevice'] ?? true,
+          });
+        } else {
+          showSnackBar(context, 'Login failed: ${e.message}', isError: true);
+        }
       } else {
         showSnackBar(context, 'Login failed: $e', isError: true);
       }
