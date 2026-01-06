@@ -238,6 +238,20 @@ class ApiService {
         },
       );
 
+      debugLog('ApiService', 'Login response status: ${response.statusCode}');
+      debugLog('ApiService', 'Login response data: ${response.data}');
+
+      // Check if response has success: false
+      if (response.data is Map && response.data['success'] == false) {
+        // This is an error response even if status code is 200
+        throw ApiError(
+          message: response.data['message']?.toString() ?? 'Login failed',
+          statusCode: response.statusCode,
+          data: response.data,
+          action: response.data['action'],
+        );
+      }
+
       if (response.data is Map && response.data['success'] == true) {
         final data = response.data['data'];
 
@@ -267,6 +281,19 @@ class ApiService {
             message: response.data['message']?.toString() ?? 'Login failed');
       }
     } on DioException catch (e) {
+      debugLog('ApiService', 'DioException in studentLogin: ${e.type}');
+
+      // Handle 403 specifically
+      if (e.response?.statusCode == 403 && e.response?.data is Map) {
+        throw ApiError(
+          message: e.response?.data['message']?.toString() ??
+              'Device change required',
+          statusCode: 403,
+          data: e.response?.data,
+          action: e.response?.data['action'],
+        );
+      }
+
       throw ApiError(
         message: e.response?.data['message']?.toString() ?? 'Login failed',
         statusCode: e.response?.statusCode,
@@ -1135,6 +1162,31 @@ class ApiService {
       throw ApiError(
         message:
             e.response?.data['message'] ?? 'Failed to fetch course details',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<ApiResponse<Map<String, dynamic>>> approveDeviceChange({
+    required String password,
+    required String deviceId,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/auth/approve-device-change',
+        data: {
+          'password': password,
+          'deviceId': deviceId,
+        },
+      );
+      return ApiResponse.fromJson(
+        response.data,
+        (data) => data as Map<String, dynamic>,
+      );
+    } on DioException catch (e) {
+      throw ApiError(
+        message:
+            e.response?.data['message'] ?? 'Failed to approve device change',
         statusCode: e.response?.statusCode,
       );
     }
