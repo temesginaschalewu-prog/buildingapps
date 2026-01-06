@@ -78,9 +78,13 @@ class AppRouter {
         GoRoute(
           path: '/device-change',
           name: 'device-change',
-          pageBuilder: (context, state) => const MaterialPage(
-            child: DeviceChangeScreen(),
-          ),
+          pageBuilder: (context, state) {
+            final extra = state.extra as Map<String, dynamic>? ?? {};
+            return MaterialPage(
+              key: state.pageKey,
+              child: DeviceChangeScreen(),
+            );
+          },
         ),
         GoRoute(
           path: '/school-selection',
