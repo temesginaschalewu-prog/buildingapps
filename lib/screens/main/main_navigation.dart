@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/user_provider.dart';
@@ -64,9 +65,9 @@ class _MainNavigationState extends State<MainNavigation> {
     final authProvider = Provider.of<AuthProvider>(context);
 
     if (!authProvider.isAuthenticated) {
-      // Redirect to login if not authenticated
+      // Use go_router instead of Navigator
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        Navigator.of(context).pushReplacementNamed('/auth/login');
+        GoRouter.of(context).go('/auth/login');
       });
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
