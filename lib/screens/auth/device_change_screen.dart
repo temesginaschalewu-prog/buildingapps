@@ -87,8 +87,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen> {
 
     setState(() => _isLoading = true);
 
-    final apiService = Provider.of<ApiService>(context, listen: false);
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final authProvider = context.read<AuthProvider>();
     final password = _passwordController.text;
 
     try {
@@ -96,7 +95,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen> {
           'DeviceChangeScreen', 'Approving device change for user: $_username');
 
       // Call the approve-device-change endpoint
-      final response = await apiService.approveDeviceChange(
+      final response = await authProvider.apiService.approveDeviceChange(
         password: password,
         deviceId: _deviceId,
       );
