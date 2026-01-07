@@ -95,12 +95,12 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => GoRouter.of(context).pop(),
             child: const Text('Cancel'),
           ),
           TextButton(
             onPressed: () {
-              Navigator.pop(context);
+              GoRouter.of(context).pop();
               context.push(
                 '/payment',
                 extra: {

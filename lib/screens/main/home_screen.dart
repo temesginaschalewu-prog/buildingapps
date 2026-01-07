@@ -1,3 +1,4 @@
+import 'package:familyacademyclient/screens/category/category_detail_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -158,19 +159,38 @@ class _HomeScreenState extends State<HomeScreen> {
                       final category = categoryProvider.activeCategories[index];
                       return CategoryCard(
                         category: category,
+                        // In the CategoryCard onTap, change to:
                         onTap: () {
                           print(
                               '📱 Category ${category.id} clicked: ${category.name}');
 
-                          // Method 1: Try go() with logging
+                          // Use push (not go) so we can come back with back button
                           try {
                             print(
-                                '🚀 Attempting navigation with go() to: /category/${category.id}');
-                            context.go('/category/${category.id}');
-                            print('✅ Navigation with go() completed');
+                                '🚀 Attempting navigation to: /category/${category.id}');
+                            context.push('/category/${category.id}');
+                            print('✅ Navigation completed');
                           } catch (e, stackTrace) {
-                            print('❌ Navigation error with go(): $e');
+                            print('❌ Navigation error: $e');
                             print('📋 Stack trace: $stackTrace');
+
+                            // Fallback: Try MaterialPageRoute
+                            try {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) => CategoryDetailScreen(
+                                      categoryId: category.id),
+                                ),
+                              );
+                            } catch (e2) {
+                              print('❌ Fallback navigation also failed: $e2');
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Navigation failed: $e2'),
+                                  duration: const Duration(seconds: 2),
+                                ),
+                              );
+                            }
                           }
                         },
                       );

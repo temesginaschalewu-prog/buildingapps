@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../providers/payment_provider.dart';
 import '../../utils/helpers.dart';
@@ -32,7 +33,7 @@ class _SupportScreenState extends State<SupportScreen> {
         title: const Text('Support'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => GoRouter.of(context).pop(),
         ),
       ),
       body: RefreshIndicator(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../providers/parent_link_provider.dart';
 import '../../providers/auth_provider.dart';
@@ -112,7 +113,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => GoRouter.of(context).pop(),
             child: const Text('Close'),
           ),
         ],

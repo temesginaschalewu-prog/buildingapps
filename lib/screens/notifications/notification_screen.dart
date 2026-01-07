@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../widgets/common/loading_indicator.dart';
@@ -255,7 +256,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => GoRouter.of(context).pop(),
             child: const Text('Close'),
           ),
         ],
@@ -276,14 +277,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             const Text('Are you sure you want to delete this notification?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => GoRouter.of(context).pop(),
             child: const Text('Cancel'),
           ),
           TextButton(
             onPressed: () {
               // You need to add delete method to provider
               // provider.deleteNotification(notificationId);
-              Navigator.pop(context);
+              GoRouter.of(context).pop();
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Notification deleted')),
               );
@@ -307,13 +308,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             'Are you sure you want to mark all notifications as read?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => GoRouter.of(context).pop(),
             child: const Text('Cancel'),
           ),
           TextButton(
             onPressed: () {
               provider.markAllAsRead();
-              Navigator.pop(context);
+              GoRouter.of(context).pop();
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                     content: Text('All notifications marked as read')),

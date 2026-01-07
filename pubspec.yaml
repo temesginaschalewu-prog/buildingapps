@@ -68,7 +68,7 @@ dependencies:
   flutter_colorpicker: ^1.0.3
   country_picker: ^2.0.27
   pin_code_fields: ^8.0.1
-  file_picker: ^6.1.1
+  file_picker: ^8.0.5
 
   # Charts & Visualizations
   percent_indicator: ^4.2.3

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../models/chapter_model.dart';
 import '../../providers/video_provider.dart';
@@ -137,7 +138,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen> {
                                       actions: [
                                         TextButton(
                                           onPressed: () =>
-                                              Navigator.pop(context),
+                                              GoRouter.of(context).pop(),
                                           child: const Text('Close'),
                                         ),
                                       ],

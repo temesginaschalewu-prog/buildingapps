@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lottie/lottie.dart';
 import '../../models/category_model.dart';
 import '../../utils/helpers.dart';
@@ -112,7 +113,7 @@ class PaymentSuccessScreen extends StatelessWidget {
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: () {
-                    Navigator.pushReplacementNamed(context, '/');
+                    GoRouter.of(context).go('/');
                   },
                   child: const Text('Return to Home'),
                 ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../providers/auth_provider.dart';
@@ -123,18 +124,14 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                                   'Expired: ${subscription.expiryDate.day}/${subscription.expiryDate.month}/${subscription.expiryDate.year}'),
                               trailing: OutlinedButton(
                                 onPressed: () {
-                                  Navigator.pushNamed(
-                                    context,
-                                    '/payment',
-                                    arguments: {
-                                      'category': {
-                                        'id': subscription.categoryId,
-                                        'name': subscription.categoryName,
-                                        'price': subscription.price,
-                                      },
-                                      'paymentType': 'repayment',
+                                  GoRouter.of(context).push('/payment', extra: {
+                                    'category': {
+                                      'id': subscription.categoryId,
+                                      'name': subscription.categoryName,
+                                      'price': subscription.price,
                                     },
-                                  );
+                                    'paymentType': 'repayment',
+                                  });
                                 },
                                 child: const Text('Renew'),
                               ),

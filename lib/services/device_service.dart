@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -16,41 +17,70 @@ class DeviceService {
   }
 
   Future<String> getDeviceId() async {
-    // Try to get saved device ID
+    // First try to get saved device ID
     String? savedDeviceId = _prefs.getString(AppConstants.deviceIdKey);
 
-    if (savedDeviceId != null) {
-      debugLog('DeviceService', 'Found saved deviceId: $savedDeviceId');
+    if (savedDeviceId != null && savedDeviceId.isNotEmpty) {
+      debugLog('DeviceService', 'Using saved deviceId: $savedDeviceId');
       return savedDeviceId;
     }
 
-    // Generate new device ID
+    // Generate new persistent device ID
     String deviceId;
 
     try {
       if (Platform.isAndroid) {
         final androidInfo = await _deviceInfo.androidInfo;
-        deviceId =
-            'ANDROID_${androidInfo.id}_${DateTime.now().millisecondsSinceEpoch}';
+        // Use Android ID which is persistent
+        final androidId = androidInfo.id;
+        if (androidId != null &&
+            androidId.isNotEmpty &&
+            androidId != "unknown") {
+          deviceId = 'ANDROID_${androidId}';
+        } else {
+          // Fallback to generated ID
+          deviceId = 'ANDROID_${_generatePersistentId()}';
+        }
       } else if (Platform.isIOS) {
         final iosInfo = await _deviceInfo.iosInfo;
-        deviceId =
-            'IOS_${iosInfo.identifierForVendor}_${DateTime.now().millisecondsSinceEpoch}';
+        // Use identifierForVendor which is persistent per app
+        final vendorId = iosInfo.identifierForVendor;
+        if (vendorId != null && vendorId.isNotEmpty) {
+          deviceId = 'IOS_${vendorId}';
+        } else {
+          // Fallback to generated ID
+          deviceId = 'IOS_${_generatePersistentId()}';
+        }
       } else {
-        deviceId = 'UNKNOWN_${DateTime.now().millisecondsSinceEpoch}';
+        // For desktop/other platforms, generate persistent ID
+        deviceId = 'DESKTOP_${_generatePersistentId()}';
       }
     } catch (e) {
       debugLog('DeviceService', 'Error getting native device id: $e');
-      // Fallback to random ID
-      deviceId =
-          'FA_${DateTime.now().millisecondsSinceEpoch}_${_generateRandomString(8)}';
+      // Generate persistent fallback ID
+      deviceId = 'FA_${_generatePersistentId()}';
     }
 
-    // Save device ID
-    debugLog('DeviceService', 'Saving generated deviceId: $deviceId');
+    // Save device ID permanently
+    debugLog('DeviceService', 'Saving persistent deviceId: $deviceId');
     await _prefs.setString(AppConstants.deviceIdKey, deviceId);
 
     return deviceId;
+  }
+
+  String _generatePersistentId() {
+    // Generate a persistent ID based on machine info
+    try {
+      final machineId = Platform.localHostname.hashCode.abs().toString();
+      final userName = Platform.environment['USER'] ??
+          Platform.environment['USERNAME'] ??
+          'unknown';
+      final combined = '${machineId}_${userName}'.hashCode.abs().toString();
+      return combined.substring(0, min(8, combined.length));
+    } catch (e) {
+      // Fallback to timestamp
+      return DateTime.now().millisecondsSinceEpoch.toString().substring(8);
+    }
   }
 
   Future<Map<String, dynamic>> getDeviceInfo() async {

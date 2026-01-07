@@ -1,5 +1,6 @@
 import 'package:familyacademyclient/providers/exam_provider.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../models/exam_model.dart';
 import '../../providers/exam_question_provider.dart';
@@ -129,7 +130,7 @@ class _ExamScreenState extends State<ExamScreen> {
         await examProvider.loadMyExamResults();
 
         // Navigate back
-        Navigator.pop(context);
+        GoRouter.of(context).pop();
       } else {
         throw Exception(
             submitResponse.data?['message'] ?? 'Failed to submit exam');

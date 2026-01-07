@@ -4,13 +4,14 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/subscription_provider.dart';
-import 'home_screen.dart';
-import 'chatbot_screen.dart';
-import 'progress_screen.dart';
-import 'profile_screen.dart';
 
 class MainNavigation extends StatefulWidget {
-  const MainNavigation({super.key});
+  final Widget child;
+
+  const MainNavigation({
+    super.key,
+    required this.child,
+  });
 
   @override
   State<MainNavigation> createState() => _MainNavigationState();
@@ -19,13 +20,6 @@ class MainNavigation extends StatefulWidget {
 class _MainNavigationState extends State<MainNavigation> {
   int _currentIndex = 0;
   bool _isInitialized = false;
-
-  final List<Widget> _screens = [
-    const HomeScreen(),
-    const ChatbotScreen(),
-    const ProgressScreen(),
-    const ProfileScreen(),
-  ];
 
   @override
   void initState() {
@@ -60,12 +54,26 @@ class _MainNavigationState extends State<MainNavigation> {
     }
   }
 
+  // Update current index based on route
+  void _updateCurrentIndex() {
+    final location = GoRouterState.of(context).uri.toString();
+
+    if (location == '/' || location.startsWith('/?')) {
+      _currentIndex = 0;
+    } else if (location == '/chatbot' || location.startsWith('/chatbot?')) {
+      _currentIndex = 1;
+    } else if (location == '/progress' || location.startsWith('/progress?')) {
+      _currentIndex = 2;
+    } else if (location == '/profile' || location.startsWith('/profile?')) {
+      _currentIndex = 3;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
 
     if (!authProvider.isAuthenticated) {
-      // Use go_router instead of Navigator
       WidgetsBinding.instance.addPostFrameCallback((_) {
         GoRouter.of(context).go('/auth/login');
       });
@@ -80,14 +88,29 @@ class _MainNavigationState extends State<MainNavigation> {
       );
     }
 
+    // Update index based on current route
+    _updateCurrentIndex();
+
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
-      ),
+      body: widget.child, // Use the child from ShellRoute
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
-        onTap: (index) => setState(() => _currentIndex = index),
+        onTap: (index) {
+          switch (index) {
+            case 0:
+              GoRouter.of(context).go('/');
+              break;
+            case 1:
+              GoRouter.of(context).go('/chatbot');
+              break;
+            case 2:
+              GoRouter.of(context).go('/progress');
+              break;
+            case 3:
+              GoRouter.of(context).go('/profile');
+              break;
+          }
+        },
         type: BottomNavigationBarType.fixed,
         selectedItemColor: Theme.of(context).primaryColor,
         unselectedItemColor: Colors.grey,

@@ -1,3 +1,6 @@
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 import 'package:familyacademyclient/providers/auth_provider.dart';
 import 'package:familyacademyclient/screens/auth/device_change_screen.dart';
 import 'package:familyacademyclient/screens/auth/login_screen.dart';
@@ -22,9 +25,6 @@ import 'package:familyacademyclient/screens/settings/parent_link_screen.dart';
 import 'package:familyacademyclient/screens/settings/subscription_screen.dart';
 import 'package:familyacademyclient/screens/settings/support_screen.dart';
 import 'package:familyacademyclient/screens/settings/tv_pairing_screen.dart';
-import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
-import 'package:provider/provider.dart';
 
 class AppRouter {
   late final GoRouter router;
@@ -81,7 +81,6 @@ class AppRouter {
           pageBuilder: (context, state) {
             final extra = state.extra as Map<String, dynamic>? ?? {};
             return MaterialPage(
-              key: state.pageKey,
               child: DeviceChangeScreen(),
             );
           },
@@ -97,16 +96,9 @@ class AppRouter {
           path: '/payment',
           name: 'payment',
           pageBuilder: (context, state) {
-            final args = state.extra as Map<String, dynamic>?;
-            final amount = args != null && args['amount'] is double
-                ? args['amount'] as double
-                : 0.0;
             return const MaterialPage(
               child: PaymentScreen(),
             );
-            //  return MaterialPage(
-            //    child: PaymentScreen(),
-            //  ); --- IGNORE ---
           },
         ),
         GoRoute(
@@ -151,8 +143,60 @@ class AppRouter {
             child: NotificationsScreen(),
           ),
         ),
+        GoRoute(
+          path: '/category/:categoryId',
+          name: 'category-detail',
+          pageBuilder: (context, state) {
+            final categoryId =
+                int.tryParse(state.pathParameters['categoryId'] ?? '0') ?? 0;
+            return MaterialPage(
+              key: ValueKey('category-$categoryId'),
+              child: CategoryDetailScreen(categoryId: categoryId),
+            );
+          },
+        ),
+        GoRoute(
+          path: '/course/:courseId',
+          name: 'course-detail',
+          pageBuilder: (context, state) {
+            final courseId =
+                int.tryParse(state.pathParameters['courseId'] ?? '0') ?? 0;
+            return MaterialPage(
+              key: ValueKey('course-$courseId'),
+              child: CourseDetailScreen(courseId: courseId),
+            );
+          },
+        ),
+        GoRoute(
+          path: '/chapter/:chapterId',
+          name: 'chapter-content',
+          pageBuilder: (context, state) {
+            final chapterId =
+                int.tryParse(state.pathParameters['chapterId'] ?? '0') ?? 0;
+            return MaterialPage(
+              key: ValueKey('chapter-$chapterId'),
+              child: ChapterContentScreen(chapterId: chapterId),
+            );
+          },
+        ),
+        GoRoute(
+          path: '/exam/:examId',
+          name: 'exam',
+          pageBuilder: (context, state) {
+            final examId =
+                int.tryParse(state.pathParameters['examId'] ?? '0') ?? 0;
+            return MaterialPage(
+              key: ValueKey('exam-$examId'),
+              child: ExamScreen(examId: examId),
+            );
+          },
+        ),
         ShellRoute(
-          builder: (context, state, child) => const MainNavigation(),
+          builder: (context, state, child) {
+            return MainNavigation(
+              child: child,
+            );
+          },
           routes: [
             GoRoute(
               path: '/',
@@ -160,97 +204,19 @@ class AppRouter {
               pageBuilder: (context, state) => const NoTransitionPage(
                 child: HomeScreen(),
               ),
-              routes: [
-                GoRoute(
-                  path: 'category/:categoryId',
-                  name: 'category-detail',
-                  pageBuilder: (context, state) {
-                    final categoryId =
-                        int.parse(state.pathParameters['categoryId']!);
-                    return MaterialPage(
-                      child: CategoryDetailScreen(categoryId: categoryId),
-                    );
-                  },
-                ),
-                GoRoute(
-                  path: 'course-list/:categoryId',
-                  name: 'course-list',
-                  pageBuilder: (context, state) {
-                    final categoryId =
-                        int.parse(state.pathParameters['categoryId']!);
-                    return MaterialPage(
-                      child: CourseListScreen(categoryId: categoryId),
-                    );
-                  },
-                ),
-                GoRoute(
-                  path: 'course/:courseId',
-                  name: 'course-detail',
-                  pageBuilder: (context, state) {
-                    final courseId =
-                        int.parse(state.pathParameters['courseId']!);
-                    return MaterialPage(
-                      child: CourseDetailScreen(courseId: courseId),
-                    );
-                  },
-                ),
-                GoRoute(
-                  path: 'chapters/:courseId',
-                  name: 'chapter-list',
-                  pageBuilder: (context, state) {
-                    final courseId =
-                        int.parse(state.pathParameters['courseId']!);
-                    return MaterialPage(
-                      child: ChapterListScreen(courseId: courseId),
-                    );
-                  },
-                ),
-                GoRoute(
-                  path: 'chapter/:chapterId',
-                  name: 'chapter-content',
-                  pageBuilder: (context, state) {
-                    final chapterId =
-                        int.parse(state.pathParameters['chapterId']!);
-                    return MaterialPage(
-                      child: ChapterContentScreen(chapterId: chapterId),
-                    );
-                  },
-                ),
-                GoRoute(
-                  path: 'exams/:courseId',
-                  name: 'exam-list',
-                  pageBuilder: (context, state) {
-                    final courseId =
-                        int.parse(state.pathParameters['courseId']!);
-                    return MaterialPage(
-                      child: ExamListScreen(courseId: courseId),
-                    );
-                  },
-                ),
-                GoRoute(
-                  path: 'exam/:examId',
-                  name: 'exam',
-                  pageBuilder: (context, state) {
-                    final examId = int.parse(state.pathParameters['examId']!);
-                    return MaterialPage(
-                      child: ExamScreen(examId: examId),
-                    );
-                  },
-                ),
-              ],
-            ),
-            GoRoute(
-              path: '/progress',
-              name: 'progress',
-              pageBuilder: (context, state) => const NoTransitionPage(
-                child: ProgressScreen(),
-              ),
             ),
             GoRoute(
               path: '/chatbot',
               name: 'chatbot',
               pageBuilder: (context, state) => const NoTransitionPage(
                 child: ChatbotScreen(),
+              ),
+            ),
+            GoRoute(
+              path: '/progress',
+              name: 'progress',
+              pageBuilder: (context, state) => const NoTransitionPage(
+                child: ProgressScreen(),
               ),
             ),
             GoRoute(

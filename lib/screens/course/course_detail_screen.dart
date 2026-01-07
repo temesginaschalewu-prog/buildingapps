@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../models/course_model.dart';
 import '../../providers/chapter_provider.dart';
@@ -77,11 +78,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                       child: ChapterCard(
                         chapter: chapter,
                         onTap: () {
-                          Navigator.pushNamed(
-                            context,
-                            '/chapter-content',
-                            arguments: chapter,
-                          );
+                          GoRouter.of(context)
+                              .push('/chapter/${chapter.id}', extra: chapter);
                         },
                       ),
                     );
@@ -104,11 +102,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                       child: ExamCard(
                         exam: exam,
                         onTap: () {
-                          Navigator.pushNamed(
-                            context,
-                            '/exam',
-                            arguments: exam,
-                          );
+                          GoRouter.of(context)
+                              .push('/exam/${exam.id}', extra: exam);
                         },
                       ),
                     );

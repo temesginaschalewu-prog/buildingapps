@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 void debugLog(String tag, String message) {
@@ -71,12 +72,12 @@ Future<void> showConfirmDialog(
       content: Text(message),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => GoRouter.of(context).pop(),
           child: const Text('Cancel'),
         ),
         TextButton(
           onPressed: () {
-            Navigator.pop(context);
+            GoRouter.of(context).pop();
             onConfirm();
           },
           child: const Text('Confirm'),

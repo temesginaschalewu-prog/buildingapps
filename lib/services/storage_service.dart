@@ -135,12 +135,19 @@ class StorageService {
     return _prefs.getString('last_app_state');
   }
 
-  // Clear all data (logout)
   Future<void> clearAll() async {
     debugLog('StorageService', 'Clearing all storage');
+
+    // Clear secure storage (tokens)
     await _secureStorage.deleteAll();
-    await _prefs.clear();
-    debugLog('StorageService', 'All storage cleared');
+
+    // Clear user data but NOT device ID
+    await _prefs.remove(AppConstants.userDataKey);
+    await _prefs.remove(AppConstants.themeModeKey);
+    await _prefs.remove(AppConstants.notificationsEnabledKey);
+    // DO NOT clear device ID: await _prefs.remove(AppConstants.deviceIdKey);
+
+    debugLog('StorageService', 'Storage cleared (device ID preserved)');
   }
 
   // Video Cache Management

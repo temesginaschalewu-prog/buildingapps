@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../models/category_model.dart';
@@ -9,7 +10,12 @@ import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
 
 class PaymentScreen extends StatefulWidget {
-  const PaymentScreen({super.key});
+  final Map<String, dynamic>? extra;
+
+  const PaymentScreen({
+    super.key,
+    this.extra,
+  });
 
   @override
   State<PaymentScreen> createState() => _PaymentScreenState();
@@ -42,20 +48,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
   void _initializeData() {
     try {
-      final args = ModalRoute.of(context)?.settings.arguments;
+      final args = widget.extra;
 
       if (args == null) {
         setState(() {
           _hasError = true;
           _errorMessage = 'No payment data provided';
-        });
-        return;
-      }
-
-      if (args is! Map<String, dynamic>) {
-        setState(() {
-          _hasError = true;
-          _errorMessage = 'Invalid payment data format';
         });
         return;
       }
@@ -69,10 +67,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
         return;
       }
 
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+
       setState(() {
-        _category = categoryData as Category;
+        _category = categoryData;
         _paymentType = args['paymentType'] ?? 'first_time';
-        final authProvider = Provider.of<AuthProvider>(context, listen: false);
         _username = authProvider.user?.username ?? '';
         _usernameController.text = _username;
         _hasError = false;
@@ -169,15 +168,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
         // Refresh user data
         await authProvider.refreshUserData();
 
-        // Navigate to success screen
-        Navigator.pushReplacementNamed(
-          context,
-          '/payment-success',
-          arguments: {
-            'category': _category,
-            'paymentType': _paymentType,
-          },
-        );
+        GoRouter.of(context).go('/payment-success', extra: {
+          'category': _category,
+          'paymentType': _paymentType,
+        });
       } else {
         showSnackBar(context, result['message'] ?? 'Payment failed',
             isError: true);
@@ -197,7 +191,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
           title: const Text('Payment'),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => GoRouter.of(context).pop(),
           ),
         ),
         body: Center(
@@ -224,7 +218,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 ),
                 const SizedBox(height: 24),
                 ElevatedButton(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () => GoRouter.of(context).pop(),
                   child: const Text('Go Back'),
                 ),
               ],
@@ -250,7 +244,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         title: const Text('Payment'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => GoRouter.of(context).pop(),
         ),
       ),
       body: SingleChildScrollView(
