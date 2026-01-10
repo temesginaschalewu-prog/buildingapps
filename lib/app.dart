@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:familyacademyclient/utils/screen_protection.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'providers/theme_provider.dart';
@@ -20,11 +21,50 @@ class FamilyAcademyApp extends StatefulWidget {
   State<FamilyAcademyApp> createState() => _FamilyAcademyAppState();
 }
 
-class _FamilyAcademyAppState extends State<FamilyAcademyApp> {
+class _FamilyAcademyAppState extends State<FamilyAcademyApp>
+    with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initializeApp();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.resumed:
+        ScreenProtectionService.enableOnResume();
+        break;
+      case AppLifecycleState.paused:
+        ScreenProtectionService.disableOnPause();
+        break;
+      case AppLifecycleState.inactive:
+        ScreenProtectionService.disableOnPause();
+        break;
+      case AppLifecycleState.detached:
+        ScreenProtectionService.disable();
+        break;
+      case AppLifecycleState.hidden:
+        ScreenProtectionService.disableOnPause();
+        break;
+    }
+  }
+
+  Future<void> _refreshAllData() async {
+    try {
+      // Get the current context using a GlobalKey or similar
+      // For now, we'll handle this in the notification handler
+      debugLog('FamilyAcademyApp', '🔄 App resumed, should refresh data');
+    } catch (e) {
+      debugLog('FamilyAcademyApp', 'Error refreshing data on resume: $e');
+    }
   }
 
   Future<void> _initializeApp() async {
@@ -46,13 +86,14 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp> {
   }
 
   void _handleNotificationData(Map<String, dynamic> data) {
-    // This handles notifications from the stream
     final type = data['type'];
     final notificationData = data['data'];
 
     switch (type) {
       case 'payment_verified':
         debugLog('FamilyAcademyApp', '💰 Payment verified: $notificationData');
+        // When payment is verified, we need to refresh subscriptions
+        _handlePaymentVerified(notificationData);
         break;
       case 'payment_rejected':
         debugLog('FamilyAcademyApp', '❌ Payment rejected: $notificationData');
@@ -68,6 +109,26 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp> {
             'FamilyAcademyApp', '📢 System announcement: $notificationData');
         break;
     }
+  }
+
+  void _handlePaymentVerified(Map<String, dynamic> data) {
+    // This is where we handle the refresh when payment is verified
+    // We need to access providers to refresh data
+
+    // Show a snackbar or notification to user
+    widget.notificationService.showLocalNotification(
+      title: 'Payment Verified!',
+      body: 'Your payment has been verified. Your access is now active.',
+      payload: json.encode({
+        'type': 'payment_verified_action',
+        'action': 'refresh_subscriptions',
+        'category_id': data['category_id'],
+        'timestamp': DateTime.now().toIso8601String(),
+      }),
+    );
+
+    // Note: We can't directly access providers here without context
+    // The actual refresh will happen when user opens the category screen
   }
 
   // Method to test notifications (can be called from anywhere)
@@ -105,11 +166,5 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp> {
         );
       },
     );
-  }
-
-  @override
-  void dispose() {
-    widget.notificationService.dispose();
-    super.dispose();
   }
 }

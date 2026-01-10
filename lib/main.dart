@@ -9,6 +9,7 @@ import 'package:familyacademyclient/providers/device_provider.dart';
 import 'package:familyacademyclient/providers/notification_provider.dart';
 import 'package:familyacademyclient/providers/payment_provider.dart';
 import 'package:familyacademyclient/providers/school_provider.dart';
+import 'package:familyacademyclient/providers/settings_provider.dart';
 import 'package:familyacademyclient/providers/subscription_provider.dart';
 import 'package:familyacademyclient/providers/theme_provider.dart';
 import 'package:familyacademyclient/providers/user_provider.dart';
@@ -24,6 +25,7 @@ import 'package:familyacademyclient/providers/parent_link_provider.dart';
 import 'package:familyacademyclient/services/api_service.dart';
 import 'package:familyacademyclient/services/storage_service.dart';
 import 'package:familyacademyclient/services/notification_service.dart';
+import 'package:familyacademyclient/utils/screen_protection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -45,6 +47,25 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     body: message.notification?.body ?? '',
     payload: json.encode(message.data),
   );
+}
+
+class AppLifecycleObserver extends WidgetsBindingObserver {
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.resumed:
+        ScreenProtectionService.enableOnResume();
+        break;
+      case AppLifecycleState.paused:
+        ScreenProtectionService.disableOnPause();
+        break;
+      case AppLifecycleState.inactive:
+        ScreenProtectionService.disableOnPause();
+        break;
+      default:
+        break;
+    }
+  }
 }
 
 Future<void> main() async {
@@ -70,7 +91,7 @@ Future<void> main() async {
     ]);
   }
 
-  await _initializeScreenProtection();
+  await ScreenProtectionService.initialize();
 
   final storageService = StorageService();
   await storageService.init();
@@ -81,6 +102,9 @@ Future<void> main() async {
   final notificationService = NotificationService();
   await notificationService.init();
   debugPrint('Main: NotificationService initialized');
+
+  final appLifecycleObserver = AppLifecycleObserver();
+  WidgetsBinding.instance.addObserver(appLifecycleObserver);
 
   runApp(
     MultiProvider(
@@ -141,20 +165,19 @@ Future<void> main() async {
           create: (_) => NotificationProvider(apiService: apiService),
         ),
         ChangeNotifierProvider(create: (_) => ChatbotProvider()),
+        ChangeNotifierProvider(
+          create: (_) => SettingsProvider(apiService: apiService),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => StreakProvider(apiService: apiService),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => ExamProvider(apiService: apiService),
+        ),
       ],
       child: FamilyAcademyApp(
         notificationService: notificationService,
       ),
     ),
   );
-}
-
-Future<void> _initializeScreenProtection() async {
-  try {
-    if (Platform.isAndroid) {
-      await ScreenProtector.preventScreenshotOn();
-    }
-  } catch (e) {
-    debugPrint('Failed to initialize screen protection: $e');
-  }
 }

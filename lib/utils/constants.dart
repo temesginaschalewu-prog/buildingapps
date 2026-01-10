@@ -1,5 +1,14 @@
 class AppConstants {
-  static const String baseUrl = 'http://localhost:3000';
+  // For Android emulator/device on same network
+  // static const String baseUrl = 'http://10.0.2.2:3000'; // For Android emulator
+  // static const String baseUrl = 'http://192.168.29.52:3000'; // For physical device on same network
+  //static const String baseUrl = 'http://192.168.29.52:3000'; // Use your PC's IP
+
+  static const String baseUrl = 'https://family-academy-backend.onrender.com';
+
+  // OR if localhost doesn't work, use your loopback IP
+  // static const String baseUrl = 'http://127.0.0.1:3000';
+
   static const String apiVersion = 'v1';
   static String get apiBaseUrl => '$baseUrl/api/$apiVersion';
 
