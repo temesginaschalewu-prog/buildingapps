@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:familyacademyclient/providers/subscription_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
@@ -6,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../../models/category_model.dart';
 import '../../providers/payment_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/settings_provider.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
 
@@ -43,6 +45,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeData();
+      _loadPaymentSettings();
     });
   }
 
@@ -82,6 +85,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
         _errorMessage = 'Failed to initialize payment: $e';
       });
     }
+  }
+
+  Future<void> _loadPaymentSettings() async {
+    final settingsProvider =
+        Provider.of<SettingsProvider>(context, listen: false);
+    await settingsProvider.loadPaymentSettings();
   }
 
   @override
@@ -138,12 +147,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
     final paymentProvider =
         Provider.of<PaymentProvider>(context, listen: false);
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final subscriptionProvider =
+        Provider.of<SubscriptionProvider>(context, listen: false);
 
     final password = _passwordController.text;
     final amount = _category!.price ?? 0.0;
 
     try {
-      // First upload the proof image
       debugLog('PaymentScreen', 'Uploading payment proof...');
       final uploadResponse =
           await paymentProvider.apiService.uploadPaymentProof(_proofImageFile!);
@@ -155,7 +165,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
       debugLog('PaymentScreen', 'Payment proof uploaded: $proofImagePath');
 
-      // Submit payment
       final result = await paymentProvider.submitPayment(
         categoryId: _category!.id,
         paymentType: _paymentType!,
@@ -165,8 +174,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
       );
 
       if (result['success'] == true) {
-        // Refresh user data
         await authProvider.refreshUserData();
+
+        await subscriptionProvider.refreshAfterPaymentVerification();
+
+        await subscriptionProvider
+            .getCategorySubscriptionDetails(_category!.id);
 
         GoRouter.of(context).go('/payment-success', extra: {
           'category': _category,
@@ -238,6 +251,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
     }
 
     final paymentProvider = Provider.of<PaymentProvider>(context);
+    final settingsProvider = Provider.of<SettingsProvider>(context);
 
     return Scaffold(
       appBar: AppBar(
@@ -254,7 +268,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Payment Summary Card
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -322,10 +335,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   ),
                 ),
               ),
-
               const SizedBox(height: 24),
-
-              // Payment Instructions
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -340,35 +350,38 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Text(paymentProvider.getPaymentInstructions()),
+                      Text(
+                        settingsProvider
+                                .getPaymentSetting('payment_instructions') ??
+                            paymentProvider.getPaymentInstructions(),
+                      ),
                       const SizedBox(height: 16),
                       const Text(
                         'Bank Details:',
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
-                      Text('Bank: ${paymentProvider.getBankName()}'),
-                      Text('Account: ${paymentProvider.getAccountNumber()}'),
+                      Text(
+                          'Bank: ${settingsProvider.getPaymentSetting('payment_bank_name') ?? paymentProvider.getBankName()}'),
+                      Text(
+                          'Account: ${settingsProvider.getPaymentSetting('payment_account_number') ?? paymentProvider.getAccountNumber()}'),
                       const SizedBox(height: 8),
                       const Text(
                         'Telebirr:',
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
-                      Text(paymentProvider.getTelebirrNumber()),
+                      Text(settingsProvider
+                              .getPaymentSetting('payment_telebirr_number') ??
+                          paymentProvider.getTelebirrNumber()),
                     ],
                   ),
                 ),
               ),
-
               const SizedBox(height: 24),
-
-              // Payment Form
               Text(
                 'Payment Details',
                 style: Theme.of(context).textTheme.headlineSmall,
               ),
               const SizedBox(height: 16),
-
-              // Username
               TextFormField(
                 controller: _usernameController,
                 decoration: const InputDecoration(
@@ -378,10 +391,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 ),
                 readOnly: true,
               ),
-
               const SizedBox(height: 16),
-
-              // Password
               TextFormField(
                 controller: _passwordController,
                 decoration: const InputDecoration(
@@ -397,10 +407,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   return null;
                 },
               ),
-
               const SizedBox(height: 16),
-
-              // Payment Method
               DropdownButtonFormField<String>(
                 value: _paymentMethod,
                 decoration: const InputDecoration(
@@ -432,10 +439,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   return null;
                 },
               ),
-
               const SizedBox(height: 16),
-
-              // Upload Proof
               Text(
                 'Upload Payment Proof',
                 style: Theme.of(context).textTheme.labelLarge,
@@ -468,10 +472,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         ),
                 ),
               ),
-
               const SizedBox(height: 16),
-
-              // Confirm Accuracy Checkbox
               Row(
                 children: [
                   Checkbox(
@@ -486,10 +487,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   ),
                 ],
               ),
-
               const SizedBox(height: 32),
-
-              // Submit Button
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
