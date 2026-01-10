@@ -1,3 +1,4 @@
+import 'package:familyacademyclient/utils/helpers.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
@@ -15,26 +16,39 @@ class ProgressScreen extends StatefulWidget {
 }
 
 class _ProgressScreenState extends State<ProgressScreen> {
-  bool _isInitialLoad = true;
+  bool _isLoading = true;
+  bool _isDisposed = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadData();
-    });
+    _loadData();
+  }
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    super.dispose();
   }
 
   Future<void> _loadData() async {
-    final streakProvider = Provider.of<StreakProvider>(context, listen: false);
-    final examProvider = Provider.of<ExamProvider>(context, listen: false);
+    if (_isDisposed) return;
 
-    if (_isInitialLoad) {
+    try {
+      final streakProvider =
+          Provider.of<StreakProvider>(context, listen: false);
+      final examProvider = Provider.of<ExamProvider>(context, listen: false);
+
       await Future.wait([
         streakProvider.loadStreak(),
         examProvider.loadMyExamResults(),
       ]);
-      setState(() => _isInitialLoad = false);
+    } catch (e) {
+      debugLog('ProgressScreen', 'Error loading data: $e');
+    } finally {
+      if (!_isDisposed && mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -57,8 +71,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
       );
     }
 
-    if (_isInitialLoad &&
-        (streakProvider.isLoading || examProvider.isLoading)) {
+    if (_isLoading) {
       return Scaffold(
         appBar: AppBar(title: const Text('Progress')),
         body: const Center(child: CircularProgressIndicator()),
@@ -122,10 +135,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
                     style: Theme.of(context).textTheme.headlineSmall,
                   ),
                   const SizedBox(height: 8),
-                  if (examProvider.isLoading &&
-                      examProvider.myExamResults.isEmpty)
-                    const Center(child: CircularProgressIndicator())
-                  else if (examProvider.myExamResults.isEmpty)
+                  if (examProvider.myExamResults.isEmpty)
                     const Card(
                       child: Padding(
                         padding: EdgeInsets.all(32),
