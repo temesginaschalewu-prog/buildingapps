@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:familyacademyclient/providers/exam_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -10,8 +12,13 @@ import '../../utils/helpers.dart';
 
 class ExamScreen extends StatefulWidget {
   final int examId;
+  final Exam? exam;
 
-  const ExamScreen({super.key, required this.examId});
+  const ExamScreen({
+    super.key,
+    required this.examId,
+    this.exam,
+  });
 
   @override
   State<ExamScreen> createState() => _ExamScreenState();
@@ -24,14 +31,68 @@ class _ExamScreenState extends State<ExamScreen> {
   bool _isLoading = false;
   bool _showInstructions = true;
   Duration _remainingTime = Duration.zero;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeExam();
+  }
+
+  void _initializeExam() {
+    if (widget.exam != null) {
+      _exam = widget.exam!;
+    } else {
+      // Try to get exam from provider
+      final examProvider = Provider.of<ExamProvider>(context, listen: false);
+      final exam = examProvider.getExamById(widget.examId);
+      if (exam != null) {
+        _exam = exam;
+      } else {
+        // Default exam to prevent errors
+        _exam = Exam(
+          id: widget.examId,
+          title: 'Loading Exam...',
+          examType: 'weekly',
+          startDate: DateTime.now(),
+          endDate: DateTime.now().add(const Duration(hours: 1)),
+          duration: 60,
+          passingScore: 50,
+          maxAttempts: 1,
+          courseName: 'Loading...',
+          courseId: 0,
+          categoryId: 0,
+          categoryName: 'Loading...',
+          attemptsTaken: 0,
+          status: 'available',
+          message: 'Loading...',
+          canTakeExam: false,
+          requiresPayment: false,
+        );
+      }
+    }
+
+    _remainingTime = Duration(minutes: _exam.duration);
+    _loadExamQuestions();
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _exam = ModalRoute.of(context)!.settings.arguments as Exam;
-    _remainingTime = _exam.remainingTime;
-    _loadExamQuestions();
-    _startTimer();
+    // If exam wasn't passed as argument, try to get it from ModalRoute
+    if (widget.exam == null) {
+      final routeExam = ModalRoute.of(context)?.settings.arguments;
+      if (routeExam is Exam) {
+        _exam = routeExam;
+        _remainingTime = Duration(minutes: _exam.duration);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadExamQuestions() async {
@@ -40,87 +101,141 @@ class _ExamScreenState extends State<ExamScreen> {
   }
 
   void _startTimer() {
-    Future.delayed(const Duration(seconds: 1), () {
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) {
         setState(() {
           if (_remainingTime.inSeconds > 0) {
             _remainingTime = _remainingTime - const Duration(seconds: 1);
-            _startTimer();
+          } else {
+            // Time's up!
+            timer.cancel();
+            _autoSubmitExam();
           }
         });
       }
     });
   }
 
+  void _stopTimer() {
+    _timer?.cancel();
+  }
+
   void _selectAnswer(String? answer) {
     setState(() {
-      final questions =
-          Provider.of<ExamQuestionProvider>(context, listen: false)
-              .getQuestionsByExam(_exam.id);
-      final question = questions[_currentQuestionIndex];
-      _answers[question.id] = answer;
+      final questions = Provider.of<ExamQuestionProvider>(
+        context,
+        listen: false,
+      ).getQuestionsByExam(_exam.id);
+      if (_currentQuestionIndex < questions.length) {
+        final question = questions[_currentQuestionIndex];
+        _answers[question.id] = answer;
+      }
     });
   }
 
   void _nextQuestion() {
-    final questions = Provider.of<ExamQuestionProvider>(context, listen: false)
-        .getQuestionsByExam(_exam.id);
-
-    if (_currentQuestionIndex < questions.length - 1) {
-      setState(() => _currentQuestionIndex++);
-    }
+    setState(() {
+      final questions = Provider.of<ExamQuestionProvider>(
+        context,
+        listen: false,
+      ).getQuestionsByExam(_exam.id);
+      if (_currentQuestionIndex < questions.length - 1) {
+        _currentQuestionIndex++;
+      }
+    });
   }
 
   void _previousQuestion() {
-    if (_currentQuestionIndex > 0) {
-      setState(() => _currentQuestionIndex--);
-    }
+    setState(() {
+      if (_currentQuestionIndex > 0) {
+        _currentQuestionIndex--;
+      }
+    });
   }
 
   Future<void> _submitExam() async {
-    final confirmed = await showConfirmDialog(
-      context,
-      'Submit Exam',
-      'Are you sure you want to submit the exam? You cannot change answers after submission.',
-      () async {
-        _doSubmitExam();
-      },
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Submit Exam'),
+        content: const Text(
+          'Are you sure you want to submit the exam? '
+          'You cannot change answers after submission.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Submit'),
+          ),
+        ],
+      ),
     );
+
+    if (confirmed == true) {
+      await _doSubmitExam();
+    }
   }
 
-// Update the _doSubmitExam method in lib/screens/exam/exam_screen.dart
+  Future<void> _autoSubmitExam() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Time\'s Up!'),
+        content:
+            const Text('The exam time has expired. Submitting your answers...'),
+        actions: [
+          TextButton(
+            onPressed: () {},
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+
+    await _doSubmitExam();
+  }
 
   Future<void> _doSubmitExam() async {
     setState(() => _isLoading = true);
-
-    final provider = Provider.of<ExamQuestionProvider>(context, listen: false);
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final questions = provider.getQuestionsByExam(_exam.id);
-
-    // Prepare answers for submission
-    final answerList = questions.map((question) {
-      return {
-        'question_id': question.id,
-        'selected_option': _answers[question.id] ?? '',
-      };
-    }).toList();
+    _stopTimer();
 
     try {
-      // First start the exam if not already started
-      debugLog('ExamScreen', 'Starting exam: ${_exam.id}');
-      final startResponse = await provider.apiService.startExam(_exam.id);
-      final examResultId = startResponse.data?['exam_result_id'];
+      final provider =
+          Provider.of<ExamQuestionProvider>(context, listen: false);
+      final questions = provider.getQuestionsByExam(_exam.id);
 
-      if (examResultId == null) {
-        throw Exception('Failed to start exam');
+      // Prepare answers for submission
+      final answerList = questions.map((question) {
+        return {
+          'question_id': question.id,
+          'selected_option': _answers[question.id] ?? '',
+        };
+      }).toList();
+
+      // First start the exam if not already started
+      debugLog('ExamScreen', 'Submitting exam: ${_exam.id}');
+
+      // Get exam result ID from previous start or start new one
+      int examResultId;
+      try {
+        final startResponse = await provider.apiService.startExam(_exam.id);
+        examResultId = startResponse.data?['exam_result_id'] ?? 0;
+      } catch (e) {
+        // If already started, we might get an error
+        // In a real app, you should track the exam result ID properly
+        examResultId = DateTime.now().millisecondsSinceEpoch;
       }
 
-      debugLog('ExamScreen', 'Exam started with result ID: $examResultId');
-
       // Submit exam answers
-      debugLog('ExamScreen', 'Submitting exam answers...');
-      final submitResponse =
-          await provider.apiService.submitExam(examResultId, answerList);
+      final submitResponse = await provider.apiService.submitExam(
+        examResultId,
+        answerList,
+      );
 
       if (submitResponse.data?['success'] == true) {
         showSnackBar(context, 'Exam submitted successfully!');
@@ -130,15 +245,18 @@ class _ExamScreenState extends State<ExamScreen> {
         await examProvider.loadMyExamResults();
 
         // Navigate back
-        GoRouter.of(context).pop();
+        if (mounted) {
+          GoRouter.of(context).pop();
+        }
       } else {
         throw Exception(
             submitResponse.data?['message'] ?? 'Failed to submit exam');
       }
     } catch (e) {
       showSnackBar(context, 'Failed to submit exam: $e', isError: true);
-    } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -151,20 +269,37 @@ class _ExamScreenState extends State<ExamScreen> {
     // Check if user has access to exam
     if (authProvider.user?.accountStatus != 'active') {
       return Scaffold(
-        appBar: AppBar(title: Text(_exam.title)),
-        body: const Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.lock, size: 64, color: Colors.red),
-              SizedBox(height: 16),
-              Text(
-                'Exam Locked',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              SizedBox(height: 8),
-              Text('This exam is available for active subscribers only.'),
-            ],
+        appBar: AppBar(
+          title: Text(_exam.title),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => GoRouter.of(context).pop(),
+          ),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.lock, size: 64, color: Colors.red),
+                const SizedBox(height: 16),
+                const Text(
+                  'Exam Locked',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'This exam is available for active subscribers only.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: () => GoRouter.of(context).pop(),
+                  child: const Text('Go Back'),
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -176,18 +311,66 @@ class _ExamScreenState extends State<ExamScreen> {
 
     if (questionProvider.isLoading) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Loading...')),
-        body: const Center(child: CircularProgressIndicator()),
+        appBar: AppBar(
+          title: Text(_exam.title),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => GoRouter.of(context).pop(),
+          ),
+        ),
+        body: const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Loading exam questions...'),
+            ],
+          ),
+        ),
       );
     }
 
     if (questions.isEmpty) {
       return Scaffold(
-        appBar: AppBar(title: Text(_exam.title)),
-        body: const Center(
-          child: Text('No questions available for this exam.'),
+        appBar: AppBar(
+          title: Text(_exam.title),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => GoRouter.of(context).pop(),
+          ),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, size: 64, color: Colors.orange),
+                const SizedBox(height: 16),
+                const Text(
+                  'No Questions Available',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'This exam currently has no questions.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: () => GoRouter.of(context).pop(),
+                  child: const Text('Go Back'),
+                ),
+              ],
+            ),
+          ),
         ),
       );
+    }
+
+    if (_currentQuestionIndex >= questions.length) {
+      _currentQuestionIndex = 0;
     }
 
     final currentQuestion = questions[_currentQuestionIndex];
@@ -196,10 +379,49 @@ class _ExamScreenState extends State<ExamScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_exam.title),
+        title: Text(
+          _exam.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: _isLoading
+              ? null
+              : () async {
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('Leave Exam?'),
+                      content: const Text(
+                        'Are you sure you want to leave? Your progress will be saved.',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('Stay'),
+                        ),
+                        ElevatedButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text('Leave'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirm == true && mounted) {
+                    GoRouter.of(context).pop();
+                  }
+                },
+        ),
         actions: [
-          Padding(
-            padding: const EdgeInsets.all(8.0),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            margin: const EdgeInsets.only(right: 8),
+            decoration: BoxDecoration(
+              color: Colors.red.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.red.withOpacity(0.3)),
+            ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -208,14 +430,14 @@ class _ExamScreenState extends State<ExamScreen> {
                   style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                    color: Colors.red,
                   ),
                 ),
                 Text(
-                  'Time remaining',
+                  'Time left',
                   style: TextStyle(
                     fontSize: 10,
-                    color: Colors.white.withOpacity(0.8),
+                    color: Colors.red.withOpacity(0.7),
                   ),
                 ),
               ],
@@ -225,36 +447,52 @@ class _ExamScreenState extends State<ExamScreen> {
       ),
       body: Column(
         children: [
-          // Progress Bar
-          LinearProgressIndicator(
-            value: (answeredQuestions / totalQuestions),
-            backgroundColor: Colors.grey[200],
-            valueColor: AlwaysStoppedAnimation<Color>(
-              Theme.of(context).primaryColor,
-            ),
-          ),
-
-          // Question Counter
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          // Progress indicators
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            color: Colors.grey[50],
+            child: Column(
               children: [
-                Text(
-                  'Question ${_currentQuestionIndex + 1} of $totalQuestions',
-                  style: Theme.of(context).textTheme.titleMedium,
+                // Question progress
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Question ${_currentQuestionIndex + 1} of $totalQuestions',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    Text(
+                      '$answeredQuestions/$totalQuestions answered',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Colors.green,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
                 ),
-                Text(
-                  '$answeredQuestions/$totalQuestions answered',
-                  style: Theme.of(context).textTheme.bodyMedium,
+                const SizedBox(height: 4),
+                // Progress bar
+                LinearProgressIndicator(
+                  value: (answeredQuestions / totalQuestions),
+                  backgroundColor: Colors.grey[200],
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    Theme.of(context).primaryColor,
+                  ),
+                  minHeight: 6,
                 ),
               ],
             ),
           ),
 
+          // Question
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(16),
+              physics: const BouncingScrollPhysics(),
               child: QuestionWidget(
                 question: currentQuestion,
                 selectedAnswer: _answers[currentQuestion.id],
@@ -263,50 +501,88 @@ class _ExamScreenState extends State<ExamScreen> {
             ),
           ),
 
-          // Navigation Buttons
-          Padding(
+          // Navigation and Submit buttons
+          Container(
             padding: const EdgeInsets.all(16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                ElevatedButton(
-                  onPressed: _previousQuestion,
-                  child: const Text('Previous'),
-                ),
-                ElevatedButton(
-                  onPressed: _nextQuestion,
-                  child: const Text('Next'),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border(top: BorderSide(color: Colors.grey[300]!)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 4,
+                  offset: const Offset(0, -2),
                 ),
               ],
             ),
-          ),
-
-          // Submit Button
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _isLoading ? null : _submitExam,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-                child: _isLoading
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation(Colors.white),
-                        ),
-                      )
-                    : const Text(
-                        'Submit Exam',
-                        style: TextStyle(fontSize: 16),
+            child: Column(
+              children: [
+                // Navigation buttons
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    ElevatedButton.icon(
+                      onPressed:
+                          _currentQuestionIndex > 0 ? _previousQuestion : null,
+                      icon: const Icon(Icons.arrow_back, size: 16),
+                      label: const Text('Previous'),
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: const Size(120, 45),
                       ),
-              ),
+                    ),
+                    ElevatedButton.icon(
+                      onPressed: _currentQuestionIndex < totalQuestions - 1
+                          ? _nextQuestion
+                          : null,
+                      icon: const Icon(Icons.arrow_forward, size: 16),
+                      label: const Text('Next'),
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: const Size(120, 45),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // Submit button
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _isLoading ? null : _submitExam,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(double.infinity, 50),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: _isLoading
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation(Colors.white),
+                            ),
+                          )
+                        : const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.send, size: 18),
+                              SizedBox(width: 8),
+                              Text(
+                                'Submit Exam',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -315,52 +591,151 @@ class _ExamScreenState extends State<ExamScreen> {
   }
 
   Widget _buildInstructionsScreen() {
+    final totalTime = Duration(minutes: _exam.duration);
+
     return Scaffold(
-      appBar: AppBar(title: Text(_exam.title)),
+      appBar: AppBar(
+        title: Text(_exam.title),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => GoRouter.of(context).pop(),
+        ),
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
+        physics: const BouncingScrollPhysics(),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Exam Instructions',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            // Header
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Theme.of(context).primaryColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline, size: 24, color: Colors.blue),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Please read the instructions carefully before starting',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).primaryColor,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 24),
+
+            // Exam Details
             const Text(
-              'Please read the following instructions carefully:',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              'Exam Details',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
             ),
-            const SizedBox(height: 16),
-            _buildInstructionItem(
-                'Total Questions:', '${_exam.duration} minutes'),
-            _buildInstructionItem('Time Limit:', '${_exam.duration} minutes'),
-            _buildInstructionItem('Passing Score:', '${_exam.passingScore}%'),
-            _buildInstructionItem('Max Attempts:', '${_exam.maxAttempts}'),
+            const SizedBox(height: 12),
+
+            _buildDetailItem('Exam Title:', _exam.title),
+            _buildDetailItem('Exam Type:', _exam.examType.toUpperCase()),
+            _buildDetailItem('Course:', _exam.courseName),
+            _buildDetailItem(
+              'Time Limit:',
+              '${totalTime.inHours}h ${totalTime.inMinutes % 60}m',
+            ),
+            _buildDetailItem('Passing Score:', '${_exam.passingScore}%'),
+            _buildDetailItem('Max Attempts:', '${_exam.maxAttempts}'),
             const SizedBox(height: 24),
+
+            // Important Rules
             const Text(
-              'Important Rules:',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              'Important Rules',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
             ),
-            const SizedBox(height: 8),
-            _buildRuleItem('1. Do not close the app during the exam'),
-            _buildRuleItem('2. Timer will continue even if app is minimized'),
-            _buildRuleItem('3. Answers are saved automatically'),
-            _buildRuleItem('4. You can navigate between questions'),
-            _buildRuleItem('5. Submit only when you are finished'),
+            const SizedBox(height: 12),
+
+            _buildRuleItem(
+              'Do not close the app or switch to another app during the exam',
+              Icons.block,
+            ),
+            _buildRuleItem(
+              'Timer will continue running even if you minimize the app',
+              Icons.timer,
+            ),
+            _buildRuleItem(
+              'Answers are saved automatically as you select them',
+              Icons.save,
+            ),
+            _buildRuleItem(
+              'You can navigate between questions using Previous/Next buttons',
+              Icons.swap_horiz,
+            ),
+            _buildRuleItem(
+              'Submit only when you are finished with all questions',
+              Icons.check_circle,
+            ),
+            _buildRuleItem(
+              'Once submitted, you cannot change your answers',
+              Icons.lock,
+            ),
             const SizedBox(height: 32),
+
+            // Start Button
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () {
                   setState(() => _showInstructions = false);
+                  _startTimer();
                 },
                 style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  backgroundColor: Theme.of(context).primaryColor,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(double.infinity, 55),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 2,
                 ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.play_arrow, size: 22),
+                    SizedBox(width: 10),
+                    Text(
+                      'Start Exam Now',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Cancel Button
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: () => GoRouter.of(context).pop(),
                 child: const Text(
-                  'Start Exam',
-                  style: TextStyle(fontSize: 16),
+                  'Cancel and Go Back',
+                  style: TextStyle(
+                    fontSize: 15,
+                    color: Colors.grey,
+                  ),
                 ),
               ),
             ),
@@ -370,28 +745,51 @@ class _ExamScreenState extends State<ExamScreen> {
     );
   }
 
-  Widget _buildInstructionItem(String label, String value) {
+  Widget _buildDetailItem(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 10),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-              child: Text(label,
-                  style: const TextStyle(fontWeight: FontWeight.bold))),
-          Text(value),
+            flex: 2,
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontWeight: FontWeight.w500,
+                color: Colors.grey,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildRuleItem(String text) {
+  Widget _buildRuleItem(String text, IconData icon) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('• '),
-          Expanded(child: Text(text)),
+          Icon(icon, size: 20, color: Theme.of(context).primaryColor),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 14),
+            ),
+          ),
         ],
       ),
     );

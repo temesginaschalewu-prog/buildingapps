@@ -1,4 +1,4 @@
-import '../utils/constants.dart';
+import 'package:familyacademyclient/utils/constants.dart';
 
 class Note {
   final int id;
@@ -21,15 +21,21 @@ class Note {
 
   factory Note.fromJson(Map<String, dynamic> json) {
     return Note(
-      id: json['id'],
-      title: json['title'],
-      chapterId: json['chapter_id'],
-      content: json['content'],
-      filePath: json['file_path'],
+      id: json['id'] is int
+          ? json['id']
+          : int.tryParse(json['id']?.toString() ?? '0') ?? 0,
+      title: json['title']?.toString() ?? '',
+      chapterId: json['chapter_id'] is int
+          ? json['chapter_id']
+          : int.tryParse(json['chapter_id']?.toString() ?? '0') ?? 0,
+      content: json['content']?.toString() ?? '',
+      filePath: json['file_path']?.toString(),
       releaseDate: json['release_date'] != null
-          ? DateTime.parse(json['release_date'])
+          ? DateTime.parse(json['release_date'].toString())
           : null,
-      createdAt: DateTime.parse(json['created_at']),
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'].toString())
+          : DateTime.now(),
     );
   }
 

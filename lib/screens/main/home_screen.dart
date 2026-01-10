@@ -1,4 +1,3 @@
-import 'package:familyacademyclient/screens/category/category_detail_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -44,6 +43,13 @@ class _HomeScreenState extends State<HomeScreen> {
     final themeProvider = Provider.of<ThemeProvider>(context);
     final notificationProvider = Provider.of<NotificationProvider>(context);
     final user = authProvider.user;
+
+    // Get screen dimensions for responsive design
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
+    final isSmallScreen = screenWidth < 360;
+    final crossAxisCount = screenWidth < 400 ? 1 : 2;
+    final childAspectRatio = screenWidth < 400 ? 1.8 : 1.2;
 
     if (_isInitialLoad && categoryProvider.isLoading) {
       return Scaffold(
@@ -111,143 +117,137 @@ class _HomeScreenState extends State<HomeScreen> {
               Provider.of<CategoryProvider>(context, listen: false);
           await categoryProvider.loadCategories();
         },
-        child: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Welcome, ${user?.username ?? 'Student'}!',
-                      style: Theme.of(context).textTheme.headlineMedium,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Welcome, ${user?.username ?? 'Student'}!',
+                          style: Theme.of(context)
+                              .textTheme
+                              .headlineMedium
+                              ?.copyWith(
+                                fontSize: isSmallScreen ? 22 : 24,
+                              ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          user?.accountStatus == 'active'
+                              ? 'Active Subscriber'
+                              : 'Free Account',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      user?.accountStatus == 'active'
-                          ? 'Active Subscriber'
-                          : 'Free Account',
-                      style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
+                if (categoryProvider.activeCategories.isNotEmpty)
+                  SliverPadding(
+                    padding: EdgeInsets.symmetric(
+                        horizontal: isSmallScreen ? 12 : 16),
+                    sliver: SliverToBoxAdapter(
+                      child: Text(
+                        'Active Categories',
+                        style:
+                            Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                  fontSize: isSmallScreen ? 18 : 20,
+                                ),
+                      ),
                     ),
-                  ],
-                ),
-              ),
-            ),
-            if (categoryProvider.activeCategories.isNotEmpty)
-              SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                sliver: SliverToBoxAdapter(
-                  child: Text(
-                    'Active Categories',
-                    style: Theme.of(context).textTheme.headlineSmall,
                   ),
-                ),
-              ),
-            if (categoryProvider.activeCategories.isNotEmpty)
-              SliverPadding(
-                padding: const EdgeInsets.all(16),
-                sliver: SliverGrid(
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 16,
-                    mainAxisSpacing: 16,
-                    childAspectRatio: 1.2,
-                  ),
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final category = categoryProvider.activeCategories[index];
-                      return CategoryCard(
-                        category: category,
-                        // In the CategoryCard onTap, change to:
-                        onTap: () {
-                          print(
-                              '📱 Category ${category.id} clicked: ${category.name}');
-
-                          // Use push (not go) so we can come back with back button
-                          try {
-                            print(
-                                '🚀 Attempting navigation to: /category/${category.id}');
-                            context.push('/category/${category.id}');
-                            print('✅ Navigation completed');
-                          } catch (e, stackTrace) {
-                            print('❌ Navigation error: $e');
-                            print('📋 Stack trace: $stackTrace');
-
-                            // Fallback: Try MaterialPageRoute
-                            try {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (context) => CategoryDetailScreen(
-                                      categoryId: category.id),
-                                ),
-                              );
-                            } catch (e2) {
-                              print('❌ Fallback navigation also failed: $e2');
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Navigation failed: $e2'),
-                                  duration: const Duration(seconds: 2),
-                                ),
-                              );
-                            }
-                          }
-                        },
-                      );
-                    },
-                    childCount: categoryProvider.activeCategories.length,
-                  ),
-                ),
-              ),
-            if (categoryProvider.comingSoonCategories.isNotEmpty)
-              SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                sliver: SliverToBoxAdapter(
-                  child: Text(
-                    'Coming Soon',
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
-                ),
-              ),
-            if (categoryProvider.comingSoonCategories.isNotEmpty)
-              SliverPadding(
-                padding: const EdgeInsets.all(16),
-                sliver: SliverGrid(
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 16,
-                    mainAxisSpacing: 16,
-                    childAspectRatio: 1.2,
-                  ),
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final category =
-                          categoryProvider.comingSoonCategories[index];
-                      return CategoryCard(
-                        category: category,
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('This category is coming soon!'),
-                            ),
+                if (categoryProvider.activeCategories.isNotEmpty)
+                  SliverPadding(
+                    padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
+                    sliver: SliverGrid(
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: crossAxisCount,
+                        crossAxisSpacing: isSmallScreen ? 12 : 16,
+                        mainAxisSpacing: isSmallScreen ? 12 : 16,
+                        childAspectRatio: childAspectRatio,
+                      ),
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final category =
+                              categoryProvider.activeCategories[index];
+                          return CategoryCard(
+                            category: category,
+                            onTap: () {
+                              context.push('/category/${category.id}');
+                            },
                           );
                         },
-                      );
-                    },
-                    childCount: categoryProvider.comingSoonCategories.length,
+                        childCount: categoryProvider.activeCategories.length,
+                      ),
+                    ),
                   ),
+                if (categoryProvider.comingSoonCategories.isNotEmpty)
+                  SliverPadding(
+                    padding: EdgeInsets.symmetric(
+                        horizontal: isSmallScreen ? 12 : 16),
+                    sliver: SliverToBoxAdapter(
+                      child: Text(
+                        'Coming Soon',
+                        style:
+                            Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                  fontSize: isSmallScreen ? 18 : 20,
+                                ),
+                      ),
+                    ),
+                  ),
+                if (categoryProvider.comingSoonCategories.isNotEmpty)
+                  SliverPadding(
+                    padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
+                    sliver: SliverGrid(
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: crossAxisCount,
+                        crossAxisSpacing: isSmallScreen ? 12 : 16,
+                        mainAxisSpacing: isSmallScreen ? 12 : 16,
+                        childAspectRatio: childAspectRatio,
+                      ),
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final category =
+                              categoryProvider.comingSoonCategories[index];
+                          return CategoryCard(
+                            category: category,
+                            onTap: () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content:
+                                      Text('This category is coming soon!'),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                        childCount:
+                            categoryProvider.comingSoonCategories.length,
+                      ),
+                    ),
+                  ),
+                if (categoryProvider.activeCategories.isEmpty &&
+                    categoryProvider.comingSoonCategories.isEmpty)
+                  SliverFillRemaining(
+                    child: EmptyState(
+                      icon: Icons.category,
+                      title: 'No Categories Available',
+                      message: 'Categories will appear here when available',
+                    ),
+                  ),
+                // Add some bottom padding
+                const SliverToBoxAdapter(
+                  child: SizedBox(height: 20),
                 ),
-              ),
-            if (categoryProvider.activeCategories.isEmpty &&
-                categoryProvider.comingSoonCategories.isEmpty)
-              const SliverFillRemaining(
-                child: EmptyState(
-                  icon: Icons.category,
-                  title: 'No Categories Available',
-                  message: 'Categories will appear here when available',
-                ),
-              ),
-          ],
+              ],
+            );
+          },
         ),
       ),
     );

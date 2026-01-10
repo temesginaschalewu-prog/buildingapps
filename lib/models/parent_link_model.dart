@@ -6,9 +6,9 @@ class ParentLink {
   final DateTime tokenExpiresAt;
   final DateTime? linkedAt;
   final DateTime? unlinkedAt;
-  final String status; // 'pending', 'linked', 'unlinked'
-  final String? username; // Student's username
-  final String? accountStatus; // Student's account status
+  final String status;
+  final String? username;
+  final String? accountStatus;
 
   ParentLink({
     required this.id,

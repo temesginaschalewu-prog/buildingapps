@@ -12,17 +12,6 @@ class CourseCard extends StatelessWidget {
     required this.onTap,
   });
 
-  Color get _accessColor {
-    switch (course.access) {
-      case 'full':
-        return AppColors.success;
-      case 'limited':
-        return AppColors.warning;
-      default:
-        return Colors.grey;
-    }
-  }
-
   String get _accessText {
     switch (course.access) {
       case 'full':
@@ -30,7 +19,18 @@ class CourseCard extends StatelessWidget {
       case 'limited':
         return 'LIMITED ACCESS';
       default:
-        return course.access.toUpperCase();
+        return 'LOCKED';
+    }
+  }
+
+  Color get _accessColor {
+    switch (course.access) {
+      case 'full':
+        return AppColors.success;
+      case 'limited':
+        return AppColors.warning;
+      default:
+        return AppColors.error;
     }
   }
 
@@ -42,7 +42,7 @@ class CourseCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
       ),
       child: InkWell(
-        onTap: onTap,
+        onTap: onTap, // Always tappable - all courses should be clickable
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(16),

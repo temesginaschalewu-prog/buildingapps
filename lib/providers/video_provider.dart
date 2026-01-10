@@ -32,23 +32,31 @@ class VideoProvider with ChangeNotifier {
       final response = await apiService.getVideosByChapter(chapterId);
 
       final responseData = response.data ?? {};
-      final videosData = responseData['videos'] ?? responseData['data'] ?? [];
+      final videosData = responseData['videos'] ?? [];
 
       if (videosData is List) {
-        _videosByChapter[chapterId] =
-            List<Video>.from(videosData.map((x) => Video.fromJson(x)));
+        final videoList = <Video>[];
+        for (var videoJson in videosData) {
+          try {
+            videoList.add(Video.fromJson(videoJson));
+          } catch (e) {
+            debugLog(
+                'VideoProvider', 'Error parsing video: $e, data: $videoJson');
+          }
+        }
+        _videosByChapter[chapterId] = videoList;
       } else {
         _videosByChapter[chapterId] = [];
       }
 
       _videos = [..._videos, ..._videosByChapter[chapterId]!];
 
-      notifyListeners();
+      debugLog('VideoProvider',
+          'Loaded ${_videosByChapter[chapterId]!.length} videos for chapter $chapterId');
     } catch (e) {
       _error = e.toString();
       debugLog('VideoProvider', 'loadVideosByChapter error: $e');
-      notifyListeners();
-      rethrow;
+      _videosByChapter[chapterId] = [];
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -63,10 +71,8 @@ class VideoProvider with ChangeNotifier {
     try {
       debugLog('VideoProvider', 'incrementViewCount for videoId:$videoId');
 
-      // ✅ Call API to increment view count (uncomment)
       await apiService.incrementVideoViewCount(videoId);
 
-      // Update local video
       final index = _videos.indexWhere((v) => v.id == videoId);
       if (index != -1) {
         final video = _videos[index];
@@ -86,7 +92,6 @@ class VideoProvider with ChangeNotifier {
       }
     } catch (e) {
       debugLog('VideoProvider', 'incrementViewCount error: $e');
-      // Consider showing a snackbar instead of silent fail
     }
   }
 

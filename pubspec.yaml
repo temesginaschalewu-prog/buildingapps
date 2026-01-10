@@ -69,6 +69,7 @@ dependencies:
   country_picker: ^2.0.27
   pin_code_fields: ^8.0.1
   file_picker: ^8.0.5
+  flutter_widget_from_html: ^0.17.1
 
   # Charts & Visualizations
   percent_indicator: ^4.2.3
@@ -95,6 +96,9 @@ dependencies:
   package_info_plus: ^8.0.0
   vibration: ^3.1.5
   webview_flutter: ^4.7.0
+  
+  
+
 
 dev_dependencies:
   flutter_test:

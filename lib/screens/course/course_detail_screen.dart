@@ -1,9 +1,15 @@
+import 'package:familyacademyclient/models/chapter_model.dart';
+import 'package:familyacademyclient/models/exam_model.dart';
+import 'package:familyacademyclient/providers/category_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../models/course_model.dart';
 import '../../providers/chapter_provider.dart';
 import '../../providers/exam_provider.dart';
+import '../../providers/course_provider.dart';
+import '../../providers/subscription_provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../widgets/chapter/chapter_card.dart';
 import '../../widgets/exam/exam_card.dart';
 import '../../widgets/common/loading_indicator.dart';
@@ -19,38 +25,289 @@ class CourseDetailScreen extends StatefulWidget {
 }
 
 class _CourseDetailScreenState extends State<CourseDetailScreen> {
-  late Course _course;
-  int _selectedTab = 0;
+  late int _selectedTab = 0;
+  bool _isLoading = true;
+  Course? _course;
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _course = ModalRoute.of(context)!.settings.arguments as Course;
+  void initState() {
+    super.initState();
     _loadData();
   }
 
   Future<void> _loadData() async {
-    final chapterProvider =
-        Provider.of<ChapterProvider>(context, listen: false);
+    final chapterProvider = Provider.of<ChapterProvider>(
+      context,
+      listen: false,
+    );
     final examProvider = Provider.of<ExamProvider>(context, listen: false);
+    final courseProvider = Provider.of<CourseProvider>(context, listen: false);
 
-    await chapterProvider.loadChaptersByCourse(_course.id);
-    await examProvider.loadExamsByCourse(_course.id);
+    try {
+      Course? foundCourse;
+
+      final categoryProvider = Provider.of<CategoryProvider>(
+        context,
+        listen: false,
+      );
+      await categoryProvider.loadCategories();
+
+      for (final category in categoryProvider.categories) {
+        await courseProvider.loadCoursesByCategory(category.id);
+        final courses = courseProvider.getCoursesByCategory(category.id);
+
+        for (final course in courses) {
+          if (course.id == widget.courseId) {
+            foundCourse = course;
+            break;
+          }
+        }
+
+        if (foundCourse != null) break;
+      }
+
+      if (foundCourse == null) {
+        debugLog('CourseDetailScreen', 'Course ${widget.courseId} not found');
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
+        return;
+      }
+
+      _course = foundCourse;
+
+      await Future.wait([
+        chapterProvider.loadChaptersByCourse(widget.courseId),
+        examProvider.loadExamsByCourse(widget.courseId),
+      ]);
+    } catch (e) {
+      debugLog('CourseDetailScreen', 'Error loading data: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  void _handleChapterTap(Chapter chapter) {
+    final router = GoRouter.of(context);
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final subscriptionProvider = Provider.of<SubscriptionProvider>(
+      context,
+      listen: false,
+    );
+
+    if (_course == null) return;
+
+    final hasAccess = subscriptionProvider.hasActiveSubscriptionForCategory(
+      _course!.categoryId,
+    );
+
+    if (chapter.isFree || hasAccess) {
+      router.push('/chapter/${chapter.id}', extra: chapter);
+    } else {
+      // SHOW PAYMENT DIALOG - This was missing!
+      _showPaymentDialogForCategory(_course!.categoryId);
+    }
+  }
+
+  void _handleExamTap(Exam exam) {
+    final router = GoRouter.of(context);
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final categoryProvider = Provider.of<CategoryProvider>(
+      context,
+      listen: false,
+    );
+
+    if (_course == null) return;
+
+    // Find the category for this course
+    final category = categoryProvider.getCategoryById(_course!.categoryId);
+
+    if (category == null) {
+      showSnackBar(context, 'Category not found', isError: true);
+      return;
+    }
+
+    // Check if exam can be taken
+    if (exam.canTakeExam) {
+      router.push('/exam/${exam.id}', extra: exam);
+    } else {
+      // Show payment dialog
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Payment Required'),
+          content: Text(
+            'You need to purchase "${category.name}" to take this exam.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                router.push(
+                  '/payment',
+                  extra: {
+                    'category': category,
+                    'paymentType': authProvider.user?.accountStatus == 'active'
+                        ? 'repayment'
+                        : 'first_time',
+                  },
+                );
+              },
+              child: const Text('Purchase'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  void _showPaymentDialogForCategory(int categoryId) {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final categoryProvider = Provider.of<CategoryProvider>(
+      context,
+      listen: false,
+    );
+    final router = GoRouter.of(context);
+
+    // Find the category
+    final category = categoryProvider.getCategoryById(categoryId);
+
+    if (category == null) {
+      showSnackBar(context, 'Category not found', isError: true);
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Payment Required'),
+        content: Text(
+          'You need to purchase "${category.name}" to access this content.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              router.push(
+                '/payment',
+                extra: {
+                  'category': category,
+                  'paymentType': authProvider.user?.accountStatus == 'active'
+                      ? 'repayment'
+                      : 'first_time',
+                },
+              );
+            },
+            child: const Text('Purchase'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showPaymentDialog() {
+    if (_course == null) return;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+        final categoryProvider = Provider.of<CategoryProvider>(
+          context,
+          listen: false,
+        );
+
+        final category = categoryProvider.getCategoryById(_course!.categoryId);
+
+        return AlertDialog(
+          title: const Text('Payment Required'),
+          content: Text(
+            category != null
+                ? 'You need to purchase "${category.name}" to access this content.'
+                : 'Payment is required to access this content.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                final router = GoRouter.of(context);
+
+                if (category != null) {
+                  router.push(
+                    '/payment',
+                    extra: {
+                      'category': category,
+                      'paymentType':
+                          authProvider.user?.accountStatus == 'active'
+                          ? 'repayment'
+                          : 'first_time',
+                    },
+                  );
+                }
+              },
+              child: const Text('Purchase'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final chapterProvider = Provider.of<ChapterProvider>(context);
     final examProvider = Provider.of<ExamProvider>(context);
+    final subscriptionProvider = Provider.of<SubscriptionProvider>(context);
 
-    final chapters = chapterProvider.getChaptersByCourse(_course.id);
-    final exams = examProvider.getExamsByCourse(_course.id);
+    final chapters = chapterProvider.getChaptersByCourse(widget.courseId);
+    final exams = examProvider.getExamsByCourse(widget.courseId);
+
+    bool hasCategoryAccess = false;
+    if (_course != null) {
+      hasCategoryAccess = subscriptionProvider.hasActiveSubscriptionForCategory(
+        _course!.categoryId,
+      );
+    }
+
+    if (_isLoading) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Loading...')),
+        body: const LoadingIndicator(),
+      );
+    }
+
+    if (_course == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Course Not Found')),
+        body: const Center(
+          child: Text('Course not found or no longer available.'),
+        ),
+      );
+    }
 
     return DefaultTabController(
       length: 2,
       child: Scaffold(
         appBar: AppBar(
-          title: Text(_course.name),
+          title: Text(_course!.name),
           bottom: TabBar(
             tabs: const [
               Tab(text: 'Chapters'),
@@ -61,55 +318,56 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
         ),
         body: TabBarView(
           children: [
-            // Chapters Tab
-            if (chapterProvider.isLoading)
-              const LoadingIndicator()
-            else
-              RefreshIndicator(
-                onRefresh: () =>
-                    chapterProvider.loadChaptersByCourse(_course.id),
-                child: ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: chapters.length,
-                  itemBuilder: (context, index) {
-                    final chapter = chapters[index];
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: ChapterCard(
-                        chapter: chapter,
-                        onTap: () {
-                          GoRouter.of(context)
-                              .push('/chapter/${chapter.id}', extra: chapter);
-                        },
-                      ),
-                    );
-                  },
-                ),
-              ),
-            // Exams Tab
-            if (examProvider.isLoading)
-              const LoadingIndicator()
-            else
-              RefreshIndicator(
-                onRefresh: () => examProvider.loadExamsByCourse(_course.id),
-                child: ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: exams.length,
-                  itemBuilder: (context, index) {
-                    final exam = exams[index];
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: ExamCard(
-                        exam: exam,
-                        onTap: () {
-                          GoRouter.of(context)
-                              .push('/exam/${exam.id}', extra: exam);
-                        },
-                      ),
-                    );
-                  },
-                ),
-              ),
+            chapterProvider.isLoading
+                ? const LoadingIndicator()
+                : RefreshIndicator(
+                    onRefresh: () =>
+                        chapterProvider.loadChaptersByCourse(widget.courseId),
+                    child: chapters.isEmpty
+                        ? const Center(
+                            child: Text(
+                              'No chapters available for this course.',
+                            ),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: chapters.length,
+                            itemBuilder: (context, index) {
+                              final chapter = chapters[index];
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: ChapterCard(
+                                  chapter: chapter,
+                                  onTap: () => _handleChapterTap(chapter),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+            examProvider.isLoading
+                ? const LoadingIndicator()
+                : RefreshIndicator(
+                    onRefresh: () =>
+                        examProvider.loadExamsByCourse(widget.courseId),
+                    child: exams.isEmpty
+                        ? const Center(
+                            child: Text('No exams available for this course.'),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: exams.length,
+                            itemBuilder: (context, index) {
+                              final exam = exams[index];
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: ExamCard(
+                                  exam: exam,
+                                  onTap: () => _handleExamTap(exam),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
           ],
         ),
       ),

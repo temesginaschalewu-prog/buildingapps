@@ -1,12 +1,16 @@
+import 'dart:developer';
+import 'package:familyacademyclient/utils/helpers.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/constants.dart';
-import '../utils/helpers.dart';
 import '../themes/app_themes.dart';
 
 class ThemeProvider with ChangeNotifier {
   ThemeMode _themeMode = ThemeMode.light;
   bool _isLoading = false;
+  bool _hasLoaded = false;
+
+  final GlobalKey _rootKey = GlobalKey();
 
   ThemeProvider() {
     _loadTheme();
@@ -15,8 +19,12 @@ class ThemeProvider with ChangeNotifier {
   ThemeMode get themeMode => _themeMode;
   ThemeData get lightTheme => AppThemes.lightTheme;
   ThemeData get darkTheme => AppThemes.darkTheme;
+  bool get isLoading => _isLoading;
+  GlobalKey get rootKey => _rootKey;
 
   Future<void> _loadTheme() async {
+    if (_hasLoaded) return;
+
     _isLoading = true;
     debugLog('ThemeProvider', 'Loading saved theme');
 
@@ -29,16 +37,21 @@ class ThemeProvider with ChangeNotifier {
       } else if (savedTheme == 'light') {
         _themeMode = ThemeMode.light;
       } else {
-        _themeMode = ThemeMode.system;
+        _themeMode = ThemeMode.light;
       }
+
+      _hasLoaded = true;
+      debugLog('ThemeProvider', 'Theme loaded: $_themeMode');
     } catch (e) {
       debugLog('ThemeProvider', 'Error loading theme: $e');
-      _themeMode = ThemeMode.system;
+      _themeMode = ThemeMode.light;
     } finally {
       _isLoading = false;
-      debugLog('ThemeProvider', 'Theme loaded: $_themeMode');
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        notifyListeners();
+
+      Future.delayed(const Duration(milliseconds: 50), () {
+        if (hasListeners) {
+          notifyListeners();
+        }
       });
     }
   }
@@ -51,15 +64,14 @@ class ThemeProvider with ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
       AppConstants.themeModeKey,
-      themeMode == ThemeMode.dark
-          ? 'dark'
-          : themeMode == ThemeMode.light
-              ? 'light'
-              : 'system',
+      themeMode == ThemeMode.dark ? 'dark' : 'light',
     );
 
     debugLog('ThemeProvider', 'Theme set to: $_themeMode');
-    notifyListeners();
+
+    Future.delayed(const Duration(milliseconds: 50), () {
+      notifyListeners();
+    });
   }
 
   void toggleTheme() {

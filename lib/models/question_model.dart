@@ -31,19 +31,23 @@ class Question {
 
   factory Question.fromJson(Map<String, dynamic> json) {
     return Question(
-      id: json['id'],
-      chapterId: json['chapter_id'],
-      questionText: json['question_text'],
-      optionA: json['option_a'],
-      optionB: json['option_b'],
-      optionC: json['option_c'],
-      optionD: json['option_d'],
-      optionE: json['option_e'],
-      optionF: json['option_f'],
-      correctOption: json['correct_option'],
-      explanation: json['explanation'],
-      difficulty: json['difficulty'] ?? 'medium',
-      hasAnswer: json['has_answer'] ?? false,
+      id: json['id'] is int
+          ? json['id']
+          : int.tryParse(json['id']?.toString() ?? '0') ?? 0,
+      chapterId: json['chapter_id'] is int
+          ? json['chapter_id']
+          : int.tryParse(json['chapter_id']?.toString() ?? '0') ?? 0,
+      questionText: json['question_text']?.toString() ?? '',
+      optionA: json['option_a']?.toString(),
+      optionB: json['option_b']?.toString(),
+      optionC: json['option_c']?.toString(),
+      optionD: json['option_d']?.toString(),
+      optionE: json['option_e']?.toString(),
+      optionF: json['option_f']?.toString(),
+      correctOption: json['correct_option']?.toString() ?? 'A',
+      explanation: json['explanation']?.toString(),
+      difficulty: json['difficulty']?.toString() ?? 'medium',
+      hasAnswer: json['has_answer'] == true,
     );
   }
 

@@ -30,10 +30,33 @@ class ExamQuestionProvider with ChangeNotifier {
     try {
       debugLog('ExamQuestionProvider', 'Loading questions for exam: $examId');
       final response = await apiService.getExamQuestions(examId);
-      _questionsByExam[examId] = response.data ?? [];
 
-      // Update main questions list
-      _examQuestions = [..._examQuestions, ..._questionsByExam[examId]!];
+      // Properly handle the API response
+      if (response.data is Map<String, dynamic>) {
+        final data = response.data as Map<String, dynamic>;
+
+        // Check different possible response formats
+        List<ExamQuestion> questions = [];
+
+        if (data['questions'] is List) {
+          questions = (data['questions'] as List).map((item) {
+            return ExamQuestion.fromJson(item);
+          }).toList();
+        } else if (data['data'] is List) {
+          questions = (data['data'] as List).map((item) {
+            return ExamQuestion.fromJson(item);
+          }).toList();
+        }
+
+        _questionsByExam[examId] = questions;
+        _examQuestions = [..._questionsByExam[examId]!];
+
+        debugLog('ExamQuestionProvider',
+            'Loaded ${questions.length} questions for exam $examId');
+      } else {
+        // Fallback to current logic
+        _questionsByExam[examId] = [];
+      }
 
       notifyListeners();
     } catch (e) {

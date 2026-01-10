@@ -114,16 +114,79 @@ class SubscriptionProvider with ChangeNotifier {
 
   Future<void> refreshSubscription(int categoryId) async {
     try {
-      // Check if subscription exists for this category
+      debugLog('SubscriptionProvider',
+          'Refreshing subscription for category: $categoryId');
+
+      // Force reload subscriptions
+      await loadSubscriptions(forceRefresh: true);
+
+      // Also check specific category status
       final status = await checkSubscriptionStatus(categoryId);
 
+      debugLog(
+          'SubscriptionProvider', 'Subscription status after refresh: $status');
+
       if (status['has_subscription'] == true) {
-        // Reload subscriptions to get updated data
-        await loadSubscriptions(forceRefresh: true);
+        debugLog('SubscriptionProvider',
+            '✅ Subscription active for category: $categoryId');
+
+        // Notify all listeners that subscription state changed
+        _notifySafely();
       }
     } catch (e) {
       debugLog('SubscriptionProvider', 'Error refreshing subscription: $e');
+      rethrow;
     }
+  }
+
+  Future<Map<String, dynamic>> getCategorySubscriptionDetails(
+      int categoryId) async {
+    try {
+      final status = await checkSubscriptionStatus(categoryId);
+
+      if (status['has_subscription'] == true) {
+        // Update local cache
+        final subscription = Subscription.fromJson({
+          'id': status['id'],
+          'start_date': status['start_date'],
+          'expiry_date': status['expiry_date'],
+          'status': status['current_status'],
+          'billing_cycle': status['billing_cycle'] ?? 'monthly',
+          'category_name': status['category_name'] ?? 'Unknown Category',
+          'category_id': categoryId,
+          'price': status['price'] ?? 0,
+          'payment_method': status['payment_method'],
+          'payment_status': status['payment_status'],
+          'days_remaining': status['days_remaining'] ?? 0,
+        });
+
+        _activeSubscriptionsByCategory[categoryId] = subscription;
+        _notifySafely();
+      }
+
+      return status;
+    } catch (e) {
+      debugLog(
+          'SubscriptionProvider', 'getCategorySubscriptionDetails error: $e');
+      return {'has_subscription': false, 'status': 'unpaid'};
+    }
+  }
+
+// Add this method to force refresh when payment is verified
+  Future<void> refreshAfterPaymentVerification() async {
+    debugLog('SubscriptionProvider', 'Refreshing after payment verification');
+
+    // Clear current data
+    _subscriptions = [];
+    _activeSubscriptionsByCategory = {};
+    _hasLoaded = false;
+
+    // Reload everything
+    await loadSubscriptions(forceRefresh: true);
+
+    debugLog('SubscriptionProvider',
+        '✅ Subscriptions refreshed after payment verification');
+    _notifySafely();
   }
 
   bool isSubscriptionExpiringSoon(int categoryId) {

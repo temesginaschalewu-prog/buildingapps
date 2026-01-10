@@ -32,23 +32,30 @@ class NoteProvider with ChangeNotifier {
       final response = await apiService.getNotesByChapter(chapterId);
 
       final responseData = response.data ?? {};
-      final notesData = responseData['notes'] ?? responseData['data'] ?? [];
+      final notesData = responseData['notes'] ?? [];
 
       if (notesData is List) {
-        _notesByChapter[chapterId] =
-            List<Note>.from(notesData.map((x) => Note.fromJson(x)));
+        final noteList = <Note>[];
+        for (var noteJson in notesData) {
+          try {
+            noteList.add(Note.fromJson(noteJson));
+          } catch (e) {
+            debugLog('NoteProvider', 'Error parsing note: $e, data: $noteJson');
+          }
+        }
+        _notesByChapter[chapterId] = noteList;
       } else {
         _notesByChapter[chapterId] = [];
       }
 
       _notes = [..._notes, ..._notesByChapter[chapterId]!];
 
-      notifyListeners();
+      debugLog('NoteProvider',
+          'Loaded ${_notesByChapter[chapterId]!.length} notes for chapter $chapterId');
     } catch (e) {
       _error = e.toString();
       debugLog('NoteProvider', 'loadNotesByChapter error: $e');
-      notifyListeners();
-      rethrow;
+      _notesByChapter[chapterId] = [];
     } finally {
       _isLoading = false;
       notifyListeners();

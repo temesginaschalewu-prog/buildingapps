@@ -1,3 +1,4 @@
+import 'package:familyacademyclient/models/exam_model.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -64,84 +65,73 @@ class AppRouter {
         GoRoute(
           path: '/auth/register',
           name: 'register',
-          pageBuilder: (context, state) => const MaterialPage(
-            child: RegisterScreen(),
-          ),
+          pageBuilder: (context, state) =>
+              const MaterialPage(child: RegisterScreen()),
         ),
         GoRoute(
           path: '/auth/login',
           name: 'login',
-          pageBuilder: (context, state) => const MaterialPage(
-            child: LoginScreen(),
-          ),
+          pageBuilder: (context, state) =>
+              const MaterialPage(child: LoginScreen()),
         ),
         GoRoute(
           path: '/device-change',
           name: 'device-change',
           pageBuilder: (context, state) {
             final extra = state.extra as Map<String, dynamic>? ?? {};
-            return MaterialPage(
-              child: DeviceChangeScreen(),
-            );
+            return MaterialPage(child: DeviceChangeScreen());
           },
         ),
         GoRoute(
           path: '/school-selection',
           name: 'school-selection',
-          pageBuilder: (context, state) => const MaterialPage(
-            child: SchoolSelectionScreen(),
-          ),
+          pageBuilder: (context, state) =>
+              const MaterialPage(child: SchoolSelectionScreen()),
         ),
         GoRoute(
           path: '/payment',
           name: 'payment',
           pageBuilder: (context, state) {
-            return const MaterialPage(
-              child: PaymentScreen(),
+            return MaterialPage(
+              child: PaymentScreen(extra: state.extra as Map<String, dynamic>?),
             );
           },
         ),
         GoRoute(
           path: '/payment-success',
           name: 'payment-success',
-          pageBuilder: (context, state) => const MaterialPage(
-            child: PaymentSuccessScreen(),
-          ),
+          pageBuilder: (context, state) =>
+              const MaterialPage(child: PaymentSuccessScreen()),
         ),
         GoRoute(
           path: '/subscriptions',
           name: 'subscriptions',
-          pageBuilder: (context, state) => const MaterialPage(
-            child: SubscriptionScreen(),
-          ),
+          pageBuilder: (context, state) =>
+              const MaterialPage(child: SubscriptionScreen()),
         ),
         GoRoute(
           path: '/tv-pairing',
           name: 'tv-pairing',
-          pageBuilder: (context, state) => const MaterialPage(
-            child: TvPairingScreen(),
-          ),
+          pageBuilder: (context, state) =>
+              const MaterialPage(child: TvPairingScreen()),
         ),
         GoRoute(
           path: '/parent-link',
           name: 'parent-link',
-          pageBuilder: (context, state) => const MaterialPage(
-            child: ParentLinkScreen(),
-          ),
+          pageBuilder: (context, state) =>
+              const MaterialPage(child: ParentLinkScreen()),
         ),
         GoRoute(
           path: '/support',
           name: 'support',
-          pageBuilder: (context, state) => const MaterialPage(
-            child: SupportScreen(),
-          ),
+          pageBuilder: (context, state) =>
+              const MaterialPage(child: SupportScreen()),
         ),
         GoRoute(
           path: '/notifications',
           name: 'notifications',
-          pageBuilder: (context, state) => const MaterialPage(
-            child: NotificationsScreen(),
-          ),
+          pageBuilder: (context, state) =>
+              const MaterialPage(child: NotificationsScreen()),
         ),
         GoRoute(
           path: '/category/:categoryId',
@@ -185,46 +175,45 @@ class AppRouter {
           pageBuilder: (context, state) {
             final examId =
                 int.tryParse(state.pathParameters['examId'] ?? '0') ?? 0;
+            // Get the exam object from extra
+            final exam = state.extra as Exam?;
             return MaterialPage(
               key: ValueKey('exam-$examId'),
-              child: ExamScreen(examId: examId),
+              child: ExamScreen(
+                examId: examId,
+                exam: exam, // Pass the exam object
+              ),
             );
           },
         ),
         ShellRoute(
           builder: (context, state, child) {
-            return MainNavigation(
-              child: child,
-            );
+            return MainNavigation(child: child);
           },
           routes: [
             GoRoute(
               path: '/',
               name: 'home',
-              pageBuilder: (context, state) => const NoTransitionPage(
-                child: HomeScreen(),
-              ),
+              pageBuilder: (context, state) =>
+                  const NoTransitionPage(child: HomeScreen()),
             ),
             GoRoute(
               path: '/chatbot',
               name: 'chatbot',
-              pageBuilder: (context, state) => const NoTransitionPage(
-                child: ChatbotScreen(),
-              ),
+              pageBuilder: (context, state) =>
+                  const NoTransitionPage(child: ChatbotScreen()),
             ),
             GoRoute(
               path: '/progress',
               name: 'progress',
-              pageBuilder: (context, state) => const NoTransitionPage(
-                child: ProgressScreen(),
-              ),
+              pageBuilder: (context, state) =>
+                  const NoTransitionPage(child: ProgressScreen()),
             ),
             GoRoute(
               path: '/profile',
               name: 'profile',
-              pageBuilder: (context, state) => const NoTransitionPage(
-                child: ProfileScreen(),
-              ),
+              pageBuilder: (context, state) =>
+                  const NoTransitionPage(child: ProfileScreen()),
             ),
           ],
         ),

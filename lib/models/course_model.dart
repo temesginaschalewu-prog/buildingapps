@@ -28,8 +28,8 @@ class Course {
       chapterCount: json['chapter_count'] is String
           ? int.parse(json['chapter_count'])
           : json['chapter_count'] ?? 0,
-      access: json['access']?.toString() ?? 'limited',
-      message: json['message']?.toString() ?? 'Free chapters only',
+      access: json['access']?.toString() ?? 'none', // Changed default to 'none'
+      message: json['message']?.toString() ?? 'Purchase required',
     );
   }
 
@@ -47,4 +47,5 @@ class Course {
 
   bool get hasFullAccess => access == 'full';
   bool get hasLimitedAccess => access == 'limited';
+  bool get hasNoAccess => access == 'none';
 }

@@ -1152,8 +1152,7 @@ class ApiService {
   Future<ApiResponse<Map<String, dynamic>>> getCourseDetails(
       int courseId) async {
     try {
-      final response =
-          await _dio.get('${AppConstants.coursesEndpoint}/$courseId');
+      final response = await _dio.get('/courses/$courseId');
       return ApiResponse.fromJson(
         response.data,
         (data) => data as Map<String, dynamic>,

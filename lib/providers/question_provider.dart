@@ -33,24 +33,31 @@ class QuestionProvider with ChangeNotifier {
       final response = await apiService.getPracticeQuestions(chapterId);
 
       final responseData = response.data ?? {};
-      final questionsData =
-          responseData['questions'] ?? responseData['data'] ?? [];
+      final questionsData = responseData['questions'] ?? [];
 
       if (questionsData is List) {
-        _questionsByChapter[chapterId] =
-            List<Question>.from(questionsData.map((x) => Question.fromJson(x)));
+        final questionList = <Question>[];
+        for (var questionJson in questionsData) {
+          try {
+            questionList.add(Question.fromJson(questionJson));
+          } catch (e) {
+            debugLog('QuestionProvider',
+                'Error parsing question: $e, data: $questionJson');
+          }
+        }
+        _questionsByChapter[chapterId] = questionList;
       } else {
         _questionsByChapter[chapterId] = [];
       }
 
       _questions = [..._questions, ..._questionsByChapter[chapterId]!];
 
-      notifyListeners();
+      debugLog('QuestionProvider',
+          'Loaded ${_questionsByChapter[chapterId]!.length} questions for chapter $chapterId');
     } catch (e) {
       _error = e.toString();
       debugLog('QuestionProvider', 'loadPracticeQuestions error: $e');
-      notifyListeners();
-      rethrow;
+      _questionsByChapter[chapterId] = [];
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -70,7 +77,6 @@ class QuestionProvider with ChangeNotifier {
           'Checking answer for question:$questionId option:$selectedOption');
       final response = await apiService.checkAnswer(questionId, selectedOption);
 
-      // Update question with answer
       final index = _questions.indexWhere((q) => q.id == questionId);
       if (index != -1) {
         _questions[index] = Question(
