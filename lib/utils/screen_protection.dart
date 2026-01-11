@@ -1,72 +1,89 @@
 import 'dart:io';
-import 'package:familyacademyclient/utils/helpers.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/material.dart';
 import 'package:screen_protector/screen_protector.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 
 class ScreenProtectionService {
   static bool _isInitialized = false;
 
+  /// Initialize screen protection for the entire app
   static Future<void> initialize() async {
+    if (_isInitialized) return;
+
     try {
-      if (_isInitialized) return;
-
-      if (Platform.isAndroid) {
+      if (Platform.isAndroid || Platform.isIOS) {
         await ScreenProtector.preventScreenshotOn();
-
-        await ScreenProtector.protectDataLeakageOn();
-
-        debugLog(
-            'ScreenProtection', 'Screen protection initialized successfully');
-        _isInitialized = true;
-      } else if (Platform.isIOS) {
-        debugLog('ScreenProtection', 'Screen protection initialized for iOS');
-        _isInitialized = true;
       }
+      _isInitialized = true;
+      debugPrint("✅ Screen protection initialized");
     } catch (e) {
-      debugLog(
-          'ScreenProtection', 'Failed to initialize screen protection: $e');
+      debugPrint("❌ Failed to initialize screen protection: $e");
     }
   }
 
+  /// Enable protection on app resume
   static Future<void> enableOnResume() async {
     try {
-      if (Platform.isAndroid) {
+      if (Platform.isAndroid || Platform.isIOS) {
         await ScreenProtector.preventScreenshotOn();
       }
     } catch (e) {
-      debugLog('ScreenProtection', 'Failed to enable protection on resume: $e');
+      debugPrint("❌ Failed to enable protection on resume: $e");
     }
   }
 
+  /// Disable protection on pause
   static Future<void> disableOnPause() async {
     try {
-      if (Platform.isAndroid) {
+      if (Platform.isAndroid || Platform.isIOS) {
         await ScreenProtector.preventScreenshotOff();
       }
     } catch (e) {
-      debugLog('ScreenProtection', 'Failed to disable protection on pause: $e');
+      debugPrint("❌ Failed to disable protection on pause: $e");
     }
   }
 
+  /// Disable all protection (use when app fully closed)
   static Future<void> disable() async {
     try {
-      if (Platform.isAndroid) {
-        await ScreenProtector.preventScreenshotOff();
-        await ScreenProtector.protectDataLeakageOff();
-      }
+      await ScreenProtector.preventScreenshotOff();
+      WakelockPlus.disable();
     } catch (e) {
-      debugLog('ScreenProtection', 'Failed to disable screen protection: $e');
+      debugPrint("❌ Failed to disable screen protection: $e");
     }
   }
 
-  static Future<void> setSecureWindow() async {
+  /// Protect videos (disable sleep and prevent capture)
+  static Future<void> protectVideoPlayback() async {
     try {
-      if (Platform.isAndroid) {
-        await SystemChannels.textInput.invokeMethod('TextInput.hide');
-      }
+      await ScreenProtector.protectDataLeakageOn();
+      WakelockPlus.enable();
     } catch (e) {
-      debugLog('ScreenProtection', 'Failed to set secure window: $e');
+      debugPrint("❌ Failed to protect video playback: $e");
+    }
+  }
+
+  /// Restore normal protection after video
+  static Future<void> restoreAfterVideo() async {
+    try {
+      await ScreenProtector.protectDataLeakageOff();
+      WakelockPlus.disable();
+    } catch (e) {
+      debugPrint("❌ Failed to restore protection after video: $e");
+    }
+  }
+
+  /// Check if screen recording is possible (Android 10+)
+  static Future<bool> isScreenRecordingPossible() async {
+    try {
+      if (!Platform.isAndroid) return true;
+      final androidInfo = await DeviceInfoPlugin().androidInfo;
+      return androidInfo.version.sdkInt < 29; // Android 10+
+    } catch (e) {
+      debugPrint("❌ Failed to check screen recording: $e");
+      return true;
     }
   }
 }

@@ -19,7 +19,7 @@ class CourseCard extends StatelessWidget {
       case 'limited':
         return 'LIMITED ACCESS';
       default:
-        return 'LOCKED';
+        return 'LIMITED ACCESS';
     }
   }
 
