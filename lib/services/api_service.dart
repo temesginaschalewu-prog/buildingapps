@@ -241,9 +241,7 @@ class ApiService {
       debugLog('ApiService', 'Login response status: ${response.statusCode}');
       debugLog('ApiService', 'Login response data: ${response.data}');
 
-      // Check if response has success: false
       if (response.data is Map && response.data['success'] == false) {
-        // This is an error response even if status code is 200
         throw ApiError(
           message: response.data['message']?.toString() ?? 'Login failed',
           statusCode: response.statusCode,
@@ -283,7 +281,6 @@ class ApiService {
     } on DioException catch (e) {
       debugLog('ApiService', 'DioException in studentLogin: ${e.type}');
 
-      // Handle 403 specifically
       if (e.response?.statusCode == 403 && e.response?.data is Map) {
         throw ApiError(
           message: e.response?.data['message']?.toString() ??
@@ -387,6 +384,21 @@ class ApiService {
       throw ApiError(
         message: e.response?.data['message']?.toString() ??
             'Failed to select school',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<ApiResponse<List<Setting>>> getAllSettings() async {
+    try {
+      final response = await _dio.get('/api/v1/settings');
+      return ApiResponse.fromJson(
+        response.data,
+        (data) => List<Setting>.from(data.map((x) => Setting.fromJson(x))),
+      );
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to fetch settings',
         statusCode: e.response?.statusCode,
       );
     }

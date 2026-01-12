@@ -175,14 +175,37 @@ class AppRouter {
           pageBuilder: (context, state) {
             final examId =
                 int.tryParse(state.pathParameters['examId'] ?? '0') ?? 0;
-            // Get the exam object from extra
             final exam = state.extra as Exam?;
             return MaterialPage(
               key: ValueKey('exam-$examId'),
               child: ExamScreen(
                 examId: examId,
-                exam: exam, // Pass the exam object
+                exam: exam,
               ),
+            );
+          },
+        ),
+        GoRoute(
+          path: '/course/:courseId/chapters',
+          name: 'chapter-list',
+          pageBuilder: (context, state) {
+            final courseId =
+                int.tryParse(state.pathParameters['courseId'] ?? '0') ?? 0;
+            return MaterialPage(
+              key: ValueKey('chapter-list-$courseId'),
+              child: ChapterListScreen(courseId: courseId),
+            );
+          },
+        ),
+        GoRoute(
+          path: '/course/:courseId/exams',
+          name: 'exam-list',
+          pageBuilder: (context, state) {
+            final courseId =
+                int.tryParse(state.pathParameters['courseId'] ?? '0') ?? 0;
+            return MaterialPage(
+              key: ValueKey('exam-list-$courseId'),
+              child: ExamListScreen(courseId: courseId),
             );
           },
         ),

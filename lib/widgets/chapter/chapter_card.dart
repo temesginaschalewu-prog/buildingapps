@@ -1,48 +1,110 @@
+import 'package:familyacademyclient/models/chapter_model.dart';
 import 'package:flutter/material.dart';
-import '../../models/chapter_model.dart';
+import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import '../../providers/subscription_provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../themes/app_colors.dart';
 
 class ChapterCard extends StatelessWidget {
   final Chapter chapter;
+  final int courseId;
+  final int categoryId;
+  final String categoryName;
   final VoidCallback onTap;
 
   const ChapterCard({
     super.key,
     required this.chapter,
+    required this.courseId,
+    required this.categoryId,
+    required this.categoryName,
     required this.onTap,
   });
 
-  Color get _statusColor {
-    switch (chapter.status) {
-      case 'free':
-        return AppColors.free;
-      case 'locked':
-        return AppColors.locked;
-      default:
-        return Colors.grey;
+  Color _getStatusColor() {
+    if (chapter.accessible) {
+      return AppColors.success;
+    } else {
+      return chapter.isFree ? Colors.orange : AppColors.locked;
     }
   }
 
-  String get _statusText {
-    switch (chapter.status) {
-      case 'free':
-        return 'FREE';
-      case 'locked':
-        return 'LOCKED';
-      default:
-        return chapter.status.toUpperCase();
+  IconData _getStatusIcon() {
+    if (chapter.accessible) {
+      return Icons.play_circle_fill;
+    } else {
+      return chapter.isFree ? Icons.schedule : Icons.lock;
     }
+  }
+
+  String _getStatusText() {
+    if (chapter.accessible) {
+      return 'ACCESSIBLE';
+    } else {
+      return chapter.isFree ? 'COMING SOON' : 'LOCKED';
+    }
+  }
+
+  void _showPaymentDialog(BuildContext context) {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Payment Required'),
+        content: Text(
+          'You need to purchase "$categoryName" to access this chapter.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+
+              context.push(
+                '/payment',
+                extra: {
+                  'category': {
+                    'id': categoryId,
+                    'name': categoryName,
+                  },
+                  'paymentType': authProvider.user?.accountStatus == 'active'
+                      ? 'repayment'
+                      : 'first_time',
+                },
+              );
+            },
+            child: const Text('Purchase'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final subscriptionProvider = Provider.of<SubscriptionProvider>(context);
+
+    final hasAccess = chapter.isFree ||
+        subscriptionProvider.hasActiveSubscriptionForCategory(categoryId);
+
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
       ),
       child: InkWell(
-        onTap: chapter.accessible ? onTap : null,
+        onTap: () {
+          if (hasAccess) {
+            context.push('/chapter/${chapter.id}', extra: chapter);
+          } else {
+            _showPaymentDialog(context);
+          }
+        },
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -52,44 +114,78 @@ class ChapterCard extends StatelessWidget {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: _statusColor.withOpacity(0.1),
+                  color: _getStatusColor().withOpacity(0.1),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: _statusColor),
                 ),
                 child: Icon(
-                  chapter.accessible ? Icons.play_circle : Icons.lock,
-                  color: _statusColor,
-                  size: 24,
+                  _getStatusIcon(),
+                  color: _getStatusColor(),
                 ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _getStatusColor().withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: _getStatusColor()),
+                          ),
+                          child: Text(
+                            _getStatusText(),
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(
+                                  color: _getStatusColor(),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                        ),
+                        if (chapter.releaseDate != null)
+                          Text(
+                            '${chapter.releaseDate!.day}/${chapter.releaseDate!.month}',
+                            style: Theme.of(context).textTheme.labelSmall,
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
                     Text(
                       chapter.name,
-                      style: Theme.of(context).textTheme.bodyLarge,
+                      style: Theme.of(context).textTheme.titleMedium,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _statusText,
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            color: _statusColor,
-                            fontWeight: FontWeight.w600,
-                          ),
-                    ),
+                    if (!hasAccess && !chapter.isFree)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          'Purchase "$categoryName" to unlock',
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: Colors.orange,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                        ),
+                      ),
                   ],
                 ),
               ),
-              if (!chapter.accessible)
-                const Icon(
-                  Icons.arrow_forward_ios,
-                  size: 16,
-                  color: Colors.grey,
-                ),
+              const SizedBox(width: 8),
+              Icon(
+                hasAccess ? Icons.arrow_forward_ios : Icons.lock_outline,
+                size: 16,
+                color: hasAccess ? AppColors.primary : AppColors.locked,
+              ),
             ],
           ),
         ),

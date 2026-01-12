@@ -12,21 +12,64 @@ class SupportScreen extends StatefulWidget {
 }
 
 class _SupportScreenState extends State<SupportScreen> {
+  bool _isLoading = false;
+
   @override
   void initState() {
     super.initState();
-    _loadSettings();
+    _loadContactSettings();
   }
 
-  Future<void> _loadSettings() async {
+  Future<void> _loadContactSettings() async {
     final settingsProvider =
         Provider.of<SettingsProvider>(context, listen: false);
     await settingsProvider.loadContactSettings();
   }
 
+  Widget _buildContactItem(String title, String? value, IconData icon) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            icon,
+            size: 24,
+            color: Theme.of(context).primaryColor,
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.grey,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value ?? 'Not available',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final settingsProvider = Provider.of<SettingsProvider>(context);
+    final contactSettings = settingsProvider.contactSettings;
 
     return Scaffold(
       appBar: AppBar(
@@ -36,124 +79,199 @@ class _SupportScreenState extends State<SupportScreen> {
           onPressed: () => GoRouter.of(context).pop(),
         ),
       ),
-      body: RefreshIndicator(
-        onRefresh: () => settingsProvider.loadContactSettings(),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Contact Information',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+      body: settingsProvider.isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).primaryColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.support_agent,
+                          size: 32,
+                          color: Theme.of(context).primaryColor,
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Need Help?',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: Theme.of(context).primaryColor,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              const Text(
+                                'We\'re here to help you with any questions or issues.',
+                                style: TextStyle(fontSize: 14),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  const Text(
+                    'Contact Information',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  if (contactSettings.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 20),
+                      child: Center(
+                        child: Text(
+                          'Contact information not available',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey,
+                            fontStyle: FontStyle.italic,
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 16),
-                      _buildContactItem(
-                        Icons.phone,
-                        'Phone',
-                        settingsProvider.getSetting('contact_support_phone') ??
-                            '+251 91 234 5678',
-                        onTap: () {
-                          final phone = settingsProvider
-                              .getSetting('contact_support_phone');
-                          if (phone != null) {}
+                    )
+                  else
+                    Column(
+                      children: [
+                        if (settingsProvider.getContactSupportPhone() != null)
+                          _buildContactItem(
+                            'Support Phone',
+                            settingsProvider.getContactSupportPhone(),
+                            Icons.phone,
+                          ),
+                        if (settingsProvider.getContactSupportEmail() != null)
+                          _buildContactItem(
+                            'Support Email',
+                            settingsProvider.getContactSupportEmail(),
+                            Icons.email,
+                          ),
+                        if (settingsProvider.getContactOfficeAddress() != null)
+                          _buildContactItem(
+                            'Office Address',
+                            settingsProvider.getContactOfficeAddress(),
+                            Icons.location_on,
+                          ),
+                        if (settingsProvider.getContactOfficeHours() != null)
+                          _buildContactItem(
+                            'Office Hours',
+                            settingsProvider.getContactOfficeHours(),
+                            Icons.access_time,
+                          ),
+                      ],
+                    ),
+                  const SizedBox(height: 32),
+                  const Text(
+                    'Common Issues',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildCommonIssueItem(
+                    'Payment Issues',
+                    'Ensure payment proof is clear and includes transaction ID',
+                    Icons.payment,
+                  ),
+                  _buildCommonIssueItem(
+                    'Video Playback',
+                    'Check your internet connection and try again',
+                    Icons.video_library,
+                  ),
+                  _buildCommonIssueItem(
+                    'Exam Access',
+                    'Ensure you have an active subscription for the category',
+                    Icons.quiz,
+                  ),
+                  _buildCommonIssueItem(
+                    'Account Login',
+                    'Verify username and password, or request password reset',
+                    Icons.lock,
+                  ),
+                  const SizedBox(height: 32),
+                  const Text(
+                    'Send Us a Message',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'If you need further assistance, please contact support using the information above.',
+                    style: TextStyle(fontSize: 14, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Quick Actions',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      ActionChip(
+                        avatar: const Icon(Icons.receipt, size: 18),
+                        label: const Text('My Payments'),
+                        onPressed: () {
+                          GoRouter.of(context).push('/payment-history');
                         },
                       ),
-                      _buildContactItem(
-                        Icons.email,
-                        'Email',
-                        settingsProvider.getSetting('contact_support_email') ??
-                            'support@familyacademy.edu',
-                        onTap: () {
-                          final email = settingsProvider
-                              .getSetting('contact_support_email');
-                          if (email != null) {}
+                      ActionChip(
+                        avatar: const Icon(Icons.subscriptions, size: 18),
+                        label: const Text('My Subscriptions'),
+                        onPressed: () {
+                          GoRouter.of(context).push('/subscriptions');
                         },
                       ),
-                      _buildContactItem(
-                        Icons.location_on,
-                        'Address',
-                        settingsProvider.getSetting('contact_office_address') ??
-                            'Bole, Addis Ababa, Ethiopia',
+                      ActionChip(
+                        avatar: const Icon(Icons.device_hub, size: 18),
+                        label: const Text('Device Settings'),
+                        onPressed: () {
+                          GoRouter.of(context).push('/device-settings');
+                        },
                       ),
                     ],
                   ),
-                ),
+                  const SizedBox(height: 32),
+                ],
               ),
-              const SizedBox(height: 24),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Office Hours',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        settingsProvider.getSetting('contact_office_hours') ??
-                            'Monday-Friday: 8:30 AM - 5:30 PM\nSaturday: 9:00 AM - 1:00 PM',
-                        style: const TextStyle(fontSize: 16),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 32),
-            ],
-          ),
-        ),
-      ),
+            ),
     );
   }
 
-  Widget _buildContactItem(IconData icon, String label, String value,
-      {VoidCallback? onTap}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        children: [
-          Icon(icon, color: Colors.grey),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
-                  ),
-                ),
-                GestureDetector(
-                  onTap: onTap,
-                  child: Text(
-                    value,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+  Widget _buildCommonIssueItem(
+      String title, String description, IconData icon) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: ListTile(
+        leading: Icon(icon, color: Theme.of(context).primaryColor),
+        title: Text(
+          title,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        subtitle: Text(description),
+        dense: true,
       ),
     );
   }

@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:familyacademyclient/providers/subscription_provider.dart';
+import 'package:familyacademyclient/models/setting_model.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
@@ -8,6 +8,7 @@ import '../../models/category_model.dart';
 import '../../providers/payment_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../providers/subscription_provider.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
 
@@ -29,7 +30,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   final _passwordController = TextEditingController();
   final _picker = ImagePicker();
 
-  String? _paymentMethod = AppConstants.telebirr;
+  String? _paymentMethod;
   String? _paymentType = 'first_time';
   File? _proofImageFile;
   bool _confirmAccuracy = false;
@@ -39,6 +40,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
   Category? _category;
   late String _username;
+  double _amount = 0.0;
 
   @override
   void initState() {
@@ -61,8 +63,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
         return;
       }
 
-      final categoryData = args['category'];
-      if (categoryData == null || categoryData is! Category) {
+      dynamic categoryData = args['category'];
+
+      if (categoryData == null) {
         setState(() {
           _hasError = true;
           _errorMessage = 'Category data is required';
@@ -70,15 +73,39 @@ class _PaymentScreenState extends State<PaymentScreen> {
         return;
       }
 
+      if (categoryData is Map<String, dynamic>) {
+        _category = Category(
+          id: categoryData['id'] ?? 0,
+          name: categoryData['name'] ?? 'Unknown Category',
+          status: 'active',
+          price: categoryData['price'] != null
+              ? double.parse(categoryData['price'].toString())
+              : 0.0,
+          billingCycle: categoryData['billing_cycle'] ?? 'monthly',
+          description: categoryData['description'],
+        );
+      } else if (categoryData is Category) {
+        _category = categoryData;
+      } else {
+        setState(() {
+          _hasError = true;
+          _errorMessage = 'Invalid category data format';
+        });
+        return;
+      }
+
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
       setState(() {
-        _category = categoryData;
         _paymentType = args['paymentType'] ?? 'first_time';
         _username = authProvider.user?.username ?? '';
         _usernameController.text = _username;
+        _amount = _category!.price ?? 0.0;
         _hasError = false;
       });
+
+      debugLog(
+          'PaymentScreen', 'Category: ${_category!.name}, Amount: $_amount');
     } catch (e) {
       setState(() {
         _hasError = true;
@@ -132,6 +159,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
       return;
     }
 
+    if (_amount <= 0) {
+      showSnackBar(context, 'Invalid payment amount', isError: true);
+      return;
+    }
+
     if (!_formKey.currentState!.validate()) return;
     if (_proofImageFile == null) {
       showSnackBar(context, 'Please upload payment proof', isError: true);
@@ -139,6 +171,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
     }
     if (!_confirmAccuracy) {
       showSnackBar(context, 'Please confirm accuracy', isError: true);
+      return;
+    }
+
+    if (_paymentMethod == null) {
+      showSnackBar(context, 'Please select a payment method', isError: true);
       return;
     }
 
@@ -151,7 +188,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
         Provider.of<SubscriptionProvider>(context, listen: false);
 
     final password = _passwordController.text;
-    final amount = _category!.price ?? 0.0;
 
     try {
       debugLog('PaymentScreen', 'Uploading payment proof...');
@@ -169,7 +205,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         categoryId: _category!.id,
         paymentType: _paymentType!,
         paymentMethod: _paymentMethod!,
-        amount: amount,
+        amount: _amount,
         proofImagePath: proofImagePath,
       );
 
@@ -194,6 +230,29 @@ class _PaymentScreenState extends State<PaymentScreen> {
     } finally {
       setState(() => _isLoading = false);
     }
+  }
+
+  Widget _buildPaymentMethodItem(Setting setting) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            setting.displayName,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            setting.settingValue ?? '',
+            style: const TextStyle(fontSize: 14),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -250,8 +309,16 @@ class _PaymentScreenState extends State<PaymentScreen> {
       );
     }
 
-    final paymentProvider = Provider.of<PaymentProvider>(context);
     final settingsProvider = Provider.of<SettingsProvider>(context);
+    final paymentSettings = settingsProvider.paymentSettings;
+
+    if (_paymentMethod == null && paymentSettings.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        setState(() {
+          _paymentMethod = paymentSettings.first.settingKey;
+        });
+      });
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -304,7 +371,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                             style: Theme.of(context).textTheme.bodyMedium,
                           ),
                           Text(
-                            '${_category!.price ?? 0} Birr',
+                            '${_amount.toStringAsFixed(0)} Birr',
                             style: const TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
@@ -313,69 +380,47 @@ class _PaymentScreenState extends State<PaymentScreen> {
                           ),
                         ],
                       ),
-                      if (_category!.billingCycle.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                'Billing Cycle:',
-                                style: Theme.of(context).textTheme.bodyMedium,
-                              ),
-                              Text(
-                                _category!.billingCycle.toUpperCase(),
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold),
-                              ),
-                            ],
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Billing Cycle:',
+                            style: Theme.of(context).textTheme.bodyMedium,
                           ),
-                        ),
+                          Text(
+                            _category!.billingCycle.toUpperCase(),
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
               ),
               const SizedBox(height: 24),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Payment Instructions',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
+              if (paymentSettings.isNotEmpty)
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Payment Methods',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        settingsProvider
-                                .getPaymentSetting('payment_instructions') ??
-                            paymentProvider.getPaymentInstructions(),
-                      ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Bank Details:',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      Text(
-                          'Bank: ${settingsProvider.getPaymentSetting('payment_bank_name') ?? paymentProvider.getBankName()}'),
-                      Text(
-                          'Account: ${settingsProvider.getPaymentSetting('payment_account_number') ?? paymentProvider.getAccountNumber()}'),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Telebirr:',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      Text(settingsProvider
-                              .getPaymentSetting('payment_telebirr_number') ??
-                          paymentProvider.getTelebirrNumber()),
-                    ],
+                        const SizedBox(height: 8),
+                        ...paymentSettings
+                            .map(_buildPaymentMethodItem)
+                            .toList(),
+                      ],
+                    ),
                   ),
                 ),
-              ),
               const SizedBox(height: 24),
               Text(
                 'Payment Details',
@@ -408,37 +453,30 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 },
               ),
               const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                value: _paymentMethod,
-                decoration: const InputDecoration(
-                  labelText: 'Payment Method',
-                  border: OutlineInputBorder(),
-                  filled: true,
+              if (paymentSettings.isNotEmpty)
+                DropdownButtonFormField<String>(
+                  value: _paymentMethod,
+                  decoration: const InputDecoration(
+                    labelText: 'Select Payment Method',
+                    border: OutlineInputBorder(),
+                    filled: true,
+                  ),
+                  items: paymentSettings.map((setting) {
+                    return DropdownMenuItem<String>(
+                      value: setting.settingKey,
+                      child: Text(setting.displayName),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setState(() => _paymentMethod = value);
+                  },
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please select a payment method';
+                    }
+                    return null;
+                  },
                 ),
-                items: [
-                  DropdownMenuItem(
-                    value: AppConstants.telebirr,
-                    child: const Text('Telebirr'),
-                  ),
-                  DropdownMenuItem(
-                    value: AppConstants.bankTransfer,
-                    child: const Text('Bank Transfer'),
-                  ),
-                  DropdownMenuItem(
-                    value: AppConstants.cash,
-                    child: const Text('Cash'),
-                  ),
-                ],
-                onChanged: (value) {
-                  setState(() => _paymentMethod = value);
-                },
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Payment method is required';
-                  }
-                  return null;
-                },
-              ),
               const SizedBox(height: 16),
               Text(
                 'Upload Payment Proof',

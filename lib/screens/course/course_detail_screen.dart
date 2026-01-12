@@ -28,6 +28,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
   late int _selectedTab = 0;
   bool _isLoading = true;
   Course? _course;
+  String _categoryName = '';
+  int _categoryId = 0;
 
   @override
   void initState() {
@@ -42,14 +44,12 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     );
     final examProvider = Provider.of<ExamProvider>(context, listen: false);
     final courseProvider = Provider.of<CourseProvider>(context, listen: false);
+    final categoryProvider =
+        Provider.of<CategoryProvider>(context, listen: false);
 
     try {
       Course? foundCourse;
 
-      final categoryProvider = Provider.of<CategoryProvider>(
-        context,
-        listen: false,
-      );
       await categoryProvider.loadCategories();
 
       for (final category in categoryProvider.categories) {
@@ -59,6 +59,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
         for (final course in courses) {
           if (course.id == widget.courseId) {
             foundCourse = course;
+            _categoryId = category.id;
+            _categoryName = category.name;
             break;
           }
         }
@@ -94,80 +96,20 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
   }
 
   void _handleChapterTap(Chapter chapter) {
-    final router = GoRouter.of(context);
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final context = this.context;
     final subscriptionProvider = Provider.of<SubscriptionProvider>(
       context,
       listen: false,
     );
-
-    if (_course == null) return;
 
     final hasAccess = subscriptionProvider.hasActiveSubscriptionForCategory(
       _course!.categoryId,
     );
 
     if (chapter.isFree || hasAccess) {
-      router.push('/chapter/${chapter.id}', extra: chapter);
+      context.push('/chapter/${chapter.id}', extra: chapter);
     } else {
-      // SHOW PAYMENT DIALOG - This was missing!
       _showPaymentDialogForCategory(_course!.categoryId);
-    }
-  }
-
-  void _handleExamTap(Exam exam) {
-    final router = GoRouter.of(context);
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final categoryProvider = Provider.of<CategoryProvider>(
-      context,
-      listen: false,
-    );
-
-    if (_course == null) return;
-
-    // Find the category for this course
-    final category = categoryProvider.getCategoryById(_course!.categoryId);
-
-    if (category == null) {
-      showSnackBar(context, 'Category not found', isError: true);
-      return;
-    }
-
-    // Check if exam can be taken
-    if (exam.canTakeExam) {
-      router.push('/exam/${exam.id}', extra: exam);
-    } else {
-      // Show payment dialog
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Payment Required'),
-          content: Text(
-            'You need to purchase "${category.name}" to take this exam.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                router.push(
-                  '/payment',
-                  extra: {
-                    'category': category,
-                    'paymentType': authProvider.user?.accountStatus == 'active'
-                        ? 'repayment'
-                        : 'first_time',
-                  },
-                );
-              },
-              child: const Text('Purchase'),
-            ),
-          ],
-        ),
-      );
     }
   }
 
@@ -179,7 +121,6 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     );
     final router = GoRouter.of(context);
 
-    // Find the category
     final category = categoryProvider.getCategoryById(categoryId);
 
     if (category == null) {
@@ -202,7 +143,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              router.push(
+
+              context.push(
                 '/payment',
                 extra: {
                   'category': category,
@@ -216,58 +158,6 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  void _showPaymentDialog() {
-    if (_course == null) return;
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        final authProvider = Provider.of<AuthProvider>(context, listen: false);
-        final categoryProvider = Provider.of<CategoryProvider>(
-          context,
-          listen: false,
-        );
-
-        final category = categoryProvider.getCategoryById(_course!.categoryId);
-
-        return AlertDialog(
-          title: const Text('Payment Required'),
-          content: Text(
-            category != null
-                ? 'You need to purchase "${category.name}" to access this content.'
-                : 'Payment is required to access this content.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                final router = GoRouter.of(context);
-
-                if (category != null) {
-                  router.push(
-                    '/payment',
-                    extra: {
-                      'category': category,
-                      'paymentType':
-                          authProvider.user?.accountStatus == 'active'
-                          ? 'repayment'
-                          : 'first_time',
-                    },
-                  );
-                }
-              },
-              child: const Text('Purchase'),
-            ),
-          ],
-        );
-      },
     );
   }
 
@@ -318,56 +208,107 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
         ),
         body: TabBarView(
           children: [
-            chapterProvider.isLoading
-                ? const LoadingIndicator()
-                : RefreshIndicator(
-                    onRefresh: () =>
-                        chapterProvider.loadChaptersByCourse(widget.courseId),
-                    child: chapters.isEmpty
-                        ? const Center(
-                            child: Text(
-                              'No chapters available for this course.',
+            if (chapterProvider.isLoading)
+              const LoadingIndicator()
+            else
+              RefreshIndicator(
+                onRefresh: () =>
+                    chapterProvider.loadChaptersByCourse(widget.courseId),
+                child: chapters.isEmpty
+                    ? const Center(
+                        child: Text(
+                          'No chapters available for this course.',
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: chapters.length,
+                        itemBuilder: (context, index) {
+                          final chapter = chapters[index];
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: ChapterCard(
+                              chapter: chapter,
+                              onTap: () => _handleChapterTap(chapter),
+                              courseId: widget.courseId,
+                              categoryName: _categoryName,
+                              categoryId: _categoryId,
                             ),
-                          )
-                        : ListView.builder(
-                            padding: const EdgeInsets.all(16),
-                            itemCount: chapters.length,
-                            itemBuilder: (context, index) {
-                              final chapter = chapters[index];
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 12),
-                                child: ChapterCard(
-                                  chapter: chapter,
-                                  onTap: () => _handleChapterTap(chapter),
-                                ),
-                              );
-                            },
-                          ),
-                  ),
-            examProvider.isLoading
-                ? const LoadingIndicator()
-                : RefreshIndicator(
-                    onRefresh: () =>
-                        examProvider.loadExamsByCourse(widget.courseId),
-                    child: exams.isEmpty
-                        ? const Center(
-                            child: Text('No exams available for this course.'),
-                          )
-                        : ListView.builder(
-                            padding: const EdgeInsets.all(16),
-                            itemCount: exams.length,
-                            itemBuilder: (context, index) {
-                              final exam = exams[index];
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 12),
-                                child: ExamCard(
-                                  exam: exam,
-                                  onTap: () => _handleExamTap(exam),
-                                ),
-                              );
-                            },
-                          ),
-                  ),
+                          );
+                        },
+                      ),
+              ),
+            if (examProvider.isLoading)
+              const LoadingIndicator()
+            else
+              RefreshIndicator(
+                onRefresh: () =>
+                    examProvider.loadExamsByCourse(widget.courseId),
+                child: exams.isEmpty
+                    ? const Center(
+                        child: Text('No exams available for this course.'),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: exams.length,
+                        itemBuilder: (context, index) {
+                          final exam = exams[index];
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: ExamCard(
+                              exam: exam,
+                              onTap: () {
+                                final authProvider = Provider.of<AuthProvider>(
+                                  context,
+                                  listen: false,
+                                );
+
+                                if (exam.canTakeExam) {
+                                  context.push('/exam/${exam.id}', extra: exam);
+                                } else if (exam.requiresPayment) {
+                                  showDialog(
+                                    context: context,
+                                    builder: (context) => AlertDialog(
+                                      title: const Text('Payment Required'),
+                                      content: Text(
+                                        'You need to purchase "${exam.categoryName}" to take this exam.',
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(context),
+                                          child: const Text('Cancel'),
+                                        ),
+                                        TextButton(
+                                          onPressed: () {
+                                            Navigator.pop(context);
+                                            context.push(
+                                              '/payment',
+                                              extra: {
+                                                'category': {
+                                                  'id': exam.categoryId,
+                                                  'name': exam.categoryName,
+                                                },
+                                                'paymentType': authProvider.user
+                                                            ?.accountStatus ==
+                                                        'active'
+                                                    ? 'repayment'
+                                                    : 'first_time',
+                                              },
+                                            );
+                                          },
+                                          child: const Text('Purchase'),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
+                          );
+                        },
+                      ),
+              ),
           ],
         ),
       ),

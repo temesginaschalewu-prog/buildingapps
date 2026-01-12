@@ -108,6 +108,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() => _isSaving = true);
 
     final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final user = authProvider.user ?? userProvider.currentUser;
+
     final email = _emailController.text.trim();
     final phone = _phoneController.text.trim();
 
@@ -125,22 +128,42 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
 
     try {
+      debugLog(
+          'ProfileScreen', 'Saving profile with email: $email, phone: $phone');
+
+      String? profileImageUrl;
+      if (_profileImageFile != null) {
+        debugLog('ProfileScreen', 'Uploading profile image...');
+        final response =
+            await userProvider.apiService.uploadImage(_profileImageFile!);
+        profileImageUrl = response.data;
+        debugLog('ProfileScreen', 'Profile image uploaded: $profileImageUrl');
+      }
+
       await userProvider.updateProfile(
         email: email.isEmpty ? null : email,
         phone: phone.isEmpty ? null : phone,
+        profileImage: profileImageUrl,
       );
 
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
       await authProvider.refreshUserData();
+
+      debugLog('ProfileScreen', 'Profile saved successfully');
 
       if (mounted) {
         setState(() {
           _isEditing = false;
           _isSaving = false;
+
+          if (profileImageUrl != null) {
+            _profileImageFile = null;
+          }
         });
       }
+
       showSnackBar(context, 'Profile updated successfully');
     } catch (e) {
+      debugLog('ProfileScreen', 'Error saving profile: $e');
       if (mounted) {
         setState(() => _isSaving = false);
       }
