@@ -9,6 +9,7 @@ import '../../providers/payment_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/subscription_provider.dart';
+import '../../providers/category_provider.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
 
@@ -41,6 +42,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   Category? _category;
   late String _username;
   double _amount = 0.0;
+  String _billingCycle = 'monthly';
 
   @override
   void initState() {
@@ -73,23 +75,53 @@ class _PaymentScreenState extends State<PaymentScreen> {
         return;
       }
 
+      // Try to get the full category object
+      Category? category;
+
       if (categoryData is Map<String, dynamic>) {
-        _category = Category(
-          id: categoryData['id'] ?? 0,
-          name: categoryData['name'] ?? 'Unknown Category',
-          status: 'active',
-          price: categoryData['price'] != null
-              ? double.parse(categoryData['price'].toString())
-              : 0.0,
-          billingCycle: categoryData['billing_cycle'] ?? 'monthly',
-          description: categoryData['description'],
-        );
+        // If it's a map, check if it has price
+        if (categoryData['price'] != null) {
+          category = Category(
+            id: categoryData['id'] ?? 0,
+            name: categoryData['name'] ?? 'Unknown Category',
+            status: 'active',
+            price: double.parse(categoryData['price'].toString()),
+            billingCycle: categoryData['billing_cycle'] ?? 'monthly',
+            description: categoryData['description'],
+          );
+        } else {
+          // If map doesn't have price, get from provider
+          final categoryProvider = Provider.of<CategoryProvider>(
+            context,
+            listen: false,
+          );
+          final cat = categoryProvider.getCategoryById(categoryData['id']);
+          if (cat != null) {
+            category = cat;
+          }
+        }
       } else if (categoryData is Category) {
-        _category = categoryData;
-      } else {
+        category = categoryData;
+      }
+
+      if (category == null) {
+        // Last resort: try to get category from provider
+        final categoryProvider = Provider.of<CategoryProvider>(
+          context,
+          listen: false,
+        );
+        if (categoryData is Map<String, dynamic>) {
+          final cat = categoryProvider.getCategoryById(categoryData['id']);
+          if (cat != null) {
+            category = cat;
+          }
+        }
+      }
+
+      if (category == null) {
         setState(() {
           _hasError = true;
-          _errorMessage = 'Invalid category data format';
+          _errorMessage = 'Category not found';
         });
         return;
       }
@@ -100,12 +132,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
         _paymentType = args['paymentType'] ?? 'first_time';
         _username = authProvider.user?.username ?? '';
         _usernameController.text = _username;
-        _amount = _category!.price ?? 0.0;
+        _amount = category?.price ?? 0.0;
+        _billingCycle = category!.billingCycle;
+        _category = category;
         _hasError = false;
       });
 
-      debugLog(
-          'PaymentScreen', 'Category: ${_category!.name}, Amount: $_amount');
+      debugLog('PaymentScreen',
+          'Category: ${category.name}, Amount: $_amount, Billing: $_billingCycle');
     } catch (e) {
       setState(() {
         _hasError = true;
@@ -191,29 +225,36 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
     try {
       debugLog('PaymentScreen', 'Uploading payment proof...');
+
+      // Check if file exists
+      if (_proofImageFile == null || !_proofImageFile!.existsSync()) {
+        throw Exception('Payment proof file not found');
+      }
+
       final uploadResponse =
           await paymentProvider.apiService.uploadPaymentProof(_proofImageFile!);
       final proofImagePath = uploadResponse.data;
 
-      if (proofImagePath == null) {
-        throw Exception('Failed to upload payment proof');
+      if (proofImagePath == null || proofImagePath.toString().isEmpty) {
+        throw Exception('Failed to upload payment proof: Empty response');
       }
 
       debugLog('PaymentScreen', 'Payment proof uploaded: $proofImagePath');
 
+      // Submit payment with the uploaded proof
       final result = await paymentProvider.submitPayment(
         categoryId: _category!.id,
         paymentType: _paymentType!,
         paymentMethod: _paymentMethod!,
         amount: _amount,
-        proofImagePath: proofImagePath,
+        proofImagePath: proofImagePath.toString(), // Ensure it's a string
       );
+
+      debugLog('PaymentScreen', 'Payment submission result: $result');
 
       if (result['success'] == true) {
         await authProvider.refreshUserData();
-
         await subscriptionProvider.refreshAfterPaymentVerification();
-
         await subscriptionProvider
             .getCategorySubscriptionDetails(_category!.id);
 
@@ -225,8 +266,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
         showSnackBar(context, result['message'] ?? 'Payment failed',
             isError: true);
       }
-    } catch (e) {
-      showSnackBar(context, 'Payment failed: $e', isError: true);
+    } catch (e, stackTrace) {
+      debugLog('PaymentScreen', 'Payment error: $e\n$stackTrace');
+      showSnackBar(context, 'Payment failed: ${e.toString()}', isError: true);
     } finally {
       setState(() => _isLoading = false);
     }
@@ -389,7 +431,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                             style: Theme.of(context).textTheme.bodyMedium,
                           ),
                           Text(
-                            _category!.billingCycle.toUpperCase(),
+                            _billingCycle.toUpperCase(),
                             style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
                         ],
