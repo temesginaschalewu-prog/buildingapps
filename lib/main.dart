@@ -26,24 +26,33 @@ import 'package:familyacademyclient/services/api_service.dart';
 import 'package:familyacademyclient/services/storage_service.dart';
 import 'package:familyacademyclient/services/notification_service.dart';
 import 'package:familyacademyclient/utils/screen_protection.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:screen_protector/screen_protector.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
+  print("Handling a background message: ${message.messageId}");
+
+  final prefs = await SharedPreferences.getInstance();
+  final notificationsEnabled = prefs.getBool('notifications_enabled') ?? true;
+
+  if (!notificationsEnabled) {
+    print("Notifications are disabled, skipping background notification");
+    return;
+  }
 
   final notificationService = NotificationService();
   await notificationService.init();
 
   await notificationService.showLocalNotification(
-    title: message.notification?.title ?? 'Background Notification',
+    title: message.notification?.title ?? 'Family Academy',
     body: message.notification?.body ?? '',
     payload: json.encode(message.data),
   );
@@ -76,12 +85,47 @@ Future<void> main() async {
   if (Platform.isAndroid || Platform.isIOS) {
     try {
       await Firebase.initializeApp();
+      print("✅ Firebase initialized for mobile platform");
+
+      final notificationService = NotificationService();
+      await notificationService.init();
+      await notificationService.setupFirebaseHandlers();
+
       FirebaseMessaging.onBackgroundMessage(
-        _firebaseMessagingBackgroundHandler,
-      );
+          _firebaseMessagingBackgroundHandler);
+
+      final messaging = FirebaseMessaging.instance;
+
+      final currentSettings = await messaging.getNotificationSettings();
+      if (currentSettings.authorizationStatus ==
+          AuthorizationStatus.notDetermined) {
+        final settings = await messaging.requestPermission(
+          alert: true,
+          announcement: false,
+          badge: true,
+          carPlay: false,
+          criticalAlert: false,
+          provisional: false,
+          sound: true,
+        );
+
+        print('User granted permission: ${settings.authorizationStatus}');
+      }
+
+      final token = await messaging.getToken();
+      print("Firebase Messaging Token: $token");
+
+      final prefs = await SharedPreferences.getInstance();
+      if (token != null) {
+        await prefs.setString('fcm_token', token);
+        print("Saved FCM token to shared preferences");
+      }
     } catch (e) {
-      debugPrint('Firebase initialization failed: $e');
+      print('Firebase initialization failed: $e');
     }
+  } else {
+    print(
+        "⚠️ Firebase not initialized for non-mobile platform (${Platform.operatingSystem})");
   }
 
   if (Platform.isAndroid || Platform.isIOS) {
@@ -95,13 +139,14 @@ Future<void> main() async {
 
   final storageService = StorageService();
   await storageService.init();
-  debugPrint('Main: StorageService initialized');
+  print('Main: StorageService initialized');
 
   final apiService = ApiService();
-  debugPrint('Main: ApiService created');
+  print('Main: ApiService created');
+
   final notificationService = NotificationService();
   await notificationService.init();
-  debugPrint('Main: NotificationService initialized');
+  print('Main: NotificationService initialized');
 
   final appLifecycleObserver = AppLifecycleObserver();
   WidgetsBinding.instance.addObserver(appLifecycleObserver);
@@ -109,6 +154,11 @@ Future<void> main() async {
   runApp(
     MultiProvider(
       providers: [
+        // Add StorageService provider here
+        Provider<StorageService>(
+          create: (_) => storageService,
+        ),
+
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(
           create: (_) => AuthProvider(
@@ -167,12 +217,6 @@ Future<void> main() async {
         ChangeNotifierProvider(create: (_) => ChatbotProvider()),
         ChangeNotifierProvider(
           create: (_) => SettingsProvider(apiService: apiService),
-        ),
-        ChangeNotifierProvider(
-          create: (_) => StreakProvider(apiService: apiService),
-        ),
-        ChangeNotifierProvider(
-          create: (_) => ExamProvider(apiService: apiService),
         ),
       ],
       child: FamilyAcademyApp(
