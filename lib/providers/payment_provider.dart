@@ -91,7 +91,8 @@ class PaymentProvider with ChangeNotifier {
 
     try {
       debugLog('PaymentProvider',
-          'Submitting payment category:$categoryId amount:$amount');
+          'Submitting payment category:$categoryId amount:$amount proof:$proofImagePath');
+
       final response = await apiService.submitPayment(
         categoryId: categoryId,
         paymentType: paymentType,
@@ -100,15 +101,27 @@ class PaymentProvider with ChangeNotifier {
         proofImagePath: proofImagePath,
       );
 
-      // Reload payments after submission
-      await loadPayments();
+      // Debug the response
+      debugLog('PaymentProvider', 'Submit payment response: ${response.data}');
 
-      debugLog('PaymentProvider', 'Payment submitted successfully');
-      return response.data ?? {};
-    } catch (e) {
+      // Ensure we return a Map<String, dynamic>
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
+      } else {
+        debugLog('PaymentProvider',
+            'Response data is not a map: ${response.data.runtimeType}');
+        return {'success': false, 'message': 'Invalid response format'};
+      }
+    } catch (e, stackTrace) {
       _error = e.toString();
-      debugLog('PaymentProvider', 'submitPayment error: $e');
-      rethrow;
+      debugLog('PaymentProvider', 'submitPayment error: $e\n$stackTrace');
+
+      // Return error map
+      return {
+        'success': false,
+        'message': e.toString(),
+        'error': e.toString(),
+      };
     } finally {
       _isLoading = false;
       _notifySafely();
