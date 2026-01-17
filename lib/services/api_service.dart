@@ -685,6 +685,9 @@ class ApiService {
     String? proofImagePath,
   }) async {
     try {
+      debugLog('ApiService',
+          'Submitting payment: category=$categoryId, amount=$amount, proof=$proofImagePath');
+
       final response = await _dio.post(
         AppConstants.submitPaymentEndpoint,
         data: {
@@ -695,12 +698,28 @@ class ApiService {
           'proof_image_path': proofImagePath,
         },
       );
+
+      debugLog('ApiService', 'Payment submission response: ${response.data}');
+
       return ApiResponse.fromJson(
-          response.data, (data) => data as Map<String, dynamic>);
+        response.data,
+        (data) {
+          // Ensure data is a Map<String, dynamic>
+          if (data is Map<String, dynamic>) {
+            return data;
+          } else {
+            debugLog('ApiService',
+                'Response data is not a map: ${data.runtimeType}');
+            return {'success': false, 'message': 'Invalid response format'};
+          }
+        },
+      );
     } on DioException catch (e) {
+      debugLog('ApiService', 'Submit payment Dio error: ${e.response?.data}');
       throw ApiError(
         message: e.response?.data['message'] ?? 'Failed to submit payment',
         statusCode: e.response?.statusCode,
+        data: e.response?.data,
       );
     }
   }
@@ -813,6 +832,80 @@ class ApiService {
     }
   }
 
+  Future<ApiResponse<int>> getUnreadNotificationCount() async {
+    try {
+      final response = await _dio.get('/notifications/unread-count');
+      return ApiResponse.fromJson(
+        response.data,
+        (data) => (data['unread_count'] as num).toInt(),
+      );
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to get unread count',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<ApiResponse<void>> markNotificationAsRead(int notificationId) async {
+    try {
+      final response = await _dio.put(
+        '${AppConstants.notificationsEndpoint}/$notificationId/read',
+      );
+      return ApiResponse(success: true, message: response.data['message']);
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ??
+            'Failed to mark notification as read',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<ApiResponse<void>> markAllNotificationsAsRead() async {
+    try {
+      final response = await _dio.put(
+        '${AppConstants.notificationsEndpoint}/mark-all-read',
+      );
+      return ApiResponse(success: true, message: response.data['message']);
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ??
+            'Failed to mark all notifications as read',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<ApiResponse<void>> deleteNotification(int notificationId) async {
+    try {
+      final response = await _dio.delete(
+        '${AppConstants.notificationsEndpoint}/$notificationId',
+      );
+      return ApiResponse(success: true, message: response.data['message']);
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to delete notification',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<ApiResponse<void>> deleteAllNotifications() async {
+    try {
+      final response = await _dio.delete(
+        '${AppConstants.notificationsEndpoint}/delete-all',
+      );
+      return ApiResponse(success: true, message: response.data['message']);
+    } on DioException catch (e) {
+      throw ApiError(
+        message:
+            e.response?.data['message'] ?? 'Failed to delete all notifications',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
   Future<ApiResponse<void>> unpairTvDevice() async {
     try {
       final response = await _dio.post(AppConstants.unpairTvDeviceEndpoint);
@@ -843,9 +936,18 @@ class ApiService {
   Future<ApiResponse<ParentLink>> getParentLinkStatus() async {
     try {
       final response = await _dio.get(AppConstants.parentLinkStatusEndpoint);
+
+      debugLog('ApiService', 'Parent link response: ${response.data}');
+
       return ApiResponse.fromJson(
-          response.data, (data) => ParentLink.fromJson(data));
+        response.data,
+        (data) {
+          debugLog('ApiService', 'Parsing parent link data: $data');
+          return ParentLink.fromJson(data);
+        },
+      );
     } on DioException catch (e) {
+      debugLog('ApiService', 'Parent link error: ${e.response?.data}');
       throw ApiError(
         message:
             e.response?.data['message'] ?? 'Failed to fetch parent link status',
