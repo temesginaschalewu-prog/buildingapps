@@ -8,12 +8,13 @@ class CourseProvider with ChangeNotifier {
 
   List<Course> _courses = [];
   Map<int, List<Course>> _coursesByCategory = {};
+  Map<int, bool> _hasLoadedCategory = {};
   bool _isLoading = false;
   String? _error;
 
   CourseProvider({required this.apiService});
 
-  List<Course> get courses => _courses;
+  List<Course> get courses => List.unmodifiable(_courses);
   bool get isLoading => _isLoading;
   String? get error => _error;
 
@@ -21,46 +22,134 @@ class CourseProvider with ChangeNotifier {
     return _coursesByCategory[categoryId] ?? [];
   }
 
-  Future<void> loadCoursesByCategory(int categoryId) async {
-    if (_isLoading) return; // Prevent multiple simultaneous loads
+  bool hasLoadedCategory(int categoryId) {
+    return _hasLoadedCategory[categoryId] ?? false;
+  }
+
+  Future<void> loadCoursesByCategory(int categoryId,
+      {bool forceRefresh = false}) async {
+    // If we already have data and not forcing refresh, just return cached data
+    if (_hasLoadedCategory[categoryId] == true &&
+        !forceRefresh &&
+        !_isLoading) {
+      return;
+    }
 
     _isLoading = true;
     _error = null;
-
-    // Delay notifyListeners to avoid calling during build
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      notifyListeners();
-    });
+    _notifySafely();
 
     try {
       debugLog('CourseProvider', 'Loading courses for category: $categoryId');
       final response = await apiService.getCoursesByCategory(categoryId);
 
-      // Extract the courses list from the response data
       final responseData = response.data ?? {};
-      final coursesData = responseData['courses'] ?? responseData['data'] ?? [];
+      final categoryData = responseData['category'] ?? {};
+      final coursesData = responseData['courses'] ?? [];
+
+      bool categoryHasAccess = categoryData['has_access'] ?? false;
 
       if (coursesData is List) {
-        _coursesByCategory[categoryId] =
-            List<Course>.from(coursesData.map((x) => Course.fromJson(x)));
+        List<Course> parsedCourses = [];
+
+        for (var courseData in coursesData) {
+          try {
+            final course = Course.fromJson(courseData);
+
+            parsedCourses.add(Course(
+              id: course.id,
+              name: course.name,
+              categoryId: course.categoryId,
+              description: course.description,
+              chapterCount: course.chapterCount,
+              access: categoryHasAccess ? 'full' : 'limited',
+              message: categoryHasAccess
+                  ? 'Full access to all content'
+                  : 'Limited access to free chapters only',
+              hasPendingPayment: false,
+              requiresPayment: !categoryHasAccess,
+            ));
+          } catch (e) {
+            debugLog('CourseProvider',
+                'Error parsing course: $e, data: $courseData');
+          }
+        }
+
+        _coursesByCategory[categoryId] = parsedCourses;
+        _hasLoadedCategory[categoryId] = true;
+
+        debugLog('CourseProvider',
+            'Parsed ${parsedCourses.length} courses for category $categoryId, access: $categoryHasAccess');
+
+        if (parsedCourses.isEmpty) {
+          debugLog(
+              'CourseProvider', '⚠️ No courses found for category $categoryId');
+        }
       } else {
+        debugLog('CourseProvider',
+            'Courses data is not a list: ${coursesData.runtimeType}');
         _coursesByCategory[categoryId] = [];
+        _hasLoadedCategory[categoryId] = true;
       }
 
-      // Update main courses list
-      _courses = [..._courses, ..._coursesByCategory[categoryId]!];
+      // Update main courses list without duplicates
+      final currentIds = _courses.map((c) => c.id).toSet();
+      final newCourses = _coursesByCategory[categoryId]!
+          .where((course) => !currentIds.contains(course.id))
+          .toList();
+      _courses.addAll(newCourses);
 
       debugLog('CourseProvider',
           'Loaded ${_coursesByCategory[categoryId]!.length} courses for category $categoryId');
     } catch (e) {
       _error = e.toString();
       debugLog('CourseProvider', 'loadCoursesByCategory error: $e');
-      _coursesByCategory[categoryId] = [];
+      // Keep existing data if available
+      if (!_hasLoadedCategory[categoryId]!) {
+        _coursesByCategory[categoryId] = [];
+        _hasLoadedCategory[categoryId] = true;
+      }
     } finally {
       _isLoading = false;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        notifyListeners();
-      });
+      _notifySafely();
+    }
+  }
+
+  Future<void> refreshCoursesWithAccessCheck(
+      int categoryId, bool hasAccess) async {
+    try {
+      debugLog('CourseProvider',
+          'Refreshing courses for category $categoryId with access: $hasAccess');
+
+      // Clear cache for this category
+      _coursesByCategory.remove(categoryId);
+      _hasLoadedCategory.remove(categoryId);
+
+      await loadCoursesByCategory(categoryId);
+
+      final courses = _coursesByCategory[categoryId] ?? [];
+      if (courses.isNotEmpty) {
+        final updatedCourses = courses
+            .map((course) => Course(
+                  id: course.id,
+                  name: course.name,
+                  categoryId: course.categoryId,
+                  description: course.description,
+                  chapterCount: course.chapterCount,
+                  access: hasAccess ? 'full' : 'limited',
+                  message: hasAccess
+                      ? 'Full access to all content'
+                      : 'Limited access to free chapters only',
+                  hasPendingPayment: false,
+                  requiresPayment: !hasAccess,
+                ))
+            .toList();
+
+        _coursesByCategory[categoryId] = updatedCourses;
+        _notifySafely();
+      }
+    } catch (e) {
+      debugLog('CourseProvider', 'refreshCoursesWithAccessCheck error: $e');
     }
   }
 
@@ -75,15 +164,22 @@ class CourseProvider with ChangeNotifier {
   void clearCourses() {
     _courses = [];
     _coursesByCategory = {};
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      notifyListeners();
-    });
+    _hasLoadedCategory = {};
+    _notifySafely();
   }
 
   void clearError() {
     _error = null;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      notifyListeners();
-    });
+    _notifySafely();
+  }
+
+  void _notifySafely() {
+    if (hasListeners) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (hasListeners) {
+          notifyListeners();
+        }
+      });
+    }
   }
 }

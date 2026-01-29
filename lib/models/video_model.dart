@@ -1,10 +1,12 @@
+import 'package:familyacademyclient/utils/constants.dart';
+
 class Video {
   final int id;
   final String title;
   final int chapterId;
   final String filePath;
-  final int fileSize; // Changed from int? to int
-  final int duration; // Changed from int? to int
+  final int fileSize;
+  final int duration;
   final String? thumbnailUrl;
   final DateTime? releaseDate;
   final int viewCount;
@@ -15,8 +17,8 @@ class Video {
     required this.title,
     required this.chapterId,
     required this.filePath,
-    required this.fileSize, // Changed to required
-    required this.duration, // Changed to required
+    required this.fileSize,
+    required this.duration,
     this.thumbnailUrl,
     this.releaseDate,
     required this.viewCount,
@@ -52,8 +54,6 @@ class Video {
     );
   }
 
-  // ... rest of the class remains the same
-
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -69,13 +69,45 @@ class Video {
     };
   }
 
-  String get fullUrl => 'http://localhost:3000$filePath';
+  // FIX: Proper URL generation for production
+  String get fullVideoUrl {
+    // If filePath is already a full URL (Cloudinary or other CDN)
+    if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
+      return filePath;
+    }
 
-  bool get hasThumbnail => thumbnailUrl != null && thumbnailUrl!.isNotEmpty;
+    // If it's a relative path, construct URL with baseUrl
+    // Ensure we use HTTPS in production
+    String base = AppConstants.baseUrl;
 
-  String? get thumbnailUrlFull => hasThumbnail
-      ? (thumbnailUrl!.startsWith('http')
-          ? thumbnailUrl
-          : 'http://localhost:3000$thumbnailUrl')
-      : null;
+    // Remove any leading slash from filePath
+    String cleanPath =
+        filePath.startsWith('/') ? filePath.substring(1) : filePath;
+
+    // Construct full URL
+    return '$base/$cleanPath';
+  }
+
+  // FIX: Proper thumbnail URL generation
+  String? get fullThumbnailUrl {
+    if (thumbnailUrl == null || thumbnailUrl!.isEmpty) {
+      return null;
+    }
+
+    // If thumbnail is already a full URL
+    if (thumbnailUrl!.startsWith('http://') ||
+        thumbnailUrl!.startsWith('https://')) {
+      return thumbnailUrl;
+    }
+
+    // Construct with baseUrl
+    String base = AppConstants.baseUrl;
+    String cleanPath = thumbnailUrl!.startsWith('/')
+        ? thumbnailUrl!.substring(1)
+        : thumbnailUrl!;
+
+    return '$base/$cleanPath';
+  }
+
+  bool get hasThumbnail => fullThumbnailUrl != null;
 }

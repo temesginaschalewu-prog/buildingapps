@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../models/parent_link_model.dart';
 import '../utils/helpers.dart';
 
 class ParentLinkProvider with ChangeNotifier {
@@ -13,6 +15,9 @@ class ParentLinkProvider with ChangeNotifier {
   DateTime? _linkedAt;
   bool _isLoading = false;
   String? _error;
+  Timer? _countdownTimer;
+  String? _parentName;
+  ParentLink? _parentLinkData;
 
   ParentLinkProvider({required this.apiService});
 
@@ -24,8 +29,9 @@ class ParentLinkProvider with ChangeNotifier {
   DateTime? get linkedAt => _linkedAt;
   bool get isLoading => _isLoading;
   String? get error => _error;
+  String? get parentName => _parentName;
+  ParentLink? get parentLinkData => _parentLinkData;
 
-  // Add the missing getter
   Duration get remainingTime {
     if (_tokenExpiresAt == null) return Duration.zero;
     final now = DateTime.now();
@@ -33,9 +39,48 @@ class ParentLinkProvider with ChangeNotifier {
     return _tokenExpiresAt!.difference(now);
   }
 
+  String get remainingTimeFormatted {
+    final duration = remainingTime;
+    if (duration.inMinutes <= 0) return 'Expired';
+
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+
+    if (hours > 0) {
+      return '$hours hour${hours > 1 ? 's' : ''} ${minutes} minute${minutes != 1 ? 's' : ''}';
+    } else {
+      return '$minutes minute${minutes != 1 ? 's' : ''}';
+    }
+  }
+
   bool get isTokenExpired {
     if (_tokenExpiresAt == null) return true;
     return DateTime.now().isAfter(_tokenExpiresAt!);
+  }
+
+  // Start countdown timer for token
+  void _startCountdownTimer() {
+    _stopCountdownTimer(); // Clear any existing timer
+
+    if (_tokenExpiresAt != null && !isTokenExpired) {
+      _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (isTokenExpired) {
+          _stopCountdownTimer();
+          _parentToken = null;
+          _tokenExpiresAt = null;
+          notifyListeners();
+        } else {
+          notifyListeners(); // Update UI every second
+        }
+      });
+    }
+  }
+
+  void _stopCountdownTimer() {
+    if (_countdownTimer != null) {
+      _countdownTimer!.cancel();
+      _countdownTimer = null;
+    }
   }
 
   Future<void> generateParentToken() async {
@@ -52,9 +97,19 @@ class ParentLinkProvider with ChangeNotifier {
 
       _parentToken = data['token'];
       _tokenExpiresAt = DateTime.parse(data['expires_at']);
+      _isLinked = false;
+      _parentTelegramUsername = null;
+      _linkedAt = null;
+      _parentName = null;
+      _parentLinkData = null;
 
       debugLog(
           'ParentLinkProvider', 'Generated token expiresAt: $_tokenExpiresAt');
+
+      // Start countdown timer
+      _startCountdownTimer();
+
+      _hasLoaded = true;
     } catch (e) {
       _error = e.toString();
       debugLog('ParentLinkProvider', 'generateParentToken error: $e');
@@ -66,11 +121,17 @@ class ParentLinkProvider with ChangeNotifier {
   }
 
   Future<void> getParentLinkStatus({bool forceRefresh = false}) async {
-    if (_isLoading) return;
-    if (_hasLoaded && !forceRefresh) return;
+    // Don't show loading if we already have cached data and not forcing refresh
+    if (!forceRefresh && _hasLoaded) {
+      return;
+    }
+
+    if (_isLoading && !forceRefresh) return;
 
     _isLoading = true;
-    _error = null;
+    if (forceRefresh) {
+      _error = null;
+    }
     _notifySafely();
 
     try {
@@ -79,18 +140,39 @@ class ParentLinkProvider with ChangeNotifier {
       final parentLink = response.data;
 
       if (parentLink != null) {
-        // Check if parentLink has status field or linked status
-        // Adjust based on your actual ParentLink model
-        _isLinked = parentLink.status == 'linked' ||
-            parentLink.parentTelegramUsername != null;
+        // Store the full parent link data
+        _parentLinkData = parentLink;
 
+        // Stop any existing timer
+        _stopCountdownTimer();
+
+        // Update status based on parent link data
+        _isLinked = parentLink.isLinked;
         _parentTelegramUsername = parentLink.parentTelegramUsername;
         _linkedAt = parentLink.linkedAt;
+        _parentName = parentLink.parentName;
 
         if (!_isLinked) {
           _parentToken = parentLink.token;
           _tokenExpiresAt = parentLink.tokenExpiresAt;
+
+          // Start countdown if we have a token
+          if (_parentToken != null && _tokenExpiresAt != null) {
+            _startCountdownTimer();
+          }
+        } else {
+          _parentToken = null;
+          _tokenExpiresAt = null;
         }
+      } else {
+        // No parent link data found
+        _parentLinkData = null;
+        _isLinked = false;
+        _parentTelegramUsername = null;
+        _linkedAt = null;
+        _parentName = null;
+        _parentToken = null;
+        _tokenExpiresAt = null;
       }
 
       _hasLoaded = true;
@@ -98,11 +180,15 @@ class ParentLinkProvider with ChangeNotifier {
     } catch (e) {
       _error = e.toString();
       debugLog('ParentLinkProvider', 'getParentLinkStatus error: $e');
-      rethrow;
+      // Don't rethrow - we want to show cached data even if refresh fails
     } finally {
       _isLoading = false;
       _notifySafely();
     }
+  }
+
+  Future<void> refreshParentLinkStatus() async {
+    await getParentLinkStatus(forceRefresh: true);
   }
 
   Future<void> unlinkParent() async {
@@ -117,12 +203,15 @@ class ParentLinkProvider with ChangeNotifier {
       await apiService.unlinkParent();
 
       // Reset state
+      _stopCountdownTimer();
       _isLinked = false;
       _parentTelegramUsername = null;
       _linkedAt = null;
       _parentToken = null;
       _tokenExpiresAt = null;
-      _hasLoaded = false;
+      _parentName = null;
+      _parentLinkData = null;
+      _hasLoaded = true;
 
       debugLog('ParentLinkProvider', 'Parent unlinked');
     } catch (e) {
@@ -135,9 +224,37 @@ class ParentLinkProvider with ChangeNotifier {
     }
   }
 
+  // Manually update link status (for when parent links via Telegram)
+  void updateLinkStatus({
+    required bool isLinked,
+    String? parentTelegramUsername,
+    String? parentName,
+    DateTime? linkedAt,
+  }) {
+    _stopCountdownTimer();
+    _isLinked = isLinked;
+    _parentTelegramUsername = parentTelegramUsername;
+    _parentName = parentName;
+    _linkedAt = linkedAt ?? DateTime.now();
+
+    if (isLinked) {
+      _parentToken = null;
+      _tokenExpiresAt = null;
+    }
+
+    _hasLoaded = true;
+    notifyListeners();
+  }
+
   void clearError() {
     _error = null;
     _notifySafely();
+  }
+
+  @override
+  void dispose() {
+    _stopCountdownTimer();
+    super.dispose();
   }
 
   void _notifySafely() {

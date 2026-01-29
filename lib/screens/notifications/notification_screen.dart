@@ -1,3 +1,5 @@
+import 'package:familyacademyclient/models/notification_model.dart'
+    as AppNotification;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -112,13 +114,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   Widget _buildNotificationItem(
-    notification, // Your existing Notification model
+    AppNotification.Notification notification,
     NotificationProvider provider,
     ThemeData theme,
   ) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      color: notification.isDelivered
+      color: notification.isRead
           ? theme.cardTheme.color
           : theme.colorScheme.surfaceVariant.withOpacity(0.5),
       child: ListTile(
@@ -133,7 +135,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           notification.title,
           style: theme.textTheme.titleMedium?.copyWith(
             fontWeight:
-                notification.isDelivered ? FontWeight.normal : FontWeight.bold,
+                notification.isRead ? FontWeight.normal : FontWeight.bold,
           ),
         ),
         subtitle: Column(
@@ -154,12 +156,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           icon: const Icon(Icons.more_vert),
           onSelected: (value) => _handleMenuItemSelected(
             value,
-            notification.id,
+            notification.logId, // Use logId instead of id
             provider,
             context,
           ),
           itemBuilder: (context) => [
-            if (!notification.isDelivered)
+            if (!notification.isRead)
               const PopupMenuItem(
                 value: 'mark_read',
                 child: Row(
@@ -183,8 +185,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           ],
         ),
         onTap: () {
-          if (!notification.isDelivered) {
-            provider.markAsRead(notification.id);
+          if (!notification.isRead) {
+            provider.markAsRead(notification.logId);
           }
           _handleNotificationTap(notification, context);
         },

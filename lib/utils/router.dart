@@ -43,16 +43,25 @@ class AppRouter {
           '/device-change',
         ].contains(state.uri.toString());
 
+        // Skip redirect check for payment-success route
+        if (state.uri.toString() == '/payment-success') {
+          return null;
+        }
+
         if (!isAuthenticated && !isPublicRoute) {
           return '/auth/login';
         }
 
+        // CRITICAL FIX: Only redirect to school-selection if user has NO school
+        // and they're NOT on payment-success route
         if (isAuthenticated &&
             authProvider.user?.schoolId == null &&
-            state.uri.toString() != '/school-selection') {
+            state.uri.toString() != '/school-selection' &&
+            state.uri.toString() != '/payment-success') {
           return '/school-selection';
         }
 
+        // Don't redirect authenticated users with school back to auth routes
         if (isAuthenticated &&
             authProvider.user?.schoolId != null &&
             state.uri.toString().startsWith('/auth/')) {
@@ -100,8 +109,11 @@ class AppRouter {
         GoRoute(
           path: '/payment-success',
           name: 'payment-success',
-          pageBuilder: (context, state) =>
-              const MaterialPage(child: PaymentSuccessScreen()),
+          pageBuilder: (context, state) {
+            return MaterialPage(
+              child: PaymentSuccessScreen(),
+            );
+          },
         ),
         GoRoute(
           path: '/subscriptions',

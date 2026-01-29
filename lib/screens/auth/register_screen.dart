@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/device_provider.dart';
 import '../../utils/helpers.dart';
 import '../../widgets/auth/auth_form_field.dart';
 import '../../widgets/auth/password_field.dart';
+import '../../services/notification_service.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -20,6 +22,49 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _confirmPasswordController = TextEditingController();
   bool _isLoading = false;
   bool _mounted = true;
+  String? _deviceId;
+  final NotificationService _notificationService = NotificationService();
+  String? _fcmToken;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_mounted) {
+        _initializeDevice();
+        _getFcmToken();
+      }
+    });
+  }
+
+  Future<void> _initializeDevice() async {
+    if (!_mounted) return;
+
+    try {
+      final deviceProvider =
+          Provider.of<DeviceProvider>(context, listen: false);
+      await deviceProvider.initialize();
+      if (_mounted) {
+        setState(() {
+          _deviceId = deviceProvider.deviceId;
+        });
+      }
+      debugLog('RegisterScreen', 'Device ID: $_deviceId');
+    } catch (e) {
+      debugLog('RegisterScreen', 'Error initializing device: $e');
+    }
+  }
+
+  Future<void> _getFcmToken() async {
+    try {
+      await _notificationService.init();
+      _fcmToken = await _notificationService.getFCMToken();
+      debugLog(
+          'RegisterScreen', 'FCM Token: ${_fcmToken?.substring(0, 20)}...');
+    } catch (e) {
+      debugLog('RegisterScreen', 'Error getting FCM token: $e');
+    }
+  }
 
   @override
   void dispose() {
@@ -33,6 +78,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
 
+    if (_deviceId == null) {
+      showSnackBar(context, 'Device initialization failed', isError: true);
+      return;
+    }
+
     if (_mounted) {
       setState(() => _isLoading = true);
     }
@@ -41,10 +91,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final username = _usernameController.text.trim();
     final password = _passwordController.text;
 
+    // Get FCM token if not already obtained
+    if (_fcmToken == null) {
+      await _getFcmToken();
+    }
+
     try {
-      await authProvider.register(username, password);
+      debugLog('RegisterScreen',
+          'Registering with device ID: $_deviceId and FCM token');
+      // Pass FCM token to register method
+      await authProvider.register(username, password, _deviceId!, _fcmToken);
 
       if (authProvider.error == null && _mounted) {
+        // Wait a moment for device to be set
+        await Future.delayed(const Duration(milliseconds: 500));
+
         // Navigate to school selection
         context.go('/school-selection');
       } else if (_mounted) {
@@ -147,6 +208,40 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     return null;
                   },
                 ),
+                if (_deviceId != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: Column(
+                      children: [
+                        Text(
+                          'Device ID: ${_deviceId!.substring(0, _deviceId!.length > 20 ? 20 : _deviceId!.length)}${_deviceId!.length > 20 ? '...' : ''}',
+                          style:
+                              Theme.of(context).textTheme.bodySmall!.copyWith(
+                                    fontFamily: 'monospace',
+                                    fontSize: 12,
+                                    color: Colors.grey[700],
+                                  ),
+                          textAlign: TextAlign.center,
+                        ),
+                        if (_fcmToken != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(
+                              'FCM Token: ${_fcmToken!.substring(0, 20)}...',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall!
+                                  .copyWith(
+                                    fontFamily: 'monospace',
+                                    fontSize: 12,
+                                    color: Colors.grey[700],
+                                  ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
                 const SizedBox(height: 32),
                 ElevatedButton(
                   onPressed: _isLoading ? null : _register,

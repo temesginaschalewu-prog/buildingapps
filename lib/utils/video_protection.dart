@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:familyacademyclient/utils/screen_protection.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 
@@ -12,166 +13,168 @@ class VideoProtection {
     bool autoPlay = true,
     bool looping = false,
   }) {
+    // Ensure HTTPS URL
+    final secureVideoUrl = _ensureHttpsUrl(videoUrl);
+
     return ChewieController(
       videoPlayerController: videoPlayerController,
       autoPlay: autoPlay,
       looping: looping,
       showControls: true,
-      allowFullScreen: false,
+      allowFullScreen: false, // Disable fullscreen to maintain protection
       allowPlaybackSpeedChanging: false,
       showOptions: false,
-
-      // Custom overlay to prevent screen capture
-      overlay: Container(
-        color: Colors.transparent,
-        child: GestureDetector(
-          onTap: () {
-            // Handle overlay taps if needed
-          },
-          child: Container(
-            color: Colors.transparent,
-          ),
-        ),
-      ),
-
-      // Use default controls or custom controls without problematic parameters
-      // Remove the customControls parameter or fix it like this:
       customControls: const MaterialControls(
         showPlayButton: true,
       ),
-
-      // Prevent video from being shared
       allowedScreenSleep: false,
-
-      // Placeholder while loading
       placeholder: Container(
         color: Colors.black,
         child: const Center(
           child: CircularProgressIndicator(),
         ),
       ),
-
-      // Auto-initialize video
       autoInitialize: true,
-
-      // Error widget
       errorBuilder: (context, errorMessage) {
+        debugPrint('Video player error: $errorMessage');
         return Center(
-          child: Text(
-            'Error loading video: $errorMessage',
-            style: const TextStyle(color: Colors.white),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error, color: Colors.white, size: 48),
+              const SizedBox(height: 16),
+              Text(
+                'Error loading video',
+                style: const TextStyle(color: Colors.white, fontSize: 16),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'URL: ${secureVideoUrl.substring(0, 50)}...',
+                style: const TextStyle(color: Colors.grey, fontSize: 12),
+              ),
+            ],
           ),
         );
       },
     );
   }
 
-  // OR if you want to use CupertinoControls, fix it like this:
-  static ChewieController createProtectedControllerWithCupertino({
-    required VideoPlayerController videoPlayerController,
-    required BuildContext context,
-    bool autoPlay = true,
-    bool looping = false,
-  }) {
-    return ChewieController(
-      videoPlayerController: videoPlayerController,
-      autoPlay: autoPlay,
-      looping: looping,
-      showControls: true,
-      allowFullScreen: false,
-      allowPlaybackSpeedChanging: false,
-      showOptions: false,
+  static String _ensureHttpsUrl(String url) {
+    // If URL is localhost or HTTP, convert to Render HTTPS URL
+    if (url.contains('http://192.168') || url.contains('http://localhost')) {
+      // Extract the path from the URL
+      final uri = Uri.parse(url);
+      final path = uri.path;
 
-      // Custom controls - use the correct parameter names
-      cupertinoProgressColors: ChewieProgressColors(
-        playedColor: Theme.of(context).primaryColor,
-        handleColor: Theme.of(context).primaryColor,
-        backgroundColor: Colors.grey,
-        bufferedColor: Colors.grey.shade300,
-      ),
+      // Use the production base URL
+      return 'https://family-academy-backend.onrender.com$path';
+    }
 
-      materialProgressColors: ChewieProgressColors(
-        playedColor: Theme.of(context).primaryColor,
-        handleColor: Theme.of(context).primaryColor,
-        backgroundColor: Colors.grey,
-        bufferedColor: Colors.grey.shade300,
-      ),
-
-      // Placeholder while loading
-      placeholder: Container(
-        color: Colors.black,
-        child: const Center(
-          child: CircularProgressIndicator(),
-        ),
-      ),
-
-      // Auto-initialize video
-      autoInitialize: true,
-    );
+    // Already HTTPS or external URL
+    return url;
   }
 
   static Widget createProtectedVideoPlayer({
     required ChewieController controller,
     required BuildContext context,
     required String videoTitle,
+    required VoidCallback onDispose,
   }) {
+    // Enable video protection when screen builds
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ScreenProtectionService.protectVideoPlayback();
+    });
+
     return WillPopScope(
       onWillPop: () async {
-        if (controller.isPlaying) {
-          controller.pause();
-        }
-        // Don't call ScreenProtectionService here as it might interfere
+        // Restore protection and dispose
+        await disposeController(controller, onDispose);
         return true;
       },
-      child: Scaffold(
-        backgroundColor: Colors.black,
-        appBar: AppBar(
+      child: PopScope(
+        canPop: false,
+        child: Scaffold(
           backgroundColor: Colors.black,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.white),
-            onPressed: () {
-              controller.pause();
-              Navigator.pop(context);
-            },
-          ),
-          title: Text(
-            videoTitle,
-            style: const TextStyle(color: Colors.white),
-          ),
-          centerTitle: true,
-          elevation: 0,
-        ),
-        body: SafeArea(
-          child: Stack(
-            children: [
-              Center(
-                child: AspectRatio(
-                  aspectRatio:
-                      controller.videoPlayerController.value.aspectRatio,
-                  child: Chewie(controller: controller),
-                ),
+          appBar: AppBar(
+            backgroundColor: Colors.black,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back, color: Colors.white),
+              onPressed: () async {
+                await disposeController(controller, onDispose);
+                Navigator.pop(context);
+              },
+            ),
+            title: Text(
+              videoTitle,
+              style: const TextStyle(color: Colors.white),
+            ),
+            centerTitle: true,
+            elevation: 0,
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.fullscreen_exit, color: Colors.white),
+                onPressed: () {
+                  // Prevent fullscreen to maintain protection
+                },
               ),
             ],
+          ),
+          body: SafeArea(
+            child: Stack(
+              children: [
+                Center(
+                  child: AspectRatio(
+                    aspectRatio:
+                        controller.videoPlayerController.value.aspectRatio,
+                    child: Chewie(controller: controller),
+                  ),
+                ),
+                // Overlay to prevent taps during playback
+                if (controller.isPlaying)
+                  Positioned.fill(
+                    child: GestureDetector(
+                      onTap: () {
+                        // Do nothing - prevents interaction
+                      },
+                      child: Container(
+                        color: Colors.transparent,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  static Future<void> disposeController(ChewieController controller) async {
+  static Future<void> disposeController(
+      ChewieController controller, VoidCallback onDispose) async {
     await controller.pause();
     controller.dispose();
+    // Restore normal screen protection
+    await ScreenProtectionService.restoreAfterVideo();
+    onDispose();
   }
 
-  static Future<bool> isVideoFileProtected(String filePath) async {
-    try {
-      final file = File(filePath);
-      if (await file.exists()) {
-        return true;
-      }
-      return false;
-    } catch (e) {
-      return false;
+  // Method to handle screen orientation for video
+  static Future<void> lockVideoOrientation() async {
+    if (Platform.isAndroid || Platform.isIOS) {
+      await SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+        DeviceOrientation.portraitUp,
+      ]);
+    }
+  }
+
+  static Future<void> unlockVideoOrientation() async {
+    if (Platform.isAndroid || Platform.isIOS) {
+      await SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+      ]);
     }
   }
 }

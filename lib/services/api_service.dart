@@ -19,6 +19,7 @@ import 'package:familyacademyclient/utils/constants.dart' show AppConstants;
 import 'package:familyacademyclient/utils/helpers.dart';
 import 'package:flutter/foundation.dart' show kReleaseMode, kDebugMode;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:http/http.dart' hide MultipartFile, Response;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:familyacademyclient/models/category_model.dart';
 import '../utils/api_response.dart';
@@ -181,11 +182,17 @@ class ApiService {
   }
 
   Future<ApiResponse<Map<String, dynamic>>> register(
-      String username, String password) async {
+      String username, String password, String deviceId,
+      {String? fcmToken}) async {
     try {
       final response = await _dio.post(
         AppConstants.registerEndpoint,
-        data: {'username': username, 'password': password},
+        data: {
+          'username': username,
+          'password': password,
+          'deviceId': deviceId,
+          'fcmToken': fcmToken,
+        },
       );
 
       if (response.data is Map && response.data['success'] == true) {
@@ -226,8 +233,24 @@ class ApiService {
     }
   }
 
-  Future<ApiResponse<Map<String, dynamic>>> studentLogin(
-      String username, String password, String? deviceId) async {
+  Future<ApiResponse<void>> updateFcmToken(String fcmToken) async {
+    try {
+      final response = await _dio.put(
+        '/users/fcm-token',
+        data: {'fcm_token': fcmToken},
+      );
+
+      return ApiResponse(success: true, message: response.data['message']);
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to update FCM token',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<ApiResponse<Map<String, dynamic>>> studentLogin(String username,
+      String password, String? deviceId, String? fcmToken) async {
     try {
       final response = await _dio.post(
         AppConstants.studentLoginEndpoint,
@@ -235,6 +258,7 @@ class ApiService {
           'username': username,
           'password': password,
           'deviceId': deviceId,
+          'fcmToken': fcmToken,
         },
       );
 
@@ -407,11 +431,39 @@ class ApiService {
   Future<ApiResponse<List<Category>>> getCategories() async {
     try {
       final response = await _dio.get(AppConstants.categoriesEndpoint);
+
+      debugLog('ApiService', 'getCategories response: ${response.data}');
+
       return ApiResponse.fromJson(
         response.data,
-        (data) => List<Category>.from(data.map((x) => Category.fromJson(x))),
+        (data) {
+          if (data is List) {
+            return data.map<Category>((item) {
+              try {
+                return Category.fromJson(item);
+              } catch (e) {
+                debugLog(
+                    'ApiService', 'Error parsing category: $e\nData: $item');
+
+                return Category(
+                  id: item['id'] ?? 0,
+                  name: item['name'] ?? 'Unknown Category',
+                  status: item['status'] ?? 'active',
+                  price: item['price'] != null
+                      ? double.parse(item['price'].toString())
+                      : null,
+                  billingCycle: item['billing_cycle'] ?? 'monthly',
+                  description: item['description'],
+                  courseCount: item['course_count'] ?? 0,
+                );
+              }
+            }).toList();
+          }
+          return <Category>[];
+        },
       );
     } on DioException catch (e) {
+      debugLog('ApiService', 'getCategories Dio error: ${e.response?.data}');
       throw ApiError(
         message: e.response?.data['message'] ?? 'Failed to fetch categories',
         statusCode: e.response?.statusCode,
@@ -456,11 +508,31 @@ class ApiService {
     try {
       final response =
           await _dio.get(AppConstants.coursesByCategory(categoryId));
+
+      debugLog('ApiService', 'getCoursesByCategory response: ${response.data}');
+
       return ApiResponse.fromJson(
         response.data,
-        (data) => data as Map<String, dynamic>,
+        (data) {
+          if (data is Map<String, dynamic>) {
+            final coursesData = data['courses'] ?? data['data'] ?? [];
+            List<dynamic> coursesList = [];
+
+            if (coursesData is List) {
+              coursesList = coursesData;
+            }
+
+            return {
+              'courses': coursesList,
+              'category_id': categoryId,
+            };
+          }
+          return {'courses': [], 'category_id': categoryId};
+        },
       );
     } on DioException catch (e) {
+      debugLog(
+          'ApiService', 'getCoursesByCategory Dio error: ${e.response?.data}');
       throw ApiError(
         message: e.response?.data['message'] ?? 'Failed to fetch courses',
         statusCode: e.response?.statusCode,
@@ -558,18 +630,45 @@ class ApiService {
         queryParameters: courseId != null ? {'course_id': courseId} : null,
       );
 
-      return ApiResponse.fromJson(
-        response.data,
-        (data) {
-          if (data is List) {
-            return data.map<Exam>((item) => Exam.fromJson(item)).toList();
+      debugLog('ApiService', 'getAvailableExams response: ${response.data}');
+
+      if (response.data is Map<String, dynamic>) {
+        final data = response.data as Map<String, dynamic>;
+
+        if (data['success'] == true) {
+          List<Exam> exams = [];
+
+          if (data['data'] is List) {
+            exams = (data['data'] as List).map<Exam>((item) {
+              return Exam.fromJson(item);
+            }).toList();
           }
-          return <Exam>[];
-        },
+
+          return ApiResponse<List<Exam>>(
+            success: true,
+            message: data['message']?.toString() ?? 'Exams retrieved',
+            data: exams,
+          );
+        } else {
+          return ApiResponse<List<Exam>>(
+            success: false,
+            message: data['message']?.toString() ?? 'Failed to fetch exams',
+            data: [],
+          );
+        }
+      }
+
+      return ApiResponse<List<Exam>>(
+        success: false,
+        message: 'Invalid response format',
+        data: [],
       );
     } on DioException catch (e) {
+      debugLog(
+          'ApiService', 'getAvailableExams Dio error: ${e.response?.data}');
       throw ApiError(
-        message: e.response?.data['message'] ?? 'Failed to fetch exams',
+        message:
+            e.response?.data['message']?.toString() ?? 'Failed to fetch exams',
         statusCode: e.response?.statusCode,
       );
     }
@@ -677,6 +776,43 @@ class ApiService {
     }
   }
 
+  Future<ApiResponse<Map<String, dynamic>>>
+      checkHasActiveSubscriptionForCategory(int categoryId) async {
+    try {
+      final response = await _dio.get(
+        '/api/v1/subscriptions/has-active/$categoryId',
+      );
+
+      debugLog('ApiService',
+          'checkHasActiveSubscriptionForCategory response: ${response.data}');
+
+      if (response.data is Map<String, dynamic>) {
+        final data = response.data as Map<String, dynamic>;
+
+        return ApiResponse<Map<String, dynamic>>(
+          success: data['success'] ?? false,
+          message: data['message']?.toString() ?? 'Subscription status checked',
+          data: data['data'] ?? data,
+        );
+      }
+
+      return ApiResponse<Map<String, dynamic>>(
+        success: false,
+        message: 'Invalid response format',
+        data: {'has_active_subscription': false},
+      );
+    } on DioException catch (e) {
+      debugLog('ApiService',
+          'checkHasActiveSubscriptionForCategory Dio error: ${e.response?.data}');
+      return ApiResponse<Map<String, dynamic>>(
+        success: false,
+        message: e.response?.data['message']?.toString() ??
+            'Failed to check subscription status',
+        data: {'has_active_subscription': false},
+      );
+    }
+  }
+
   Future<ApiResponse<Map<String, dynamic>>> submitPayment({
     required int categoryId,
     required String paymentType,
@@ -686,7 +822,7 @@ class ApiService {
   }) async {
     try {
       debugLog('ApiService',
-          'Submitting payment: category=$categoryId, amount=$amount, proof=$proofImagePath');
+          'Submitting payment: category=$categoryId, amount=$amount, method=$paymentMethod, proof=$proofImagePath');
 
       final response = await _dio.post(
         AppConstants.submitPaymentEndpoint,
@@ -701,25 +837,47 @@ class ApiService {
 
       debugLog('ApiService', 'Payment submission response: ${response.data}');
 
-      return ApiResponse.fromJson(
-        response.data,
-        (data) {
-          // Ensure data is a Map<String, dynamic>
-          if (data is Map<String, dynamic>) {
-            return data;
-          } else {
-            debugLog('ApiService',
-                'Response data is not a map: ${data.runtimeType}');
-            return {'success': false, 'message': 'Invalid response format'};
-          }
-        },
+      if (response.data is Map<String, dynamic>) {
+        final data = response.data as Map<String, dynamic>;
+
+        if (data['has_pending_payment'] == true) {
+          return ApiResponse<Map<String, dynamic>>(
+            success: false,
+            message: data['message'] ?? 'Payment already pending',
+            data: data['data'] ?? data,
+          );
+        }
+
+        return ApiResponse<Map<String, dynamic>>(
+          success: data['success'] ?? false,
+          message: data['message']?.toString() ?? 'Payment submitted',
+          data: data['data'] ?? data,
+        );
+      }
+
+      return ApiResponse<Map<String, dynamic>>(
+        success: false,
+        message: 'Invalid response format',
+        data: {'success': false, 'message': 'Invalid response'},
       );
     } on DioException catch (e) {
       debugLog('ApiService', 'Submit payment Dio error: ${e.response?.data}');
-      throw ApiError(
-        message: e.response?.data['message'] ?? 'Failed to submit payment',
-        statusCode: e.response?.statusCode,
-        data: e.response?.data,
+
+      if (e.response?.statusCode == 400 &&
+          e.response?.data is Map<String, dynamic> &&
+          (e.response?.data['has_pending_payment'] == true)) {
+        return ApiResponse<Map<String, dynamic>>(
+          success: false,
+          message: e.response?.data['message'] ?? 'Payment already pending',
+          data: e.response?.data['data'] ?? e.response?.data,
+        );
+      }
+
+      return ApiResponse<Map<String, dynamic>>(
+        success: false,
+        message: e.response?.data['message']?.toString() ??
+            'Failed to submit payment',
+        data: {'success': false, 'error': e.toString()},
       );
     }
   }
@@ -727,13 +885,48 @@ class ApiService {
   Future<ApiResponse<List<Payment>>> getMyPayments() async {
     try {
       final response = await _dio.get(AppConstants.myPaymentsEndpoint);
+
+      debugLog('ApiService', 'getMyPayments response: ${response.data}');
+
       return ApiResponse.fromJson(
         response.data,
-        (data) => List<Payment>.from(data.map((x) => Payment.fromJson(x))),
+        (data) {
+          if (data is List) {
+            return data.map<Payment>((item) {
+              try {
+                return Payment.fromJson(item);
+              } catch (e) {
+                debugLog(
+                    'ApiService', 'Error parsing payment: $e\nData: $item');
+
+                return Payment(
+                  id: item['id'] ?? 0,
+                  paymentType: item['payment_type'] ?? 'first_time',
+                  amount: item['amount'] != null
+                      ? double.parse(item['amount'].toString())
+                      : 0,
+                  paymentMethod: item['payment_method'] ?? 'telebirr',
+                  status: item['status'] ?? 'pending',
+                  createdAt: item['created_at'] != null
+                      ? DateTime.parse(item['created_at'])
+                      : DateTime.now(),
+                  categoryName: item['category_name'] ?? 'Unknown Category',
+                  verifiedAt: item['verified_at'] != null
+                      ? DateTime.parse(item['verified_at'])
+                      : null,
+                  rejectionReason: item['rejection_reason'],
+                );
+              }
+            }).toList();
+          }
+          return <Payment>[];
+        },
       );
     } on DioException catch (e) {
+      debugLog('ApiService', 'getMyPayments Dio error: ${e.response?.data}');
       throw ApiError(
-        message: e.response?.data['message'] ?? 'Failed to fetch payments',
+        message: e.response?.data['message']?.toString() ??
+            'Failed to fetch payments',
         statusCode: e.response?.statusCode,
       );
     }
@@ -742,15 +935,79 @@ class ApiService {
   Future<ApiResponse<List<Subscription>>> getMySubscriptions() async {
     try {
       final response = await _dio.get(AppConstants.mySubscriptionsEndpoint);
-      return ApiResponse.fromJson(
-        response.data,
-        (data) =>
-            List<Subscription>.from(data.map((x) => Subscription.fromJson(x))),
+
+      debugLog('ApiService', 'getMySubscriptions response: ${response.data}');
+
+      if (response.data is Map<String, dynamic>) {
+        final data = response.data as Map<String, dynamic>;
+
+        if (data['success'] == true) {
+          List<Subscription> subscriptions = [];
+
+          if (data['data'] is List) {
+            subscriptions = (data['data'] as List).map<Subscription>((item) {
+              try {
+                return Subscription.fromJson(item);
+              } catch (e) {
+                debugLog('ApiService',
+                    'Error parsing subscription: $e\nData: $item');
+
+                return Subscription(
+                  id: item['id'] ?? 0,
+                  userId: item['user_id'] ?? 0,
+                  categoryId: item['category_id'] ?? 0,
+                  startDate: item['start_date'] != null
+                      ? DateTime.parse(item['start_date'])
+                      : DateTime.now(),
+                  expiryDate: item['expiry_date'] != null
+                      ? DateTime.parse(item['expiry_date'])
+                      : DateTime.now().add(const Duration(days: 30)),
+                  status: item['current_status'] ?? item['status'] ?? 'active',
+                  billingCycle: item['billing_cycle'] ?? 'monthly',
+                  paymentId: item['payment_id'],
+                  createdAt: item['created_at'] != null
+                      ? DateTime.parse(item['created_at'])
+                      : null,
+                  updatedAt: item['updated_at'] != null
+                      ? DateTime.parse(item['updated_at'])
+                      : null,
+                  categoryName: item['category_name'],
+                  price: item['price'] != null
+                      ? double.parse(item['price'].toString())
+                      : null,
+                );
+              }
+            }).toList();
+          }
+
+          return ApiResponse<List<Subscription>>(
+            success: true,
+            message: data['message']?.toString() ?? 'Subscriptions retrieved',
+            data: subscriptions,
+          );
+        } else {
+          return ApiResponse<List<Subscription>>(
+            success: false,
+            message:
+                data['message']?.toString() ?? 'Failed to fetch subscriptions',
+            data: [],
+          );
+        }
+      }
+
+      return ApiResponse<List<Subscription>>(
+        success: false,
+        message: 'Invalid response format',
+        data: [],
       );
     } on DioException catch (e) {
-      throw ApiError(
-        message: e.response?.data['message'] ?? 'Failed to fetch subscriptions',
-        statusCode: e.response?.statusCode,
+      debugLog(
+          'ApiService', 'getMySubscriptions Dio error: ${e.response?.data}');
+      return ApiResponse<List<Subscription>>(
+        success: false,
+        message: e.response?.data['message']?.toString() ??
+            'Failed to fetch subscriptions',
+        data: [],
       );
     }
   }
@@ -762,13 +1019,33 @@ class ApiService {
         AppConstants.checkSubscriptionStatusEndpoint,
         queryParameters: {'category_id': categoryId},
       );
-      return ApiResponse.fromJson(
-          response.data, (data) => data as Map<String, dynamic>);
+
+      debugLog(
+          'ApiService', 'checkSubscriptionStatus response: ${response.data}');
+
+      if (response.data is Map<String, dynamic>) {
+        final data = response.data as Map<String, dynamic>;
+
+        return ApiResponse<Map<String, dynamic>>(
+          success: data['success'] ?? false,
+          message: data['message']?.toString() ?? 'Status checked',
+          data: data['data'] ?? data,
+        );
+      }
+
+      return ApiResponse<Map<String, dynamic>>(
+        success: false,
+        message: 'Invalid response format',
+        data: {'has_subscription': false, 'status': 'unpaid'},
+      );
     } on DioException catch (e) {
-      throw ApiError(
-        message: e.response?.data['message'] ??
+      debugLog('ApiService',
+          'checkSubscriptionStatus Dio error: ${e.response?.data}');
+      return ApiResponse<Map<String, dynamic>>(
+        success: false,
+        message: e.response?.data['message']?.toString() ??
             'Failed to check subscription status',
-        statusCode: e.response?.statusCode,
+        data: {'has_subscription': false, 'status': 'error'},
       );
     }
   }
@@ -1074,11 +1351,22 @@ class ApiService {
     try {
       final response =
           await _dio.get(AppConstants.settingsByCategory(category));
+
+      debugLog(
+          'ApiService', 'getSettingsByCategory response: ${response.data}');
+
       return ApiResponse.fromJson(
         response.data,
-        (data) => List<Setting>.from(data.map((x) => Setting.fromJson(x))),
+        (data) {
+          if (data is List) {
+            return List<Setting>.from(data.map((x) => Setting.fromJson(x)));
+          }
+          return <Setting>[];
+        },
       );
     } on DioException catch (e) {
+      debugLog(
+          'ApiService', 'getSettingsByCategory Dio error: ${e.response?.data}');
       throw ApiError(
         message: e.response?.data['message'] ?? 'Failed to fetch settings',
         statusCode: e.response?.statusCode,
@@ -1099,17 +1387,65 @@ class ApiService {
               ? AppConstants.uploadVideoEndpoint
               : AppConstants.uploadFileEndpoint;
 
+      debugLog('ApiService', 'Uploading file to: $endpoint');
+
       final response = await _dio.post(
         endpoint,
         data: formData,
         options: Options(headers: {'Content-Type': 'multipart/form-data'}),
       );
 
-      return ApiResponse.fromJson(response.data, (data) => data['file_path']);
+      debugLog('ApiService', 'Upload response: ${response.data}');
+
+      final responseData = response.data;
+
+      if (responseData is Map<String, dynamic>) {
+        if (responseData['data'] != null) {
+          final data = responseData['data'];
+          if (data is String) {
+            return ApiResponse<String>(
+              success: responseData['success'] ?? true,
+              message:
+                  responseData['message']?.toString() ?? 'Upload successful',
+              data: data,
+            );
+          } else if (data is Map<String, dynamic> &&
+              data['file_path'] != null) {
+            return ApiResponse<String>(
+              success: responseData['success'] ?? true,
+              message:
+                  responseData['message']?.toString() ?? 'Upload successful',
+              data: data['file_path'].toString(),
+            );
+          }
+        } else if (responseData['file_path'] != null) {
+          return ApiResponse<String>(
+            success: true,
+            message: responseData['message']?.toString() ?? 'Upload successful',
+            data: responseData['file_path'].toString(),
+          );
+        }
+      }
+
+      final String url;
+      if (responseData is Map<String, dynamic>) {
+        url = responseData.toString();
+      } else {
+        url = responseData?.toString() ?? '';
+      }
+
+      return ApiResponse<String>(
+        success: true,
+        message: 'File uploaded successfully',
+        data: url,
+      );
     } on DioException catch (e) {
+      debugLog('ApiService', 'Upload file error: ${e.response?.data}');
       throw ApiError(
-        message: e.response?.data['message'] ?? 'Failed to upload file',
+        message:
+            e.response?.data['message']?.toString() ?? 'Failed to upload file',
         statusCode: e.response?.statusCode,
+        data: e.response?.data,
       );
     }
   }
@@ -1129,9 +1465,94 @@ class ApiService {
 
   Future<ApiResponse<String>> uploadPaymentProof(File imageFile) async {
     try {
-      return await uploadImage(imageFile);
-    } catch (e) {
-      throw ApiError(message: 'Failed to upload payment proof: $e');
+      final fileName = imageFile.path.split('/').last;
+      final formData = FormData.fromMap({
+        'file': await MultipartFile.fromFile(
+          imageFile.path,
+          filename: fileName,
+          contentType: MediaType('image', 'jpeg'),
+        ),
+      });
+
+      debugLog('ApiService', '📸 Uploading payment proof...');
+
+      // FIX: Use the correct payment proof endpoint
+      final response = await _dio.post(
+        AppConstants
+            .uploadPaymentProofEndpoint, // THIS IS THE FIX: '/upload/payment-proof'
+        data: formData,
+        options: Options(
+          headers: {
+            'Content-Type': 'multipart/form-data',
+            'Accept': 'application/json',
+          },
+        ),
+      );
+
+      debugLog('ApiService', '📸 Upload response: ${response.data}');
+
+      final responseData = response.data;
+
+      if (responseData is Map<String, dynamic>) {
+        if (responseData['success'] == true) {
+          String? fileUrl;
+
+          // Try different response formats
+          if (responseData['data'] is String) {
+            fileUrl = responseData['data'];
+          } else if (responseData['data'] != null) {
+            // If data is not string but an object, try to extract URL
+            if (responseData['data'] is Map) {
+              final dataMap = responseData['data'] as Map;
+              if (dataMap['url'] != null) {
+                fileUrl = dataMap['url'].toString();
+              } else if (dataMap['secure_url'] != null) {
+                fileUrl = dataMap['secure_url'].toString();
+              } else if (dataMap['file_path'] != null) {
+                fileUrl = dataMap['file_path'].toString();
+              }
+            }
+          } else if (responseData['url'] != null) {
+            fileUrl = responseData['url'];
+          } else if (responseData['secure_url'] != null) {
+            fileUrl = responseData['secure_url'];
+          } else if (responseData['file_path'] != null) {
+            fileUrl = responseData['file_path'];
+          }
+
+          if (fileUrl != null && fileUrl.isNotEmpty) {
+            debugLog('ApiService', '✅ Payment proof URL: $fileUrl');
+            return ApiResponse<String>(
+              success: true,
+              message: responseData['message'] ?? 'Upload successful',
+              data: fileUrl,
+            );
+          } else {
+            debugLog('ApiService', '❌ No URL found in response');
+          }
+        } else {
+          debugLog('ApiService',
+              '❌ Upload not successful: ${responseData['message']}');
+        }
+      }
+
+      // Fallback: if we can't parse the URL, return the entire response data as string
+      debugLog('ApiService', '⚠️ Using fallback response parsing');
+      return ApiResponse<String>(
+        success: responseData['success'] ?? false,
+        message:
+            responseData['message']?.toString() ?? 'Upload response received',
+        data: responseData['data']?.toString() ?? responseData.toString(),
+      );
+    } on DioException catch (e) {
+      debugLog(
+          'ApiService', '❌ Payment proof upload error: ${e.response?.data}');
+      throw ApiError(
+        message: e.response?.data['message']?.toString() ??
+            'Failed to upload payment proof',
+        statusCode: e.response?.statusCode,
+        data: e.response?.data,
+      );
     }
   }
 

@@ -4,33 +4,61 @@ import '../../themes/app_colors.dart';
 
 class CategoryCard extends StatelessWidget {
   final Category category;
+  final bool hasSubscription;
   final VoidCallback onTap;
 
   const CategoryCard({
     super.key,
     required this.category,
+    required this.hasSubscription,
     required this.onTap,
   });
 
   Color get _statusColor {
-    switch (category.status) {
-      case 'active':
-        return category.isFree ? AppColors.free : AppColors.primary;
-      case 'coming_soon':
-        return AppColors.comingSoon;
-      default:
-        return Colors.grey;
+    if (category.status == 'active') {
+      if (category.isFree) {
+        return AppColors.free;
+      } else if (hasSubscription) {
+        return AppColors.success;
+      } else {
+        return AppColors.primary;
+      }
+    } else if (category.status == 'coming_soon') {
+      return AppColors.comingSoon;
+    } else {
+      return Colors.grey;
     }
   }
 
   String get _statusText {
-    switch (category.status) {
-      case 'active':
-        return category.isFree ? 'FREE' : 'ACTIVE';
-      case 'coming_soon':
-        return 'COMING SOON';
-      default:
-        return category.status.toUpperCase();
+    if (category.status == 'active') {
+      if (category.isFree) {
+        return 'FREE';
+      } else if (hasSubscription) {
+        return 'SUBSCRIBED';
+      } else {
+        return 'ACTIVE';
+      }
+    } else if (category.status == 'coming_soon') {
+      return 'COMING SOON';
+    } else {
+      return category.status.toUpperCase();
+    }
+  }
+
+  IconData get _statusIcon {
+    if (category.status == 'active') {
+      if (category.isFree) {
+        return Icons.lock_open;
+      } else if (hasSubscription) {
+        return Icons.check_circle;
+      } else {
+        return Icons.lock;
+      }
+    } else if (category.status == 'coming_soon') {
+      return Icons.schedule;
+    } else {
+      return Icons.block;
     }
   }
 
@@ -73,17 +101,30 @@ class CategoryCard extends StatelessWidget {
                             borderRadius: BorderRadius.circular(4),
                             border: Border.all(color: _statusColor),
                           ),
-                          child: Text(
-                            _statusText,
-                            style: Theme.of(context)
-                                .textTheme
-                                .labelSmall
-                                ?.copyWith(
-                                  color: _statusColor,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: isSmallScreen ? 10 : 12,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                _statusIcon,
+                                size: isSmallScreen ? 10 : 12,
+                                color: _statusColor,
+                              ),
+                              const SizedBox(width: 2),
+                              Flexible(
+                                child: Text(
+                                  _statusText,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelSmall
+                                      ?.copyWith(
+                                        color: _statusColor,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: isSmallScreen ? 10 : 12,
+                                      ),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                            overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
                           ),
                         ),
                       ),
@@ -132,12 +173,40 @@ class CategoryCard extends StatelessWidget {
               if (category.status == 'active' && !category.isFree)
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    category.billingCycle.toUpperCase(),
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: AppColors.textSecondary,
-                          fontSize: isSmallScreen ? 10 : 12,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        category.billingCycle.toUpperCase(),
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: AppColors.textSecondary,
+                              fontSize: isSmallScreen ? 10 : 12,
+                            ),
+                      ),
+                      if (hasSubscription)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: Colors.green),
+                          ),
+                          child: Text(
+                            'ACTIVE',
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(
+                                  color: Colors.green,
+                                  fontSize: isSmallScreen ? 8 : 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                          ),
                         ),
+                    ],
                   ),
                 ),
             ],

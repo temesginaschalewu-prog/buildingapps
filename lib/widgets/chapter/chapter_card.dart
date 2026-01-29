@@ -1,10 +1,14 @@
-import 'package:familyacademyclient/models/chapter_model.dart';
+import 'package:familyacademyclient/models/category_model.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import '../../models/chapter_model.dart';
 import '../../providers/subscription_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/category_provider.dart';
+import '../../providers/payment_provider.dart';
 import '../../themes/app_colors.dart';
+import '../../utils/helpers.dart';
 
 class ChapterCard extends StatelessWidget {
   final Chapter chapter;
@@ -22,32 +26,96 @@ class ChapterCard extends StatelessWidget {
     required this.onTap,
   });
 
-  Color _getStatusColor() {
-    if (chapter.accessible) {
+  Color _getStatusColor(bool hasAccess) {
+    if (hasAccess) {
       return AppColors.success;
     } else {
       return chapter.isFree ? Colors.orange : AppColors.locked;
     }
   }
 
-  IconData _getStatusIcon() {
-    if (chapter.accessible) {
+  IconData _getStatusIcon(bool hasAccess) {
+    if (hasAccess) {
       return Icons.play_circle_fill;
     } else {
       return chapter.isFree ? Icons.schedule : Icons.lock;
     }
   }
 
-  String _getStatusText() {
-    if (chapter.accessible) {
+  String _getStatusText(bool hasAccess) {
+    if (hasAccess) {
       return 'ACCESSIBLE';
     } else {
       return chapter.isFree ? 'COMING SOON' : 'LOCKED';
     }
   }
 
-  void _showPaymentDialog(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+  void _handleTap(BuildContext context) {
+    final subscriptionProvider = Provider.of<SubscriptionProvider>(
+      context,
+      listen: false,
+    );
+    final paymentProvider = Provider.of<PaymentProvider>(
+      context,
+      listen: false,
+    );
+    final categoryProvider = Provider.of<CategoryProvider>(
+      context,
+      listen: false,
+    );
+
+    final category = categoryProvider.getCategoryById(categoryId);
+    final isCategoryFree = category?.isFree ?? false;
+
+    final hasAccess = chapter.isFree ||
+        isCategoryFree ||
+        subscriptionProvider.hasActiveSubscriptionForCategory(categoryId);
+
+    if (hasAccess) {
+      onTap();
+    } else {
+      _showPaymentDialog(context, category);
+    }
+  }
+
+  void _showPaymentDialog(BuildContext context, Category? category) {
+    final paymentProvider = Provider.of<PaymentProvider>(
+      context,
+      listen: false,
+    );
+    final subscriptionProvider = Provider.of<SubscriptionProvider>(
+      context,
+      listen: false,
+    );
+
+    if (category == null) {
+      showSnackBar(context, 'Category not found', isError: true);
+      return;
+    }
+
+    final pendingPayments = paymentProvider.getPendingPayments();
+    final hasPendingPayment = pendingPayments.any((payment) =>
+        payment.categoryName.toLowerCase() == category.name.toLowerCase());
+
+    if (hasPendingPayment) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Payment Pending'),
+          content: const Text(
+            'You already have a pending payment for this category. '
+            'Please wait for admin verification (1-3 working days).',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
 
     showDialog(
       context: context,
@@ -64,15 +132,12 @@ class ChapterCard extends StatelessWidget {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-
               context.push(
                 '/payment',
                 extra: {
-                  'category': {
-                    'id': categoryId,
-                    'name': categoryName,
-                  },
-                  'paymentType': authProvider.user?.accountStatus == 'active'
+                  'category': category,
+                  'paymentType': subscriptionProvider
+                          .hasActiveSubscriptionForCategory(categoryId)
                       ? 'repayment'
                       : 'first_time',
                 },
@@ -88,8 +153,13 @@ class ChapterCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final subscriptionProvider = Provider.of<SubscriptionProvider>(context);
+    final categoryProvider = Provider.of<CategoryProvider>(context);
+
+    final category = categoryProvider.getCategoryById(categoryId);
+    final isCategoryFree = category?.isFree ?? false;
 
     final hasAccess = chapter.isFree ||
+        isCategoryFree ||
         subscriptionProvider.hasActiveSubscriptionForCategory(categoryId);
 
     return Card(
@@ -98,13 +168,7 @@ class ChapterCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
       ),
       child: InkWell(
-        onTap: () {
-          if (hasAccess) {
-            context.push('/chapter/${chapter.id}', extra: chapter);
-          } else {
-            _showPaymentDialog(context);
-          }
-        },
+        onTap: () => _handleTap(context),
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -114,12 +178,12 @@ class ChapterCard extends StatelessWidget {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: _getStatusColor().withOpacity(0.1),
+                  color: _getStatusColor(hasAccess).withOpacity(0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(
-                  _getStatusIcon(),
-                  color: _getStatusColor(),
+                  _getStatusIcon(hasAccess),
+                  color: _getStatusColor(hasAccess),
                 ),
               ),
               const SizedBox(width: 12),
@@ -127,36 +191,23 @@ class ChapterCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _getStatusColor().withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(color: _getStatusColor()),
-                          ),
-                          child: Text(
-                            _getStatusText(),
-                            style: Theme.of(context)
-                                .textTheme
-                                .labelSmall
-                                ?.copyWith(
-                                  color: _getStatusColor(),
-                                  fontWeight: FontWeight.w600,
-                                ),
-                          ),
-                        ),
-                        if (chapter.releaseDate != null)
-                          Text(
-                            '${chapter.releaseDate!.day}/${chapter.releaseDate!.month}',
-                            style: Theme.of(context).textTheme.labelSmall,
-                          ),
-                      ],
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _getStatusColor(hasAccess).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: _getStatusColor(hasAccess)),
+                      ),
+                      child: Text(
+                        _getStatusText(hasAccess),
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: _getStatusColor(hasAccess),
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Text(
@@ -169,10 +220,14 @@ class ChapterCard extends StatelessWidget {
                       Padding(
                         padding: const EdgeInsets.only(top: 4),
                         child: Text(
-                          'Purchase "$categoryName" to unlock',
+                          isCategoryFree
+                              ? 'Free category access'
+                              : 'Purchase "$categoryName" to unlock',
                           style:
                               Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Colors.orange,
+                                    color: isCategoryFree
+                                        ? AppColors.success
+                                        : Colors.orange,
                                     fontStyle: FontStyle.italic,
                                   ),
                         ),

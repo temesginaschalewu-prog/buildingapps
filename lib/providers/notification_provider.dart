@@ -9,22 +9,22 @@ class NotificationProvider with ChangeNotifier {
   List<AppNotification.Notification> _notifications = [];
   bool _isLoading = false;
   String? _error;
+  int _unreadCount = 0;
 
   NotificationProvider({required this.apiService});
 
   List<AppNotification.Notification> get notifications => _notifications;
   bool get isLoading => _isLoading;
   String? get error => _error;
+  int get unreadCount => _unreadCount;
 
   List<AppNotification.Notification> get unreadNotifications {
-    return _notifications.where((n) => !n.isDelivered).toList();
+    return _notifications.where((n) => !n.isRead && n.isDelivered).toList();
   }
 
   List<AppNotification.Notification> get readNotifications {
-    return _notifications.where((n) => n.isDelivered).toList();
+    return _notifications.where((n) => n.isRead && n.isDelivered).toList();
   }
-
-  int get unreadCount => unreadNotifications.length;
 
   Future<void> loadNotifications() async {
     _isLoading = true;
@@ -35,8 +35,13 @@ class NotificationProvider with ChangeNotifier {
       debugLog('NotificationProvider', 'Loading notifications');
       final response = await apiService.getMyNotifications();
       _notifications = response.data ?? [];
+
+      // Calculate unread count
+      _unreadCount =
+          _notifications.where((n) => !n.isRead && n.isDelivered).length;
+
       debugLog('NotificationProvider',
-          'Loaded notifications: ${_notifications.length}');
+          'Loaded notifications: ${_notifications.length}, Unread: $_unreadCount');
       notifyListeners();
     } catch (e) {
       _error = e.toString();
@@ -49,21 +54,31 @@ class NotificationProvider with ChangeNotifier {
     }
   }
 
-  Future<void> markAsRead(int notificationId) async {
+  Future<void> markAsRead(int logId) async {
     try {
-      final index = _notifications.indexWhere((n) => n.id == notificationId);
+      final index = _notifications.indexWhere((n) => n.logId == logId);
       if (index != -1) {
         _notifications[index] = AppNotification.Notification(
-          id: _notifications[index].id,
+          logId: _notifications[index].logId,
+          notificationId: _notifications[index].notificationId,
           title: _notifications[index].title,
           message: _notifications[index].message,
-          deliveryStatus: 'delivered',
+          deliveryStatus: _notifications[index].deliveryStatus,
+          isRead: true,
           receivedAt: _notifications[index].receivedAt,
           sentAt: _notifications[index].sentAt,
+          readAt: DateTime.now(),
+          deliveredAt: _notifications[index].deliveredAt,
+          sentBy: _notifications[index].sentBy,
         );
+
+        // Update unread count
+        _unreadCount = unreadNotifications.length;
         notifyListeners();
-        debugLog('NotificationProvider',
-            'Marked notification $notificationId as read');
+
+        // Call API to mark as read on server
+        await apiService.markNotificationAsRead(logId);
+        debugLog('NotificationProvider', 'Marked notification $logId as read');
       }
     } catch (e) {
       debugLog('NotificationProvider', 'Error marking as read: $e');
@@ -74,26 +89,40 @@ class NotificationProvider with ChangeNotifier {
     try {
       _notifications = _notifications.map((notification) {
         return AppNotification.Notification(
-          id: notification.id,
+          logId: notification.logId,
+          notificationId: notification.notificationId,
           title: notification.title,
           message: notification.message,
-          deliveryStatus: 'delivered',
+          deliveryStatus: notification.deliveryStatus,
+          isRead: true,
           receivedAt: notification.receivedAt,
           sentAt: notification.sentAt,
+          readAt: DateTime.now(),
+          deliveredAt: notification.deliveredAt,
+          sentBy: notification.sentBy,
         );
       }).toList();
+
+      _unreadCount = 0;
       notifyListeners();
+
+      // Call API to mark all as read on server
+      await apiService.markAllNotificationsAsRead();
       debugLog('NotificationProvider', 'Marked all notifications as read');
     } catch (e) {
       debugLog('NotificationProvider', 'Error marking all as read: $e');
     }
   }
 
-  Future<void> deleteNotification(int notificationId) async {
+  Future<void> deleteNotification(int logId) async {
     try {
-      _notifications.removeWhere((n) => n.id == notificationId);
+      _notifications.removeWhere((n) => n.logId == logId);
+      _unreadCount = unreadNotifications.length;
       notifyListeners();
-      debugLog('NotificationProvider', 'Deleted notification $notificationId');
+
+      // Call API to delete on server
+      await apiService.deleteNotification(logId);
+      debugLog('NotificationProvider', 'Deleted notification $logId');
     } catch (e) {
       debugLog('NotificationProvider', 'Error deleting notification: $e');
     }
@@ -101,11 +130,15 @@ class NotificationProvider with ChangeNotifier {
 
   void addNotification(AppNotification.Notification notification) {
     _notifications.insert(0, notification);
+    if (!notification.isRead && notification.isDelivered) {
+      _unreadCount++;
+    }
     notifyListeners();
   }
 
   void clearNotifications() {
     _notifications.clear();
+    _unreadCount = 0;
     notifyListeners();
   }
 
@@ -114,25 +147,31 @@ class NotificationProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  AppNotification.Notification? getNotificationById(int id) {
+  void refreshUnreadCount() {
+    _unreadCount = unreadNotifications.length;
+    notifyListeners();
+  }
+
+  AppNotification.Notification? getNotificationByLogId(int logId) {
     try {
-      return _notifications.firstWhere((n) => n.id == id);
+      return _notifications.firstWhere((n) => n.logId == logId);
     } catch (e) {
       return null;
     }
   }
 
-  // Add test notification for debugging
   void addTestNotification() {
     final testNotification = AppNotification.Notification(
-      id: DateTime.now().millisecondsSinceEpoch,
+      logId: DateTime.now().millisecondsSinceEpoch,
       title: 'Test Notification',
       message: 'This is a test notification to verify the system is working.',
-      deliveryStatus: 'pending',
+      deliveryStatus: 'delivered',
+      isRead: false,
       receivedAt: DateTime.now(),
     );
 
     _notifications.insert(0, testNotification);
+    _unreadCount++;
     notifyListeners();
     debugLog('NotificationProvider', 'Added test notification');
   }

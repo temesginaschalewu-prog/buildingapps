@@ -4,8 +4,10 @@ class Course {
   final int categoryId;
   final String? description;
   final int chapterCount;
-  final String access;
-  final String message;
+  final String? access;
+  final String? message;
+  final bool hasPendingPayment;
+  final bool requiresPayment;
 
   Course({
     required this.id,
@@ -13,23 +15,23 @@ class Course {
     required this.categoryId,
     this.description,
     required this.chapterCount,
-    required this.access,
-    required this.message,
+    this.access,
+    this.message,
+    this.hasPendingPayment = false,
+    this.requiresPayment = true,
   });
 
   factory Course.fromJson(Map<String, dynamic> json) {
     return Course(
-      id: json['id'] is String ? int.parse(json['id']) : json['id'] ?? 0,
-      name: json['name']?.toString() ?? '',
-      categoryId: json['category_id'] is String
-          ? int.parse(json['category_id'])
-          : json['category_id'] ?? 0,
-      description: json['description']?.toString(),
-      chapterCount: json['chapter_count'] is String
-          ? int.parse(json['chapter_count'])
-          : json['chapter_count'] ?? 0,
-      access: json['access']?.toString() ?? 'none', // Changed default to 'none'
-      message: json['message']?.toString() ?? 'Purchase required',
+      id: json['id'] ?? 0,
+      name: json['name'] ?? '',
+      categoryId: json['category_id'] ?? 0,
+      description: json['description'],
+      chapterCount: json['chapter_count'] ?? 0,
+      access: json['access'],
+      message: json['message'],
+      hasPendingPayment: json['has_pending_payment'] ?? false,
+      requiresPayment: json['requires_payment'] ?? true,
     );
   }
 
@@ -42,10 +44,19 @@ class Course {
       'chapter_count': chapterCount,
       'access': access,
       'message': message,
+      'has_pending_payment': hasPendingPayment,
+      'requires_payment': requiresPayment,
     };
   }
 
-  bool get hasFullAccess => access == 'full';
-  bool get hasLimitedAccess => access == 'limited';
-  bool get hasNoAccess => access == 'none';
+  bool get isFullyAccessible => access == 'full';
+  bool get isLimitedAccess => access == 'limited' || access == null;
+
+  bool hasFullAccess(bool hasActiveSubscription) {
+    if (access == 'full') return true;
+
+    if (hasActiveSubscription) return true;
+
+    return false;
+  }
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:familyacademyclient/services/api_service.dart';
 import 'package:familyacademyclient/models/subscription_model.dart';
@@ -6,202 +7,192 @@ import 'package:familyacademyclient/utils/helpers.dart';
 class SubscriptionProvider with ChangeNotifier {
   final ApiService apiService;
 
-  List<Subscription> _subscriptions = [];
+  Map<int, Subscription> _subscriptionsByCategory = {};
+  List<Subscription> _allSubscriptions = [];
+  Map<int, bool> _categoryAccessCache = {};
   bool _isLoading = false;
   bool _hasLoaded = false;
   String? _error;
-  Map<int, Subscription> _activeSubscriptionsByCategory = {};
+  Timer? _refreshTimer;
 
-  SubscriptionProvider({required this.apiService});
+  SubscriptionProvider({required this.apiService}) {
+    _refreshTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+      if (_hasLoaded) {
+        loadSubscriptions(forceRefresh: true);
+      }
+    });
+  }
 
-  List<Subscription> get subscriptions => List.unmodifiable(_subscriptions);
+  List<Subscription> get allSubscriptions =>
+      List.unmodifiable(_allSubscriptions);
+  Map<int, Subscription> get subscriptionsByCategory =>
+      Map.unmodifiable(_subscriptionsByCategory);
   bool get isLoading => _isLoading;
   bool get hasLoaded => _hasLoaded;
   String? get error => _error;
-  Map<int, Subscription> get activeSubscriptionsByCategory =>
-      Map.unmodifiable(_activeSubscriptionsByCategory);
 
-  List<Subscription> getActiveSubscriptions() {
-    return _subscriptions.where((s) => s.isActive && !s.hasExpired).toList();
+  List<Subscription> get activeSubscriptions {
+    return _allSubscriptions.where((sub) => sub.isActive).toList();
   }
 
-  List<Subscription> getExpiredSubscriptions() {
-    return _subscriptions.where((s) => s.hasExpired).toList();
+  List<Subscription> get expiredSubscriptions {
+    return _allSubscriptions.where((sub) => sub.isExpired).toList();
   }
 
-  List<Subscription> getCancelledSubscriptions() {
-    return _subscriptions.where((s) => s.isCancelled).toList();
-  }
-
-  List<Subscription> getExpiringSoonSubscriptions() {
-    return _subscriptions.where((s) => s.isExpiringSoon).toList();
+  List<Subscription> get expiringSoonSubscriptions {
+    return _allSubscriptions.where((sub) => sub.isExpiringSoon).toList();
   }
 
   Future<void> loadSubscriptions({bool forceRefresh = false}) async {
-    if (_isLoading) return;
-    if (_hasLoaded && !forceRefresh) return;
+    if (_isLoading && !forceRefresh) return;
+    if (_hasLoaded && !forceRefresh && !_isLoading) return;
 
     _isLoading = true;
     _error = null;
     _notifySafely();
 
     try {
-      debugLog('SubscriptionProvider', 'Loading subscriptions');
+      debugLog('SubscriptionProvider', 'Loading subscriptions...');
       final response = await apiService.getMySubscriptions();
-      _subscriptions = response.data ?? [];
 
-      // Build category map for quick lookup
-      _activeSubscriptionsByCategory = {};
-      for (final sub in getActiveSubscriptions()) {
-        _activeSubscriptionsByCategory[sub.categoryId] = sub;
+      if (response.success && response.data != null) {
+        _allSubscriptions = response.data!;
+
+        _subscriptionsByCategory = {};
+        _categoryAccessCache = {};
+
+        for (final sub in _allSubscriptions) {
+          _subscriptionsByCategory[sub.categoryId] = sub;
+          _categoryAccessCache[sub.categoryId] = sub.isActive;
+        }
+
+        _hasLoaded = true;
+        debugLog('SubscriptionProvider',
+            '✅ Loaded ${_allSubscriptions.length} subscriptions, ${activeSubscriptions.length} active');
+      } else {
+        _error = response.message;
+        debugLog('SubscriptionProvider',
+            '❌ Failed to load subscriptions: ${response.message}');
       }
-
-      _hasLoaded = true;
-      debugLog(
-        'SubscriptionProvider',
-        'Loaded ${_subscriptions.length} subscriptions, '
-            '${getActiveSubscriptions().length} active',
-      );
-    } catch (e) {
+    } catch (e, stackTrace) {
       _error = e.toString();
-      debugLog('SubscriptionProvider', 'loadSubscriptions error: $e');
-      rethrow;
+      debugLog('SubscriptionProvider',
+          '❌ Error loading subscriptions: $e\n$stackTrace');
+      _allSubscriptions = [];
+      _subscriptionsByCategory = {};
+      _categoryAccessCache = {};
     } finally {
       _isLoading = false;
       _notifySafely();
     }
   }
 
-  Future<Map<String, dynamic>> checkSubscriptionStatus(int categoryId) async {
-    if (_isLoading) return {};
+  Future<bool> checkHasActiveSubscriptionForCategory(int categoryId) async {
+    if (_categoryAccessCache.containsKey(categoryId)) {
+      return _categoryAccessCache[categoryId]!;
+    }
 
-    _isLoading = true;
-    _error = null;
-    _notifySafely();
+    final subscription = _subscriptionsByCategory[categoryId];
+    if (subscription != null) {
+      final hasAccess = subscription.isActive;
+      _categoryAccessCache[categoryId] = hasAccess;
+      return hasAccess;
+    }
 
     try {
       debugLog('SubscriptionProvider',
-          'Checking subscription status for category:$categoryId');
+          'Checking subscription status for category: $categoryId');
       final response = await apiService.checkSubscriptionStatus(categoryId);
-      debugLog('SubscriptionProvider',
-          'Subscription status response: ${response.data}');
-      return response.data ?? {};
+
+      if (response.success && response.data != null) {
+        final data = response.data as Map<String, dynamic>;
+
+        if (data['has_subscription'] == true) {
+          final subscription = Subscription.fromJson({
+            'id': data['id'] ?? 0,
+            'user_id': data['user_id'] ?? 0,
+            'category_id': categoryId,
+            'start_date':
+                data['start_date'] ?? DateTime.now().toIso8601String(),
+            'expiry_date': data['expiry_date'] ??
+                DateTime.now().add(const Duration(days: 30)).toIso8601String(),
+            'status': (data['current_status'] ?? data['status'] ?? 'active')
+                .toString(),
+            'billing_cycle': (data['billing_cycle'] ?? 'monthly').toString(),
+            'category_name': data['category_name'] ?? '',
+            'price': data['price'] ?? 0.0,
+          });
+
+          _subscriptionsByCategory[categoryId] = subscription;
+
+          if (!_allSubscriptions.any((s) => s.id == subscription.id)) {
+            _allSubscriptions.add(subscription);
+          }
+
+          final hasAccess = subscription.isActive;
+          _categoryAccessCache[categoryId] = hasAccess;
+
+          _notifySafely();
+          return hasAccess;
+        }
+      }
+
+      _categoryAccessCache[categoryId] = false;
+      return false;
     } catch (e) {
-      _error = e.toString();
-      debugLog('SubscriptionProvider', 'checkSubscriptionStatus error: $e');
-      rethrow;
-    } finally {
-      _isLoading = false;
-      _notifySafely();
+      debugLog(
+          'SubscriptionProvider', '❌ Error checking subscription status: $e');
+
+      _categoryAccessCache[categoryId] = false;
+      return false;
     }
   }
 
   bool hasActiveSubscriptionForCategory(int categoryId) {
-    return _activeSubscriptionsByCategory.containsKey(categoryId);
+    return _categoryAccessCache[categoryId] ?? false;
   }
 
-  Subscription? getSubscriptionByCategoryId(int categoryId) {
-    return _activeSubscriptionsByCategory[categoryId];
+  bool hasPendingPaymentForCategory(int categoryId) {
+    return false;
   }
 
-  Subscription? getSubscriptionById(int id) {
-    try {
-      return _subscriptions.firstWhere((s) => s.id == id);
-    } catch (e) {
-      return null;
-    }
+  Subscription? getSubscriptionForCategory(int categoryId) {
+    return _subscriptionsByCategory[categoryId];
   }
 
-  Future<void> refreshSubscription(int categoryId) async {
-    try {
-      debugLog('SubscriptionProvider',
-          'Refreshing subscription for category: $categoryId');
-
-      // Force reload subscriptions
-      await loadSubscriptions(forceRefresh: true);
-
-      // Also check specific category status
-      final status = await checkSubscriptionStatus(categoryId);
-
-      debugLog(
-          'SubscriptionProvider', 'Subscription status after refresh: $status');
-
-      if (status['has_subscription'] == true) {
-        debugLog('SubscriptionProvider',
-            '✅ Subscription active for category: $categoryId');
-
-        // Notify all listeners that subscription state changed
-        _notifySafely();
-      }
-    } catch (e) {
-      debugLog('SubscriptionProvider', 'Error refreshing subscription: $e');
-      rethrow;
-    }
-  }
-
-  Future<Map<String, dynamic>> getCategorySubscriptionDetails(
-      int categoryId) async {
-    try {
-      final status = await checkSubscriptionStatus(categoryId);
-
-      if (status['has_subscription'] == true) {
-        // Update local cache
-        final subscription = Subscription.fromJson({
-          'id': status['id'],
-          'start_date': status['start_date'],
-          'expiry_date': status['expiry_date'],
-          'status': status['current_status'],
-          'billing_cycle': status['billing_cycle'] ?? 'monthly',
-          'category_name': status['category_name'] ?? 'Unknown Category',
-          'category_id': categoryId,
-          'price': status['price'] ?? 0,
-          'payment_method': status['payment_method'],
-          'payment_status': status['payment_status'],
-          'days_remaining': status['days_remaining'] ?? 0,
-        });
-
-        _activeSubscriptionsByCategory[categoryId] = subscription;
-        _notifySafely();
-      }
-
-      return status;
-    } catch (e) {
-      debugLog(
-          'SubscriptionProvider', 'getCategorySubscriptionDetails error: $e');
-      return {'has_subscription': false, 'status': 'unpaid'};
-    }
-  }
-
-// Add this method to force refresh when payment is verified
   Future<void> refreshAfterPaymentVerification() async {
-    debugLog('SubscriptionProvider', 'Refreshing after payment verification');
+    debugLog(
+        'SubscriptionProvider', '🔄 Refreshing after payment verification');
 
-    // Clear current data
-    _subscriptions = [];
-    _activeSubscriptionsByCategory = {};
+    _allSubscriptions = [];
+    _subscriptionsByCategory = {};
+    _categoryAccessCache = {};
     _hasLoaded = false;
 
-    // Reload everything
     await loadSubscriptions(forceRefresh: true);
 
-    debugLog('SubscriptionProvider',
-        '✅ Subscriptions refreshed after payment verification');
+    debugLog('SubscriptionProvider', '✅ Subscriptions refreshed');
     _notifySafely();
   }
 
-  bool isSubscriptionExpiringSoon(int categoryId) {
-    final sub = getSubscriptionByCategoryId(categoryId);
-    return sub != null && sub.isExpiringSoon;
-  }
+  Future<void> refreshCategorySubscription(int categoryId) async {
+    try {
+      _categoryAccessCache.remove(categoryId);
 
-  int getDaysRemaining(int categoryId) {
-    final sub = getSubscriptionByCategoryId(categoryId);
-    return sub?.daysRemaining ?? 0;
+      await loadSubscriptions(forceRefresh: true);
+
+      debugLog('SubscriptionProvider',
+          '✅ Refreshed subscription for category: $categoryId');
+    } catch (e) {
+      debugLog('SubscriptionProvider',
+          '❌ Error refreshing category subscription: $e');
+    }
   }
 
   void clearSubscriptions() {
-    _subscriptions = [];
-    _activeSubscriptionsByCategory = {};
+    _allSubscriptions = [];
+    _subscriptionsByCategory = {};
+    _categoryAccessCache = {};
     _hasLoaded = false;
     _notifySafely();
   }
@@ -209,6 +200,12 @@ class SubscriptionProvider with ChangeNotifier {
   void clearError() {
     _error = null;
     _notifySafely();
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
   }
 
   void _notifySafely() {

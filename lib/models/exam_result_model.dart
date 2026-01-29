@@ -5,10 +5,10 @@ class ExamResult {
   final double score;
   final int totalQuestions;
   final int correctAnswers;
-  final int timeTaken; // in seconds
+  final int timeTaken;
   final DateTime startedAt;
   final DateTime? completedAt;
-  final String status; // 'in_progress', 'completed', 'abandoned'
+  final String status;
   final String? examCode;
   final List<dynamic>? answerDetails;
   final String title;

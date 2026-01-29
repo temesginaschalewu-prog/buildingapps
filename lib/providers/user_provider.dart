@@ -18,6 +18,12 @@ class UserProvider with ChangeNotifier {
   bool _hasLoadedPayments = false;
   String? _error;
 
+  // Cache timestamps
+  DateTime? _lastProfileLoadTime;
+  DateTime? _lastNotificationsLoadTime;
+  DateTime? _lastPaymentsLoadTime;
+  static const Duration _cacheDuration = Duration(minutes: 5);
+
   UserProvider({required this.apiService});
 
   User? get currentUser => _currentUser;
@@ -30,9 +36,21 @@ class UserProvider with ChangeNotifier {
   bool get hasLoadedPayments => _hasLoadedPayments;
   String? get error => _error;
 
+  bool _shouldReload(DateTime? lastLoadTime) {
+    if (lastLoadTime == null) return true;
+    return DateTime.now().difference(lastLoadTime) > _cacheDuration;
+  }
+
   Future<void> loadUserProfile({bool forceRefresh = false}) async {
-    if (_isLoading) return;
-    if (_hasLoadedProfile && !forceRefresh) return;
+    if (_isLoading && !forceRefresh) return;
+
+    // Check cache
+    if (!forceRefresh &&
+        _hasLoadedProfile &&
+        !_shouldReload(_lastProfileLoadTime)) {
+      debugLog('UserProvider', 'Using cached profile data');
+      return;
+    }
 
     _isLoading = true;
     _error = null;
@@ -43,6 +61,7 @@ class UserProvider with ChangeNotifier {
       final response = await apiService.getMyProfile();
       _currentUser = response.data;
       _hasLoadedProfile = true;
+      _lastProfileLoadTime = DateTime.now();
       debugLog('UserProvider', 'Loaded user profile: ${_currentUser?.id}');
     } catch (e) {
       _error = e.toString();
@@ -55,8 +74,15 @@ class UserProvider with ChangeNotifier {
   }
 
   Future<void> loadPayments({bool forceRefresh = false}) async {
-    if (_isLoading) return;
-    if (_hasLoadedPayments && !forceRefresh) return;
+    if (_isLoading && !forceRefresh) return;
+
+    // Check cache
+    if (!forceRefresh &&
+        _hasLoadedPayments &&
+        !_shouldReload(_lastPaymentsLoadTime)) {
+      debugLog('UserProvider', 'Using cached payments data');
+      return;
+    }
 
     _isLoading = true;
     _error = null;
@@ -67,6 +93,7 @@ class UserProvider with ChangeNotifier {
       final response = await apiService.getMyPayments();
       _payments = response.data ?? [];
       _hasLoadedPayments = true;
+      _lastPaymentsLoadTime = DateTime.now();
       debugLog('UserProvider', 'Loaded payments: ${_payments.length}');
     } catch (e) {
       _error = e.toString();
@@ -79,8 +106,15 @@ class UserProvider with ChangeNotifier {
   }
 
   Future<void> loadNotifications({bool forceRefresh = false}) async {
-    if (_isLoading) return;
-    if (_hasLoadedNotifications && !forceRefresh) return;
+    if (_isLoading && !forceRefresh) return;
+
+    // Check cache
+    if (!forceRefresh &&
+        _hasLoadedNotifications &&
+        !_shouldReload(_lastNotificationsLoadTime)) {
+      debugLog('UserProvider', 'Using cached notifications data');
+      return;
+    }
 
     _isLoading = true;
     _error = null;
@@ -91,6 +125,7 @@ class UserProvider with ChangeNotifier {
       final response = await apiService.getMyNotifications();
       _notifications = response.data ?? [];
       _hasLoadedNotifications = true;
+      _lastNotificationsLoadTime = DateTime.now();
       debugLog(
           'UserProvider', 'Loaded notifications: ${_notifications.length}');
     } catch (e) {
@@ -144,7 +179,9 @@ class UserProvider with ChangeNotifier {
           createdAt: _currentUser!.createdAt,
           updatedAt: DateTime.now(),
         );
-        _hasLoadedProfile = false; // Mark for reload
+        _hasLoadedProfile =
+            true; // Keep as loaded but mark for refresh on next call
+        _lastProfileLoadTime = DateTime.now();
       }
     } catch (e) {
       _error = e.toString();
@@ -156,19 +193,24 @@ class UserProvider with ChangeNotifier {
     }
   }
 
-  Future<void> markNotificationAsRead(int notificationId) async {
-    final index = _notifications.indexWhere((n) => n.id == notificationId);
+  Future<void> markNotificationAsRead(int logId) async {
+    final index = _notifications.indexWhere((n) => n.logId == logId);
     if (index != -1) {
       final notification = _notifications[index];
       _notifications[index] = AppNotification.Notification(
-        id: notification.id,
+        logId: notification.logId,
+        notificationId: notification.notificationId,
         title: notification.title,
         message: notification.message,
-        deliveryStatus: 'delivered',
+        deliveryStatus: notification.deliveryStatus,
+        isRead: true,
         receivedAt: notification.receivedAt,
         sentAt: notification.sentAt,
+        readAt: DateTime.now(),
+        deliveredAt: notification.deliveredAt,
+        sentBy: notification.sentBy,
       );
-      debugLog('UserProvider', 'Marked notification $notificationId as read');
+      debugLog('UserProvider', 'Marked notification $logId as read');
       _notifySafely();
     }
   }
@@ -180,6 +222,7 @@ class UserProvider with ChangeNotifier {
   Future<void> clearNotifications() async {
     _notifications.clear();
     _hasLoadedNotifications = false;
+    _lastNotificationsLoadTime = null;
     _notifySafely();
   }
 
@@ -195,6 +238,9 @@ class UserProvider with ChangeNotifier {
     _hasLoadedProfile = false;
     _hasLoadedNotifications = false;
     _hasLoadedPayments = false;
+    _lastProfileLoadTime = null;
+    _lastNotificationsLoadTime = null;
+    _lastPaymentsLoadTime = null;
     _notifySafely();
   }
 

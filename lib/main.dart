@@ -1,5 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform;
+import 'dart:io';
 
 import 'package:familyacademyclient/app.dart';
 import 'package:familyacademyclient/providers/auth_provider.dart';
@@ -31,7 +32,6 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:screen_protector/screen_protector.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -49,8 +49,6 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   }
 
   final notificationService = NotificationService();
-  await notificationService.init();
-
   await notificationService.showLocalNotification(
     title: message.notification?.title ?? 'Family Academy',
     body: message.notification?.body ?? '',
@@ -82,14 +80,17 @@ Future<void> main() async {
 
   await dotenv.load(fileName: ".env");
 
+  // Initialize Firebase only once here
   if (Platform.isAndroid || Platform.isIOS) {
     try {
       await Firebase.initializeApp();
       print("✅ Firebase initialized for mobile platform");
 
       final notificationService = NotificationService();
+
+      // Initialize notification service WITHOUT ApiService (will be set later)
       await notificationService.init();
-      await notificationService.setupFirebaseHandlers();
+      print('Main: NotificationService initialized once');
 
       FirebaseMessaging.onBackgroundMessage(
           _firebaseMessagingBackgroundHandler);
@@ -113,7 +114,7 @@ Future<void> main() async {
       }
 
       final token = await messaging.getToken();
-      print("Firebase Messaging Token: $token");
+      print("Firebase Messaging Token: ${token?.substring(0, 20)}...");
 
       final prefs = await SharedPreferences.getInstance();
       if (token != null) {
@@ -143,10 +144,6 @@ Future<void> main() async {
 
   final apiService = ApiService();
   print('Main: ApiService created');
-
-  final notificationService = NotificationService();
-  await notificationService.init();
-  print('Main: NotificationService initialized');
 
   final appLifecycleObserver = AppLifecycleObserver();
   WidgetsBinding.instance.addObserver(appLifecycleObserver);
@@ -220,7 +217,7 @@ Future<void> main() async {
         ),
       ],
       child: FamilyAcademyApp(
-        notificationService: notificationService,
+        apiService: apiService, // Pass apiService to FamilyAcademyApp
       ),
     ),
   );

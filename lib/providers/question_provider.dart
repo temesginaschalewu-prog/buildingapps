@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-
 import '../services/api_service.dart';
 import '../models/question_model.dart';
 import '../utils/helpers.dart';
@@ -9,8 +8,13 @@ class QuestionProvider with ChangeNotifier {
 
   List<Question> _questions = [];
   Map<int, List<Question>> _questionsByChapter = {};
+  Map<int, bool> _hasLoadedForChapter = {};
+  Map<int, bool> _isLoadingForChapter = {};
+  Map<int, DateTime> _lastLoadedTime = {};
   bool _isLoading = false;
   String? _error;
+
+  static const Duration cacheDuration = Duration(minutes: 20);
 
   QuestionProvider({required this.apiService});
 
@@ -18,18 +22,39 @@ class QuestionProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
 
+  bool hasLoadedForChapter(int chapterId) =>
+      _hasLoadedForChapter[chapterId] ?? false;
+  bool isLoadingForChapter(int chapterId) =>
+      _isLoadingForChapter[chapterId] ?? false;
+
   List<Question> getQuestionsByChapter(int chapterId) {
     return _questionsByChapter[chapterId] ?? [];
   }
 
-  Future<void> loadPracticeQuestions(int chapterId) async {
-    _isLoading = true;
+  Future<void> loadPracticeQuestions(int chapterId,
+      {bool forceRefresh = false}) async {
+    if (_isLoadingForChapter[chapterId] == true) {
+      return;
+    }
+
+    final lastLoaded = _lastLoadedTime[chapterId];
+    final hasCache = _hasLoadedForChapter[chapterId] == true;
+    final isCacheValid = lastLoaded != null &&
+        DateTime.now().difference(lastLoaded) < cacheDuration;
+
+    if (hasCache && !forceRefresh && isCacheValid) {
+      debugLog('QuestionProvider',
+          '✅ Using cached questions for chapter: $chapterId');
+      return;
+    }
+
+    _isLoadingForChapter[chapterId] = true;
     _error = null;
     notifyListeners();
 
     try {
       debugLog('QuestionProvider',
-          'Loading practice questions for chapter: $chapterId');
+          '❓ Loading practice questions for chapter: $chapterId');
       final response = await apiService.getPracticeQuestions(chapterId);
 
       final responseData = response.data ?? {};
@@ -45,20 +70,33 @@ class QuestionProvider with ChangeNotifier {
                 'Error parsing question: $e, data: $questionJson');
           }
         }
+
         _questionsByChapter[chapterId] = questionList;
+        _hasLoadedForChapter[chapterId] = true;
+        _lastLoadedTime[chapterId] = DateTime.now();
+
+        for (final question in questionList) {
+          if (!_questions.any((q) => q.id == question.id)) {
+            _questions.add(question);
+          }
+        }
+
+        debugLog('QuestionProvider',
+            '✅ Loaded ${questionList.length} questions for chapter $chapterId');
       } else {
         _questionsByChapter[chapterId] = [];
+        _hasLoadedForChapter[chapterId] = true;
+        _lastLoadedTime[chapterId] = DateTime.now();
       }
-
-      _questions = [..._questions, ..._questionsByChapter[chapterId]!];
-
-      debugLog('QuestionProvider',
-          'Loaded ${_questionsByChapter[chapterId]!.length} questions for chapter $chapterId');
     } catch (e) {
       _error = e.toString();
-      debugLog('QuestionProvider', 'loadPracticeQuestions error: $e');
-      _questionsByChapter[chapterId] = [];
+      debugLog('QuestionProvider', '❌ loadPracticeQuestions error: $e');
+
+      if (!_hasLoadedForChapter[chapterId]!) {
+        _questionsByChapter[chapterId] = [];
+      }
     } finally {
+      _isLoadingForChapter[chapterId] = false;
       _isLoading = false;
       notifyListeners();
     }
@@ -74,7 +112,7 @@ class QuestionProvider with ChangeNotifier {
 
     try {
       debugLog('QuestionProvider',
-          'Checking answer for question:$questionId option:$selectedOption');
+          '✅ Checking answer for question:$questionId option:$selectedOption');
       final response = await apiService.checkAnswer(questionId, selectedOption);
 
       final index = _questions.indexWhere((q) => q.id == questionId);
@@ -100,7 +138,7 @@ class QuestionProvider with ChangeNotifier {
       return response.data ?? {};
     } catch (e) {
       _error = e.toString();
-      debugLog('QuestionProvider', 'checkAnswer error: $e');
+      debugLog('QuestionProvider', '❌ checkAnswer error: $e');
       notifyListeners();
       rethrow;
     } finally {
@@ -110,12 +148,31 @@ class QuestionProvider with ChangeNotifier {
   }
 
   Question? getQuestionById(int id) {
-    return _questions.firstWhere((q) => q.id == id);
+    try {
+      return _questions.firstWhere((q) => q.id == id);
+    } catch (e) {
+      return null;
+    }
   }
 
-  void clearQuestions() {
-    _questions = [];
-    _questionsByChapter = {};
+  void clearQuestionsForChapter(int chapterId) {
+    _hasLoadedForChapter.remove(chapterId);
+    _lastLoadedTime.remove(chapterId);
+
+    final chapterQuestions = _questionsByChapter[chapterId] ?? [];
+    _questions.removeWhere(
+        (question) => chapterQuestions.any((q) => q.id == question.id));
+    _questionsByChapter.remove(chapterId);
+
+    notifyListeners();
+  }
+
+  void clearAllQuestions() {
+    _questions.clear();
+    _questionsByChapter.clear();
+    _hasLoadedForChapter.clear();
+    _lastLoadedTime.clear();
+    _isLoadingForChapter.clear();
     notifyListeners();
   }
 

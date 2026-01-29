@@ -1,3 +1,5 @@
+// ignore_for_file: use_build_context_synchronously
+
 import 'dart:io';
 import 'package:familyacademyclient/models/setting_model.dart';
 import 'package:flutter/material.dart';
@@ -75,11 +77,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
         return;
       }
 
-      // Try to get the full category object
       Category? category;
 
       if (categoryData is Map<String, dynamic>) {
-        // If it's a map, check if it has price
         if (categoryData['price'] != null) {
           category = Category(
             id: categoryData['id'] ?? 0,
@@ -90,7 +90,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
             description: categoryData['description'],
           );
         } else {
-          // If map doesn't have price, get from provider
           final categoryProvider = Provider.of<CategoryProvider>(
             context,
             listen: false,
@@ -105,7 +104,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
       }
 
       if (category == null) {
-        // Last resort: try to get category from provider
         final categoryProvider = Provider.of<CategoryProvider>(
           context,
           listen: false,
@@ -226,7 +224,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
     try {
       debugLog('PaymentScreen', 'Uploading payment proof...');
 
-      // Check if file exists
       if (_proofImageFile == null || !_proofImageFile!.existsSync()) {
         throw Exception('Payment proof file not found');
       }
@@ -241,30 +238,42 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
       debugLog('PaymentScreen', 'Payment proof uploaded: $proofImagePath');
 
-      // Submit payment with the uploaded proof
       final result = await paymentProvider.submitPayment(
         categoryId: _category!.id,
         paymentType: _paymentType!,
         paymentMethod: _paymentMethod!,
         amount: _amount,
-        proofImagePath: proofImagePath.toString(), // Ensure it's a string
+        proofImagePath: proofImagePath.toString(),
       );
 
       debugLog('PaymentScreen', 'Payment submission result: $result');
 
       if (result['success'] == true) {
-        await authProvider.refreshUserData();
         await subscriptionProvider.refreshAfterPaymentVerification();
-        await subscriptionProvider
-            .getCategorySubscriptionDetails(_category!.id);
 
-        GoRouter.of(context).go('/payment-success', extra: {
+        showSnackBar(context, 'Payment submitted successfully!');
+
+        await context.push('/payment-success', extra: {
           'category': _category,
           'paymentType': _paymentType,
         });
       } else {
-        showSnackBar(context, result['message'] ?? 'Payment failed',
-            isError: true);
+        final data = result['data'];
+        if (data != null && data['has_pending_payment'] == true) {
+          showSnackBar(
+            context,
+            'You already have a pending payment for this category. Please wait for admin verification.',
+            isError: true,
+          );
+
+          await context.push('/payment-success', extra: {
+            'category': _category,
+            'paymentType': _paymentType,
+          });
+        } else {
+          showSnackBar(context, result['message'] ?? 'Payment failed',
+              isError: true);
+        }
       }
     } catch (e, stackTrace) {
       debugLog('PaymentScreen', 'Payment error: $e\n$stackTrace');

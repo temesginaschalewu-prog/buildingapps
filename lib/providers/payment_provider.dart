@@ -83,7 +83,7 @@ class PaymentProvider with ChangeNotifier {
     required double amount,
     String? proofImagePath,
   }) async {
-    if (_isLoading) return {};
+    if (_isLoading) return {'success': false, 'message': 'Already processing'};
 
     _isLoading = true;
     _error = null;
@@ -93,7 +93,8 @@ class PaymentProvider with ChangeNotifier {
       debugLog('PaymentProvider',
           'Submitting payment category:$categoryId amount:$amount proof:$proofImagePath');
 
-      final response = await apiService.submitPayment(
+      // Get the FULL ApiResponse, not just the data
+      final apiResponse = await apiService.submitPayment(
         categoryId: categoryId,
         paymentType: paymentType,
         paymentMethod: paymentMethod,
@@ -102,16 +103,19 @@ class PaymentProvider with ChangeNotifier {
       );
 
       // Debug the response
-      debugLog('PaymentProvider', 'Submit payment response: ${response.data}');
+      debugLog(
+          'PaymentProvider', 'Submit payment response: ${apiResponse.data}');
+      debugLog(
+          'PaymentProvider', 'Submit payment success: ${apiResponse.success}');
+      debugLog(
+          'PaymentProvider', 'Submit payment message: ${apiResponse.message}');
 
-      // Ensure we return a Map<String, dynamic>
-      if (response.data is Map<String, dynamic>) {
-        return response.data as Map<String, dynamic>;
-      } else {
-        debugLog('PaymentProvider',
-            'Response data is not a map: ${response.data.runtimeType}');
-        return {'success': false, 'message': 'Invalid response format'};
-      }
+      // CRITICAL FIX: Return the full response including success status
+      return {
+        'success': apiResponse.success,
+        'message': apiResponse.message,
+        'data': apiResponse.data, // This is where the payment details are
+      };
     } catch (e, stackTrace) {
       _error = e.toString();
       debugLog('PaymentProvider', 'submitPayment error: $e\n$stackTrace');
@@ -154,7 +158,7 @@ class PaymentProvider with ChangeNotifier {
 
   String getTelebirrNumber() {
     final setting = getPaymentSetting('payment_telebirr_number');
-    return setting?.settingValue ?? '+251912345678';
+    return setting?.settingKey ?? 'payment_telebirr_number';
   }
 
   void clearPayments() {

@@ -22,6 +22,8 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen> {
   bool _confirmChange = false;
   late Map<String, dynamic> _args = {};
   bool _hasArgs = false;
+  String? _newDeviceId;
+  String? _error;
 
   @override
   void didChangeDependencies() {
@@ -36,6 +38,18 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen> {
       _hasArgs = true;
 
       debugLog('DeviceChangeScreen', 'Received args: $_args');
+
+      // Get new device ID from device provider
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        final deviceProvider =
+            Provider.of<DeviceProvider>(context, listen: false);
+        await deviceProvider.initialize();
+        if (mounted) {
+          setState(() {
+            _newDeviceId = deviceProvider.deviceId;
+          });
+        }
+      });
 
       // Auto-fill password if provided
       if (_args['password'] != null) {
@@ -61,7 +75,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen> {
   String get _deviceId => _hasArgs ? (_args['deviceId']?.toString() ?? '') : '';
   String get _currentDeviceId =>
       _hasArgs ? (_args['currentDeviceId']?.toString() ?? '') : '';
-  String get _newDeviceId =>
+  String get _newDeviceIdFromArgs =>
       _hasArgs ? (_args['newDeviceId']?.toString() ?? '') : '';
   int get _changeCount => _hasArgs ? (_args['changeCount'] as int? ?? 0) : 0;
   int get _maxChanges => _hasArgs ? (_args['maxChanges'] as int? ?? 2) : 2;
@@ -85,19 +99,24 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen> {
       return;
     }
 
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
 
     final authProvider = context.read<AuthProvider>();
+    final deviceProvider = context.read<DeviceProvider>();
     final password = _passwordController.text;
+    final effectiveDeviceId = _newDeviceId ?? _deviceId;
 
     try {
-      debugLog(
-          'DeviceChangeScreen', 'Approving device change for user: $_username');
+      debugLog('DeviceChangeScreen',
+          'Approving device change for user: $_username to device: $effectiveDeviceId');
 
       // Call the approve-device-change endpoint
       final response = await authProvider.apiService.approveDeviceChange(
         password: password,
-        deviceId: _deviceId,
+        deviceId: effectiveDeviceId,
       );
 
       if (response.success && response.data != null) {
@@ -108,8 +127,11 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen> {
           userData: data['user'],
           token: data['token'],
           deviceToken: data['deviceToken'],
-          deviceId: _deviceId,
+          deviceId: effectiveDeviceId,
         );
+
+        // Update device provider
+        await deviceProvider.initialize();
 
         showSnackBar(
           context,
@@ -123,22 +145,32 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen> {
           context.go('/');
         }
       } else {
-        showSnackBar(context, response.message ?? 'Device change failed',
-            isError: true);
+        setState(() {
+          _error = response.message ?? 'Device change failed';
+        });
+        showSnackBar(context, _error!, isError: true);
       }
     } catch (e) {
       debugLog('DeviceChangeScreen', 'Device change failed: $e');
 
-      if (e is ApiError && e.action == 'max_device_changes_reached') {
-        showSnackBar(
-          context,
-          'Maximum device changes (2 per month) reached. Please contact support.',
-          isError: true,
-        );
+      String errorMessage = 'Device change failed';
+
+      if (e is ApiError) {
+        if (e.action == 'max_device_changes_reached') {
+          errorMessage =
+              'Maximum device changes (2 per month) reached. Please contact support.';
+        } else {
+          errorMessage = e.message;
+        }
       } else {
-        showSnackBar(context, 'Device change failed: ${e.toString()}',
-            isError: true);
+        errorMessage = e.toString();
       }
+
+      setState(() {
+        _error = errorMessage;
+      });
+
+      showSnackBar(context, errorMessage, isError: true);
     } finally {
       setState(() => _isLoading = false);
     }
@@ -168,6 +200,37 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen> {
     );
   }
 
+  void _showDeviceInfoDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Device Information'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Username: $_username'),
+            const SizedBox(height: 8),
+            Text('Current Device ID: ${_currentDeviceId.substring(0, 20)}...'),
+            const SizedBox(height: 8),
+            Text(
+                'New Device ID: ${(_newDeviceId ?? _deviceId).substring(0, 20)}...'),
+            const SizedBox(height: 8),
+            Text('Device Changes This Month: $_changeCount/$_maxChanges'),
+            const SizedBox(height: 8),
+            Text('Remaining Changes: $_remainingChanges'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_hasArgs) {
@@ -189,6 +252,13 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen> {
       appBar: AppBar(
         title: const Text('Device Change Required'),
         automaticallyImplyLeading: false,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.info_outline),
+            onPressed: _showDeviceInfoDialog,
+            tooltip: 'Device Information',
+          ),
+        ],
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -226,6 +296,17 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen> {
                           'Your old device will be blocked after this change.',
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
+                        if (_error != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(
+                              _error!,
+                              style: const TextStyle(
+                                color: Colors.red,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -250,7 +331,18 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen> {
                         const SizedBox(height: 12),
                         _buildInfoRow('Username', _username),
                         _buildInfoRow('Current Device', _currentDeviceId),
-                        _buildInfoRow('New Device', _newDeviceId),
+                        _buildInfoRow('New Device', _newDeviceId ?? _deviceId),
+                        if (_newDeviceId == null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(
+                              '⚠️ Could not detect new device ID',
+                              style: TextStyle(
+                                color: Colors.orange,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -288,6 +380,17 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen> {
                               ),
                             ),
                           ),
+                        if (_canChangeDevice && _remainingChanges == 0)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(
+                              '⚠️ Last change available this month',
+                              style: TextStyle(
+                                color: Colors.orange,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -303,6 +406,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen> {
                     border: OutlineInputBorder(),
                     filled: true,
                     prefixIcon: Icon(Icons.lock),
+                    helperText: 'Enter your password to confirm device change',
                   ),
                   obscureText: true,
                   validator: (value) {
@@ -388,7 +492,19 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen> {
 
                 OutlinedButton(
                   onPressed: _isLoading ? null : _cancelDeviceChange,
-                  child: const Text('Cancel'),
+                  child: const Text('Cancel Device Change'),
+                ),
+
+                const SizedBox(height: 20),
+
+                // Help text
+                Text(
+                  'Note: Device changes are limited to 2 per month for security reasons.',
+                  style: Theme.of(context).textTheme.bodySmall!.copyWith(
+                        color: Colors.grey[600],
+                        fontStyle: FontStyle.italic,
+                      ),
+                  textAlign: TextAlign.center,
                 ),
               ],
             ),
@@ -413,7 +529,10 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen> {
           ),
           Expanded(
             child: Text(
-              value,
+              value.isNotEmpty
+                  ? value.substring(0, value.length > 30 ? 30 : value.length) +
+                      (value.length > 30 ? '...' : '')
+                  : 'Not available',
               style: TextStyle(
                 color: Colors.grey[700],
                 fontFamily: Platform.isIOS ? 'Courier' : 'monospace',
@@ -435,13 +554,15 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen> {
           Text(label),
           Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               fontWeight: FontWeight.bold,
-              color: Colors.blue,
+              color: _remainingChanges == 0 ? Colors.red : Colors.blue,
             ),
           ),
         ],
       ),
     );
   }
+
+  int min(int a, int b) => a < b ? a : b;
 }

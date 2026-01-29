@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -19,39 +21,45 @@ class MainNavigation extends StatefulWidget {
 
 class _MainNavigationState extends State<MainNavigation> {
   int _currentIndex = 0;
-  bool _isInitialized = false;
+  bool _isInitializing = false;
+  bool _dataLoadedInBackground = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initializeUserData();
+      _initializeUserDataInBackground();
     });
   }
 
-  Future<void> _initializeUserData() async {
+  // Load data in background without blocking UI
+  Future<void> _initializeUserDataInBackground() async {
+    if (_isInitializing) return;
+
+    _isInitializing = true;
+
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final userProvider = Provider.of<UserProvider>(context, listen: false);
     final subscriptionProvider =
         Provider.of<SubscriptionProvider>(context, listen: false);
 
-    if (authProvider.isAuthenticated) {
-      // Load essential data sequentially
-      await userProvider.loadUserProfile();
+    if (authProvider.isAuthenticated && !_dataLoadedInBackground) {
+      try {
+        // Load essential data in background
+        await userProvider.loadUserProfile();
 
-      // Load other data that might be needed
-      await Future.wait([
-        userProvider.loadNotifications(),
-        userProvider.loadPayments(),
-        subscriptionProvider.loadSubscriptions(),
-      ]);
+        // Load other data in background without waiting
+        unawaited(userProvider.loadNotifications());
+        unawaited(userProvider.loadPayments());
+        unawaited(subscriptionProvider.loadSubscriptions());
+
+        _dataLoadedInBackground = true;
+      } catch (e) {
+        // Silently fail, data will load when screens need it
+      }
     }
 
-    if (mounted) {
-      setState(() {
-        _isInitialized = true;
-      });
-    }
+    _isInitializing = false;
   }
 
   // Update current index based on route
@@ -77,12 +85,6 @@ class _MainNavigationState extends State<MainNavigation> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         GoRouter.of(context).go('/auth/login');
       });
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    if (!_isInitialized) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );

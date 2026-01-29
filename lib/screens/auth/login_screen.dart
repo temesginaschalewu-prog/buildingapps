@@ -10,6 +10,7 @@ import '../../providers/device_provider.dart';
 import '../../utils/helpers.dart';
 import '../../widgets/auth/auth_form_field.dart';
 import '../../widgets/auth/password_field.dart';
+import '../../services/notification_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -25,6 +26,8 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   String? _deviceId;
   bool _mounted = true;
+  final NotificationService _notificationService = NotificationService();
+  String? _fcmToken;
 
   @override
   void initState() {
@@ -32,6 +35,7 @@ class _LoginScreenState extends State<LoginScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_mounted) {
         _initializeDevice();
+        _getFcmToken();
       }
     });
   }
@@ -51,6 +55,16 @@ class _LoginScreenState extends State<LoginScreen> {
       debugLog('LoginScreen', 'Device ID: $_deviceId');
     } catch (e) {
       debugLog('LoginScreen', 'Error initializing device: $e');
+    }
+  }
+
+  Future<void> _getFcmToken() async {
+    try {
+      await _notificationService.init();
+      _fcmToken = await _notificationService.getFCMToken();
+      debugLog('LoginScreen', 'FCM Token: ${_fcmToken?.substring(0, 20)}...');
+    } catch (e) {
+      debugLog('LoginScreen', 'Error getting FCM token: $e');
     }
   }
 
@@ -78,9 +92,12 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       debugLog('LoginScreen', 'Attempting login...');
 
-      // Use authProvider's method
-      await authProvider.studentLogin(username, password, _deviceId!);
+      // Get FCM token from NotificationService
+      final notificationService = NotificationService();
+      final fcmToken = await notificationService.getFCMToken();
 
+      // Use authProvider's method with FCM token
+      await authProvider.studentLogin(username, password, _deviceId!, fcmToken);
       debugLog('LoginScreen', 'Login attempt completed');
       debugLog('LoginScreen', 'AuthProvider error: ${authProvider.error}');
       debugLog('LoginScreen',
@@ -101,7 +118,8 @@ class _LoginScreenState extends State<LoginScreen> {
           'deviceId': _deviceId,
           'currentDeviceId': currentDeviceId,
           'newDeviceId': _deviceId,
-          'changeCount': 0, // We'll get this from backend response
+          'fcmToken': _fcmToken, // Pass FCM token
+          'changeCount': 0,
           'maxChanges': 2,
           'remainingChanges': 2,
           'canChangeDevice': true,
@@ -138,6 +156,7 @@ class _LoginScreenState extends State<LoginScreen> {
             'deviceId': _deviceId,
             'currentDeviceId': e.data['currentDeviceId'],
             'newDeviceId': e.data['newDeviceId'],
+            'fcmToken': _fcmToken, // Pass FCM token
             'changeCount': e.data['changeCount'] ?? 0,
             'maxChanges': e.data['maxChanges'] ?? 2,
             'remainingChanges': e.data['remainingChanges'] ?? 2,
@@ -242,10 +261,23 @@ class _LoginScreenState extends State<LoginScreen> {
                 if (Platform.isAndroid && _deviceId != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 32),
-                    child: Text(
-                      'Device ID: $_deviceId',
-                      style: Theme.of(context).textTheme.bodySmall,
-                      textAlign: TextAlign.center,
+                    child: Column(
+                      children: [
+                        Text(
+                          'Device ID: $_deviceId',
+                          style: Theme.of(context).textTheme.bodySmall,
+                          textAlign: TextAlign.center,
+                        ),
+                        if (_fcmToken != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(
+                              'FCM Token: ${_fcmToken!.substring(0, 20)}...',
+                              style: Theme.of(context).textTheme.bodySmall,
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                      ],
                     ),
                   ),
               ],

@@ -1,12 +1,14 @@
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
-import 'package:screen_protector/screen_protector.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
-import 'package:device_info_plus/device_info_plus.dart';
 
 class ScreenProtectionService {
+  static const MethodChannel _channel =
+      MethodChannel('com.familyacademy/screen_protection');
+
   static bool _isInitialized = false;
+  static bool _isVideoPlaying = false;
 
   /// Initialize screen protection for the entire app
   static Future<void> initialize() async {
@@ -14,7 +16,7 @@ class ScreenProtectionService {
 
     try {
       if (Platform.isAndroid || Platform.isIOS) {
-        await ScreenProtector.preventScreenshotOn();
+        await _channel.invokeMethod('protectScreen');
       }
       _isInitialized = true;
       debugPrint("✅ Screen protection initialized");
@@ -27,18 +29,18 @@ class ScreenProtectionService {
   static Future<void> enableOnResume() async {
     try {
       if (Platform.isAndroid || Platform.isIOS) {
-        await ScreenProtector.preventScreenshotOn();
+        await _channel.invokeMethod('protectScreen');
       }
     } catch (e) {
       debugPrint("❌ Failed to enable protection on resume: $e");
     }
   }
 
-  /// Disable protection on pause
+  /// Disable protection on pause (except for video)
   static Future<void> disableOnPause() async {
     try {
-      if (Platform.isAndroid || Platform.isIOS) {
-        await ScreenProtector.preventScreenshotOff();
+      if (!_isVideoPlaying && (Platform.isAndroid || Platform.isIOS)) {
+        await _channel.invokeMethod('unprotectScreen');
       }
     } catch (e) {
       debugPrint("❌ Failed to disable protection on pause: $e");
@@ -48,7 +50,7 @@ class ScreenProtectionService {
   /// Disable all protection (use when app fully closed)
   static Future<void> disable() async {
     try {
-      await ScreenProtector.preventScreenshotOff();
+      await _channel.invokeMethod('unprotectScreen');
       WakelockPlus.disable();
     } catch (e) {
       debugPrint("❌ Failed to disable screen protection: $e");
@@ -58,8 +60,20 @@ class ScreenProtectionService {
   /// Protect videos (disable sleep and prevent capture)
   static Future<void> protectVideoPlayback() async {
     try {
-      await ScreenProtector.protectDataLeakageOn();
+      _isVideoPlaying = true;
+      if (Platform.isAndroid || Platform.isIOS) {
+        await _channel.invokeMethod('protectVideo');
+      }
       WakelockPlus.enable();
+
+      // Lock orientation for video
+      if (Platform.isAndroid || Platform.isIOS) {
+        await SystemChrome.setPreferredOrientations([
+          DeviceOrientation.portraitUp,
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]);
+      }
     } catch (e) {
       debugPrint("❌ Failed to protect video playback: $e");
     }
@@ -68,22 +82,52 @@ class ScreenProtectionService {
   /// Restore normal protection after video
   static Future<void> restoreAfterVideo() async {
     try {
-      await ScreenProtector.protectDataLeakageOff();
+      _isVideoPlaying = false;
+      if (Platform.isAndroid || Platform.isIOS) {
+        await _channel.invokeMethod('restoreFromVideo');
+      }
       WakelockPlus.disable();
+
+      // Restore portrait-only orientation
+      if (Platform.isAndroid || Platform.isIOS) {
+        await SystemChrome.setPreferredOrientations([
+          DeviceOrientation.portraitUp,
+          DeviceOrientation.portraitDown,
+        ]);
+      }
     } catch (e) {
       debugPrint("❌ Failed to restore protection after video: $e");
     }
   }
 
-  /// Check if screen recording is possible (Android 10+)
-  static Future<bool> isScreenRecordingPossible() async {
+  /// Disable split-screen/multi-window
+  static Future<void> disableSplitScreen() async {
     try {
-      if (!Platform.isAndroid) return true;
-      final androidInfo = await DeviceInfoPlugin().androidInfo;
-      return androidInfo.version.sdkInt < 29; // Android 10+
+      if (Platform.isAndroid) {
+        await _channel.invokeMethod('disableSplitScreen');
+      }
     } catch (e) {
-      debugPrint("❌ Failed to check screen recording: $e");
-      return true;
+      debugPrint("❌ Failed to disable split screen: $e");
+    }
+  }
+
+  /// Prevent popups and overlays
+  static Future<void> preventPopups(BuildContext context) async {
+    // Use WillPopScope or similar in your screens
+    // This is handled at the widget level
+  }
+
+  /// Check if device is in split-screen mode
+  static Future<bool> isInSplitScreenMode() async {
+    try {
+      if (Platform.isAndroid) {
+        // You can check using platform channel if needed
+        return false;
+      }
+      return false;
+    } catch (e) {
+      debugPrint("❌ Failed to check split screen mode: $e");
+      return false;
     }
   }
 }

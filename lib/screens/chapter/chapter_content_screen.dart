@@ -1,3 +1,7 @@
+// ignore_for_file: use_build_context_synchronously
+
+import 'dart:async';
+
 import 'package:familyacademyclient/models/category_model.dart';
 import 'package:familyacademyclient/models/course_model.dart';
 import 'package:familyacademyclient/providers/category_provider.dart';
@@ -26,8 +30,19 @@ import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
 
 class ChapterContentScreen extends StatefulWidget {
   final int chapterId;
+  final Chapter? chapter;
+  final Course? course;
+  final Category? category;
+  final bool? hasAccess;
 
-  const ChapterContentScreen({super.key, required this.chapterId});
+  const ChapterContentScreen({
+    super.key,
+    required this.chapterId,
+    this.chapter,
+    this.course,
+    this.category,
+    this.hasAccess,
+  });
 
   @override
   State<ChapterContentScreen> createState() => _ChapterContentScreenState();
@@ -42,32 +57,124 @@ class _ChapterContentScreenState extends State<ChapterContentScreen> {
   bool _hasAccess = false;
   bool _isCheckingAccess = true;
 
-  // Video Player
   VideoPlayerController? _videoController;
   ChewieController? _chewieController;
   int? _currentPlayingVideoId;
 
-  // Question States
   Map<int, String?> _selectedAnswers = {};
   Map<int, bool> _showExplanation = {};
   Map<int, bool> _isQuestionCorrect = {};
 
+  bool _hasInitialized = false;
+  Timer? _refreshTimer;
+
   @override
   void initState() {
     super.initState();
+    _initializeFromCache();
     _loadData();
+
+    _refreshTimer = Timer.periodic(const Duration(minutes: 2), (_) {
+      if (mounted) {
+        _refreshDataInBackground();
+      }
+    });
   }
 
   @override
   void dispose() {
     _videoController?.dispose();
     _chewieController?.dispose();
+    _refreshTimer?.cancel();
     super.dispose();
+  }
+
+  void _initializeFromCache() {
+    final chapterProvider = Provider.of<ChapterProvider>(
+      context,
+      listen: false,
+    );
+    final courseProvider = Provider.of<CourseProvider>(
+      context,
+      listen: false,
+    );
+    final categoryProvider = Provider.of<CategoryProvider>(
+      context,
+      listen: false,
+    );
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final subscriptionProvider = Provider.of<SubscriptionProvider>(
+      context,
+      listen: false,
+    );
+
+    if (widget.chapter != null) {
+      _chapter = widget.chapter;
+      _course = widget.course;
+      _category = widget.category;
+
+      if (widget.hasAccess != null) {
+        _hasAccess = widget.hasAccess!;
+      } else if (_category != null) {
+        _hasAccess = subscriptionProvider
+            .hasActiveSubscriptionForCategory(_category!.id);
+      }
+
+      setState(() {
+        _isLoading = false;
+        _isCheckingAccess = false;
+      });
+      return;
+    }
+
+    Chapter? foundChapter;
+
+    for (final category in categoryProvider.categories) {
+      final courses = courseProvider.getCoursesByCategory(category.id);
+
+      for (final course in courses) {
+        final chapters = chapterProvider.getChaptersByCourse(course.id);
+
+        for (final chapter in chapters) {
+          if (chapter.id == widget.chapterId) {
+            foundChapter = chapter;
+            _course = course;
+            _category = category;
+            break;
+          }
+        }
+
+        if (foundChapter != null) break;
+      }
+
+      if (foundChapter != null) break;
+    }
+
+    if (foundChapter != null) {
+      _chapter = foundChapter;
+
+      if (_category != null) {
+        _hasAccess = subscriptionProvider
+            .hasActiveSubscriptionForCategory(_category!.id);
+      }
+
+      if (_hasAccess) {
+        _loadCachedContent();
+      }
+
+      setState(() {
+        _isLoading = false;
+        _isCheckingAccess = false;
+      });
+    }
   }
 
   Future<void> _loadData() async {
     try {
-      // Load chapter
+      if (_chapter != null && _hasAccess && _hasInitialized) {
+        return;
+      }
+
       final chapterProvider = Provider.of<ChapterProvider>(
         context,
         listen: false,
@@ -86,24 +193,29 @@ class _ChapterContentScreenState extends State<ChapterContentScreen> {
         listen: false,
       );
 
-      // Search for chapter in all courses
       Chapter? foundChapter;
 
-      await categoryProvider.loadCategories();
-
       for (final category in categoryProvider.categories) {
-        await courseProvider.loadCoursesByCategory(category.id);
+        if (courseProvider.getCoursesByCategory(category.id).isEmpty) {
+          await courseProvider.loadCoursesByCategory(category.id,
+              forceRefresh: false);
+        }
+
         final courses = courseProvider.getCoursesByCategory(category.id);
 
         for (final course in courses) {
-          await chapterProvider.loadChaptersByCourse(course.id);
+          if (!chapterProvider.hasLoadedForCourse(course.id)) {
+            await chapterProvider.loadChaptersByCourse(course.id,
+                forceRefresh: false);
+          }
+
           final chapters = chapterProvider.getChaptersByCourse(course.id);
 
           for (final chapter in chapters) {
             if (chapter.id == widget.chapterId) {
               foundChapter = chapter;
               _course = course;
-              _category = categoryProvider.getCategoryById(course.categoryId);
+              _category = category;
               break;
             }
           }
@@ -119,16 +231,17 @@ class _ChapterContentScreenState extends State<ChapterContentScreen> {
           'ChapterContentScreen',
           'Chapter ${widget.chapterId} not found',
         );
-        setState(() {
-          _isLoading = false;
-          _isCheckingAccess = false;
-        });
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _isCheckingAccess = false;
+          });
+        }
         return;
       }
 
       _chapter = foundChapter;
 
-      // Check access
       if (_category != null && authProvider.user != null) {
         final hasSubscription = subscriptionProvider
             .hasActiveSubscriptionForCategory(_category!.id);
@@ -144,20 +257,42 @@ class _ChapterContentScreenState extends State<ChapterContentScreen> {
       }
 
       if (_hasAccess) {
-        // Load content only if user has access
         await _loadContent();
       }
+
+      _hasInitialized = true;
     } catch (e) {
       debugLog('ChapterContentScreen', 'Error loading data: $e');
     } finally {
-      setState(() {
-        _isLoading = false;
-        _isCheckingAccess = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isCheckingAccess = false;
+        });
+      }
     }
   }
 
-  Future<void> _loadContent() async {
+  void _loadCachedContent() {
+    final videoProvider = Provider.of<VideoProvider>(context, listen: false);
+    final noteProvider = Provider.of<NoteProvider>(context, listen: false);
+    final questionProvider = Provider.of<QuestionProvider>(
+      context,
+      listen: false,
+    );
+
+    final hasCachedVideos = videoProvider.hasLoadedForChapter(widget.chapterId);
+    final hasCachedNotes = noteProvider.hasLoadedForChapter(widget.chapterId);
+    final hasCachedQuestions =
+        questionProvider.hasLoadedForChapter(widget.chapterId);
+
+    debugLog('ChapterContentScreen',
+        'Cache check - Videos: $hasCachedVideos, Notes: $hasCachedNotes, Questions: $hasCachedQuestions');
+
+    _hasInitialized = hasCachedVideos || hasCachedNotes || hasCachedQuestions;
+  }
+
+  Future<void> _loadContent({bool forceRefresh = false}) async {
     try {
       final videoProvider = Provider.of<VideoProvider>(context, listen: false);
       final noteProvider = Provider.of<NoteProvider>(context, listen: false);
@@ -166,13 +301,27 @@ class _ChapterContentScreenState extends State<ChapterContentScreen> {
         listen: false,
       );
 
-      await Future.wait([
-        videoProvider.loadVideosByChapter(widget.chapterId),
-        noteProvider.loadNotesByChapter(widget.chapterId),
-        questionProvider.loadPracticeQuestions(widget.chapterId),
-      ]);
+      unawaited(videoProvider.loadVideosByChapter(widget.chapterId,
+          forceRefresh: forceRefresh));
+      unawaited(noteProvider.loadNotesByChapter(widget.chapterId,
+          forceRefresh: forceRefresh));
+      unawaited(questionProvider.loadPracticeQuestions(widget.chapterId,
+          forceRefresh: forceRefresh));
+
+      _hasInitialized = true;
     } catch (e) {
       debugLog('ChapterContentScreen', 'Error loading content: $e');
+    }
+  }
+
+  Future<void> _refreshDataInBackground() async {
+    if (!_hasAccess || _chapter == null) return;
+
+    try {
+      await _loadContent(forceRefresh: true);
+      debugLog('ChapterContentScreen', '✅ Background refresh completed');
+    } catch (e) {
+      debugLog('ChapterContentScreen', 'Background refresh error: $e');
     }
   }
 
@@ -221,10 +370,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen> {
     );
   }
 
-  // Video Methods
   Future<void> _playVideo(Video video) async {
     try {
-      // Dispose previous video
       _videoController?.dispose();
       _chewieController?.dispose();
 
@@ -232,62 +379,52 @@ class _ChapterContentScreenState extends State<ChapterContentScreen> {
         _currentPlayingVideoId = video.id;
       });
 
-      // Increment view count
       final videoProvider = Provider.of<VideoProvider>(context, listen: false);
       await videoProvider.incrementViewCount(video.id);
 
-      // Initialize video player
+      final videoUrl = video.fullVideoUrl;
+      debugLog('ChapterContentScreen', 'Playing video from: $videoUrl');
+
       _videoController = VideoPlayerController.networkUrl(
-        Uri.parse(video.fullVideoUrl),
+        Uri.parse(videoUrl),
       );
 
       await _videoController!.initialize();
 
-      _chewieController = ChewieController(
+      _chewieController = VideoProtection.createProtectedController(
         videoPlayerController: _videoController!,
+        context: context,
+        videoUrl: videoUrl,
         autoPlay: true,
         looping: false,
-        allowFullScreen: false,
-        allowPlaybackSpeedChanging: false,
-        showOptions: false,
-        placeholder: Container(
-          color: Colors.black,
-          child: const Center(child: CircularProgressIndicator()),
-        ),
-        autoInitialize: true,
-        materialProgressColors: ChewieProgressColors(
-          playedColor: AppColors.primary,
-          handleColor: AppColors.primary,
-          backgroundColor: Colors.grey,
-          bufferedColor: Colors.grey.shade300,
-        ),
-        cupertinoProgressColors: ChewieProgressColors(
-          playedColor: AppColors.primary,
-          handleColor: AppColors.primary,
-          backgroundColor: Colors.grey,
-          bufferedColor: Colors.grey.shade300,
-        ),
       );
 
-      // Show video player
       await showDialog(
         context: context,
         builder: (context) => VideoProtection.createProtectedVideoPlayer(
           controller: _chewieController!,
           context: context,
           videoTitle: video.title,
+          onDispose: () {
+            // Dispose controllers when video player is closed
+            _chewieController?.dispose();
+            _videoController?.dispose();
+            setState(() {
+              _currentPlayingVideoId = null;
+            });
+          },
         ),
       );
     } catch (e) {
-      showSnackBar(context, 'Failed to play video: $e', isError: true);
-    } finally {
+      debugLog('ChapterContentScreen', 'Video play error: $e');
+      showSnackBar(context, 'Failed to play video: ${e.toString()}',
+          isError: true);
       setState(() {
         _currentPlayingVideoId = null;
       });
     }
   }
 
-  // Question Methods
   void _selectAnswer(int questionId, String option) {
     setState(() {
       _selectedAnswers[questionId] = option;
@@ -349,7 +486,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
+    if (_isLoading && !_hasInitialized) {
       return Scaffold(
         appBar: AppBar(title: const Text('Loading...')),
         body: const LoadingIndicator(),
@@ -433,13 +570,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen> {
         ),
         body: TabBarView(
           children: [
-            // Videos Tab
             _buildVideosTab(),
-
-            // Notes Tab
             _buildNotesTab(),
-
-            // Practice Questions Tab
             _buildPracticeTab(),
           ],
         ),
@@ -451,12 +583,15 @@ class _ChapterContentScreenState extends State<ChapterContentScreen> {
     final videoProvider = Provider.of<VideoProvider>(context);
     final videos = videoProvider.getVideosByChapter(widget.chapterId);
 
-    if (videoProvider.isLoading) {
+    if (videoProvider.isLoadingForChapter(widget.chapterId) && videos.isEmpty) {
       return const LoadingIndicator();
     }
 
     return RefreshIndicator(
-      onRefresh: () => videoProvider.loadVideosByChapter(widget.chapterId),
+      onRefresh: () async {
+        await videoProvider.loadVideosByChapter(widget.chapterId,
+            forceRefresh: true);
+      },
       child: videos.isEmpty
           ? const Center(child: Text('No videos available for this chapter.'))
           : ListView.builder(
@@ -526,12 +661,15 @@ class _ChapterContentScreenState extends State<ChapterContentScreen> {
     final noteProvider = Provider.of<NoteProvider>(context);
     final notes = noteProvider.getNotesByChapter(widget.chapterId);
 
-    if (noteProvider.isLoading) {
+    if (noteProvider.isLoadingForChapter(widget.chapterId) && notes.isEmpty) {
       return const LoadingIndicator();
     }
 
     return RefreshIndicator(
-      onRefresh: () => noteProvider.loadNotesByChapter(widget.chapterId),
+      onRefresh: () async {
+        await noteProvider.loadNotesByChapter(widget.chapterId,
+            forceRefresh: true);
+      },
       child: notes.isEmpty
           ? const Center(child: Text('No notes available for this chapter.'))
           : ListView.builder(
@@ -579,12 +717,16 @@ class _ChapterContentScreenState extends State<ChapterContentScreen> {
     final questionProvider = Provider.of<QuestionProvider>(context);
     final questions = questionProvider.getQuestionsByChapter(widget.chapterId);
 
-    if (questionProvider.isLoading) {
+    if (questionProvider.isLoadingForChapter(widget.chapterId) &&
+        questions.isEmpty) {
       return const LoadingIndicator();
     }
 
     return RefreshIndicator(
-      onRefresh: () => questionProvider.loadPracticeQuestions(widget.chapterId),
+      onRefresh: () async {
+        await questionProvider.loadPracticeQuestions(widget.chapterId,
+            forceRefresh: true);
+      },
       child: questions.isEmpty
           ? const Center(
               child: Text('No practice questions available for this chapter.'),
@@ -596,7 +738,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen> {
                 final question = questions[index];
                 final questionId = question.id;
 
-                // Initialize state if not exists
                 _selectedAnswers[questionId] ??= null;
                 _showExplanation[questionId] ??= false;
                 _isQuestionCorrect[questionId] ??= false;
@@ -608,7 +749,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Question Header
                         Row(
                           children: [
                             Container(
@@ -639,10 +779,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen> {
                             ),
                           ],
                         ),
-
                         const SizedBox(height: 12),
-
-                        // Question Text
                         Text(
                           question.questionText,
                           style: const TextStyle(
@@ -650,10 +787,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen> {
                             fontWeight: FontWeight.w500,
                           ),
                         ),
-
                         const SizedBox(height: 16),
-
-                        // Options
                         Column(
                           children: _getQuestionOptions(question)
                               .asMap()
@@ -739,10 +873,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen> {
                             );
                           }).toList(),
                         ),
-
                         const SizedBox(height: 16),
-
-                        // Check Answer Button
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
@@ -774,17 +905,16 @@ class _ChapterContentScreenState extends State<ChapterContentScreen> {
                             ),
                           ),
                         ),
-
-                        // Explanation (shown after checking)
                         if (_showExplanation[questionId]!)
                           Padding(
                             padding: const EdgeInsets.only(top: 16),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Divider(color: AppColors.border, height: 1),
+                                const Divider(
+                                    color: AppColors.border, height: 1),
                                 const SizedBox(height: 12),
-                                Text(
+                                const Text(
                                   'Explanation:',
                                   style: const TextStyle(
                                     fontSize: 14,
@@ -804,7 +934,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen> {
                                 const SizedBox(height: 8),
                                 Text(
                                   'Correct Answer: ${question.correctOption.toUpperCase()}',
-                                  style: TextStyle(
+                                  style: const TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w600,
                                     color: AppColors.success,
@@ -867,7 +997,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen> {
   }
 }
 
-// Note Detail Screen for displaying HTML content
 class NoteDetailScreen extends StatelessWidget {
   final Note note;
 
@@ -888,7 +1017,6 @@ class NoteDetailScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Note Metadata
             Row(
               children: [
                 const Icon(
@@ -917,9 +1045,7 @@ class NoteDetailScreen extends StatelessWidget {
                   ),
               ],
             ),
-
             const SizedBox(height: 16),
-
             HtmlWidget(
               note.content,
               textStyle: const TextStyle(
@@ -936,8 +1062,6 @@ class NoteDetailScreen extends StatelessWidget {
                 return false;
               },
             ),
-
-            // Download button for attachments
             if (note.hasFile)
               Padding(
                 padding: const EdgeInsets.only(top: 16),
@@ -960,27 +1084,5 @@ class NoteDetailScreen extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-// Need to add fullVideoUrl and fullFilePath properties to models
-extension VideoExtensions on Video {
-  String get fullVideoUrl {
-    // Assuming your API returns relative URLs
-    const baseUrl = 'http://192.168.29.52:3000'; // Change to your server URL
-    return '$baseUrl$filePath';
-  }
-}
-
-extension NoteExtensions on Note {
-  String get fullFilePath {
-    const baseUrl = 'http://192.168.29.52:3000';
-    return '$baseUrl$filePath';
-  }
-
-  bool get hasFile => filePath != null && filePath!.isNotEmpty;
-
-  String get formattedDate {
-    return '${createdAt.day}/${createdAt.month}/${createdAt.year}';
   }
 }

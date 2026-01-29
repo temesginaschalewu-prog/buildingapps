@@ -1,3 +1,7 @@
+import 'dart:ui';
+
+import 'package:flutter/material.dart';
+
 import '../utils/constants.dart';
 
 class Category {
@@ -28,7 +32,6 @@ class Category {
           json['price'] != null ? double.parse(json['price'].toString()) : null,
       billingCycle: json['billing_cycle'] ?? 'monthly',
       description: json['description'],
-      courseCount: json['course_count'] ?? 0,
     );
   }
 
@@ -44,9 +47,9 @@ class Category {
     };
   }
 
+  bool get isFree => price == null || price == 0;
   bool get isActive => status == 'active';
   bool get isComingSoon => status == 'coming_soon';
-  bool get isFree => price == null || price == 0;
   bool get requiresPayment => !isFree && isActive;
 
   String get priceDisplay {
@@ -60,9 +63,33 @@ class Category {
     return status;
   }
 
-  bool canAccessForUser(bool hasActiveSubscription) {
+  bool hasUserAccess(bool hasActiveSubscription, bool hasPendingPayment) {
     if (isComingSoon) return false;
     if (isFree) return true;
     return hasActiveSubscription;
+  }
+
+  String getAccessLabel(bool hasActiveSubscription, bool hasPendingPayment) {
+    if (isComingSoon) return 'COMING SOON';
+    if (isFree) return 'FREE';
+    if (hasActiveSubscription) return 'FULL ACCESS';
+    if (hasPendingPayment) return 'PENDING VERIFICATION';
+    return 'LIMITED ACCESS';
+  }
+
+  Color getAccessColor(bool hasActiveSubscription, bool hasPendingPayment) {
+    if (isComingSoon) return Colors.grey;
+    if (isFree) return Colors.green;
+    if (hasActiveSubscription) return Colors.green;
+    if (hasPendingPayment) return Colors.orange;
+    return Colors.orange;
+  }
+
+  IconData getAccessIcon(bool hasActiveSubscription, bool hasPendingPayment) {
+    if (isComingSoon) return Icons.schedule;
+    if (isFree) return Icons.check_circle;
+    if (hasActiveSubscription) return Icons.check_circle;
+    if (hasPendingPayment) return Icons.pending;
+    return Icons.lock;
   }
 }

@@ -32,13 +32,39 @@ class ExamProvider with ChangeNotifier {
     _notifySafely();
 
     try {
-      debugLog('ExamProvider', 'Loading available exams');
+      debugLog('ExamProvider', 'Loading available exams for course: $courseId');
       final response = await apiService.getAvailableExams(courseId: courseId);
-      _availableExams = response.data ?? [];
-    } catch (e) {
+
+      debugLog('ExamProvider', 'API Response success: ${response.success}');
+      debugLog('ExamProvider', 'API Response message: ${response.message}');
+      debugLog('ExamProvider',
+          'API Response data type: ${response.data?.runtimeType}');
+      debugLog(
+          'ExamProvider', 'API Response data length: ${response.data?.length}');
+
+      if (response.success && response.data != null) {
+        _availableExams = response.data!;
+        debugLog('ExamProvider', 'Loaded ${_availableExams.length} exams');
+
+        // Store by course if courseId provided
+        if (courseId != null) {
+          _examsByCourse[courseId] = _availableExams;
+        }
+
+        // Debug: Print each exam
+        for (var i = 0; i < _availableExams.length; i++) {
+          debugLog('ExamProvider',
+              'Exam $i: ${_availableExams[i].title} - ${_availableExams[i].status}');
+        }
+      } else {
+        debugLog('ExamProvider', 'No exams data received');
+        _availableExams = [];
+      }
+    } catch (e, stackTrace) {
       _error = e.toString();
       debugLog('ExamProvider', 'loadAvailableExams error: $e');
-      rethrow;
+      debugLog('ExamProvider', 'Stack trace: $stackTrace');
+      _availableExams = [];
     } finally {
       _isLoading = false;
       _notifySafely();

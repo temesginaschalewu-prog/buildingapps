@@ -1,9 +1,6 @@
-import 'package:familyacademyclient/providers/auth_provider.dart';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
-import 'package:provider/provider.dart';
-import '../../models/exam_model.dart';
-import '../../themes/app_colors.dart';
+import 'package:familyacademyclient/models/exam_model.dart';
+import 'package:familyacademyclient/themes/app_colors.dart';
 
 class ExamCard extends StatelessWidget {
   final Exam exam;
@@ -16,54 +13,122 @@ class ExamCard extends StatelessWidget {
   });
 
   Color _getStatusColor() {
-    switch (exam.status) {
-      case 'available':
-        return exam.canTakeExam ? AppColors.success : Colors.orange;
-      case 'max_attempts_reached':
-        return AppColors.error;
-      case 'in_progress':
-        return AppColors.warning;
-      case 'upcoming':
-        return AppColors.info;
-      case 'ended':
-        return Colors.grey;
-      default:
-        return Colors.grey;
+    if (exam.canTakeExam) {
+      return AppColors.success;
+    } else if (exam.requiresPayment) {
+      return AppColors.locked;
+    } else if (exam.maxAttemptsReached) {
+      return AppColors.error;
+    } else if (exam.isUpcoming) {
+      return Colors.blue;
+    } else if (exam.isEnded) {
+      return Colors.grey;
     }
-  }
-
-  String _getStatusText() {
-    switch (exam.status) {
-      case 'available':
-        return exam.canTakeExam ? 'AVAILABLE' : 'PURCHASE REQUIRED';
-      case 'max_attempts_reached':
-        return 'MAX ATTEMPTS';
-      case 'in_progress':
-        return 'IN PROGRESS';
-      case 'upcoming':
-        return 'UPCOMING';
-      case 'ended':
-        return 'ENDED';
-      default:
-        return exam.status.toUpperCase();
-    }
+    return Colors.orange;
   }
 
   IconData _getStatusIcon() {
-    switch (exam.status) {
-      case 'available':
-        return exam.canTakeExam ? Icons.play_circle_fill : Icons.lock;
-      case 'max_attempts_reached':
-        return Icons.block;
-      case 'in_progress':
-        return Icons.hourglass_bottom;
-      case 'upcoming':
-        return Icons.schedule;
-      case 'ended':
-        return Icons.done_all;
-      default:
-        return Icons.help;
+    if (exam.canTakeExam) {
+      return Icons.assignment_turned_in;
+    } else if (exam.requiresPayment) {
+      return Icons.lock;
+    } else if (exam.maxAttemptsReached) {
+      return Icons.block;
+    } else if (exam.isUpcoming) {
+      return Icons.schedule;
+    } else if (exam.isEnded) {
+      return Icons.assignment_late;
     }
+    return Icons.assignment;
+  }
+
+  String _getStatusText() {
+    if (exam.canTakeExam) {
+      return 'TAKE EXAM';
+    } else if (exam.requiresPayment) {
+      return 'PAYMENT REQUIRED';
+    } else if (exam.maxAttemptsReached) {
+      return 'MAX ATTEMPTS';
+    } else if (exam.isUpcoming) {
+      return 'UPCOMING';
+    } else if (exam.isEnded) {
+      return 'ENDED';
+    } else if (exam.isInProgress) {
+      return 'IN PROGRESS';
+    }
+    return 'AVAILABLE';
+  }
+
+  String _getTimeInfo() {
+    if (exam.hasUserTimeLimit) {
+      return '${exam.userTimeLimit} min/attempt';
+    }
+
+    final now = DateTime.now();
+    if (now.isBefore(exam.startDate)) {
+      final days = exam.startDate.difference(now).inDays;
+      return 'Starts in $days ${days == 1 ? 'day' : 'days'}';
+    } else if (now.isBefore(exam.endDate)) {
+      final hours = exam.endDate.difference(now).inHours;
+      if (hours < 24) {
+        return 'Ends in $hours ${hours == 1 ? 'hour' : 'hours'}';
+      }
+      final days = exam.endDate.difference(now).inDays;
+      return 'Ends in $days ${days == 1 ? 'day' : 'days'}';
+    }
+    return 'Ended';
+  }
+
+  Widget _buildTimeIndicator() {
+    if (exam.hasUserTimeLimit) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: Colors.blue.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: Colors.blue.withOpacity(0.3)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.person, size: 10, color: Colors.blue),
+            const SizedBox(width: 2),
+            Text(
+              '${exam.userTimeLimit}min',
+              style: const TextStyle(
+                fontSize: 10,
+                color: Colors.blue,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.grey.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: Colors.grey.withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.group, size: 10, color: Colors.grey),
+          const SizedBox(width: 2),
+          Text(
+            '${exam.duration}min',
+            style: const TextStyle(
+              fontSize: 10,
+              color: Colors.grey,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -74,53 +139,7 @@ class ExamCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
       ),
       child: InkWell(
-        onTap: () {
-          final authProvider =
-              Provider.of<AuthProvider>(context, listen: false);
-
-          if (exam.canTakeExam) {
-            context.push('/exam/${exam.id}', extra: exam);
-          } else if (exam.requiresPayment) {
-            showDialog(
-              context: context,
-              builder: (context) => AlertDialog(
-                title: const Text('Payment Required'),
-                content: Text(
-                  'You need to purchase "${exam.categoryName}" to take this exam.',
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Cancel'),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      context.push(
-                        '/payment',
-                        extra: {
-                          'category': {
-                            'id': exam.categoryId,
-                            'name': exam.categoryName,
-                          },
-                          'paymentType':
-                              authProvider.user?.accountStatus == 'active'
-                                  ? 'repayment'
-                                  : 'first_time',
-                        },
-                      );
-                    },
-                    child: const Text('Purchase'),
-                  ),
-                ],
-              ),
-            );
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(exam.message)),
-            );
-          }
-        },
+        onTap: exam.canTakeExam ? onTap : null,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -159,12 +178,7 @@ class ExamCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  Text(
-                    '${exam.duration} min',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: AppColors.textSecondary,
-                        ),
-                  ),
+                  _buildTimeIndicator(),
                 ],
               ),
               const SizedBox(height: 12),
@@ -177,47 +191,54 @@ class ExamCard extends StatelessWidget {
               const SizedBox(height: 8),
               Row(
                 children: [
-                  const Icon(Icons.calendar_today, size: 14),
+                  const Icon(Icons.book,
+                      size: 14, color: AppColors.textSecondary),
                   const SizedBox(width: 4),
                   Text(
-                    '${exam.startDate.day}/${exam.startDate.month} - ${exam.endDate.day}/${exam.endDate.month}',
+                    exam.courseName,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(width: 12),
+                  const Icon(Icons.category,
+                      size: 14, color: AppColors.textSecondary),
+                  const SizedBox(width: 4),
+                  Text(
+                    exam.categoryName,
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 8),
               Row(
                 children: [
-                  const Icon(Icons.school, size: 14),
+                  const Icon(Icons.timer,
+                      size: 14, color: AppColors.textSecondary),
                   const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      exam.courseName,
-                      style: Theme.of(context).textTheme.bodySmall,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
                   Text(
-                    'Attempts: ${exam.attemptsTaken}/${exam.maxAttempts}',
-                    style: Theme.of(context).textTheme.labelSmall,
+                    _getTimeInfo(),
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
-                  if (!exam.canTakeExam)
+                  const Spacer(),
+                  if (exam.attemptsTaken > 0)
                     Text(
-                      exam.message,
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            color: Colors.orange,
-                            fontStyle: FontStyle.italic,
+                      '${exam.attemptsTaken}/${exam.maxAttempts} attempts',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: AppColors.textSecondary,
                           ),
                     ),
                 ],
               ),
+              if (exam.requiresPayment && !exam.canTakeExam)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    'Purchase "${exam.categoryName}" to unlock',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: Colors.orange,
+                          fontStyle: FontStyle.italic,
+                        ),
+                  ),
+                ),
             ],
           ),
         ),

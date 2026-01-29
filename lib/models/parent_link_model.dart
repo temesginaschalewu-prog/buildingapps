@@ -9,6 +9,7 @@ class ParentLink {
   final String status;
   final String? username;
   final String? accountStatus;
+  final String? parentName;
 
   ParentLink({
     required this.id,
@@ -21,6 +22,7 @@ class ParentLink {
     required this.status,
     this.username,
     this.accountStatus,
+    this.parentName,
   });
 
   factory ParentLink.fromJson(Map<String, dynamic> json) {
@@ -39,6 +41,7 @@ class ParentLink {
       status: json['status'] ?? 'pending',
       username: json['username'],
       accountStatus: json['account_status'],
+      parentName: json['parent_name'] ?? json['parent_telegram_username'],
     );
   }
 
@@ -54,6 +57,7 @@ class ParentLink {
       'status': status,
       'username': username,
       'account_status': accountStatus,
+      'parent_name': parentName,
     };
   }
 

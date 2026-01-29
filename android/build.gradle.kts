@@ -1,3 +1,19 @@
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    
+    dependencies {
+        // START: FlutterFire Configuration
+        classpath("com.android.tools.build:gradle:8.1.0")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.0")
+        classpath("com.google.gms:google-services:4.4.2")  // This exists
+        classpath("com.google.firebase:firebase-crashlytics-gradle:2.9.9") // ADD THIS - CRITICAL FIX
+        // END: FlutterFire Configuration
+    }
+}
+
 allprojects {
     repositories {
         google()
@@ -5,22 +21,11 @@ allprojects {
     }
 }
 
-// ADD THIS buildscript block at the TOP of the file:
-buildscript {
-    repositories {
-        google()
-        mavenCentral()
-    }
-    dependencies {
-        // ADD the Google services classpath
-        classpath("com.google.gms:google-services:4.4.2")
-    }
-}
-
 val newBuildDir: Directory =
     rootProject.layout.buildDirectory
         .dir("../../build")
         .get()
+        
 rootProject.layout.buildDirectory.value(newBuildDir)
 
 subprojects {

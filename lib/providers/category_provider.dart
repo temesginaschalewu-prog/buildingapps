@@ -10,6 +10,7 @@ class CategoryProvider with ChangeNotifier {
   List<Category> _activeCategories = [];
   List<Category> _comingSoonCategories = [];
   bool _isLoading = false;
+  bool _hasLoaded = false;
   String? _error;
 
   CategoryProvider({required this.apiService});
@@ -19,10 +20,13 @@ class CategoryProvider with ChangeNotifier {
   List<Category> get comingSoonCategories =>
       List.unmodifiable(_comingSoonCategories);
   bool get isLoading => _isLoading;
+  bool get hasLoaded => _hasLoaded;
   String? get error => _error;
 
-  Future<void> loadCategories() async {
-    if (_isLoading) return;
+  Future<void> loadCategories({bool forceRefresh = false}) async {
+    if (_isLoading && !forceRefresh) return;
+    // If we already have data and not forcing refresh, just return
+    if (_hasLoaded && !forceRefresh && !_isLoading) return;
 
     _isLoading = true;
     _error = null;
@@ -31,15 +35,26 @@ class CategoryProvider with ChangeNotifier {
     try {
       debugLog('CategoryProvider', 'Loading categories');
       final response = await apiService.getCategories();
-      _categories = response.data ?? [];
 
-      // Filter categories
-      _activeCategories = _categories.where((c) => c.isActive).toList();
-      _comingSoonCategories = _categories.where((c) => c.isComingSoon).toList();
+      if (response.success && response.data != null) {
+        _categories = response.data ?? [];
+
+        // Filter categories
+        _activeCategories = _categories.where((c) => c.isActive).toList();
+        _comingSoonCategories =
+            _categories.where((c) => c.isComingSoon).toList();
+
+        _hasLoaded = true;
+        debugLog('CategoryProvider', 'Loaded ${_categories.length} categories');
+      } else {
+        _error = response.message;
+        debugLog('CategoryProvider',
+            'Failed to load categories: ${response.message}');
+      }
     } catch (e) {
       _error = e.toString();
       debugLog('CategoryProvider', 'loadCategories error: $e');
-      rethrow;
+      // Don't rethrow - keep existing data
     } finally {
       _isLoading = false;
       _notifySafely();

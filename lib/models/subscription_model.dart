@@ -1,77 +1,110 @@
+import 'package:flutter/foundation.dart';
+
 class Subscription {
   final int id;
+  final int userId;
+  final int categoryId;
   final DateTime startDate;
   final DateTime expiryDate;
   final String status;
   final String billingCycle;
-  final String categoryName;
-  final int categoryId;
-  final double price;
-  final String? paymentMethod;
-  final String? paymentStatus;
-  final int daysRemaining;
+  final int? paymentId;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+  final String? categoryName;
+  final double? price;
 
   Subscription({
     required this.id,
+    required this.userId,
+    required this.categoryId,
     required this.startDate,
     required this.expiryDate,
     required this.status,
     required this.billingCycle,
-    required this.categoryName,
-    required this.categoryId,
-    required this.price,
-    this.paymentMethod,
-    this.paymentStatus,
-    required this.daysRemaining,
+    this.paymentId,
+    this.createdAt,
+    this.updatedAt,
+    this.categoryName,
+    this.price,
   });
 
   factory Subscription.fromJson(Map<String, dynamic> json) {
     return Subscription(
-      id: json['id'],
+      id: json['id'] is String ? int.parse(json['id']) : json['id'] ?? 0,
+      userId: json['user_id'] is String
+          ? int.parse(json['user_id'])
+          : json['user_id'] ?? 0,
+      categoryId: json['category_id'] is String
+          ? int.parse(json['category_id'])
+          : json['category_id'] ?? 0,
       startDate: DateTime.parse(json['start_date']),
       expiryDate: DateTime.parse(json['expiry_date']),
-      status: json['status'],
-      billingCycle: json['billing_cycle'],
+      status: json['status'] ?? 'active',
+      billingCycle: json['billing_cycle'] ?? 'monthly',
+      paymentId: json['payment_id'],
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'])
+          : null,
+      updatedAt: json['updated_at'] != null
+          ? DateTime.parse(json['updated_at'])
+          : null,
       categoryName: json['category_name'],
-      categoryId: json['category_id'],
-      price: double.parse(json['price'].toString()),
-      paymentMethod: json['payment_method'],
-      paymentStatus: json['payment_status'],
-      daysRemaining: json['days_remaining'] ?? 0,
+      price:
+          json['price'] != null ? double.parse(json['price'].toString()) : null,
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'user_id': userId,
+      'category_id': categoryId,
       'start_date': startDate.toIso8601String(),
       'expiry_date': expiryDate.toIso8601String(),
       'status': status,
       'billing_cycle': billingCycle,
+      'payment_id': paymentId,
+      'created_at': createdAt?.toIso8601String(),
+      'updated_at': updatedAt?.toIso8601String(),
       'category_name': categoryName,
-      'category_id': categoryId,
       'price': price,
-      'payment_method': paymentMethod,
-      'payment_status': paymentStatus,
-      'days_remaining': daysRemaining,
     };
   }
 
-  bool get isActive => status == 'active';
-  bool get isExpired => status == 'expired';
+  bool get isActive => status == 'active' && expiryDate.isAfter(DateTime.now());
+  bool get isExpired => expiryDate.isBefore(DateTime.now());
   bool get isCancelled => status == 'cancelled';
 
-  bool get isExpiringSoon => daysRemaining <= 7 && daysRemaining > 0;
-  bool get hasExpired => daysRemaining <= 0;
+  int get daysRemaining {
+    final now = DateTime.now();
+    if (expiryDate.isBefore(now)) return 0;
+    return expiryDate.difference(now).inDays;
+  }
 
-  bool get providesAccess => isActive && !hasExpired;
+  bool get isExpiringSoon => daysRemaining <= 7 && daysRemaining > 0;
 
   String get statusDisplay {
-    if (isActive) {
-      if (hasExpired) return 'Expired';
-      if (isExpiringSoon) return 'Expiring Soon';
-      return 'Active';
-    }
+    if (isCancelled) return 'Cancelled';
+    if (isExpired) return 'Expired';
+    if (isExpiringSoon) return 'Expiring Soon';
+    if (isActive) return 'Active';
     return status;
   }
+
+  @override
+  String toString() {
+    return 'Subscription(id: $id, categoryId: $categoryId, status: $status, expiry: $expiryDate)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is Subscription &&
+        other.id == id &&
+        other.categoryId == categoryId;
+  }
+
+  @override
+  int get hashCode => id.hashCode ^ categoryId.hashCode;
 }

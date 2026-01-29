@@ -32,6 +32,7 @@ class _ExamScreenState extends State<ExamScreen> {
   bool _showInstructions = true;
   Duration _remainingTime = Duration.zero;
   Timer? _timer;
+  Duration? _userTimeLimit;
 
   @override
   void initState() {
@@ -57,8 +58,11 @@ class _ExamScreenState extends State<ExamScreen> {
           startDate: DateTime.now(),
           endDate: DateTime.now().add(const Duration(hours: 1)),
           duration: 60,
+          userTimeLimit: null,
           passingScore: 50,
           maxAttempts: 1,
+          autoSubmit: true,
+          showResultsImmediately: false,
           courseName: 'Loading...',
           courseId: 0,
           categoryId: 0,
@@ -68,10 +72,18 @@ class _ExamScreenState extends State<ExamScreen> {
           message: 'Loading...',
           canTakeExam: false,
           requiresPayment: false,
+          actualDuration: 60,
+          timingType: 'exam_wide',
         );
       }
     }
 
+    // Determine which time limit to use
+    _userTimeLimit = _exam.userTimeLimit != null
+        ? Duration(minutes: _exam.userTimeLimit!)
+        : null;
+
+    // Start with exam-wide time limit, will switch to user limit when they start
     _remainingTime = Duration(minutes: _exam.duration);
     _loadExamQuestions();
   }
@@ -84,6 +96,11 @@ class _ExamScreenState extends State<ExamScreen> {
       final routeExam = ModalRoute.of(context)?.settings.arguments;
       if (routeExam is Exam) {
         _exam = routeExam;
+
+        // Update time limits
+        _userTimeLimit = _exam.userTimeLimit != null
+            ? Duration(minutes: _exam.userTimeLimit!)
+            : null;
         _remainingTime = Duration(minutes: _exam.duration);
       }
     }
@@ -101,6 +118,11 @@ class _ExamScreenState extends State<ExamScreen> {
   }
 
   void _startTimer() {
+    // If user time limit is set, use that instead of exam-wide time
+    if (_userTimeLimit != null) {
+      _remainingTime = _userTimeLimit!;
+    }
+
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) {
         setState(() {
@@ -109,7 +131,11 @@ class _ExamScreenState extends State<ExamScreen> {
           } else {
             // Time's up!
             timer.cancel();
-            _autoSubmitExam();
+            if (_exam.autoSubmit) {
+              _autoSubmitExam();
+            } else {
+              _showTimeUpWarning();
+            }
           }
         });
       }
@@ -118,6 +144,27 @@ class _ExamScreenState extends State<ExamScreen> {
 
   void _stopTimer() {
     _timer?.cancel();
+  }
+
+  void _showTimeUpWarning() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Time\'s Up!'),
+        content: const Text(
+            'The exam time has expired. Please submit your answers.'),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _submitExam();
+            },
+            child: const Text('Submit Now'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _selectAnswer(String? answer) {
@@ -258,6 +305,26 @@ class _ExamScreenState extends State<ExamScreen> {
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  String _getTimeLimitDescription() {
+    if (_exam.hasUserTimeLimit) {
+      return '${_exam.userTimeLimit} minutes per attempt';
+    } else {
+      return '${_exam.duration} minutes exam-wide';
+    }
+  }
+
+  String _getAutoSubmitDescription() {
+    return _exam.autoSubmit
+        ? 'Auto-submit when time expires'
+        : 'Manual submission required';
+  }
+
+  String _getResultsDisplayDescription() {
+    return _exam.showResultsImmediately
+        ? 'Results shown immediately after submission'
+        : 'Results available after exam ends';
   }
 
   @override
@@ -646,13 +713,52 @@ class _ExamScreenState extends State<ExamScreen> {
             _buildDetailItem('Exam Title:', _exam.title),
             _buildDetailItem('Exam Type:', _exam.examType.toUpperCase()),
             _buildDetailItem('Course:', _exam.courseName),
+            _buildDetailItem('Time Limit:', _getTimeLimitDescription()),
+            _buildDetailItem('Auto Submit:', _getAutoSubmitDescription()),
             _buildDetailItem(
-              'Time Limit:',
-              '${totalTime.inHours}h ${totalTime.inMinutes % 60}m',
-            ),
+                'Results Display:', _getResultsDisplayDescription()),
             _buildDetailItem('Passing Score:', '${_exam.passingScore}%'),
             _buildDetailItem('Max Attempts:', '${_exam.maxAttempts}'),
+            _buildDetailItem('Your Attempts:',
+                '${_exam.attemptsTaken}/${_exam.maxAttempts}'),
             const SizedBox(height: 24),
+
+            // Timing Information
+            if (_exam.hasUserTimeLimit)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.withOpacity(0.2)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.timer, size: 20, color: Colors.blue),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Personal Timer: ${_exam.userTimeLimit} minutes',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: Colors.blue,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Timer starts when you begin and counts down independently.',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 16),
 
             // Important Rules
             const Text(
@@ -669,7 +775,9 @@ class _ExamScreenState extends State<ExamScreen> {
               Icons.block,
             ),
             _buildRuleItem(
-              'Timer will continue running even if you minimize the app',
+              _exam.hasUserTimeLimit
+                  ? 'Your personal timer will continue even if you minimize the app'
+                  : 'Timer will continue running even if you minimize the app',
               Icons.timer,
             ),
             _buildRuleItem(
@@ -688,6 +796,11 @@ class _ExamScreenState extends State<ExamScreen> {
               'Once submitted, you cannot change your answers',
               Icons.lock,
             ),
+            if (_exam.autoSubmit)
+              _buildRuleItem(
+                'Exam will auto-submit when time expires',
+                Icons.autorenew,
+              ),
             const SizedBox(height: 32),
 
             // Start Button

@@ -1,6 +1,8 @@
 class Question {
   final int id;
-  final int chapterId;
+  final String questionType;
+  final int? chapterId;
+  final int? examId;
   final String questionText;
   final String? optionA;
   final String? optionB;
@@ -15,7 +17,9 @@ class Question {
 
   Question({
     required this.id,
-    required this.chapterId,
+    this.questionType = 'practice',
+    this.chapterId,
+    this.examId,
     required this.questionText,
     this.optionA,
     this.optionB,
@@ -34,9 +38,9 @@ class Question {
       id: json['id'] is int
           ? json['id']
           : int.tryParse(json['id']?.toString() ?? '0') ?? 0,
-      chapterId: json['chapter_id'] is int
-          ? json['chapter_id']
-          : int.tryParse(json['chapter_id']?.toString() ?? '0') ?? 0,
+      questionType: json['question_type'] ?? 'practice',
+      chapterId: json['chapter_id'],
+      examId: json['exam_id'],
       questionText: json['question_text']?.toString() ?? '',
       optionA: json['option_a']?.toString(),
       optionB: json['option_b']?.toString(),
@@ -54,7 +58,9 @@ class Question {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'question_type': questionType,
       'chapter_id': chapterId,
+      'exam_id': examId,
       'question_text': questionText,
       'option_a': optionA,
       'option_b': optionB,
@@ -81,6 +87,7 @@ class Question {
   }
 
   bool get isMultipleChoice => options.length > 2;
-
+  bool get isPracticeQuestion => questionType == 'practice';
+  bool get isExamQuestion => questionType == 'exam';
   bool get recordsProgress => !hasAnswer;
 }
