@@ -1,5 +1,6 @@
 // ignore_for_file: only_throw_errors
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
@@ -28,6 +29,14 @@ class ApiService {
   late Dio _dio;
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
   bool _isRefreshingToken = false;
+  late SharedPreferences _prefs;
+
+  // Track retry counts for exponential backoff
+  final Map<String, int> _retryCounts = {};
+  static const int _maxRetries = 3;
+  static const int _baseRetryDelaySeconds = 2;
+
+  Dio get dio => _dio;
 
   ApiService() {
     _dio = Dio(
@@ -61,26 +70,65 @@ class ApiService {
         return client;
       };
     }
+
+    _initSharedPreferences();
+  }
+
+  Future<void> _initSharedPreferences() async {
+    _prefs = await SharedPreferences.getInstance();
   }
 
   Future<void> _onRequest(
       RequestOptions options, RequestInterceptorHandler handler) async {
     final token = await _secureStorage.read(key: AppConstants.tokenKey);
+
     if (token != null) {
+      try {
+        final parts = token.split('.');
+        if (parts.length == 3) {
+          final payload = parts[1];
+          final decoded = utf8.decode(base64Url.decode(payload));
+          final jsonPayload = json.decode(decoded);
+          final exp = jsonPayload['exp'];
+
+          if (exp != null) {
+            final expiryTime = DateTime.fromMillisecondsSinceEpoch(exp * 1000);
+            final now = DateTime.now();
+            final minutesUntilExpiry = expiryTime.difference(now).inMinutes;
+
+            if (minutesUntilExpiry < 5) {
+              debugLog('ApiService',
+                  '⚠️ Token expiring soon ($minutesUntilExpiry minutes), refreshing...');
+              await _refreshAccessToken();
+            }
+          }
+        }
+      } catch (e) {}
+
       options.headers['Authorization'] = 'Bearer $token';
     }
 
-    final prefs = await SharedPreferences.getInstance();
-    final deviceId = prefs.getString(AppConstants.deviceIdKey);
-    if (deviceId != null) {
-      options.headers['X-Device-ID'] = deviceId;
+    final userData = _prefs.getString(AppConstants.userDataKey);
+    if (userData != null) {
+      try {
+        final userJson = json.decode(userData);
+        final userId = userJson['id'];
+        if (userId != null) {
+          options.headers['X-User-ID'] = userId.toString();
+        }
+      } catch (e) {}
     }
 
     if (kDebugMode) {
       debugLog(
           'ApiService', '🌐 API Request: ${options.method} ${options.path}');
-      if (options.data != null) {
-        debugLog('ApiService', '📦 Request Body: ${options.data}');
+      if (options.data != null && options.data is Map) {
+        final data = options.data as Map;
+        final safeData = Map.from(data);
+
+        if (safeData.containsKey('password')) safeData['password'] = '***';
+        if (safeData.containsKey('token')) safeData['token'] = '***';
+        debugLog('ApiService', '📦 Request Body: $safeData');
       }
     }
 
@@ -95,85 +143,224 @@ class ApiService {
       debugLog('ApiService', '📦 Response Body: ${response.data}');
     }
 
+    // Reset retry count on successful response
+    final path = response.requestOptions.path;
+    _retryCounts.remove(path);
+
     handler.next(response);
   }
 
   void _onError(DioException error, ErrorInterceptorHandler handler) async {
     debugLog('ApiService', '❌ API Error: ${error.type} - ${error.message}');
     debugLog('ApiService', '📡 URL: ${error.requestOptions.path}');
-    debugLog('ApiService', '📦 Response: ${error.response?.data}');
 
+    final path = error.requestOptions.path;
+    final currentRetryCount = _retryCounts[path] ?? 0;
+
+    // Handle rate limiting (429)
     if (error.response?.statusCode == 429) {
-      debugLog('ApiService', '⚠️ Rate limited, waiting before retry...');
-      await Future.delayed(const Duration(seconds: 2));
+      debugLog('ApiService', '⚠️ Rate limited (429)');
 
-      handler.next(error);
+      if (currentRetryCount < _maxRetries) {
+        // Increment retry count
+        _retryCounts[path] = currentRetryCount + 1;
+
+        // Calculate exponential backoff delay
+        final delaySeconds = _baseRetryDelaySeconds *
+            (1 << currentRetryCount); // 2, 4, 8 seconds
+        debugLog('ApiService',
+            '⏱️ Exponential backoff: waiting $delaySeconds seconds (attempt ${currentRetryCount + 1}/$_maxRetries)');
+
+        await Future.delayed(Duration(seconds: delaySeconds));
+
+        // Retry the request
+        try {
+          final response = await _dio.request(
+            error.requestOptions.path,
+            data: error.requestOptions.data,
+            queryParameters: error.requestOptions.queryParameters,
+            options: Options(
+              method: error.requestOptions.method,
+              headers: error.requestOptions.headers,
+            ),
+          );
+          handler.resolve(response);
+          return;
+        } catch (retryError) {
+          // If retry also fails, continue with error handling
+          debugLog('ApiService', '❌ Retry $path failed: $retryError');
+        }
+      } else {
+        debugLog(
+            'ApiService', '❌ Max retries ($_maxRetries) reached for $path');
+        _retryCounts.remove(path);
+
+        // Return a friendly error response
+        handler.resolve(Response(
+          requestOptions: error.requestOptions,
+          statusCode: 429,
+          data: 'Too many requests. Please try again later.',
+        ));
+        return;
+      }
+    }
+
+    // Handle non-JSON responses (like plain text error messages)
+    if (error.response?.data is String) {
+      final stringResponse = error.response?.data as String;
+      debugLog('ApiService', '📦 String Response: $stringResponse');
+
+      // Return a structured error
+      handler.resolve(Response(
+        requestOptions: error.requestOptions,
+        statusCode: error.response?.statusCode ?? 500,
+        data: {
+          'success': false,
+          'message': stringResponse,
+        },
+      ));
       return;
     }
 
-    if (error.response?.statusCode == 401) {
-      if (!_isRefreshingToken) {
-        _isRefreshingToken = true;
-        final refreshed = await _refreshToken();
-        _isRefreshingToken = false;
+    if (error.response?.data != null && error.response!.data is Map) {
+      final responseData = error.response!.data as Map<String, dynamic>;
+      debugLog('ApiService', '📦 Response: ${responseData['message']}');
+    }
 
-        if (refreshed) {
-          try {
-            final request = error.requestOptions;
-            final retryResponse = await _dio.request(
-              request.path,
-              data: request.data,
-              queryParameters: request.queryParameters,
-              options:
-                  Options(method: request.method, headers: request.headers),
+    if (error.response?.statusCode == 401) {
+      final responseData = error.response?.data;
+      final errorMessage =
+          responseData is Map ? responseData['message']?.toString() : '';
+
+      debugLog('ApiService', '🔑 401 Unauthorized: $errorMessage');
+
+      if (!_isRefreshingToken && errorMessage?.contains('expired') == true) {
+        _isRefreshingToken = true;
+
+        try {
+          debugLog('ApiService', '🔄 Attempting token refresh...');
+
+          final refreshed = await _refreshAccessToken();
+
+          if (refreshed) {
+            debugLog('ApiService', '✅ Token refreshed, retrying request');
+
+            final newToken =
+                await _secureStorage.read(key: AppConstants.tokenKey);
+
+            final newHeaders =
+                Map<String, dynamic>.from(error.requestOptions.headers);
+            newHeaders['Authorization'] = 'Bearer $newToken';
+
+            final options = Options(
+              method: error.requestOptions.method,
+              headers: newHeaders,
+              contentType: error.requestOptions.contentType,
+              responseType: error.requestOptions.responseType,
+              receiveTimeout: error.requestOptions.receiveTimeout,
+              sendTimeout: error.requestOptions.sendTimeout,
+              extra: error.requestOptions.extra,
+              validateStatus: error.requestOptions.validateStatus,
+              followRedirects: error.requestOptions.followRedirects,
+              maxRedirects: error.requestOptions.maxRedirects,
+              requestEncoder: error.requestOptions.requestEncoder,
+              responseDecoder: error.requestOptions.responseDecoder,
+              listFormat: error.requestOptions.listFormat,
             );
-            handler.resolve(retryResponse);
-            return;
-          } catch (retryError) {
-            debugLog('ApiService', '❌ Retry failed: $retryError');
+
+            try {
+              final retryResponse = await _dio.request(
+                error.requestOptions.path,
+                data: error.requestOptions.data,
+                queryParameters: error.requestOptions.queryParameters,
+                options: options,
+              );
+
+              handler.resolve(retryResponse);
+              return;
+            } catch (retryError) {
+              debugLog('ApiService', '❌ Retry failed: $retryError');
+            }
+          } else {
+            debugLog('ApiService', '❌ Token refresh failed');
           }
+        } catch (e) {
+          debugLog('ApiService', '❌ Error during token refresh: $e');
+        } finally {
+          _isRefreshingToken = false;
         }
+      } else if (_isRefreshingToken) {
+        debugLog('ApiService',
+            '⚠️ Token refresh already in progress, queuing request');
+
+        await Future.delayed(const Duration(seconds: 1));
+        handler.next(error);
+        return;
       }
     }
 
     handler.next(error);
   }
 
-  Future<bool> _refreshToken() async {
+  Future<bool> _refreshAccessToken() async {
     try {
       final refreshToken =
           await _secureStorage.read(key: AppConstants.refreshTokenKey);
-      if (refreshToken == null) {
-        debugLog('ApiService', 'No refresh token found');
+      final currentToken =
+          await _secureStorage.read(key: AppConstants.tokenKey);
+
+      if (refreshToken == null || currentToken == null) {
+        debugLog('ApiService', '❌ No tokens available for refresh');
         return false;
       }
 
-      debugLog('ApiService', '🔄 Refreshing token...');
-      final response = await _dio.post(
-        AppConstants.refreshTokenEndpoint,
-        data: {'refreshToken': refreshToken},
-      );
+      debugLog('ApiService', '🔄 Attempting to refresh access token...');
 
-      if (response.statusCode == 200 && response.data['success'] == true) {
-        final data = response.data['data'];
-        final newToken = data['token'];
-        final newRefreshToken = data['refreshToken'] ?? data['deviceToken'];
+      try {
+        final response = await _dio.post(
+          '/auth/refresh-access',
+          data: {'refreshToken': refreshToken},
+          options: Options(
+            headers: {'Authorization': 'Bearer $currentToken'},
+          ),
+        );
 
-        if (newToken != null) {
-          await _secureStorage.write(
-              key: AppConstants.tokenKey, value: newToken);
+        if (response.statusCode == 200 && response.data['success'] == true) {
+          final data = response.data['data'];
+          final newToken = data['token'];
 
-          if (newRefreshToken != null) {
+          if (newToken != null && newToken is String) {
             await _secureStorage.write(
-                key: AppConstants.refreshTokenKey, value: newRefreshToken);
-          }
+              key: AppConstants.tokenKey,
+              value: newToken,
+            );
 
-          debugLog('ApiService', '✅ Token refreshed successfully');
-          return true;
+            debugLog('ApiService', '✅ Access token refreshed successfully');
+            return true;
+          }
         }
+      } catch (endpointError) {
+        debugLog('ApiService', '⚠️ Refresh endpoint failed: $endpointError');
       }
 
-      debugLog('ApiService', '❌ Token refresh failed: ${response.data}');
+      try {
+        final validationResponse = await _dio.get(
+          AppConstants.validateStudentTokenEndpoint,
+          options: Options(
+            headers: {'Authorization': 'Bearer $currentToken'},
+          ),
+        );
+
+        if (validationResponse.statusCode == 200) {
+          debugLog('ApiService', '✅ Token still valid, no refresh needed');
+          return true;
+        }
+      } catch (validateError) {
+        debugLog('ApiService', '❌ Token validation failed');
+      }
+
+      debugLog(
+          'ApiService', '⚠️ All refresh methods failed, token may be invalid');
       return false;
     } catch (e) {
       debugLog('ApiService', '❌ Token refresh failed: $e');
@@ -195,26 +382,37 @@ class ApiService {
         },
       );
 
+      debugLog('ApiService', 'Register response: ${response.data}');
+
       if (response.data is Map && response.data['success'] == true) {
         final data = response.data['data'];
 
+        if (data == null) {
+          throw ApiError(message: 'No data received from server');
+        }
+
         Map<String, dynamic> userData;
-        if (data is Map && data['user'] != null) {
-          userData = Map<String, dynamic>.from(data);
+        String token;
+
+        if (data is Map && data.containsKey('user')) {
+          userData = Map<String, dynamic>.from(data['user']);
+          token = data['token']?.toString() ?? '';
         } else if (data is Map) {
           userData = Map<String, dynamic>.from(data);
+          token = data['token']?.toString() ?? '';
         } else {
           throw ApiError(message: 'Invalid response format from server');
         }
 
-        final user = User.fromJson(userData['user'] ?? userData);
-        final token = userData['token'];
+        if (!userData.containsKey('id') || !userData.containsKey('username')) {
+          throw ApiError(message: 'Invalid user data received');
+        }
 
         return ApiResponse<Map<String, dynamic>>(
           success: true,
           message: response.data['message'] ?? 'Registration successful',
           data: {
-            'user': user,
+            'user': userData,
             'token': token,
           },
         );
@@ -250,8 +448,10 @@ class ApiService {
   }
 
   Future<ApiResponse<Map<String, dynamic>>> studentLogin(String username,
-      String password, String? deviceId, String? fcmToken) async {
+      String password, String deviceId, String? fcmToken) async {
     try {
+      debugLog('ApiService', '🔐 Login with device ID: $deviceId');
+
       final response = await _dio.post(
         AppConstants.studentLoginEndpoint,
         data: {
@@ -266,6 +466,17 @@ class ApiService {
       debugLog('ApiService', 'Login response data: ${response.data}');
 
       if (response.data is Map && response.data['success'] == false) {
+        if (response.statusCode == 403 &&
+            response.data['action'] == 'device_change_required') {
+          throw ApiError(
+            message: response.data['message']?.toString() ??
+                'Device change required',
+            statusCode: response.statusCode,
+            data: response.data,
+            action: 'device_change_required',
+          );
+        }
+
         throw ApiError(
           message: response.data['message']?.toString() ?? 'Login failed',
           statusCode: response.statusCode,
@@ -306,12 +517,23 @@ class ApiService {
       debugLog('ApiService', 'DioException in studentLogin: ${e.type}');
 
       if (e.response?.statusCode == 403 && e.response?.data is Map) {
+        final responseData = e.response!.data as Map<String, dynamic>;
+
+        if (responseData['action'] == 'device_change_required') {
+          throw ApiError(
+            message:
+                responseData['message']?.toString() ?? 'Device change required',
+            statusCode: 403,
+            data: responseData,
+            action: 'device_change_required',
+          );
+        }
+
         throw ApiError(
-          message: e.response?.data['message']?.toString() ??
-              'Device change required',
+          message: responseData['message']?.toString() ?? 'Login failed',
           statusCode: 403,
-          data: e.response?.data,
-          action: e.response?.data['action'],
+          data: responseData,
+          action: responseData['action'],
         );
       }
 
@@ -329,10 +551,24 @@ class ApiService {
     } catch (e) {
       debugLog('ApiService', 'Logout error (ignored): $e');
     } finally {
-      await _secureStorage.deleteAll();
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.clear();
+      await _clearUserDataOnly();
     }
+  }
+
+  Future<void> _clearUserDataOnly() async {
+    await _secureStorage.deleteAll();
+
+    final keys = _prefs.getKeys();
+    for (final key in keys) {
+      if (key.startsWith('user_') ||
+          key == AppConstants.userDataKey ||
+          key == 'session_start' ||
+          key.startsWith('cache_')) {
+        await _prefs.remove(key);
+      }
+    }
+
+    debugLog('ApiService', '✅ User data cleared');
   }
 
   Future<ApiResponse<List<School>>> getSchools() async {
@@ -389,7 +625,7 @@ class ApiService {
       }
     } on DioException catch (e) {
       if (e.response?.statusCode == 401) {
-        final refreshed = await _refreshToken();
+        final refreshed = await _refreshAccessToken();
         if (refreshed) {
           final retryResponse = await _dio.put(
             AppConstants.updateProfileEndpoint,
@@ -413,17 +649,119 @@ class ApiService {
     }
   }
 
+  // UPDATED: getAllSettings method that tries /settings/all first, then falls back to categories
   Future<ApiResponse<List<Setting>>> getAllSettings() async {
     try {
-      final response = await _dio.get('/api/v1/settings');
+      debugLog('ApiService', '📋 Loading ALL settings from backend...');
+
+      // First try to get all settings via the /settings/all endpoint
+      try {
+        final response = await _dio.get('/settings/all');
+        debugLog(
+            'ApiService', '✅ All settings response: ${response.statusCode}');
+
+        return ApiResponse.fromJson(
+          response.data,
+          (data) {
+            if (data is List) {
+              debugLog('ApiService', '✅ Parsed ${data.length} total settings');
+              // Log the categories found
+              final categories =
+                  data.map((s) => s['category']).toSet().toList();
+              debugLog('ApiService', '📊 Categories found: $categories');
+              return List<Setting>.from(data.map((x) => Setting.fromJson(x)));
+            } else if (data is Map<String, dynamic> && data['data'] != null) {
+              final settingsData = data['data'];
+              if (settingsData is List) {
+                debugLog('ApiService',
+                    '✅ Parsing ${settingsData.length} settings from data field');
+                final categories =
+                    settingsData.map((s) => s['category']).toSet().toList();
+                debugLog('ApiService', '📊 Categories found: $categories');
+                return List<Setting>.from(
+                    settingsData.map((x) => Setting.fromJson(x)));
+              }
+            }
+            return <Setting>[];
+          },
+        );
+      } catch (e) {
+        debugLog('ApiService', '⚠️ /settings/all failed: $e');
+        debugLog('ApiService', '⚠️ Falling back to multiple category calls');
+
+        // Fallback: Load multiple categories
+        final List<String> categories = [
+          'payment',
+          'contact',
+          'general',
+          'system'
+        ];
+        final List<Setting> allSettings = [];
+
+        for (final category in categories) {
+          try {
+            final response = await getSettingsByCategory(category);
+            if (response.success && response.data != null) {
+              allSettings.addAll(response.data!);
+              debugLog('ApiService',
+                  '✅ Loaded ${response.data!.length} $category settings');
+            }
+          } catch (e) {
+            debugLog('ApiService', '⚠️ Failed to load $category settings: $e');
+          }
+        }
+
+        debugLog('ApiService',
+            '✅ Total settings loaded from categories: ${allSettings.length}');
+        return ApiResponse<List<Setting>>(
+          success: true,
+          message: 'Loaded ${allSettings.length} settings from categories',
+          data: allSettings,
+        );
+      }
+    } catch (e) {
+      debugLog('ApiService', '❌ Error getting all settings: $e');
+      return ApiResponse<List<Setting>>(
+        success: false,
+        message: 'Failed to fetch settings: $e',
+        data: [],
+      );
+    }
+  }
+
+  Future<ApiResponse<List<Setting>>> getPaymentSettingsDirect() async {
+    try {
+      debugLog('ApiService', '💰 Getting payment settings directly...');
+
+      final response = await _dio.get('/settings/category/payment');
+
+      debugLog('ApiService',
+          '💰 Direct payment settings response: ${response.statusCode}');
+
       return ApiResponse.fromJson(
         response.data,
-        (data) => List<Setting>.from(data.map((x) => Setting.fromJson(x))),
+        (data) {
+          if (data is List) {
+            debugLog('ApiService',
+                '💰 Found ${data.length} payment settings directly');
+            for (final item in data) {
+              if (item is Map<String, dynamic>) {
+                final key = item['setting_key'] ?? 'unknown';
+                final value = item['setting_value'] ?? 'null';
+                debugLog('ApiService', '💰   - $key: $value');
+              }
+            }
+            return List<Setting>.from(data.map((x) => Setting.fromJson(x)));
+          }
+          return <Setting>[];
+        },
       );
-    } on DioException catch (e) {
-      throw ApiError(
-        message: e.response?.data['message'] ?? 'Failed to fetch settings',
-        statusCode: e.response?.statusCode,
+    } catch (e) {
+      debugLog('ApiService', '❌ Error getting payment settings directly: $e');
+      return ApiResponse<List<Setting>>(
+        success: false,
+        message: 'Failed to get payment settings: $e',
+        data: [],
       );
     }
   }
@@ -691,15 +1029,132 @@ class ApiService {
     try {
       final response =
           await _dio.get(AppConstants.examQuestionsEndpoint(examId));
-      return ApiResponse.fromJson(
-        response.data,
-        (data) =>
-            List<ExamQuestion>.from(data.map((x) => ExamQuestion.fromJson(x))),
+
+      debugLog('ApiService', 'getExamQuestions response: ${response.data}');
+
+      // ✅ FIXED: Handle the response directly without double-parsing
+      if (response.data is Map<String, dynamic>) {
+        final data = response.data as Map<String, dynamic>;
+
+        if (data['success'] == true) {
+          List<ExamQuestion> questions = [];
+
+          // Check if data['data'] exists and is a List
+          if (data.containsKey('data') && data['data'] is List) {
+            final items = data['data'] as List;
+            debugLog(
+                'ApiService', 'Found data list with ${items.length} items');
+
+            questions = items.map<ExamQuestion>((item) {
+              if (item is Map<String, dynamic>) {
+                return ExamQuestion(
+                  id: item['id'] ?? 0,
+                  examId: examId,
+                  questionId: item['id'] ?? item['exam_question_id'] ?? 0,
+                  displayOrder: item['display_order'] ?? 0,
+                  marks: item['marks'] ?? 1,
+                  questionText: item['question_text']?.toString() ?? '',
+                  optionA: item['option_a']?.toString(),
+                  optionB: item['option_b']?.toString(),
+                  optionC: item['option_c']?.toString(),
+                  optionD: item['option_d']?.toString(),
+                  optionE: item['option_e']?.toString(),
+                  optionF: item['option_f']?.toString(),
+                  difficulty: (item['difficulty']?.toString() ?? 'medium')
+                      .toLowerCase(),
+                  hasAnswer: item['correct_option'] != null &&
+                      (item['correct_option']?.toString() ?? '').isNotEmpty,
+                );
+              }
+              return ExamQuestion(
+                id: 0,
+                examId: examId,
+                questionId: 0,
+                displayOrder: 0,
+                marks: 0,
+                questionText: '',
+                difficulty: 'medium',
+                hasAnswer: false,
+              );
+            }).toList();
+          } else {
+            debugLog('ApiService', 'No data field found in response');
+          }
+
+          debugLog('ApiService', 'Parsed ${questions.length} exam questions');
+
+          // Return ApiResponse with the questions list directly
+          return ApiResponse<List<ExamQuestion>>(
+            success: true,
+            message: data['message']?.toString() ?? 'Exam questions retrieved',
+            data: questions,
+          );
+        } else {
+          return ApiResponse<List<ExamQuestion>>(
+            success: false,
+            message:
+                data['message']?.toString() ?? 'Failed to fetch exam questions',
+            data: [],
+          );
+        }
+      } else if (response.data is List) {
+        // Handle direct list response
+        final items = response.data as List;
+        debugLog(
+            'ApiService', 'Response is direct List with ${items.length} items');
+
+        final questions = items.map<ExamQuestion>((item) {
+          if (item is Map<String, dynamic>) {
+            return ExamQuestion(
+              id: item['id'] ?? 0,
+              examId: examId,
+              questionId: item['id'] ?? item['exam_question_id'] ?? 0,
+              displayOrder: item['display_order'] ?? 0,
+              marks: item['marks'] ?? 1,
+              questionText: item['question_text']?.toString() ?? '',
+              optionA: item['option_a']?.toString(),
+              optionB: item['option_b']?.toString(),
+              optionC: item['option_c']?.toString(),
+              optionD: item['option_d']?.toString(),
+              optionE: item['option_e']?.toString(),
+              optionF: item['option_f']?.toString(),
+              difficulty:
+                  (item['difficulty']?.toString() ?? 'medium').toLowerCase(),
+              hasAnswer: item['correct_option'] != null &&
+                  (item['correct_option']?.toString() ?? '').isNotEmpty,
+            );
+          }
+          return ExamQuestion(
+            id: 0,
+            examId: examId,
+            questionId: 0,
+            displayOrder: 0,
+            marks: 0,
+            questionText: '',
+            difficulty: 'medium',
+            hasAnswer: false,
+          );
+        }).toList();
+
+        debugLog('ApiService', 'Parsed ${questions.length} exam questions');
+
+        return ApiResponse<List<ExamQuestion>>(
+          success: true,
+          message: 'Exam questions retrieved successfully',
+          data: questions,
+        );
+      }
+
+      return ApiResponse<List<ExamQuestion>>(
+        success: false,
+        message: 'Invalid response format',
+        data: [],
       );
     } on DioException catch (e) {
+      debugLog('ApiService', 'getExamQuestions error: ${e.response?.data}');
       throw ApiError(
-        message:
-            e.response?.data['message'] ?? 'Failed to fetch exam questions',
+        message: e.response?.data['message']?.toString() ??
+            'Failed to fetch exam questions',
         statusCode: e.response?.statusCode,
       );
     }
@@ -1246,19 +1701,15 @@ class ApiService {
     }
   }
 
-  Future<ApiResponse<List<UserProgress>>> getUserProgressForCourse(
-      int courseId) async {
+  Future<ApiResponse<Map<String, dynamic>>> getUserProgress(
+      int chapterId) async {
     try {
-      final response = await _dio
-          .get('${AppConstants.userProgressEndpoint}/course/$courseId');
+      final response = await _dio.get('/progress/chapter/$chapterId');
       return ApiResponse.fromJson(
-        response.data,
-        (data) =>
-            List<UserProgress>.from(data.map((x) => UserProgress.fromJson(x))),
-      );
+          response.data, (data) => data as Map<String, dynamic>);
     } on DioException catch (e) {
       throw ApiError(
-        message: e.response?.data['message'] ?? 'Failed to fetch user progress',
+        message: e.response?.data['message'] ?? 'Failed to fetch progress',
         statusCode: e.response?.statusCode,
       );
     }
@@ -1346,30 +1797,50 @@ class ApiService {
     }
   }
 
+  // UPDATED: getSettingsByCategory with better logging
   Future<ApiResponse<List<Setting>>> getSettingsByCategory(
       String category) async {
     try {
-      final response =
-          await _dio.get(AppConstants.settingsByCategory(category));
+      debugLog('ApiService', '📋 Loading settings for category: $category');
 
-      debugLog(
-          'ApiService', 'getSettingsByCategory response: ${response.data}');
+      final response = await _dio.get('/settings/category/$category');
+
+      debugLog('ApiService',
+          'Settings by category response: ${response.statusCode}');
 
       return ApiResponse.fromJson(
         response.data,
         (data) {
           if (data is List) {
+            debugLog('ApiService', 'Parsing ${data.length} $category settings');
             return List<Setting>.from(data.map((x) => Setting.fromJson(x)));
+          } else if (data is Map<String, dynamic> && data['data'] != null) {
+            final settingsData = data['data'];
+            if (settingsData is List) {
+              debugLog('ApiService',
+                  'Parsing ${settingsData.length} $category settings from data field');
+              return List<Setting>.from(
+                  settingsData.map((x) => Setting.fromJson(x)));
+            }
           }
+          debugLog('ApiService', '⚠️ No $category settings data found');
           return <Setting>[];
         },
       );
     } on DioException catch (e) {
       debugLog(
-          'ApiService', 'getSettingsByCategory Dio error: ${e.response?.data}');
+          'ApiService', '❌ getSettingsByCategory error: ${e.response?.data}');
+      debugLog('ApiService', '❌ Error URL: ${e.requestOptions.path}');
+
+      if (e.response?.statusCode == 404) {
+        debugLog('ApiService', '⚠️ 404 error for /settings/category/$category');
+      }
+
       throw ApiError(
-        message: e.response?.data['message'] ?? 'Failed to fetch settings',
+        message: e.response?.data['message']?.toString() ??
+            'Failed to fetch $category settings',
         statusCode: e.response?.statusCode,
+        data: e.response?.data,
       );
     }
   }
@@ -1476,10 +1947,8 @@ class ApiService {
 
       debugLog('ApiService', '📸 Uploading payment proof...');
 
-      // FIX: Use the correct payment proof endpoint
       final response = await _dio.post(
-        AppConstants
-            .uploadPaymentProofEndpoint, // THIS IS THE FIX: '/upload/payment-proof'
+        AppConstants.uploadPaymentProofEndpoint,
         data: formData,
         options: Options(
           headers: {
@@ -1497,11 +1966,9 @@ class ApiService {
         if (responseData['success'] == true) {
           String? fileUrl;
 
-          // Try different response formats
           if (responseData['data'] is String) {
             fileUrl = responseData['data'];
           } else if (responseData['data'] != null) {
-            // If data is not string but an object, try to extract URL
             if (responseData['data'] is Map) {
               final dataMap = responseData['data'] as Map;
               if (dataMap['url'] != null) {
@@ -1536,7 +2003,6 @@ class ApiService {
         }
       }
 
-      // Fallback: if we can't parse the URL, return the entire response data as string
       debugLog('ApiService', '⚠️ Using fallback response parsing');
       return ApiResponse<String>(
         success: responseData['success'] ?? false,
@@ -1615,30 +2081,60 @@ class ApiService {
     }
   }
 
-  Future<ApiResponse<UserProgress>> getUserProgress(int chapterId) async {
+  Future<ApiResponse<Map<String, dynamic>>> getOverallProgress() async {
     try {
-      final response =
-          await _dio.get(AppConstants.userProgressByChapterEndpoint(chapterId));
+      final response = await _dio.get('/progress/overall');
       return ApiResponse.fromJson(
-          response.data, (data) => UserProgress.fromJson(data));
+          response.data, (data) => data as Map<String, dynamic>);
     } on DioException catch (e) {
       throw ApiError(
-        message: e.response?.data['message'] ?? 'Failed to fetch user progress',
+        message:
+            e.response?.data['message'] ?? 'Failed to fetch overall progress',
         statusCode: e.response?.statusCode,
       );
     }
   }
 
-  Future<ApiResponse<void>> saveUserProgress(UserProgress progress) async {
+  Future<ApiResponse<List<UserProgress>>> getUserProgressForCourse(
+      int courseId) async {
     try {
-      final response = await _dio.post(
-        AppConstants.userProgressEndpoint,
-        data: progress.toJson(),
+      final response = await _dio.get('/progress/course/$courseId');
+      return ApiResponse.fromJson(
+        response.data,
+        (data) =>
+            List<UserProgress>.from(data.map((x) => UserProgress.fromJson(x))),
       );
+    } on DioException catch (e) {
+      throw ApiError(
+        message:
+            e.response?.data['message'] ?? 'Failed to fetch course progress',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<ApiResponse<void>> saveUserProgress({
+    required int chapterId,
+    int? videoProgress,
+    bool? notesViewed,
+    int? questionsAttempted,
+    int? questionsCorrect,
+  }) async {
+    try {
+      final data = {
+        'chapter_id': chapterId,
+        if (videoProgress != null) 'video_progress': videoProgress,
+        if (notesViewed != null) 'notes_viewed': notesViewed ? 1 : 0,
+        if (questionsAttempted != null)
+          'questions_attempted': questionsAttempted,
+        if (questionsCorrect != null) 'questions_correct': questionsCorrect,
+      };
+
+      final response = await _dio.post('/progress/save', data: data);
       return ApiResponse(success: true, message: response.data['message']);
     } on DioException catch (e) {
       throw ApiError(
-        message: e.response?.data['message'] ?? 'Failed to save user progress',
+        message: e.response?.data['message'] ?? 'Failed to save progress',
         statusCode: e.response?.statusCode,
       );
     }

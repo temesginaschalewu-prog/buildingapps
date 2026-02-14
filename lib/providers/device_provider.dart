@@ -18,7 +18,11 @@ class DeviceProvider with ChangeNotifier {
   bool _isInitialized = false;
   String? _error;
 
-  DeviceProvider({required this.apiService}) : deviceService = DeviceService();
+  DeviceProvider(
+      {required this.apiService, required DeviceService deviceService})
+      : deviceService = DeviceService() {
+    _initializeAsync();
+  }
 
   String? get deviceId => _deviceId;
   String? get tvDeviceId => _tvDeviceId;
@@ -35,6 +39,20 @@ class DeviceProvider with ChangeNotifier {
     return DateTime.now().isAfter(_pairingExpiresAt!);
   }
 
+  Future<void> _initializeAsync() async {
+    try {
+      await deviceService.init();
+      _deviceId = await deviceService.getDeviceId();
+      _tvDeviceId = await deviceService.getTvDeviceId();
+      await _loadPairingCode();
+      _isInitialized = true;
+      debugLog('DeviceProvider', '✅ Initialized with device ID: $_deviceId');
+    } catch (e) {
+      _error = e.toString();
+      debugLog('DeviceProvider', 'initialize error: $e');
+    }
+  }
+
   Future<void> initialize() async {
     if (_isInitialized) return;
 
@@ -43,37 +61,25 @@ class DeviceProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      debugLog('DeviceProvider', 'Initializing device provider');
-
-      await deviceService.init();
-
-      // Get device ID
-      _deviceId = await deviceService.getDeviceId();
-      debugLog('DeviceProvider', 'Device id set: $_deviceId');
-
-      await _loadTvDeviceId();
-      await _loadPairingCode();
-
-      _isInitialized = true;
-    } catch (e) {
-      _error = e.toString();
-      debugLog('DeviceProvider', 'initialize error: $e');
+      await _initializeAsync();
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
 
-  Future<void> _loadTvDeviceId() async {
-    _tvDeviceId = await deviceService.getTvDeviceId();
-    debugLog('DeviceProvider', 'Loaded tvDeviceId: $_tvDeviceId');
-  }
+  Future<void> _loadPairingCode() async {
+    final prefs = await SharedPreferences.getInstance();
+    final code = prefs.getString('pairing_code');
+    final expiresAt = prefs.getInt('pairing_expires_at');
 
-  Future<void> _saveTvDeviceId(String deviceId) async {
-    await deviceService.saveTvDeviceId(deviceId);
-    _tvDeviceId = deviceId;
-    notifyListeners();
-    debugLog('DeviceProvider', 'Saved tvDeviceId: $deviceId');
+    if (code != null && expiresAt != null) {
+      _pairingCode = code;
+      _pairingExpiresAt = DateTime.fromMillisecondsSinceEpoch(expiresAt);
+      _isPairing = true;
+      debugLog('DeviceProvider',
+          'Loaded pairing code: $code, expires: $_pairingExpiresAt');
+    }
   }
 
   Future<void> _savePairingCode(String code, int expiresInSeconds) async {
@@ -90,20 +96,6 @@ class DeviceProvider with ChangeNotifier {
     _pairingExpiresAt = DateTime.now().add(Duration(seconds: expiresInSeconds));
     _isPairing = true;
     notifyListeners();
-  }
-
-  Future<void> _loadPairingCode() async {
-    final prefs = await SharedPreferences.getInstance();
-    final code = prefs.getString('pairing_code');
-    final expiresAt = prefs.getInt('pairing_expires_at');
-
-    if (code != null && expiresAt != null) {
-      _pairingCode = code;
-      _pairingExpiresAt = DateTime.fromMillisecondsSinceEpoch(expiresAt);
-      _isPairing = true;
-      debugLog('DeviceProvider',
-          'Loaded pairing code: $code, expires: $_pairingExpiresAt');
-    }
   }
 
   Future<void> pairTvDevice(String tvDeviceId) async {
@@ -149,7 +141,8 @@ class DeviceProvider with ChangeNotifier {
       final response = await apiService.verifyTvPairing(code);
       final data = response.data!;
 
-      await _saveTvDeviceId(data['tv_device_id']);
+      await deviceService.saveTvDeviceId(data['tv_device_id']);
+      _tvDeviceId = data['tv_device_id'];
 
       await _clearPairingState();
 
@@ -180,7 +173,8 @@ class DeviceProvider with ChangeNotifier {
       debugLog('DeviceProvider', 'Unpairing TV device');
       await apiService.unpairTvDevice();
 
-      await _clearTvDevice();
+      await deviceService.clearTvDeviceId();
+      _tvDeviceId = null;
 
       await apiService.updateDevice('tv', '');
 
@@ -195,13 +189,6 @@ class DeviceProvider with ChangeNotifier {
       _isLoading = false;
       notifyListeners();
     }
-  }
-
-  Future<void> _clearTvDevice() async {
-    await deviceService.clearTvDeviceId();
-    _tvDeviceId = null;
-    debugLog('DeviceProvider', 'TV device cleared from storage');
-    notifyListeners();
   }
 
   Future<void> _clearPairingState() async {
@@ -226,7 +213,6 @@ class DeviceProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // Get device info for debugging
   Future<Map<String, dynamic>> getDeviceInfo() async {
     if (!_isInitialized) await initialize();
 
@@ -236,5 +222,24 @@ class DeviceProvider with ChangeNotifier {
       debugLog('DeviceProvider', 'getDeviceInfo error: $e');
       return {};
     }
+  }
+
+  Future<void> clearUserData() async {
+    debugLog('DeviceProvider', 'Clearing user device data (keeping device ID)');
+
+    _tvDeviceId = null;
+    _pairingCode = null;
+    _pairingExpiresAt = null;
+    _isPairing = false;
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('pairing_code');
+    await prefs.remove('pairing_expires_at');
+    await deviceService.clearTvDeviceId();
+
+    debugLog(
+        'DeviceProvider', '✅ User device data cleared (device ID preserved)');
+
+    notifyListeners();
   }
 }

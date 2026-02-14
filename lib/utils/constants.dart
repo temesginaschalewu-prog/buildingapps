@@ -1,14 +1,6 @@
 class AppConstants {
-  // For Android emulator/device on same network
-  // static const String baseUrl = 'http://10.0.2.2:3000'; // For Android emulator
-  // static const String baseUrl = 'http://192.168.29.52:3000'; // For physical device on same network
-  //static const String baseUrl = 'http://192.168.29.52:3000'; // Use your PC's IP
-
-  static const String baseUrl = 'https://family-academy-backend.onrender.com';
-
-  // OR if localhost doesn't work, use your loopback IP
-  // static const String baseUrl = 'http://127.0.0.1:3000';
-
+  static const String baseUrl =
+      'https://family-academy-backend-a12l.onrender.com';
   static const String apiVersion = 'v1';
   static String get apiBaseUrl => '$baseUrl/api/$apiVersion';
 
@@ -20,24 +12,13 @@ class AppConstants {
   static const String validateTokenEndpoint = '/auth/validate';
   static const String validateStudentTokenEndpoint = '/auth/student/validate';
   static const String validateAdminTokenEndpoint = '/auth/admin/validate';
+  static const String checkDeviceChangeEndpoint = '/auth/check-device-change';
 
   static const String schoolsEndpoint = '/schools';
 
   static const String categoriesEndpoint = '/categories';
   static const String allCategoriesEndpoint = '$categoriesEndpoint/all';
   static const String studentCategoriesEndpoint = '$categoriesEndpoint/student';
-
-  static const String userProgressByCourseEndpoint =
-      '$userProgressEndpoint/course';
-  static const String examResultDetailsEndpoint =
-      '$examResultsEndpoint/details';
-  static const String parentTokenGenerateEndpoint =
-      '$telegramEndpoint/generate-token';
-  static const String examQuestionBatchEndpoint = '$questionsEndpoint/batch';
-  static const String uploadPaymentProofEndpoint = '/upload/payment-proof';
-  static const String deviceChangePaymentEndpoint =
-      '$paymentsEndpoint/device-change';
-  static const String checkDeviceChangeEndpoint = '/auth/check-device-change';
 
   static const String coursesEndpoint = '/courses';
   static String coursesByCategory(int categoryId) =>
@@ -80,6 +61,8 @@ class AppConstants {
       '$examResultsEndpoint/$examResultId';
   static String examResultsByExamEndpoint(int examId) =>
       '$examResultsEndpoint/exam/$examId';
+  static const String examResultDetailsEndpoint =
+      '$examResultsEndpoint/details';
 
   static const String paymentsEndpoint = '/payments';
   static const String submitPaymentEndpoint = '$paymentsEndpoint/submit';
@@ -90,6 +73,10 @@ class AppConstants {
       '$paymentsEndpoint/verify/$paymentId';
   static String rejectPaymentEndpoint(int paymentId) =>
       '$paymentsEndpoint/reject/$paymentId';
+  static const String deviceChangePaymentEndpoint =
+      '$paymentsEndpoint/device-change';
+  static const String uploadPaymentProofEndpoint = '/upload/payment-proof';
+
   static const String subscriptionsEndpoint = '/subscriptions';
   static const String mySubscriptionsEndpoint =
       '$subscriptionsEndpoint/my-subscriptions';
@@ -114,6 +101,8 @@ class AppConstants {
   static const String telegramEndpoint = '/telegram';
   static const String generateParentTokenEndpoint =
       '$telegramEndpoint/generate-token';
+  static const String parentTokenGenerateEndpoint =
+      '$telegramEndpoint/generate-token';
   static const String parentLinkStatusEndpoint = '$telegramEndpoint/status';
   static const String unlinkParentEndpoint = '$telegramEndpoint/unlink';
 
@@ -131,6 +120,10 @@ class AppConstants {
   static const String allUsersEndpoint = usersEndpoint;
   static String userDetailsEndpoint(int userId) => '$usersEndpoint/$userId';
 
+  static const String contactSettingsEndpoint =
+      '$settingsEndpoint/category/contact';
+  static const String paymentSettingsEndpoint =
+      '$settingsEndpoint/category/payment';
   static const String settingsEndpoint = '/settings';
   static const String publicSettingsEndpoint = '$settingsEndpoint/public';
   static String settingsByCategory(String category) =>
@@ -141,22 +134,29 @@ class AppConstants {
   static const String initializeDefaultsEndpoint =
       '$settingsEndpoint/initialize-defaults';
 
-  static const String uploadImageEndpoint = '/upload/image';
-  static const String uploadVideoEndpoint = '/upload/video';
-  static const String uploadFileEndpoint = '/upload/file';
-
+  static const String saveProgressEndpoint = '/progress/save';
+  static const String getProgressEndpoint = '/progress/chapter/';
+  static const String getCourseProgressEndpoint = '/progress/course/';
+  static const String getOverallProgressEndpoint = '/progress/overall';
   static const String userProgressEndpoint = '/user-progress';
   static String userProgressByChapterEndpoint(int chapterId) =>
       '$userProgressEndpoint/chapter/$chapterId';
+  static const String userProgressByCourseEndpoint =
+      '$userProgressEndpoint/course';
+
+  static const String uploadImageEndpoint = '/upload/image';
+  static const String uploadVideoEndpoint = '/upload/video';
+  static const String uploadFileEndpoint = '/upload/file';
 
   static const String parentLinksEndpoint = '/parent-links';
 
   static const String systemLogsEndpoint = '/system-logs';
 
   static const String examQuestions = '/exam-questions';
+  static const String examQuestionBatchEndpoint = '$questionsEndpoint/batch';
 
   static const String appName = 'Family Academy';
-  static const String appVersion = '1.0.0';
+  static const String appVersion = '1.3.0';
 
   static const String unpaidStatus = 'unpaid';
   static const String activeStatus = 'active';
@@ -164,11 +164,13 @@ class AppConstants {
 
   static const String firstTimePayment = 'first_time';
   static const String repayment = 'repayment';
-  static const String deviceChange = 'device_change';
 
-  static const String telebirr = 'telebirr';
-  static const String bankTransfer = 'bank_transfer';
-  static const String cash = 'cash';
+  static const String paymentMethodsEnabledKey = 'payment_methods_enabled';
+  static const String paymentInstructionsKey = 'payment_instructions';
+  static const String paymentMethodPrefix = 'payment_method_';
+  static const String paymentMethodNameSuffix = '_name';
+  static const String paymentMethodNumberSuffix = '_number';
+  static const String paymentMethodInstructionsSuffix = '_instructions';
 
   static const String freeChapter = 'free';
   static const String lockedChapter = 'locked';
@@ -228,42 +230,37 @@ class AppConstants {
   static const String lastCacheCleanupKey = 'last_cache_cleanup';
   static const String lastAppStateKey = 'last_app_state';
 
-  static const int maxCacheSizeMB = 500;
-  static const int videoCacheDays = 30;
-  static const int maxVideoSizeMB = 500;
+  static const String contactSupportPhoneKey = 'contact_support_phone';
+  static const String contactSupportEmailKey = 'contact_support_email';
+  static const String contactOfficeAddressKey = 'contact_office_address';
+  static const String contactOfficeHoursKey = 'contact_office_hours';
+  static const String contactWhatsAppNumberKey = 'contact_whatsapp_number';
+  static const String contactTelegramUsernameKey = 'contact_telegram_username';
 
-  static const int pairingCodeLength = 6;
-  static const int pairingExpiryMinutes = 10;
-
-  static const int parentTokenExpiryMinutes = 30;
-
-  static const int streakResetDays = 1;
-
-  static const int expiryReminderDays = 7;
-  static const int paymentReminderDays = 3;
-
-  static const List<String> blockedFileTypes = [
-    '.exe',
-    '.bat',
-    '.sh',
-    '.php',
-    '.js',
-    '.py',
-  ];
-  static const List<String> allowedImageTypes = ['jpg', 'jpeg', 'png'];
-  static const List<String> allowedVideoTypes = ['mp4', 'mov', 'avi'];
+  static const String systemVersionKey = 'system_version';
+  static const String adminEmailKey = 'admin_email';
 
   static const int apiTimeoutSeconds = 30;
   static const int videoBufferSeconds = 10;
   static const int sessionTimeoutMinutes = 30;
   static const int examTimerIntervalSeconds = 1;
+  static const int pairingExpiryMinutes = 10;
+  static const int parentTokenExpiryMinutes = 30;
+  static const int streakResetDays = 1;
+  static const int expiryReminderDays = 7;
+  static const int paymentReminderDays = 3;
+  static const int examMinDurationMinutes = 30;
+  static const int examMaxDurationMinutes = 180;
+  static const int examWarningTimeMinutes = 5;
 
-  static const String deviceIdPrefix = 'FA_DEVICE_';
-
-  static const String encryptionKey = 'family_academy_secure_key_2024';
-
+  static const int maxCacheSizeMB = 500;
+  static const int videoCacheDays = 30;
+  static const int maxVideoSizeMB = 500;
   static const int maxFileUploadSizeMB = 5;
   static const int maxPaymentProofSizeMB = 5;
+  static const int pairingCodeLength = 6;
+  static const String deviceIdPrefix = 'FA_DEVICE_';
+  static const String encryptionKey = 'family_academy_secure_key_2024';
 
   static const int maxApiRetries = 3;
   static const int apiRetryDelayMs = 1000;
@@ -275,9 +272,16 @@ class AppConstants {
   static const double defaultIconSize = 24.0;
   static const double defaultButtonHeight = 48.0;
 
-  static const int examMinDurationMinutes = 30;
-  static const int examMaxDurationMinutes = 180;
-  static const int examWarningTimeMinutes = 5;
+  static const List<String> blockedFileTypes = [
+    '.exe',
+    '.bat',
+    '.sh',
+    '.php',
+    '.js',
+    '.py',
+  ];
+  static const List<String> allowedImageTypes = ['jpg', 'jpeg', 'png'];
+  static const List<String> allowedVideoTypes = ['mp4', 'mov', 'avi'];
 
   static const Map<int, String> streakLevels = {
     2: '🌱 Growing',

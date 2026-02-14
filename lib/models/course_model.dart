@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 class Course {
   final int id;
   final String name;
@@ -57,6 +59,44 @@ class Course {
 
     if (hasActiveSubscription) return true;
 
+    if (!requiresPayment) return true;
+
     return false;
+  }
+
+  bool shouldShowLock(bool hasActiveSubscription) {
+    return requiresPayment && !hasActiveSubscription;
+  }
+
+  IconData getAccessIcon(bool hasActiveSubscription) {
+    if (hasFullAccess(hasActiveSubscription)) {
+      return Icons.check_circle;
+    } else if (hasPendingPayment) {
+      return Icons.pending;
+    } else {
+      return Icons.lock;
+    }
+  }
+
+  Color getAccessColor(bool hasActiveSubscription) {
+    if (hasFullAccess(hasActiveSubscription)) {
+      return Colors.green;
+    } else if (hasPendingPayment) {
+      return Colors.orange;
+    } else {
+      return Colors.orangeAccent;
+    }
+  }
+
+  String getAccessText(bool hasActiveSubscription) {
+    if (hasFullAccess(hasActiveSubscription)) {
+      return 'Full Access';
+    } else if (hasPendingPayment) {
+      return 'Pending Payment';
+    } else if (!requiresPayment) {
+      return 'Free';
+    } else {
+      return 'Purchase Required';
+    }
   }
 }

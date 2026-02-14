@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class ExamResult {
   final int id;
   final int examId;
@@ -86,6 +88,9 @@ class ExamResult {
   bool get isCompleted => status == 'completed';
   bool get isInProgress => status == 'in_progress';
   bool get isAbandoned => status == 'abandoned';
+
+  bool get showResultsImmediately =>
+      true; // Default to true for completed exams
 
   bool get passed => score >= passingScore;
 

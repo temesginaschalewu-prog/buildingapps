@@ -10,6 +10,7 @@ class Payment {
   final String categoryName;
   final DateTime? verifiedAt;
   final String? rejectionReason;
+  final int? categoryId;
 
   Payment({
     required this.id,
@@ -21,6 +22,7 @@ class Payment {
     required this.categoryName,
     this.verifiedAt,
     this.rejectionReason,
+    this.categoryId,
   });
 
   factory Payment.fromJson(Map<String, dynamic> json) {
@@ -36,6 +38,7 @@ class Payment {
           ? DateTime.parse(json['verified_at'])
           : null,
       rejectionReason: json['rejection_reason'],
+      categoryId: json['category_id'],
     );
   }
 
@@ -50,6 +53,7 @@ class Payment {
       'category_name': categoryName,
       'verified_at': verifiedAt?.toIso8601String(),
       'rejection_reason': rejectionReason,
+      'category_id': categoryId,
     };
   }
 
@@ -62,24 +66,9 @@ class Payment {
       case AppConstants.firstTimePayment:
         return 'First Time Payment';
       case AppConstants.repayment:
-        return 'Repayment';
-      case AppConstants.deviceChange:
-        return 'Device Change';
+        return 'Renewal Payment';
       default:
-        return paymentType;
-    }
-  }
-
-  String get paymentMethodText {
-    switch (paymentMethod) {
-      case AppConstants.telebirr:
-        return 'Telebirr';
-      case AppConstants.bankTransfer:
-        return 'Bank Transfer';
-      case AppConstants.cash:
-        return 'Cash';
-      default:
-        return paymentMethod;
+        return paymentType.replaceAll('_', ' ');
     }
   }
 }

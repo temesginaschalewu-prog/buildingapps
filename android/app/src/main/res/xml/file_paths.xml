@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- External storage -->
+    <external-path name="external_files" path="." />
+    
+    <!-- External media -->
+    <external-media-path name="external_media" path="." />
+    
+    <!-- External downloads -->
+    <external-downloads-path name="downloads" path="." />
+    
+    <!-- External DCIM -->
+    <external-dcim-path name="dcim" path="." />
+    
+    <!-- External pictures -->
+    <external-pictures-path name="pictures" path="." />
+    
+    <!-- External movies -->
+    <external-movies-path name="movies" path="." />
+    
+    <!-- External audio -->
+    <external-audio-path name="audio" path="." />
+    
+    <!-- Files directory -->
+    <files-path name="files" path="." />
+    
+    <!-- Cache directory -->
+    <cache-path name="cache" path="." />
+    
+    <!-- External cache -->
+    <external-cache-path name="external_cache" path="." />
+    
+    <!-- Root path for Family Academy downloads -->
+    <root-path name="root" path="." />
+</paths>

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 
 class Setting {
@@ -105,9 +107,17 @@ class Setting {
   Map<String, dynamic>? get jsonValue {
     if (settingValue == null) return null;
     try {
-      return Map<String, dynamic>.from(settingValue! as Map);
+      if (settingValue is Map<String, dynamic>) {
+        return settingValue as Map<String, dynamic>;
+      }
+
+      final decoded = jsonDecode(settingValue!);
+      if (decoded is Map<String, dynamic>) {
+        return decoded;
+      }
     } catch (e) {
-      return null;
+      debugPrint('Error parsing JSON value: $e');
     }
+    return null;
   }
 }

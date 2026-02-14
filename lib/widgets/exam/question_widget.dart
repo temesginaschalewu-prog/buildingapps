@@ -39,16 +39,16 @@ class _QuestionWidgetState extends State<QuestionWidget> {
     widget.onAnswerSelected(option);
   }
 
-  Color _getDifficultyColor(String difficulty) {
+  Color _getDifficultyColor(String difficulty, BuildContext context) {
     switch (difficulty.toLowerCase()) {
       case 'easy':
-        return Colors.green;
+        return Theme.of(context).colorScheme.tertiary;
       case 'medium':
-        return Colors.orange;
+        return Theme.of(context).colorScheme.secondary;
       case 'hard':
-        return Colors.red;
+        return Theme.of(context).colorScheme.error;
       default:
-        return Colors.blue;
+        return Theme.of(context).colorScheme.primary;
     }
   }
 
@@ -60,18 +60,21 @@ class _QuestionWidgetState extends State<QuestionWidget> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Question header
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.blue.withOpacity(0.05),
+            color:
+                Theme.of(context).colorScheme.primaryContainer.withOpacity(0.1),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.blue.withOpacity(0.2)),
+            border: Border.all(
+                color: Theme.of(context)
+                    .colorScheme
+                    .primaryContainer
+                    .withOpacity(0.2)),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Marks and difficulty
               Row(
                 children: [
                   Container(
@@ -80,14 +83,17 @@ class _QuestionWidgetState extends State<QuestionWidget> {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: Theme.of(context).primaryColor.withOpacity(0.1),
+                      color: Theme.of(context)
+                          .colorScheme
+                          .primary
+                          .withOpacity(0.1),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
                       '${widget.question.marks} mark${widget.question.marks > 1 ? 's' : ''}',
                       style: TextStyle(
                         fontSize: 12,
-                        color: Theme.of(context).primaryColor,
+                        color: Theme.of(context).colorScheme.primary,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -99,7 +105,8 @@ class _QuestionWidgetState extends State<QuestionWidget> {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: _getDifficultyColor(widget.question.difficulty)
+                      color: _getDifficultyColor(
+                              widget.question.difficulty, context)
                           .withOpacity(0.1),
                       borderRadius: BorderRadius.circular(4),
                     ),
@@ -107,26 +114,25 @@ class _QuestionWidgetState extends State<QuestionWidget> {
                       widget.question.difficulty.toUpperCase(),
                       style: TextStyle(
                         fontSize: 12,
-                        color: _getDifficultyColor(widget.question.difficulty),
+                        color: _getDifficultyColor(
+                            widget.question.difficulty, context),
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
                 ],
               ),
-
-              // Question number
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.grey[200],
+                  color: Theme.of(context).colorScheme.surfaceVariant,
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
                   'Question ${widget.question.displayOrder}',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
-                    color: Colors.grey,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
               ),
@@ -134,16 +140,14 @@ class _QuestionWidgetState extends State<QuestionWidget> {
           ),
         ),
         const SizedBox(height: 16),
-
-        // Question text
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).colorScheme.surface,
             borderRadius: BorderRadius.circular(8),
             boxShadow: [
               BoxShadow(
-                color: Colors.grey.withOpacity(0.1),
+                color: Theme.of(context).colorScheme.shadow.withOpacity(0.1),
                 blurRadius: 4,
                 offset: const Offset(0, 2),
               ),
@@ -151,26 +155,24 @@ class _QuestionWidgetState extends State<QuestionWidget> {
           ),
           child: Text(
             widget.question.questionText,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w500,
               height: 1.5,
+              color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
         ),
         const SizedBox(height: 24),
-
-        // Options
         Text(
           'Select your answer:',
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w600,
-            color: Colors.grey[700],
+            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
           ),
         ),
         const SizedBox(height: 12),
-
         Column(
           children: List.generate(options.length, (index) {
             final option = options[index];
@@ -186,20 +188,21 @@ class _QuestionWidgetState extends State<QuestionWidget> {
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: isSelected
-                        ? Theme.of(context).primaryColor.withOpacity(0.1)
-                        : Colors.white,
+                        ? Theme.of(context).colorScheme.primary.withOpacity(0.1)
+                        : Theme.of(context).colorScheme.surface,
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
                       color: isSelected
-                          ? Theme.of(context).primaryColor
-                          : Colors.grey[300]!,
+                          ? Theme.of(context).colorScheme.primary
+                          : Theme.of(context).colorScheme.outline,
                       width: isSelected ? 2 : 1,
                     ),
                     boxShadow: isSelected
                         ? [
                             BoxShadow(
                               color: Theme.of(context)
-                                  .primaryColor
+                                  .colorScheme
+                                  .primary
                                   .withOpacity(0.1),
                               blurRadius: 6,
                               offset: const Offset(0, 2),
@@ -209,19 +212,18 @@ class _QuestionWidgetState extends State<QuestionWidget> {
                   ),
                   child: Row(
                     children: [
-                      // Option letter circle
                       Container(
                         width: 36,
                         height: 36,
                         decoration: BoxDecoration(
                           color: isSelected
-                              ? Theme.of(context).primaryColor
+                              ? Theme.of(context).colorScheme.primary
                               : Colors.transparent,
                           shape: BoxShape.circle,
                           border: Border.all(
                             color: isSelected
-                                ? Theme.of(context).primaryColor
-                                : Colors.grey[400]!,
+                                ? Theme.of(context).colorScheme.primary
+                                : Theme.of(context).colorScheme.outline,
                             width: 1.5,
                           ),
                         ),
@@ -231,35 +233,32 @@ class _QuestionWidgetState extends State<QuestionWidget> {
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.bold,
-                              color:
-                                  isSelected ? Colors.white : Colors.grey[700],
+                              color: isSelected
+                                  ? Theme.of(context).colorScheme.onPrimary
+                                  : Theme.of(context).colorScheme.onSurface,
                             ),
                           ),
                         ),
                       ),
                       const SizedBox(width: 16),
-
-                      // Option text
                       Expanded(
                         child: Text(
                           option,
                           style: TextStyle(
                             fontSize: 15,
                             color: isSelected
-                                ? Theme.of(context).primaryColor
-                                : Colors.grey[800],
+                                ? Theme.of(context).colorScheme.primary
+                                : Theme.of(context).colorScheme.onSurface,
                             fontWeight: isSelected
                                 ? FontWeight.w600
                                 : FontWeight.normal,
                           ),
                         ),
                       ),
-
-                      // Selection indicator
                       if (isSelected)
                         Icon(
                           Icons.check_circle,
-                          color: Theme.of(context).primaryColor,
+                          color: Theme.of(context).colorScheme.primary,
                           size: 20,
                         ),
                     ],

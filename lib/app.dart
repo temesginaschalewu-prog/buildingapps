@@ -1,11 +1,21 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+
+import 'package:familyacademyclient/providers/payment_provider.dart';
+import 'package:familyacademyclient/providers/settings_provider.dart';
+import 'package:familyacademyclient/providers/user_provider.dart';
+import 'package:familyacademyclient/screens/splash/splash_screen.dart';
 import 'package:familyacademyclient/utils/screen_protection.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:familyacademyclient/utils/responsive.dart';
 import 'providers/theme_provider.dart';
 import 'providers/notification_provider.dart';
 import 'providers/auth_provider.dart';
+import 'providers/subscription_provider.dart';
+import 'providers/category_provider.dart';
 import 'utils/router.dart';
 import 'services/notification_service.dart';
 import 'services/api_service.dart';
@@ -13,10 +23,12 @@ import 'utils/helpers.dart';
 
 class FamilyAcademyApp extends StatefulWidget {
   final ApiService apiService;
+  final NotificationService notificationService;
 
   const FamilyAcademyApp({
     super.key,
     required this.apiService,
+    required this.notificationService,
   });
 
   @override
@@ -28,37 +40,38 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
   bool _isAppInForeground = true;
   String _currentRoute = '/';
   bool _isRouterReady = false;
+  bool _isInitializing = false;
+  final Map<String, DateTime> _lastRouteVisited = {};
+  Timer? _sessionCheckTimer;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _initializeApp();
+    _startSessionChecker();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Wait for router to be ready
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_isRouterReady && context.mounted) {
-        try {
-          // This will only work after the router is built
-          final routeState = GoRouterState.of(context);
-          _currentRoute = routeState.uri.toString();
-          _isRouterReady = true;
-          debugLog('FamilyAcademyApp',
-              '✅ Router ready, initial route: $_currentRoute');
-        } catch (e) {
-          debugLog('FamilyAcademyApp', '⚠️ Router not ready yet: $e');
-        }
+    if (!_isRouterReady && context.mounted) {
+      try {
+        final routeState = GoRouterState.of(context);
+        _currentRoute = routeState.uri.toString();
+        _isRouterReady = true;
+        debugLog('FamilyAcademyApp',
+            '✅ Router ready, initial route: $_currentRoute');
+      } catch (e) {
+        debugLog('FamilyAcademyApp', '⚠️ Router not ready yet: $e');
       }
-    });
+    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _sessionCheckTimer?.cancel();
     super.dispose();
   }
 
@@ -94,70 +107,43 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
     }
   }
 
-  Future<void> _refreshAllData() async {
-    try {
-      if (_isAppInForeground) {
-        debugLog('FamilyAcademyApp', '🔄 App resumed, refreshing data');
-        // Only refresh if app is in foreground
+  void _startSessionChecker() {
+    _sessionCheckTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (context.mounted) {
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
         if (authProvider.isAuthenticated) {
-          // Refresh user data in background
-          await authProvider.checkAndRequireReLogin();
-
-          if (authProvider.requiresReLogin) {
-            debugLog(
-                'FamilyAcademyApp', '🔄 Re-login required (3 days passed)');
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (context.mounted) {
-                authProvider.logoutDueToInactivity();
-                GoRouter.of(context).go('/auth/login');
-              }
-            });
-          }
+          authProvider.checkSession();
         }
       }
-    } catch (e) {
-      debugLog('FamilyAcademyApp', 'Error refreshing data on resume: $e');
-    }
+    });
   }
 
   Future<void> _initializeApp() async {
     try {
-      // Initialize screen protection
       await ScreenProtectionService.initialize();
       await ScreenProtectionService.disableSplitScreen();
 
       debugLog('FamilyAcademyApp', '✅ Screen protection initialized');
 
-      // Set ApiService to NotificationService singleton
-      final notificationService = NotificationService();
-      notificationService.setApiService(widget.apiService);
+      widget.notificationService.setApiService(widget.apiService);
 
-      // Check if re-login is required (3 days check)
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (context.mounted) {
           final authProvider =
               Provider.of<AuthProvider>(context, listen: false);
-          await authProvider.checkAndRequireReLogin();
 
-          if (authProvider.requiresReLogin) {
-            debugLog(
-                'FamilyAcademyApp', '🔄 Re-login required (3 days passed)');
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (context.mounted) {
-                authProvider.logoutDueToInactivity();
-                GoRouter.of(context).go('/auth/login');
-              }
-            });
+          await authProvider.initialize();
+
+          if (authProvider.isAuthenticated) {
+            await _initializeAuthenticatedProviders();
           }
         }
       });
 
-      // Listen to notification stream
-      notificationService.notificationStream.listen((data) {
-        debugLog(
-            'FamilyAcademyApp', '📱 Notification received: ${data['type']}');
-        _handleNotificationData(data);
+      widget.notificationService.notificationStream.listen((data) {
+        if (_isAppInForeground) {
+          _handleNotificationData(data);
+        }
       });
 
       debugLog('FamilyAcademyApp', '✅ App initialization complete');
@@ -166,7 +152,84 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
     }
   }
 
-  // Monitor route changes using GoRouterState
+  Future<void> _initializeAuthenticatedProviders() async {
+    if (_isInitializing || !context.mounted) return;
+
+    _isInitializing = true;
+    debugLog('FamilyAcademyApp', '🔄 Initializing authenticated providers');
+
+    try {
+      final subscriptionProvider =
+          Provider.of<SubscriptionProvider>(context, listen: false);
+      final categoryProvider =
+          Provider.of<CategoryProvider>(context, listen: false);
+
+      final settingsProvider =
+          Provider.of<SettingsProvider>(context, listen: false);
+      await settingsProvider.getAllSettings();
+
+      await subscriptionProvider.loadSubscriptions();
+      await categoryProvider.loadCategoriesWithSubscriptionCheck();
+
+      _loadBackgroundProviders();
+
+      await widget.notificationService.sendFcmTokenToBackendIfAuthenticated();
+    } catch (e) {
+      debugLog('FamilyAcademyApp', 'Provider initialization error: $e');
+    } finally {
+      _isInitializing = false;
+    }
+  }
+
+  Future<void> _loadBackgroundProviders() async {
+    try {
+      final userProvider = Provider.of<UserProvider>(context, listen: false);
+      final notificationProvider =
+          Provider.of<NotificationProvider>(context, listen: false);
+      final paymentProvider =
+          Provider.of<PaymentProvider>(context, listen: false);
+      final settingsProvider =
+          Provider.of<SettingsProvider>(context, listen: false);
+
+      await settingsProvider.getAllSettings().catchError(
+          (e) => debugLog('FamilyAcademyApp', 'Settings error: $e'));
+
+      await Future.wait([
+        userProvider.loadUserProfile().catchError(
+            (e) => debugLog('FamilyAcademyApp', 'User profile error: $e')),
+        notificationProvider.loadNotifications().catchError(
+            (e) => debugLog('FamilyAcademyApp', 'Notifications error: $e')),
+        paymentProvider.loadPayments().catchError(
+            (e) => debugLog('FamilyAcademyApp', 'Payments error: $e')),
+      ], eagerError: true);
+    } catch (e) {
+      debugLog('FamilyAcademyApp', 'Background providers error: $e');
+    }
+  }
+
+  Future<void> _refreshAllData() async {
+    try {
+      if (_isAppInForeground && context.mounted) {
+        debugLog('FamilyAcademyApp', '🔄 App resumed, refreshing data');
+        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+
+        if (authProvider.isAuthenticated) {
+          final subscriptionProvider =
+              Provider.of<SubscriptionProvider>(context, listen: false);
+          final categoryProvider =
+              Provider.of<CategoryProvider>(context, listen: false);
+
+          await subscriptionProvider.loadSubscriptions(forceRefresh: true);
+          await categoryProvider.loadCategories(forceRefresh: true);
+
+          debugLog('FamilyAcademyApp', '✅ Data refreshed on app resume');
+        }
+      }
+    } catch (e) {
+      debugLog('FamilyAcademyApp', 'Refresh data error: $e');
+    }
+  }
+
   void _monitorRouteChanges() {
     if (!_isRouterReady || !context.mounted) return;
 
@@ -177,85 +240,74 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
       if (_currentRoute != currentUri) {
         final previousRoute = _currentRoute;
         _currentRoute = currentUri;
+        _lastRouteVisited[currentUri] = DateTime.now();
 
         debugLog('FamilyAcademyApp',
             '🔄 Route changed from "$previousRoute" to "$_currentRoute"');
 
-        // Re-enable screen protection on any route change
         if (_isAppInForeground) {
           ScreenProtectionService.enableOnResume();
         }
 
-        // Prevent unauthorized navigation attempts
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (context.mounted) {
-            _preventUnauthorizedNavigation(_currentRoute);
+            _refreshDataOnRouteChange(previousRoute, currentUri);
           }
         });
       }
-    } catch (e) {
-      // Router might not be available yet
-    }
+    } catch (e) {}
   }
 
-  // Prevent unauthorized navigation attempts
-  void _preventUnauthorizedNavigation(String location) {
-    if (!context.mounted) return;
+  void _refreshDataOnRouteChange(String previousRoute, String currentRoute) {
+    if (!context.mounted ||
+        !_shouldRefreshOnNavigation(previousRoute, currentRoute)) {
+      return;
+    }
 
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (context.mounted) {
+        try {
+          final authProvider =
+              Provider.of<AuthProvider>(context, listen: false);
+          if (authProvider.isAuthenticated) {
+            debugLog('FamilyAcademyApp', '🔄 Refreshing data on route change');
 
-    // Define public routes that don't require authentication
-    final publicRoutes = [
-      '/auth/login',
-      '/auth/register',
-      '/device-change',
-      '/payment-success' // Payment success is public
-    ];
+            if (currentRoute == '/' || currentRoute.startsWith('/category/')) {
+              final subscriptionProvider =
+                  Provider.of<SubscriptionProvider>(context, listen: false);
+              final categoryProvider =
+                  Provider.of<CategoryProvider>(context, listen: false);
 
-    // Check if trying to access protected route without auth
-    if (!authProvider.isAuthenticated) {
-      bool isProtectedRoute = true;
-      for (final route in publicRoutes) {
-        if (location == route || location.startsWith('$route?')) {
-          isProtectedRoute = false;
-          break;
+              await subscriptionProvider.loadSubscriptions(forceRefresh: true);
+              await categoryProvider.loadCategories(forceRefresh: true);
+            }
+          }
+        } catch (e) {
+          debugLog('FamilyAcademyApp', 'Route refresh error: $e');
         }
       }
+    });
+  }
 
-      if (isProtectedRoute && location != '/auth/login') {
-        debugLog('FamilyAcademyApp',
-            '🚫 Blocked unauthorized navigation to: $location');
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (context.mounted) {
-            GoRouter.of(context).go('/auth/login');
-          }
-        });
-      }
-    } else {
-      // User is authenticated, check for school selection
-      if (authProvider.user?.schoolId == null &&
-          location != '/school-selection' &&
-          location != '/payment-success') {
-        // Redirect to school selection if no school selected
-        debugLog('FamilyAcademyApp', '🏫 Redirecting to school selection');
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (context.mounted) {
-            GoRouter.of(context).go('/school-selection');
-          }
-        });
-      }
+  bool _shouldRefreshOnNavigation(String fromRoute, String toRoute) {
+    const refreshableRoutes = [
+      '/',
+      '/category/',
+      '/course/',
+      '/progress',
+      '/profile'
+    ];
 
-      // Prevent authenticated users from accessing auth routes
-      if (location.startsWith('/auth/') && location != '/auth/logout') {
-        debugLog('FamilyAcademyApp',
-            '🔄 Redirecting authenticated user from auth route');
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (context.mounted) {
-            GoRouter.of(context).go('/');
-          }
-        });
+    for (final route in refreshableRoutes) {
+      if (toRoute.startsWith(route)) {
+        final lastVisited = _lastRouteVisited[toRoute];
+
+        return lastVisited == null ||
+            DateTime.now().difference(lastVisited).inSeconds > 30;
       }
     }
+
+    return false;
   }
 
   void _handleNotificationData(Map<String, dynamic> data) {
@@ -263,63 +315,33 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
     final notificationData = data['data'];
     final route = data['route'] ?? '/notifications';
 
-    debugLog('FamilyAcademyApp', '🔄 Handling notification type: $type');
-
-    // Ensure we're in foreground before handling notification
-    if (!_isAppInForeground) {
-      debugLog(
-          'FamilyAcademyApp', '📱 App in background, queuing notification');
-      // Queue notification handling for when app resumes
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (context.mounted) {
-          _processNotificationInForeground(type, notificationData, route);
-        }
-      });
-      return;
-    }
-
-    _processNotificationInForeground(type, notificationData, route);
-  }
-
-  void _processNotificationInForeground(
-      String type, dynamic notificationData, String route) {
     switch (type) {
       case 'payment_verified':
-        debugLog('FamilyAcademyApp', '💰 Payment verified: $notificationData');
         _handlePaymentVerified(notificationData);
         break;
       case 'payment_rejected':
-        debugLog('FamilyAcademyApp', '❌ Payment rejected: $notificationData');
         _showPaymentRejectedNotification(notificationData);
         break;
       case 'exam_result':
-        debugLog('FamilyAcademyApp', '📝 Exam result: $notificationData');
         _showExamResultNotification(notificationData);
         break;
       case 'streak_update':
-        debugLog('FamilyAcademyApp', '🔥 Streak update: $notificationData');
         _showStreakUpdateNotification(notificationData);
         break;
       case 'system_announcement':
-        debugLog(
-            'FamilyAcademyApp', '📢 System announcement: $notificationData');
         _showSystemAnnouncement(notificationData);
         break;
       case 'navigate':
-        debugLog('FamilyAcademyApp', '📍 Navigating to: $route');
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (context.mounted && _isRouterReady) {
-            // Ensure protection is enabled before navigation
             ScreenProtectionService.enableOnResume();
             GoRouter.of(context).go(route);
           }
         });
         break;
       case 'notification_clicked':
-        debugLog('FamilyAcademyApp', '🖱️ Notification clicked');
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (context.mounted && _isRouterReady) {
-            // Refresh notifications before navigating
             context.read<NotificationProvider>().loadNotifications().then((_) {
               ScreenProtectionService.enableOnResume();
               GoRouter.of(context).go(route);
@@ -327,14 +349,11 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
           }
         });
         break;
-      default:
-        debugLog('FamilyAcademyApp', '❓ Unknown notification type: $type');
     }
   }
 
   void _handlePaymentVerified(Map<String, dynamic> data) {
-    final notificationService = NotificationService();
-    notificationService.showLocalNotification(
+    widget.notificationService.showLocalNotification(
       title: 'Payment Verified!',
       body: 'Your payment has been verified. Your access is now active.',
       payload: json.encode({
@@ -342,108 +361,99 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
         'action': 'refresh_subscriptions',
         'category_id': data['category_id'],
         'timestamp': DateTime.now().toIso8601String(),
+        'click_action': '/notifications',
       }),
     );
 
-    // Refresh subscription data
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (context.mounted) {
-        final subscriptionProvider = context.read<NotificationProvider>();
-        subscriptionProvider.loadNotifications();
+        final subscriptionProvider =
+            Provider.of<SubscriptionProvider>(context, listen: false);
+        final categoryProvider =
+            Provider.of<CategoryProvider>(context, listen: false);
+
+        subscriptionProvider.refreshAfterPaymentVerification().then((_) {
+          categoryProvider.loadCategories(forceRefresh: true);
+        });
       }
     });
   }
 
   void _showPaymentRejectedNotification(dynamic data) {
-    final notificationService = NotificationService();
-    notificationService.showLocalNotification(
+    widget.notificationService.showLocalNotification(
       title: 'Payment Rejected',
       body: 'Your payment was rejected. Please contact support.',
-      payload: json.encode({
-        'type': 'payment_rejected_action',
-        'action': 'contact_support',
-        'timestamp': DateTime.now().toIso8601String(),
-      }),
     );
   }
 
   void _showExamResultNotification(dynamic data) {
-    final notificationService = NotificationService();
-    notificationService.showLocalNotification(
+    widget.notificationService.showLocalNotification(
       title: 'Exam Results Available',
       body: 'Your exam results are ready to view.',
-      payload: json.encode({
-        'type': 'exam_result_action',
-        'action': 'view_results',
-        'exam_id': data['exam_id'],
-        'timestamp': DateTime.now().toIso8601String(),
-      }),
     );
   }
 
   void _showStreakUpdateNotification(dynamic data) {
-    final notificationService = NotificationService();
-    notificationService.showLocalNotification(
+    widget.notificationService.showLocalNotification(
       title: 'Streak Update!',
       body: 'You have a ${data['streak_days']} day streak! Keep it up!',
-      payload: json.encode({
-        'type': 'streak_update_action',
-        'action': 'view_progress',
-        'timestamp': DateTime.now().toIso8601String(),
-      }),
     );
   }
 
   void _showSystemAnnouncement(dynamic data) {
-    final notificationService = NotificationService();
-    notificationService.showLocalNotification(
+    widget.notificationService.showLocalNotification(
       title: data['title'] ?? 'System Announcement',
       body: data['message'] ?? 'New system announcement',
-      payload: json.encode({
-        'type': 'system_announcement_action',
-        'action': 'view_announcements',
-        'timestamp': DateTime.now().toIso8601String(),
-      }),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    // Monitor route changes in build method
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _monitorRouteChanges();
     });
 
     return Consumer<ThemeProvider>(
       builder: (context, themeProvider, child) {
-        return MaterialApp.router(
-          title: 'Family Academy',
-          theme: themeProvider.lightTheme,
-          darkTheme: themeProvider.darkTheme,
-          themeMode: themeProvider.themeMode,
-          routerConfig: AppRouter().router,
-          debugShowCheckedModeBanner: false,
-          builder: (context, child) {
-            // Add popup protection overlay
-            return MediaQuery(
-              data: MediaQuery.of(context).copyWith(
-                textScaleFactor: 1.0,
-              ),
-              child: PopScope(
-                // Prevent back button from being used maliciously
-                canPop: true,
-                onPopInvoked: (didPop) {
-                  if (didPop) {
-                    // Ensure protection is maintained after pop
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (_isAppInForeground) {
+        return Consumer<AuthProvider>(
+          builder: (context, authProvider, child) {
+            if (authProvider.isInitializing) {
+              return MaterialApp(
+                home: const SplashScreen(),
+                debugShowCheckedModeBanner: false,
+                theme: themeProvider.lightTheme,
+                darkTheme: themeProvider.darkTheme,
+                themeMode: themeProvider.themeMode,
+              );
+            }
+
+            return MaterialApp.router(
+              title: 'Family Academy',
+              theme: themeProvider.lightTheme,
+              darkTheme: themeProvider.darkTheme,
+              themeMode: themeProvider.themeMode,
+              routerConfig: AppRouter().router,
+              debugShowCheckedModeBanner: false,
+              builder: (context, child) {
+                return MediaQuery(
+                  data: MediaQuery.of(context).copyWith(
+                    textScaleFactor: ScreenSize.isDesktop(context)
+                        ? 1.1
+                        : ScreenSize.isTablet(context)
+                            ? 1.05
+                            : 1.0,
+                  ),
+                  child: PopScope(
+                    canPop: true,
+                    onPopInvoked: (didPop) {
+                      if (didPop && _isAppInForeground) {
                         ScreenProtectionService.enableOnResume();
                       }
-                    });
-                  }
-                },
-                child: child ?? const SizedBox(),
-              ),
+                    },
+                    child: child ?? const SizedBox(),
+                  ),
+                );
+              },
             );
           },
         );

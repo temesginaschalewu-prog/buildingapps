@@ -1,9 +1,9 @@
 import 'dart:developer';
-import 'package:familyacademyclient/utils/helpers.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/constants.dart';
 import '../themes/app_themes.dart';
+import '../utils/helpers.dart';
 
 class ThemeProvider with ChangeNotifier {
   ThemeMode _themeMode = ThemeMode.light;
@@ -76,5 +76,9 @@ class ThemeProvider with ChangeNotifier {
 
   void toggleTheme() {
     setTheme(_themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark);
+  }
+
+  Future<void> clearUserData() async {
+    debugLog('ThemeProvider', 'Theme preferences preserved (device-specific)');
   }
 }

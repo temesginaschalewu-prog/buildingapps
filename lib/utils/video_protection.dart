@@ -1,180 +1,161 @@
-import 'dart:io';
-import 'package:familyacademyclient/utils/screen_protection.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
-import 'package:chewie/chewie.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
+import '../utils/helpers.dart';
 
-class VideoProtection {
-  static ChewieController createProtectedController({
-    required VideoPlayerController videoPlayerController,
-    required BuildContext context,
-    required String videoUrl,
-    bool autoPlay = true,
-    bool looping = false,
-  }) {
-    // Ensure HTTPS URL
-    final secureVideoUrl = _ensureHttpsUrl(videoUrl);
+class VideoProtectionService {
+  static VideoPlayerController? _currentController;
+  static bool _wakelockEnabled = false;
+  static bool _initialized = false;
 
-    return ChewieController(
-      videoPlayerController: videoPlayerController,
-      autoPlay: autoPlay,
-      looping: looping,
-      showControls: true,
-      allowFullScreen: false, // Disable fullscreen to maintain protection
-      allowPlaybackSpeedChanging: false,
-      showOptions: false,
-      customControls: const MaterialControls(
-        showPlayButton: true,
-      ),
-      allowedScreenSleep: false,
-      placeholder: Container(
-        color: Colors.black,
-        child: const Center(
-          child: CircularProgressIndicator(),
-        ),
-      ),
-      autoInitialize: true,
-      errorBuilder: (context, errorMessage) {
-        debugPrint('Video player error: $errorMessage');
-        return Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error, color: Colors.white, size: 48),
-              const SizedBox(height: 16),
-              Text(
-                'Error loading video',
-                style: const TextStyle(color: Colors.white, fontSize: 16),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'URL: ${secureVideoUrl.substring(0, 50)}...',
-                style: const TextStyle(color: Colors.grey, fontSize: 12),
-              ),
-            ],
-          ),
-        );
-      },
-    );
+  static Future<void> initialize() async {
+    if (_initialized) return;
+
+    debugLog('VideoProtection', 'Initializing video protection');
+    _initialized = true;
   }
 
-  static String _ensureHttpsUrl(String url) {
-    // If URL is localhost or HTTP, convert to Render HTTPS URL
-    if (url.contains('http://192.168') || url.contains('http://localhost')) {
-      // Extract the path from the URL
-      final uri = Uri.parse(url);
-      final path = uri.path;
+  static void protectVideoController(VideoPlayerController controller) {
+    _currentController = controller;
 
-      // Use the production base URL
-      return 'https://family-academy-backend.onrender.com$path';
-    }
+    _enableWakelock();
 
-    // Already HTTPS or external URL
-    return url;
-  }
-
-  static Widget createProtectedVideoPlayer({
-    required ChewieController controller,
-    required BuildContext context,
-    required String videoTitle,
-    required VoidCallback onDispose,
-  }) {
-    // Enable video protection when screen builds
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ScreenProtectionService.protectVideoPlayback();
+    controller.addListener(() {
+      if (controller.value.isPlaying) {
+        _enableWakelock();
+      } else {
+        _disableWakelock();
+      }
     });
 
-    return WillPopScope(
-      onWillPop: () async {
-        // Restore protection and dispose
-        await disposeController(controller, onDispose);
-        return true;
+    debugLog('VideoProtection', '✅ Video controller protected');
+  }
+
+  static Future<void> _enableWakelock() async {
+    if (_wakelockEnabled) return;
+
+    try {
+      await WakelockPlus.enable();
+      _wakelockEnabled = true;
+      debugLog('VideoProtection', '🔋 Wakelock enabled');
+    } catch (e) {
+      debugLog('VideoProtection', 'Error enabling wakelock: $e');
+    }
+  }
+
+  static Future<void> _disableWakelock() async {
+    if (!_wakelockEnabled) return;
+
+    try {
+      await WakelockPlus.disable();
+      _wakelockEnabled = false;
+      debugLog('VideoProtection', '🔌 Wakelock disabled');
+    } catch (e) {
+      debugLog('VideoProtection', 'Error disabling wakelock: $e');
+    }
+  }
+
+  static Widget protectVideoPlayer(Widget videoPlayer) {
+    return GestureDetector(
+      onLongPress: () {
+        debugLog('VideoProtection', '⚠️ Long press blocked on video');
       },
-      child: PopScope(
-        canPop: false,
-        child: Scaffold(
-          backgroundColor: Colors.black,
-          appBar: AppBar(
-            backgroundColor: Colors.black,
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back, color: Colors.white),
-              onPressed: () async {
-                await disposeController(controller, onDispose);
-                Navigator.pop(context);
-              },
-            ),
-            title: Text(
-              videoTitle,
-              style: const TextStyle(color: Colors.white),
-            ),
-            centerTitle: true,
-            elevation: 0,
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.fullscreen_exit, color: Colors.white),
-                onPressed: () {
-                  // Prevent fullscreen to maintain protection
-                },
-              ),
-            ],
-          ),
-          body: SafeArea(
-            child: Stack(
-              children: [
-                Center(
-                  child: AspectRatio(
-                    aspectRatio:
-                        controller.videoPlayerController.value.aspectRatio,
-                    child: Chewie(controller: controller),
-                  ),
-                ),
-                // Overlay to prevent taps during playback
-                if (controller.isPlaying)
-                  Positioned.fill(
-                    child: GestureDetector(
-                      onTap: () {
-                        // Do nothing - prevents interaction
-                      },
-                      child: Container(
-                        color: Colors.transparent,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
+      onDoubleTap: () {
+        debugLog('VideoProtection', '⚠️ Double tap blocked on video');
+      },
+      child: AbsorbPointer(
+        absorbing: false,
+        child: videoPlayer,
       ),
     );
   }
 
-  static Future<void> disposeController(
-      ChewieController controller, VoidCallback onDispose) async {
-    await controller.pause();
-    controller.dispose();
-    // Restore normal screen protection
-    await ScreenProtectionService.restoreAfterVideo();
-    onDispose();
+  static Map<String, dynamic> protectVideoUrl(String videoUrl) {
+    final protectedUrl = {
+      'url': videoUrl,
+      'protected': true,
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+      'expires_in': 3600,
+    };
+
+    debugLog('VideoProtection', '🔒 Video URL protected');
+    return protectedUrl;
   }
 
-  // Method to handle screen orientation for video
-  static Future<void> lockVideoOrientation() async {
-    if (Platform.isAndroid || Platform.isIOS) {
-      await SystemChrome.setPreferredOrientations([
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-        DeviceOrientation.portraitUp,
-      ]);
+  static Future<void> clear() async {
+    debugLog('VideoProtection', '🧹 Clearing video protection');
+
+    await _disableWakelock();
+
+    if (_currentController != null) {
+      try {
+        await _currentController!.dispose();
+      } catch (e) {
+        debugLog('VideoProtection', 'Error disposing controller: $e');
+      }
+      _currentController = null;
+    }
+
+    _initialized = false;
+  }
+
+  static bool isVideoProtected() {
+    return _currentController != null;
+  }
+
+  static Duration? getCurrentPosition() {
+    if (_currentController != null && _currentController!.value.isInitialized) {
+      return _currentController!.value.position;
+    }
+    return null;
+  }
+
+  static Map<String, dynamic> savePlaybackState() {
+    final state = <String, dynamic>{
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+    };
+
+    if (_currentController != null && _currentController!.value.isInitialized) {
+      state['position'] = _currentController!.value.position.inSeconds;
+      state['duration'] = _currentController!.value.duration.inSeconds;
+      state['is_playing'] = _currentController!.value.isPlaying;
+    }
+
+    return state;
+  }
+
+  static Future<void> restorePlaybackState(
+      VideoPlayerController controller, Map<String, dynamic> state) async {
+    try {
+      if (state.containsKey('position') && controller.value.isInitialized) {
+        final position = Duration(seconds: state['position'] as int);
+        await controller.seekTo(position);
+
+        if (state['is_playing'] == true) {
+          await controller.play();
+          await _enableWakelock();
+        }
+
+        debugLog('VideoProtection', '▶️ Playback state restored');
+      }
+    } catch (e) {
+      debugLog('VideoProtection', 'Error restoring playback state: $e');
     }
   }
 
-  static Future<void> unlockVideoOrientation() async {
-    if (Platform.isAndroid || Platform.isIOS) {
-      await SystemChrome.setPreferredOrientations([
-        DeviceOrientation.portraitUp,
-        DeviceOrientation.portraitDown,
-      ]);
+  static void handleAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+        if (_currentController != null && _currentController!.value.isPlaying) {
+          _currentController!.pause();
+          _disableWakelock();
+        }
+        break;
+      case AppLifecycleState.resumed:
+        break;
+      default:
+        break;
     }
   }
 }

@@ -1,108 +1,163 @@
 import 'package:flutter/material.dart';
 
 class AppColors {
-  static const Color primary = Color(0xFF6A5ACD);
-  static const Color primaryLight = Color(0xFF9D8DF1);
-  static const Color primaryDark = Color(0xFF483D8B);
-  static const Color primaryContainer = Color(0xFFEDEAF9);
+  // Telegram Dark Theme Colors
+  static const Color telegramBlue = Color(0xFF2AABEE);
+  static const Color telegramBlueLight = Color(0xFF3CB4EB);
+  static const Color telegramBlueDark = Color(0xFF1E8BC4);
+  static const Color telegramGreen = Color(0xFF34C759);
+  static const Color telegramRed = Color(0xFFFF3B30);
+  static const Color telegramYellow = Color(0xFFFFCC00);
+  static const Color telegramGray = Color(0xFF8E8E93);
 
-  static const Color secondary = Color(0xFFFFD166);
-  static const Color secondaryLight = Color(0xFFFFE9B5);
-  static const Color secondaryDark = Color(0xFFE6B949);
-  static const Color secondaryContainer = Color(0xFFFFF5E1);
-
-  static const Color accent = Color(0xFF06D6A0);
-  static const Color accentLight = Color(0xFF63FFD6);
-  static const Color accentDark = Color(0xFF00A97F);
-  static const Color accentContainer = Color(0xFFE8FFF9);
-
-  static const Color background = Color(0xFFFAFAFA);
-  static const Color surface = Color(0xFFFFFFFF);
-  static const Color surfaceVariant = Color(0xFFF5F5F7);
-
-  static const Color textPrimary = Color(0xFF1A1A1A);
-  static const Color textSecondary = Color(0xFF666666);
-  static const Color textTertiary = Color(0xFF999999);
-  static const Color textOnPrimary = Color(0xFFFFFFFF);
-  static const Color textOnSecondary = Color(0xFF1A1A1A);
-
-  static const Color success = Color(0xFF34C759);
-  static const Color successLight = Color(0xFFE8F5E9);
-  static const Color successDark = Color(0xFF2E7D32);
-
-  static const Color warning = Color(0xFFFF9500);
-  static const Color warningLight = Color(0xFFFFF3E0);
-  static const Color warningDark = Color(0xFFF57C00);
-
-  static const Color error = Color(0xFFFF3B30);
-  static const Color errorLight = Color(0xFFFFEBEE);
-  static const Color errorDark = Color(0xFFD32F2F);
-
-  static const Color info = Color(0xFF007AFF);
-  static const Color infoLight = Color(0xFFE3F2FD);
-  static const Color infoDark = Color(0xFF1565C0);
-
-  static const Color neutral50 = Color(0xFFF8F9FA);
-  static const Color neutral100 = Color(0xFFE9ECEF);
-  static const Color neutral200 = Color(0xFFDEE2E6);
-  static const Color neutral300 = Color(0xFFCED4DA);
-  static const Color neutral400 = Color(0xFFADB5BD);
-  static const Color neutral500 = Color(0xFF6C757D);
-  static const Color neutral600 = Color(0xFF495057);
-  static const Color neutral700 = Color(0xFF343A40);
-  static const Color neutral800 = Color(0xFF212529);
-  static const Color neutral900 = Color(0xFF121416);
-
-  static const Color border = Color(0xFFE0E0E0);
-  static const Color borderLight = Color(0xFFF0F0F0);
-  static const Color borderDark = Color(0xFFC0C0C0);
-  static const Color divider = Color(0xFFEEEEEE);
-
-  static const Color icon = Color(0xFF666666);
-  static const Color iconActive = Color(0xFF6A5ACD);
-  static const Color iconInactive = Color(0xFF999999);
-
-  static const Color card = Color(0xFFFFFFFF);
-  static const Color cardDark = Color(0xFFF8F9FA);
-  static const Color cardShadow = Color(0x0A000000);
-
-  static const Color buttonPrimary = Color(0xFF6A5ACD);
-  static const Color buttonPrimaryDisabled = Color(0xFFB0A8DC);
-  static const Color buttonSecondary = Color(0xFFF5F5F7);
-  static const Color buttonSecondaryDisabled = Color(0xFFF0F0F0);
-
-  static const Color progressBackground = Color(0xFFE0E0E0);
-  static const Color progressValue = Color(0xFF06D6A0);
-  static const Color progressValueSecondary = Color(0xFFFFD166);
-
-  static const Color chatbotUser = Color(0xFFEDEAF9);
-  static const Color chatbotBot = Color(0xFFF5F5F7);
-
-  static const Color examCorrect = Color(0xFFE8F5E9);
-  static const Color examIncorrect = Color(0xFFFFEBEE);
-  static const Color examSelected = Color(0xFFE3F2FD);
-  static const Color examNeutral = Color(0xFFF5F5F7);
+  // Background Colors
+  static const Color lightBackground = Color(0xFFFFFFFF);
+  static const Color lightSurface = Color(0xFFF2F2F7);
+  static const Color lightCard = Color(0xFFFFFFFF);
+  static const Color lightDivider = Color(0xFFC6C6C8);
 
   static const Color darkBackground = Color(0xFF121212);
   static const Color darkSurface = Color(0xFF1E1E1E);
-  static const Color darkSurfaceVariant = Color(0xFF2D2D2D);
-  static const Color darkTextPrimary = Color(0xFFE0E0E0);
-  static const Color darkTextSecondary = Color(0xFFA0A0A0);
-  static const Color darkTextTertiary = Color(0xFF707070);
-  static const Color darkBorder = Color(0xFF404040);
-  static const Color darkDivider = Color(0xFF333333);
-  static const Color darkCard = Color(0xFF242424);
-  static const Color darkIcon = Color(0xFFA0A0A0);
-  static const Color darkIconActive = Color(0xFF9D8DF1);
+  static const Color darkCard = Color(0xFF2C2C2E);
+  static const Color darkDivider = Color(0xFF38383A);
 
-  static const Color free = Color(0xFF06D6A0);
-  static const Color locked = Color(0xFFFF3B30);
-  static const Color comingSoon = Color(0xFFFF9500);
+  // Text Colors
+  static const Color lightTextPrimary = Color(0xFF000000);
+  static const Color lightTextSecondary = Color(0xFF8E8E93);
+  static const Color lightTextTertiary = Color(0xFFC7C7CC);
 
-  static const Color pending = Color(0xFFFF9500);
-  static const Color verified = Color(0xFF06D6A0);
-  static const Color rejected = Color(0xFFFF3B30);
-  static const Color active = Color(0xFF06D6A0);
-  static const Color expired = Color(0xFF999999);
-  static const Color cancelled = Color(0xFF666666);
+  static const Color darkTextPrimary = Color(0xFFFFFFFF);
+  static const Color darkTextSecondary = Color(0xFF8E8E93);
+  static const Color darkTextTertiary = Color(0xFF48484A);
+
+  // Semantic Colors
+  static const Color success = telegramGreen;
+  static const Color error = telegramRed;
+  static const Color warning = telegramYellow;
+  static const Color info = telegramBlue;
+
+  // Status Colors
+  static const Color statusActive = telegramGreen;
+  static const Color statusPending = Color(0xFFFF9500);
+  static const Color statusLocked = telegramRed;
+  static const Color statusFree = telegramBlue;
+
+  // Chat Colors
+  static const Color chatBubbleUser = telegramBlue;
+  static const Color chatBubbleBot = Color(0xFF3C3C43);
+  static const Color chatBubbleUserLight = Color(0xFFE3F2FD);
+  static const Color chatBubbleBotLight = Color(0xFFF2F2F7);
+
+  // Gradient Colors
+  static const List<Color> blueGradient = [
+    Color(0xFF2AABEE),
+    Color(0xFF229ED9),
+  ];
+
+  static const List<Color> purpleGradient = [
+    Color(0xFFAF52DE),
+    Color(0xFF8E44AD),
+  ];
+
+  static const List<Color> greenGradient = [
+    Color(0xFF34C759),
+    Color(0xFF2CAE4A),
+  ];
+
+  // Transparent Colors
+  static const Color transparent = Colors.transparent;
+  static const Color overlay = Color(0x52000000);
+  static const Color shimmerBase = Color(0xFFE0E0E0);
+  static const Color shimmerHighlight = Color(0xFFF5F5F5);
+
+  // Navigation Colors
+  static const Color bottomNavBar = Color(0xFFF8F8F8);
+  static const Color bottomNavBarDark = Color(0xFF1C1C1E);
+
+  // Search Bar Colors
+  static const Color searchBar = Color(0xFFE9E9EB);
+  static const Color searchBarDark = Color(0xFF2C2C2E);
+
+  // Selection Colors
+  static const Color selection = Color(0x1A007AFF);
+  static const Color selectionDark = Color(0x1A0A84FF);
+
+  // Get colors based on theme
+  static Color getBackground(BuildContext context) {
+    return Theme.of(context).brightness == Brightness.dark
+        ? darkBackground
+        : lightBackground;
+  }
+
+  static Color getSurface(BuildContext context) {
+    return Theme.of(context).brightness == Brightness.dark
+        ? darkSurface
+        : lightSurface;
+  }
+
+  static Color getCard(BuildContext context) {
+    return Theme.of(context).brightness == Brightness.dark
+        ? darkCard
+        : lightCard;
+  }
+
+  static Color getTextPrimary(BuildContext context) {
+    return Theme.of(context).brightness == Brightness.dark
+        ? darkTextPrimary
+        : lightTextPrimary;
+  }
+
+  static Color getTextSecondary(BuildContext context) {
+    return Theme.of(context).brightness == Brightness.dark
+        ? darkTextSecondary
+        : lightTextSecondary;
+  }
+
+  // Get status color with proper context awareness
+  static Color getStatusColor(String status, BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    switch (status.toLowerCase()) {
+      case 'active':
+      case 'verified':
+      case 'subscribed':
+      case 'completed':
+        return success;
+      case 'pending':
+      case 'coming_soon':
+      case 'in_progress':
+        return isDark ? Color(0xFFFF9500) : Color(0xFFFF9500);
+      case 'rejected':
+      case 'locked':
+      case 'expired':
+      case 'cancelled':
+        return error;
+      case 'free':
+        return telegramBlue;
+      default:
+        return isDark ? darkTextSecondary : lightTextSecondary;
+    }
+  }
+
+  // Get status background color
+  static Color getStatusBackground(String status, BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    switch (status.toLowerCase()) {
+      case 'active':
+      case 'verified':
+      case 'subscribed':
+        return isDark ? Color(0xFF1C3B2E) : Color(0xFFDCF7E6);
+      case 'pending':
+      case 'coming_soon':
+        return isDark ? Color(0xFF3B2E1C) : Color(0xFFFFF3E0);
+      case 'rejected':
+      case 'locked':
+        return isDark ? Color(0xFF3B1C1C) : Color(0xFFFFEBEE);
+      case 'free':
+        return isDark ? Color(0xFF1C2E3B) : Color(0xFFE3F2FD);
+      default:
+        return isDark ? darkSurface : lightSurface;
+    }
+  }
 }

@@ -1,133 +1,202 @@
 import 'dart:io';
-import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
+import '../utils/helpers.dart';
 
 class ScreenProtectionService {
-  static const MethodChannel _channel =
-      MethodChannel('com.familyacademy/screen_protection');
+  static bool _protectionEnabled = true;
+  static bool _initialized = false;
 
-  static bool _isInitialized = false;
-  static bool _isVideoPlaying = false;
-
-  /// Initialize screen protection for the entire app
   static Future<void> initialize() async {
-    if (_isInitialized) return;
+    if (_initialized) return;
 
+    debugLog('ScreenProtection', 'Initializing screen protection');
+
+    if (Platform.isAndroid || Platform.isIOS) {
+      await SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+      ]);
+    }
+
+    await enableSecureMode();
+
+    _initialized = true;
+    debugLog('ScreenProtection', '✅ Screen protection initialized');
+  }
+
+  static Future<void> enableSecureMode() async {
     try {
+      // Use safe system UI mode that works on all platforms
       if (Platform.isAndroid || Platform.isIOS) {
-        await _channel.invokeMethod('protectScreen');
+        try {
+          // Try edgeToEdge first (for newer devices)
+          await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+        } catch (e) {
+          debugLog('ScreenProtection', 'edgeToEdge not supported: $e');
+          // Fallback to manual flags
+          await _setSafeSystemUiFlags();
+        }
+
+        SystemChrome.setSystemUIOverlayStyle(
+          const SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            systemNavigationBarColor: Colors.black,
+          ),
+        );
       }
-      _isInitialized = true;
-      debugPrint("✅ Screen protection initialized");
     } catch (e) {
-      debugPrint("❌ Failed to initialize screen protection: $e");
+      debugLog('ScreenProtection', 'Error enabling secure mode: $e');
+      await _setSafeSystemUiFlags();
     }
   }
 
-  /// Enable protection on app resume
-  static Future<void> enableOnResume() async {
+  static Future<void> _setSafeSystemUiFlags() async {
     try {
-      if (Platform.isAndroid || Platform.isIOS) {
-        await _channel.invokeMethod('protectScreen');
+      if (Platform.isAndroid) {
+        // Use manual flags for compatibility
+        final methodChannel =
+            const MethodChannel('com.familyacademy/screen_protection');
+        await methodChannel.invokeMethod('setSystemUiMode', 'immersive');
       }
     } catch (e) {
-      debugPrint("❌ Failed to enable protection on resume: $e");
+      debugLog('ScreenProtection', 'Error setting manual flags: $e');
     }
   }
 
-  /// Disable protection on pause (except for video)
-  static Future<void> disableOnPause() async {
+  static Future<void> disableSplitScreen() async {
     try {
-      if (!_isVideoPlaying && (Platform.isAndroid || Platform.isIOS)) {
-        await _channel.invokeMethod('unprotectScreen');
-      }
-    } catch (e) {
-      debugPrint("❌ Failed to disable protection on pause: $e");
-    }
-  }
-
-  /// Disable all protection (use when app fully closed)
-  static Future<void> disable() async {
-    try {
-      await _channel.invokeMethod('unprotectScreen');
-      WakelockPlus.disable();
-    } catch (e) {
-      debugPrint("❌ Failed to disable screen protection: $e");
-    }
-  }
-
-  /// Protect videos (disable sleep and prevent capture)
-  static Future<void> protectVideoPlayback() async {
-    try {
-      _isVideoPlaying = true;
-      if (Platform.isAndroid || Platform.isIOS) {
-        await _channel.invokeMethod('protectVideo');
-      }
-      WakelockPlus.enable();
-
-      // Lock orientation for video
-      if (Platform.isAndroid || Platform.isIOS) {
-        await SystemChrome.setPreferredOrientations([
-          DeviceOrientation.portraitUp,
-          DeviceOrientation.landscapeLeft,
-          DeviceOrientation.landscapeRight,
-        ]);
-      }
-    } catch (e) {
-      debugPrint("❌ Failed to protect video playback: $e");
-    }
-  }
-
-  /// Restore normal protection after video
-  static Future<void> restoreAfterVideo() async {
-    try {
-      _isVideoPlaying = false;
-      if (Platform.isAndroid || Platform.isIOS) {
-        await _channel.invokeMethod('restoreFromVideo');
-      }
-      WakelockPlus.disable();
-
-      // Restore portrait-only orientation
-      if (Platform.isAndroid || Platform.isIOS) {
+      if (Platform.isAndroid) {
         await SystemChrome.setPreferredOrientations([
           DeviceOrientation.portraitUp,
           DeviceOrientation.portraitDown,
         ]);
+
+        try {
+          await SystemChrome.setEnabledSystemUIMode(
+            SystemUiMode.immersiveSticky,
+            overlays: [],
+          );
+        } catch (e) {
+          debugLog('ScreenProtection', 'immersiveSticky not supported: $e');
+          await _setSafeSystemUiFlags();
+        }
       }
     } catch (e) {
-      debugPrint("❌ Failed to restore protection after video: $e");
+      debugLog('ScreenProtection', 'Error disabling split screen: $e');
     }
   }
 
-  /// Disable split-screen/multi-window
-  static Future<void> disableSplitScreen() async {
-    try {
-      if (Platform.isAndroid) {
-        await _channel.invokeMethod('disableSplitScreen');
-      }
-    } catch (e) {
-      debugPrint("❌ Failed to disable split screen: $e");
+  static void enableOnResume() {
+    if (!_protectionEnabled) return;
+
+    debugLog('ScreenProtection', '🛡️ Enabling screen protection on resume');
+
+    _setSecureFlags(true);
+
+    if (Platform.isAndroid || Platform.isIOS) {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+      ]);
     }
   }
 
-  /// Prevent popups and overlays
-  static Future<void> preventPopups(BuildContext context) async {
-    // Use WillPopScope or similar in your screens
-    // This is handled at the widget level
+  static void disableOnPause() {
+    debugLog('ScreenProtection',
+        '🔓 Temporarily disabling screen protection on pause');
+
+    _setSecureFlags(false);
   }
 
-  /// Check if device is in split-screen mode
-  static Future<bool> isInSplitScreenMode() async {
+  static void disable() {
+    debugLog('ScreenProtection', '🔓 Permanently disabling screen protection');
+
+    _protectionEnabled = false;
+    _setSecureFlags(false);
+
+    if (Platform.isAndroid || Platform.isIOS) {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    }
+  }
+
+  static void enable() {
+    debugLog('ScreenProtection', '🛡️ Permanently enabling screen protection');
+
+    _protectionEnabled = true;
+    _setSecureFlags(true);
+
+    if (Platform.isAndroid || Platform.isIOS) {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+      ]);
+    }
+  }
+
+  static void _setSecureFlags(bool secure) {
     try {
       if (Platform.isAndroid) {
-        // You can check using platform channel if needed
+        final methodChannel =
+            const MethodChannel('com.familyacademy/screen_protection');
+        methodChannel
+            .invokeMethod(secure ? 'protectScreen' : 'unprotectScreen');
+      }
+    } catch (e) {
+      debugLog('ScreenProtection', 'Error setting secure flags: $e');
+    }
+  }
+
+  static bool isEnabled() {
+    return _protectionEnabled;
+  }
+
+  static Widget protectWidget(Widget child, {bool enableProtection = true}) {
+    if (!enableProtection || !_protectionEnabled) {
+      return child;
+    }
+
+    return NotificationListener<UserScrollNotification>(
+      onNotification: (notification) {
+        if (notification.direction != ScrollDirection.idle) {
+          enableOnResume();
+        }
         return false;
+      },
+      child: child,
+    );
+  }
+
+  static Widget preventScreenshot(Widget child) {
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        systemNavigationBarColor: Colors.black,
+        systemNavigationBarDividerColor: Colors.transparent,
+      ),
+      child: child,
+    );
+  }
+
+  static Future<void> clear() async {
+    debugLog('ScreenProtection', '🧹 Clearing screen protection settings');
+
+    _protectionEnabled = true;
+    _initialized = false;
+
+    if (Platform.isAndroid || Platform.isIOS) {
+      await SystemChrome.setPreferredOrientations([]);
+      try {
+        await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      } catch (e) {
+        await SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual);
       }
-      return false;
-    } catch (e) {
-      debugPrint("❌ Failed to check split screen mode: $e");
-      return false;
     }
   }
 }

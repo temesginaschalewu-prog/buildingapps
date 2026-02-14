@@ -1,12 +1,27 @@
 class Streak {
   final int currentStreak;
+  final int initialWeekStreak;
+  final bool hasStreakToday;
+  final String streakLevel;
+  final String longestStreak;
   final List<DateTime> history;
 
-  Streak({required this.currentStreak, required this.history});
+  Streak({
+    required this.currentStreak,
+    required this.initialWeekStreak,
+    required this.hasStreakToday,
+    required this.streakLevel,
+    required this.longestStreak,
+    required this.history,
+  });
 
   factory Streak.fromJson(Map<String, dynamic> json) {
     return Streak(
       currentStreak: json['current_streak'] ?? 0,
+      initialWeekStreak: json['week_streak'] ?? 0,
+      hasStreakToday: json['has_streak_today'] ?? false,
+      streakLevel: json['streak_level'] ?? '🌱 New',
+      longestStreak: json['longest_streak'] ?? '0',
       history: List<DateTime>.from(
         (json['history'] as List).map((x) => DateTime.parse(x)),
       ),
@@ -25,7 +40,7 @@ class Streak {
     return history.where((date) => date.isAfter(weekAgo)).length;
   }
 
-  bool get hasStreakToday {
+  bool get calculatedHasStreakToday {
     final today = DateTime.now();
     return history.any(
       (date) =>
@@ -35,7 +50,7 @@ class Streak {
     );
   }
 
-  String get streakLevel {
+  String get calculatedStreakLevel {
     if (currentStreak >= 30) return '🔥 Legendary';
     if (currentStreak >= 20) return '⭐ Superstar';
     if (currentStreak >= 10) return '📚 Dedicated';

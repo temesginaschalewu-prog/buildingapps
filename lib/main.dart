@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:familyacademyclient/app.dart';
@@ -9,6 +8,7 @@ import 'package:familyacademyclient/providers/chatbot_provider.dart';
 import 'package:familyacademyclient/providers/device_provider.dart';
 import 'package:familyacademyclient/providers/notification_provider.dart';
 import 'package:familyacademyclient/providers/payment_provider.dart';
+import 'package:familyacademyclient/providers/progress_provider.dart';
 import 'package:familyacademyclient/providers/school_provider.dart';
 import 'package:familyacademyclient/providers/settings_provider.dart';
 import 'package:familyacademyclient/providers/subscription_provider.dart';
@@ -24,6 +24,7 @@ import 'package:familyacademyclient/providers/note_provider.dart';
 import 'package:familyacademyclient/providers/question_provider.dart';
 import 'package:familyacademyclient/providers/parent_link_provider.dart';
 import 'package:familyacademyclient/services/api_service.dart';
+import 'package:familyacademyclient/services/device_service.dart';
 import 'package:familyacademyclient/services/storage_service.dart';
 import 'package:familyacademyclient/services/notification_service.dart';
 import 'package:familyacademyclient/utils/screen_protection.dart';
@@ -35,25 +36,24 @@ import 'package:provider/provider.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+// MediaKit import for desktop video playback
+import 'package:media_kit/media_kit.dart' as media_kit;
+
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
-  print("Handling a background message: ${message.messageId}");
+  debugPrint("Handling a background message: ${message.messageId}");
 
   final prefs = await SharedPreferences.getInstance();
   final notificationsEnabled = prefs.getBool('notifications_enabled') ?? true;
 
   if (!notificationsEnabled) {
-    print("Notifications are disabled, skipping background notification");
+    debugPrint("Notifications are disabled, skipping background notification");
     return;
   }
 
   final notificationService = NotificationService();
-  await notificationService.showLocalNotification(
-    title: message.notification?.title ?? 'Family Academy',
-    body: message.notification?.body ?? '',
-    payload: json.encode(message.data),
-  );
+  await notificationService.handleBackgroundMessage(message);
 }
 
 class AppLifecycleObserver extends WidgetsBindingObserver {
@@ -75,22 +75,71 @@ class AppLifecycleObserver extends WidgetsBindingObserver {
   }
 }
 
+void _syncProviders(BuildContext context) {
+  try {
+    final subscriptionProvider =
+        Provider.of<SubscriptionProvider>(context, listen: false);
+    final categoryProvider =
+        Provider.of<CategoryProvider>(context, listen: false);
+
+    subscriptionProvider.setCategoryProvider(categoryProvider);
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+
+    authProvider.registerOnLogoutCallback(() {
+      categoryProvider.clearUserData();
+      subscriptionProvider.clearUserData();
+    });
+
+    authProvider.registerOnLoginCallback(() async {
+      await subscriptionProvider.loadSubscriptions();
+      await categoryProvider.loadCategories();
+    });
+
+    debugPrint('Main ✅ Provider synchronization complete');
+  } catch (e) {
+    debugPrint('Main ❌ Provider synchronization error: $e');
+  }
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Initialize MediaKit for desktop platforms FIRST
+  if (Platform.isLinux || Platform.isMacOS || Platform.isWindows) {
+    try {
+      media_kit.MediaKit.ensureInitialized();
+      debugPrint(
+          '✅ MediaKit initialized for desktop (${Platform.operatingSystem})');
+    } catch (e) {
+      debugPrint('⚠️ MediaKit initialization error: $e');
+    }
+  }
+
   await dotenv.load(fileName: ".env");
 
-  // Initialize Firebase only once here
+  // Enable edge-to-edge on Android/iOS
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+
+  // Set status bar and navigation bar colors
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    systemNavigationBarColor: Colors.transparent,
+    systemNavigationBarDividerColor: Colors.transparent,
+  ));
+
+  // Initialize Firebase for mobile platforms ONLY
+  FirebaseApp? firebaseApp;
   if (Platform.isAndroid || Platform.isIOS) {
     try {
-      await Firebase.initializeApp();
-      print("✅ Firebase initialized for mobile platform");
+      firebaseApp = await Firebase.initializeApp();
+      debugPrint(
+          "✅ Firebase initialized for mobile platform (${Platform.operatingSystem})");
 
+      // Only initialize notification service for mobile platforms
       final notificationService = NotificationService();
-
-      // Initialize notification service WITHOUT ApiService (will be set later)
       await notificationService.init();
-      print('Main: NotificationService initialized once');
+      debugPrint('Main: NotificationService initialized for mobile');
 
       FirebaseMessaging.onBackgroundMessage(
           _firebaseMessagingBackgroundHandler);
@@ -110,40 +159,41 @@ Future<void> main() async {
           sound: true,
         );
 
-        print('User granted permission: ${settings.authorizationStatus}');
+        debugPrint('User granted permission: ${settings.authorizationStatus}');
       }
 
       final token = await messaging.getToken();
-      print("Firebase Messaging Token: ${token?.substring(0, 20)}...");
+      debugPrint("Firebase Messaging Token: ${token?.substring(0, 20)}...");
 
       final prefs = await SharedPreferences.getInstance();
       if (token != null) {
         await prefs.setString('fcm_token', token);
-        print("Saved FCM token to shared preferences");
+        debugPrint("Saved FCM token to shared preferences");
       }
     } catch (e) {
-      print('Firebase initialization failed: $e');
+      debugPrint('Firebase initialization failed: $e');
     }
   } else {
-    print(
-        "⚠️ Firebase not initialized for non-mobile platform (${Platform.operatingSystem})");
+    debugPrint(
+        "⚠️ Firebase not initialized for non-mobile platform (${Platform.operatingSystem}) - notifications will be local only");
   }
 
-  if (Platform.isAndroid || Platform.isIOS) {
-    await SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-    ]);
-  }
-
+  // Initialize screen protection
   await ScreenProtectionService.initialize();
 
+  // Initialize services IN ORDER
   final storageService = StorageService();
   await storageService.init();
-  print('Main: StorageService initialized');
+  debugPrint('Main: StorageService initialized');
+
+  final deviceService = DeviceService();
+  await deviceService.init(); // Wait for DeviceService to initialize
+  debugPrint('Main: DeviceService initialized');
 
   final apiService = ApiService();
-  print('Main: ApiService created');
+  debugPrint('Main: ApiService created');
+
+  final notificationService = NotificationService();
 
   final appLifecycleObserver = AppLifecycleObserver();
   WidgetsBinding.instance.addObserver(appLifecycleObserver);
@@ -151,73 +201,142 @@ Future<void> main() async {
   runApp(
     MultiProvider(
       providers: [
-        // Add StorageService provider here
-        Provider<StorageService>(
-          create: (_) => storageService,
-        ),
-
+        Provider<StorageService>(create: (_) => storageService),
+        Provider<DeviceService>(create: (_) => deviceService),
+        Provider<ApiService>(create: (_) => apiService),
+        Provider<NotificationService>(create: (_) => notificationService),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(
-          create: (_) => AuthProvider(
-            apiService: apiService,
-            storageService: storageService,
+          create: (context) => AuthProvider(
+            apiService: context.read<ApiService>(),
+            storageService: context.read<StorageService>(),
+            deviceService: context.read<DeviceService>(),
           ),
         ),
         ChangeNotifierProvider(
-          create: (_) => UserProvider(apiService: apiService),
+          create: (context) => UserProvider(
+            apiService: context.read<ApiService>(),
+            deviceService: context.read<DeviceService>(),
+          ),
         ),
         ChangeNotifierProvider(
-          create: (_) => DeviceProvider(apiService: apiService),
+          create: (context) => DeviceProvider(
+            apiService: context.read<ApiService>(),
+            deviceService: context.read<DeviceService>(),
+          ),
         ),
         ChangeNotifierProvider(
-          create: (_) => CategoryProvider(apiService: apiService),
+          create: (context) => CategoryProvider(
+            apiService: context.read<ApiService>(),
+            deviceService: context.read<DeviceService>(),
+          ),
         ),
         ChangeNotifierProvider(
-          create: (_) => SchoolProvider(apiService: apiService),
+          create: (context) => SchoolProvider(
+            apiService: context.read<ApiService>(),
+            deviceService: context.read<DeviceService>(),
+          ),
         ),
         ChangeNotifierProvider(
-          create: (_) => CourseProvider(apiService: apiService),
+          create: (context) => CourseProvider(
+            apiService: context.read<ApiService>(),
+            deviceService: context.read<DeviceService>(),
+          ),
         ),
         ChangeNotifierProvider(
-          create: (_) => VideoProvider(apiService: apiService),
+          create: (context) => VideoProvider(
+            apiService: context.read<ApiService>(),
+            deviceService: context.read<DeviceService>(),
+          ),
         ),
         ChangeNotifierProvider(
-          create: (_) => ExamProvider(apiService: apiService),
+          create: (context) => ExamProvider(
+            apiService: context.read<ApiService>(),
+            deviceService: context.read<DeviceService>(),
+          ),
         ),
         ChangeNotifierProvider(
-          create: (_) => ExamQuestionProvider(apiService: apiService),
+          create: (context) => ExamQuestionProvider(
+            apiService: context.read<ApiService>(),
+            deviceService: context.read<DeviceService>(),
+          ),
         ),
         ChangeNotifierProvider(
-          create: (_) => ChapterProvider(apiService: apiService),
+          create: (context) => ChapterProvider(
+            apiService: context.read<ApiService>(),
+            deviceService: context.read<DeviceService>(),
+          ),
         ),
         ChangeNotifierProvider(
-          create: (_) => NoteProvider(apiService: apiService),
+          create: (context) => NoteProvider(
+            apiService: context.read<ApiService>(),
+            deviceService: context.read<DeviceService>(),
+          ),
         ),
         ChangeNotifierProvider(
-          create: (_) => QuestionProvider(apiService: apiService),
+          create: (context) => QuestionProvider(
+            apiService: context.read<ApiService>(),
+            deviceService: context.read<DeviceService>(),
+          ),
         ),
         ChangeNotifierProvider(
-          create: (_) => PaymentProvider(apiService: apiService),
+          create: (context) => PaymentProvider(
+            apiService: context.read<ApiService>(),
+            deviceService: context.read<DeviceService>(),
+          ),
         ),
         ChangeNotifierProvider(
-          create: (_) => SubscriptionProvider(apiService: apiService),
+          create: (context) => SubscriptionProvider(
+            apiService: context.read<ApiService>(),
+            deviceService: context.read<DeviceService>(),
+          ),
         ),
         ChangeNotifierProvider(
-          create: (_) => StreakProvider(apiService: apiService),
+          create: (context) => StreakProvider(
+            apiService: context.read<ApiService>(),
+            deviceService: deviceService,
+          ),
         ),
         ChangeNotifierProvider(
-          create: (_) => ParentLinkProvider(apiService: apiService),
+          create: (context) => ParentLinkProvider(
+            apiService: context.read<ApiService>(),
+            deviceService: context.read<DeviceService>(),
+          ),
         ),
         ChangeNotifierProvider(
-          create: (_) => NotificationProvider(apiService: apiService),
+          create: (context) => NotificationProvider(
+            apiService: context.read<ApiService>(),
+            deviceService: context.read<DeviceService>(),
+          ),
         ),
         ChangeNotifierProvider(create: (_) => ChatbotProvider()),
         ChangeNotifierProvider(
-          create: (_) => SettingsProvider(apiService: apiService),
+          create: (context) => SettingsProvider(
+            apiService: context.read<ApiService>(),
+            deviceService: context.read<DeviceService>(),
+          ),
+        ),
+        ChangeNotifierProvider(
+          create: (context) => ProgressProvider(
+            apiService: context.read<ApiService>(),
+            streakProvider: StreakProvider(
+                apiService: context.read<ApiService>(),
+                deviceService: deviceService),
+            deviceService: context.read<DeviceService>(),
+          ),
         ),
       ],
-      child: FamilyAcademyApp(
-        apiService: apiService, // Pass apiService to FamilyAcademyApp
+      child: Builder(
+        builder: (context) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _syncProviders(context);
+          });
+
+          return FamilyAcademyApp(
+            apiService: apiService,
+            notificationService: notificationService,
+          );
+        },
       ),
     ),
   );

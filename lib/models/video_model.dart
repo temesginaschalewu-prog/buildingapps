@@ -69,45 +69,75 @@ class Video {
     };
   }
 
-  // FIX: Proper URL generation for production
   String get fullVideoUrl {
-    // If filePath is already a full URL (Cloudinary or other CDN)
+    if (filePath.isEmpty) return '';
+
     if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
       return filePath;
     }
 
-    // If it's a relative path, construct URL with baseUrl
-    // Ensure we use HTTPS in production
-    String base = AppConstants.baseUrl;
-
-    // Remove any leading slash from filePath
-    String cleanPath =
-        filePath.startsWith('/') ? filePath.substring(1) : filePath;
-
-    // Construct full URL
-    return '$base/$cleanPath';
-  }
-
-  // FIX: Proper thumbnail URL generation
-  String? get fullThumbnailUrl {
-    if (thumbnailUrl == null || thumbnailUrl!.isEmpty) {
-      return null;
+    if (filePath.startsWith('res.cloudinary.com')) {
+      return 'https://$filePath';
     }
 
-    // If thumbnail is already a full URL
+    final baseUrl = AppConstants.baseUrl.replaceAll('/api/v1', '');
+
+    final cleanPath =
+        filePath.startsWith('/') ? filePath.substring(1) : filePath;
+
+    if (cleanPath.contains('uploads/')) {
+      return '$baseUrl/$cleanPath';
+    }
+
+    return '$baseUrl/uploads/videos/$cleanPath';
+  }
+
+  String? get fullThumbnailUrl {
+    if (thumbnailUrl == null || thumbnailUrl!.isEmpty) return null;
+
     if (thumbnailUrl!.startsWith('http://') ||
         thumbnailUrl!.startsWith('https://')) {
       return thumbnailUrl;
     }
 
-    // Construct with baseUrl
-    String base = AppConstants.baseUrl;
-    String cleanPath = thumbnailUrl!.startsWith('/')
+    if (thumbnailUrl!.startsWith('res.cloudinary.com')) {
+      return 'https://$thumbnailUrl';
+    }
+
+    final baseUrl = AppConstants.baseUrl.replaceAll('/api/v1', '');
+    final cleanPath = thumbnailUrl!.startsWith('/')
         ? thumbnailUrl!.substring(1)
         : thumbnailUrl!;
 
-    return '$base/$cleanPath';
+    if (cleanPath.contains('uploads/')) {
+      return '$baseUrl/$cleanPath';
+    }
+
+    return '$baseUrl/uploads/thumbnails/$cleanPath';
   }
 
   bool get hasThumbnail => fullThumbnailUrl != null;
+
+  String get formattedDuration {
+    final hours = duration ~/ 3600;
+    final minutes = (duration % 3600) ~/ 60;
+    final seconds = duration % 60;
+
+    if (hours > 0) {
+      return '${hours}h ${minutes}m ${seconds}s';
+    } else if (minutes > 0) {
+      return '${minutes}m ${seconds}s';
+    } else {
+      return '${seconds}s';
+    }
+  }
+
+  String get fileName {
+    final uri = Uri.parse(fullVideoUrl);
+    return uri.pathSegments.last;
+  }
+
+  String get safeTitle {
+    return title.replaceAll(RegExp(r'[^\w\s-]'), '').replaceAll(' ', '_');
+  }
 }

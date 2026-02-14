@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 class Question {
   final int id;
   final String questionType;
@@ -33,14 +35,44 @@ class Question {
     required this.hasAnswer,
   });
 
+  int _parseInt(dynamic value, int defaultValue) {
+    if (value == null) return defaultValue;
+    if (value is int) return value;
+    if (value is String) {
+      return int.tryParse(value) ?? defaultValue;
+    }
+    if (value is double) {
+      return value.toInt();
+    }
+    return defaultValue;
+  }
+
+  bool _parseBool(dynamic value) {
+    if (value == null) return false;
+    if (value is bool) return value;
+    if (value is int) return value == 1;
+    if (value is String) {
+      return value.toLowerCase() == 'true' || value == '1';
+    }
+    return false;
+  }
+
   factory Question.fromJson(Map<String, dynamic> json) {
     return Question(
       id: json['id'] is int
           ? json['id']
           : int.tryParse(json['id']?.toString() ?? '0') ?? 0,
-      questionType: json['question_type'] ?? 'practice',
-      chapterId: json['chapter_id'],
-      examId: json['exam_id'],
+      questionType: json['question_type']?.toString() ?? 'practice',
+      chapterId: json['chapter_id'] != null
+          ? (json['chapter_id'] is int
+              ? json['chapter_id']
+              : int.tryParse(json['chapter_id'].toString()) ?? 0)
+          : null,
+      examId: json['exam_id'] != null
+          ? (json['exam_id'] is int
+              ? json['exam_id']
+              : int.tryParse(json['exam_id'].toString()) ?? 0)
+          : null,
       questionText: json['question_text']?.toString() ?? '',
       optionA: json['option_a']?.toString(),
       optionB: json['option_b']?.toString(),
@@ -51,7 +83,14 @@ class Question {
       correctOption: json['correct_option']?.toString() ?? 'A',
       explanation: json['explanation']?.toString(),
       difficulty: json['difficulty']?.toString() ?? 'medium',
-      hasAnswer: json['has_answer'] == true,
+      hasAnswer: (json['has_answer'] is bool)
+          ? json['has_answer']
+          : (json['has_answer'] is int)
+              ? json['has_answer'] == 1
+              : (json['has_answer'] is String)
+                  ? json['has_answer'].toLowerCase() == 'true' ||
+                      json['has_answer'] == '1'
+                  : false,
     );
   }
 

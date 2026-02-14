@@ -1,21 +1,41 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 void debugLog(String tag, String message) {
-  // ignore: avoid_print
-  print('[$tag] $message');
+  print(
+      '[${DateTime.now().toIso8601String().substring(11, 19)}] [$tag] $message');
 }
 
 void showSnackBar(BuildContext context, String message,
-    {bool isError = false}) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Text(message),
-      backgroundColor: isError ? Colors.red : Colors.green,
-      behavior: SnackBarBehavior.floating,
+    {bool isError = false, int durationSeconds = 1}) {
+  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+  final snackBar = SnackBar(
+    content: Text(message),
+    backgroundColor: isError ? Colors.red : Colors.green,
+    behavior: SnackBarBehavior.floating,
+    duration: Duration(seconds: durationSeconds),
+    action: SnackBarAction(
+      label: 'OK',
+      textColor: Colors.white,
+      onPressed: () {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      },
     ),
   );
+
+  ScaffoldMessenger.of(context).showSnackBar(snackBar);
+}
+
+double ensureDouble(dynamic value) {
+  if (value is double) return value;
+  if (value is int) return value.toDouble();
+  if (value is num) return value.toDouble();
+  if (value is String) return double.tryParse(value) ?? 0.0;
+  return 0.0;
 }
 
 String formatDate(DateTime date) {
@@ -85,4 +105,85 @@ Future<void> showConfirmDialog(
       ],
     ),
   );
+}
+
+bool validatePassword(String password) {
+  if (password.length < 6) return false;
+
+  if (!password.contains(RegExp(r'[A-Z]'))) return false;
+
+  if (!password.contains(RegExp(r'[a-z]'))) return false;
+
+  if (!password.contains(RegExp(r'[0-9]'))) return false;
+
+  return true;
+}
+
+String? validateUsername(String username) {
+  if (username.isEmpty) return 'Username is required';
+  if (username.length < 3) return 'Username must be at least 3 characters';
+  if (username.length > 20) return 'Username must be less than 20 characters';
+  if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(username)) {
+    return 'Username can only contain letters, numbers, and underscores';
+  }
+  return null;
+}
+
+String formatSubscriptionDuration(Duration duration) {
+  if (duration.inDays >= 30) {
+    final months = duration.inDays ~/ 30;
+    return '$months month${months > 1 ? 's' : ''}';
+  } else if (duration.inDays >= 7) {
+    final weeks = duration.inDays ~/ 7;
+    return '$weeks week${weeks > 1 ? 's' : ''}';
+  } else {
+    return '${duration.inDays} day${duration.inDays > 1 ? 's' : ''}';
+  }
+}
+
+double calculateProgressPercentage(int completed, int total) {
+  if (total == 0) return 0.0;
+  return (completed / total) * 100;
+}
+
+String formatProgressPercentage(double percentage) {
+  return '${percentage.toStringAsFixed(1)}%';
+}
+
+String generateCacheKey(String base, List<String> parameters) {
+  final params = parameters.join('_');
+  return '${base}_$params';
+}
+
+String formatErrorMessage(dynamic error) {
+  if (error is String) return error;
+  if (error is Map<String, dynamic>) {
+    return error['message']?.toString() ?? 'An error occurred';
+  }
+  return error.toString();
+}
+
+Function debounce(Function func, [int delay = 500]) {
+  Timer? timer;
+  return () {
+    if (timer?.isActive ?? false) {
+      timer?.cancel();
+    }
+    timer = Timer(Duration(milliseconds: delay), () {
+      func();
+    });
+  };
+}
+
+Function throttle(Function func, [int delay = 1000]) {
+  bool isThrottled = false;
+  return () {
+    if (!isThrottled) {
+      func();
+      isThrottled = true;
+      Timer(Duration(milliseconds: delay), () {
+        isThrottled = false;
+      });
+    }
+  };
 }

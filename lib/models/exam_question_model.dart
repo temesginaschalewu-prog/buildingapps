@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class ExamQuestion {
   final int id;
   final int examId;
@@ -33,19 +35,19 @@ class ExamQuestion {
 
   factory ExamQuestion.fromJson(Map<String, dynamic> json) {
     return ExamQuestion(
-      id: json['id'],
-      examId: json['exam_id'],
-      questionId: json['question_id'],
+      id: json['id'] ?? 0,
+      examId: json['exam_id'] ?? 0,
+      questionId: json['question_id'] ?? 0,
       displayOrder: json['display_order'] ?? 0,
       marks: json['marks'] ?? 1,
-      questionText: json['question_text'],
-      optionA: json['option_a'],
-      optionB: json['option_b'],
-      optionC: json['option_c'],
-      optionD: json['option_d'],
-      optionE: json['option_e'],
-      optionF: json['option_f'],
-      difficulty: json['difficulty'] ?? 'medium',
+      questionText: json['question_text']?.toString() ?? '',
+      optionA: json['option_a']?.toString(),
+      optionB: json['option_b']?.toString(),
+      optionC: json['option_c']?.toString(),
+      optionD: json['option_d']?.toString(),
+      optionE: json['option_e']?.toString(),
+      optionF: json['option_f']?.toString(),
+      difficulty: (json['difficulty']?.toString() ?? 'medium').toLowerCase(),
       hasAnswer: json['has_answer'] ?? false,
     );
   }
@@ -79,4 +81,19 @@ class ExamQuestion {
     if (optionF != null && optionF!.isNotEmpty) options.add(optionF!);
     return options;
   }
+
+  String? get correctOption {
+    return null;
+  }
+
+  String? get explanation {
+    return null;
+  }
+
+  @override
+  String toString() {
+    return 'ExamQuestion(id: $id, examId: $examId, questionText: ${questionText.substring(0, min(30, questionText.length))}...)';
+  }
+
+  int min(int a, int b) => a < b ? a : b;
 }

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:familyacademyclient/services/api_service.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -19,7 +20,7 @@ class NotificationService {
 
   static bool _isInitialized = false;
   static bool _isInitializing = false;
-  static final Completer<void> _initCompleter = Completer<void>();
+  static bool _listenersSetUp = false;
 
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
@@ -34,15 +35,15 @@ class NotificationService {
   String? _fcmToken;
   ApiService? _apiService;
 
-  // Track last notification to prevent duplicates
-  Map<String, DateTime> _lastNotificationTime = {};
+  final Map<String, DateTime> _lastNotificationTime = {};
+  final Set<String> _processedMessageIds = {};
+  final Set<String> _preventDuplicateIds = {};
 
   void setApiService(ApiService apiService) {
     _apiService = apiService;
   }
 
   Future<void> init({bool forceReinit = false}) async {
-    // Prevent multiple initializations
     if (_isInitialized && !forceReinit) {
       debugLog('NotificationService', 'Already initialized, skipping...');
       return;
@@ -50,7 +51,6 @@ class NotificationService {
 
     if (_isInitializing) {
       debugLog('NotificationService', 'Already initializing, waiting...');
-      await _initCompleter.future;
       return;
     }
 
@@ -60,37 +60,36 @@ class NotificationService {
       debugLog(
           'NotificationService', '🚀 Initializing notification service...');
 
-      // Initialize Firebase if not already initialized
-      try {
-        await Firebase.initializeApp();
-        debugLog('NotificationService', '✅ Firebase initialized');
-      } catch (e) {
-        debugLog('NotificationService',
-            '⚠️ Firebase already initialized or error: $e');
-      }
-
-      // Initialize timezone data
+      // Initialize timezone for local notifications
       tz.initializeTimeZones();
 
-      // Initialize local notifications
+      // Initialize local notifications FIRST (works on all platforms)
       await _initLocalNotifications();
 
-      // Initialize Firebase Messaging
+      // Initialize Firebase ONLY on mobile platforms
+      if (Platform.isAndroid || Platform.isIOS) {
+        try {
+          await Firebase.initializeApp();
+          debugLog('NotificationService', '✅ Firebase initialized for mobile');
+        } catch (e) {
+          debugLog(
+              'NotificationService', '⚠️ Firebase initialization error: $e');
+        }
+      }
+
       await _initFirebaseMessaging();
 
-      // Request permissions
       await _requestPermissions();
 
-      // Listen for token refresh
       _setupTokenRefreshListener();
 
+      await _setupMessageListeners();
+
       _isInitialized = true;
-      _initCompleter.complete();
 
       debugLog(
           'NotificationService', '✅ Notification service fully initialized');
     } catch (e, stack) {
-      _initCompleter.completeError(e);
       debugLog('NotificationService',
           '❌ Notification service initialization failed: $e');
       debugLog('NotificationService', 'Stack trace: $stack');
@@ -110,16 +109,23 @@ class NotificationService {
         requestSoundPermission: true,
       );
 
+      // Add Linux initialization settings
+      const linuxSettings = LinuxInitializationSettings(
+        defaultActionName: 'Open notification',
+      );
+
       const initializationSettings = InitializationSettings(
         android: androidSettings,
         iOS: iosSettings,
+        linux: linuxSettings,
       );
 
       await _localNotifications.initialize(
-        initializationSettings,
+        settings: initializationSettings,
         onDidReceiveNotificationResponse: _onDidReceiveNotificationResponse,
+        onDidReceiveBackgroundNotificationResponse:
+            _onDidReceiveNotificationResponse,
       );
-
       debugLog('NotificationService', '✅ Local notifications initialized');
     } catch (e) {
       debugLog('NotificationService', '❌ Local notifications init error: $e');
@@ -128,41 +134,64 @@ class NotificationService {
 
   Future<void> _initFirebaseMessaging() async {
     try {
-      _firebaseMessaging = FirebaseMessaging.instance;
+      // Only initialize Firebase Messaging on mobile platforms
+      if (Platform.isAndroid || Platform.isIOS) {
+        _firebaseMessaging = FirebaseMessaging.instance;
 
-      // Get FCM token
-      _fcmToken = await _firebaseMessaging!.getToken();
-      if (_fcmToken != null) {
-        debugLog('NotificationService',
-            '✅ FCM Token: ${_fcmToken!.substring(0, 20)}...');
-        await _saveFCMToken(_fcmToken!);
+        _fcmToken = await _firebaseMessaging!.getToken();
+        if (_fcmToken != null) {
+          debugLog('NotificationService',
+              '✅ FCM Token: ${_fcmToken!.substring(0, 20)}...');
+          await _saveFCMToken(_fcmToken!);
+        } else {
+          debugLog('NotificationService', '⚠️ FCM token is null');
+        }
+
+        debugLog('NotificationService', '✅ Firebase Messaging initialized');
       } else {
-        debugLog('NotificationService', '⚠️ FCM token is null');
+        debugLog('NotificationService',
+            '⚠️ Firebase Messaging not available on ${Platform.operatingSystem}');
       }
-
-      // Configure foreground message handling
-      FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
-
-      // Configure background message handling
-      FirebaseMessaging.onMessageOpenedApp.listen(_handleMessageOpenedApp);
-
-      // Handle initial message when app is terminated
-      RemoteMessage? initialMessage =
-          await _firebaseMessaging!.getInitialMessage();
-      if (initialMessage != null) {
-        await _handleMessage(initialMessage);
-      }
-
-      debugLog('NotificationService', '✅ Firebase Messaging initialized');
     } catch (e, stack) {
       debugLog('NotificationService', '❌ Firebase Messaging init error: $e');
       debugLog('NotificationService', 'Stack trace: $stack');
     }
   }
 
+  Future<void> _setupMessageListeners() async {
+    if (_listenersSetUp) {
+      debugLog('NotificationService', '⚠️ Message listeners already set up');
+      return;
+    }
+
+    try {
+      debugLog('NotificationService', '🔧 Setting up message listeners...');
+
+      // Only setup Firebase message listeners on mobile platforms
+      if (Platform.isAndroid || Platform.isIOS && _firebaseMessaging != null) {
+        FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
+        FirebaseMessaging.onMessageOpenedApp.listen(_handleMessageOpenedApp);
+
+        RemoteMessage? initialMessage =
+            await _firebaseMessaging!.getInitialMessage();
+        if (initialMessage != null) {
+          debugLog('NotificationService', '📱 Handling initial message');
+          await _handleMessage(initialMessage);
+        }
+      }
+
+      _listenersSetUp = true;
+      debugLog('NotificationService', '✅ Message listeners set up');
+    } catch (e, stack) {
+      debugLog(
+          'NotificationService', '❌ Error setting up message listeners: $e');
+      debugLog('NotificationService', 'Stack trace: $stack');
+    }
+  }
+
   Future<void> _requestPermissions() async {
     try {
-      if (defaultTargetPlatform == TargetPlatform.iOS) {
+      if (Platform.isIOS && _firebaseMessaging != null) {
         NotificationSettings settings =
             await _firebaseMessaging!.requestPermission(
           alert: true,
@@ -178,8 +207,7 @@ class NotificationService {
             'iOS Permission status: ${settings.authorizationStatus}');
       }
 
-      if (defaultTargetPlatform == TargetPlatform.android) {
-        // Android 13+ requires notification permission
+      if (Platform.isAndroid && _firebaseMessaging != null) {
         NotificationSettings permission =
             await _firebaseMessaging!.requestPermission(
           alert: true,
@@ -200,15 +228,16 @@ class NotificationService {
   }
 
   void _setupTokenRefreshListener() {
-    _firebaseMessaging!.onTokenRefresh.listen((newToken) async {
-      debugLog('NotificationService',
-          '🔄 FCM token refreshed: ${newToken.substring(0, 20)}...');
-      _fcmToken = newToken;
-      await _saveFCMToken(newToken);
+    if (_firebaseMessaging != null) {
+      _firebaseMessaging!.onTokenRefresh.listen((newToken) async {
+        debugLog('NotificationService',
+            '🔄 FCM token refreshed: ${newToken.substring(0, 20)}...');
+        _fcmToken = newToken;
+        await _saveFCMToken(newToken);
 
-      // Send updated token to backend if user is authenticated
-      await _sendFcmTokenToBackend(newToken);
-    });
+        await _sendFcmTokenToBackend(newToken);
+      });
+    }
   }
 
   Future<void> _saveFCMToken(String token) async {
@@ -222,7 +251,6 @@ class NotificationService {
     }
   }
 
-  // NEW: Send FCM token to backend ONLY when authenticated
   Future<void> sendFcmTokenToBackendIfAuthenticated() async {
     try {
       if (_fcmToken == null) {
@@ -265,9 +293,30 @@ class NotificationService {
 
   Future<void> _handleForegroundMessage(RemoteMessage message) async {
     debugLog('NotificationService',
-        '📱 Foreground message received: ${message.notification?.title}');
+        '📱 Foreground message received: ${message.messageId}');
 
-    // Check if notifications are enabled
+    // Prevent duplicate notifications
+    final String notificationId = _generateNotificationId(message);
+    if (_preventDuplicateIds.contains(notificationId)) {
+      debugLog('NotificationService',
+          '⚠️ Duplicate notification prevented: $notificationId');
+      return;
+    }
+
+    _preventDuplicateIds.add(notificationId);
+
+    // Clean up old IDs to prevent memory leak
+    if (_preventDuplicateIds.length > 1000) {
+      final idsToRemove = _preventDuplicateIds.take(500).toList();
+      _preventDuplicateIds.removeAll(idsToRemove);
+    }
+
+    if (_processedMessageIds.contains(message.messageId)) {
+      debugLog('NotificationService',
+          '⚠️ Message ${message.messageId} already processed, ignoring');
+      return;
+    }
+
     final prefs = await SharedPreferences.getInstance();
     final notificationsEnabled = prefs.getBool('notifications_enabled') ?? true;
 
@@ -276,34 +325,31 @@ class NotificationService {
       return;
     }
 
-    // Prevent duplicate notifications - check if same notification was just received
-    final notificationKey =
-        '${message.messageId}_${message.notification?.title}';
-    final now = DateTime.now();
+    _processedMessageIds.add(message.messageId ?? '');
 
-    if (_lastNotificationTime.containsKey(notificationKey)) {
-      final lastTime = _lastNotificationTime[notificationKey]!;
-      if (now.difference(lastTime).inSeconds < 2) {
-        debugLog('NotificationService', '⚠️ Duplicate notification ignored');
-        return;
-      }
+    if (_processedMessageIds.length > 100) {
+      _processedMessageIds.clear();
     }
 
-    _lastNotificationTime[notificationKey] = now;
-
-    // Handle the message data first
     await _handleMessage(message);
 
-    // Only show local notification if app is in foreground
-    // Firebase will show notification automatically in background
     if (message.notification?.title != null &&
         message.notification?.body != null) {
       await showLocalNotification(
         title: message.notification!.title!,
         body: message.notification!.body!,
         payload: json.encode(message.data),
+        notificationId: notificationId,
       );
     }
+  }
+
+  String _generateNotificationId(RemoteMessage message) {
+    // Generate a unique ID based on message content to prevent duplicates
+    final title = message.notification?.title ?? '';
+    final body = message.notification?.body ?? '';
+    final dataHash = json.encode(message.data).hashCode;
+    return '${title}_${body}_$dataHash';
   }
 
   Future<void> _handleMessage(RemoteMessage message) async {
@@ -320,6 +366,7 @@ class NotificationService {
         'message': message.notification?.body,
         'click_action':
             data['click_action'] ?? data['route'] ?? '/notifications',
+        'message_id': message.messageId,
       });
     } catch (e) {
       debugLog('NotificationService', '❌ Error handling message: $e');
@@ -328,10 +375,14 @@ class NotificationService {
 
   Future<void> _handleMessageOpenedApp(RemoteMessage message) async {
     debugLog('NotificationService',
-        '📱 App opened from notification: ${message.notification?.title}');
+        '📱 App opened from notification: ${message.messageId}');
+
+    if (_processedMessageIds.contains(message.messageId)) {
+      return;
+    }
+
     await _handleMessage(message);
 
-    // Navigate to notification screen
     final data = message.data;
     final route = data['click_action'] ?? data['route'] ?? '/notifications';
     _notificationStreamController.add({
@@ -339,7 +390,51 @@ class NotificationService {
       'route': route,
       'data': data,
       'timestamp': DateTime.now(),
+      'message_id': message.messageId,
     });
+  }
+
+  Future<void> handleBackgroundMessage(RemoteMessage message) async {
+    debugLog('NotificationService',
+        '📱 Handling background message: ${message.messageId}');
+
+    // Prevent duplicate background notifications
+    final String notificationId = _generateNotificationId(message);
+    if (_preventDuplicateIds.contains(notificationId)) {
+      debugLog('NotificationService',
+          '⚠️ Duplicate background notification prevented: $notificationId');
+      return;
+    }
+
+    _preventDuplicateIds.add(notificationId);
+
+    if (_processedMessageIds.contains(message.messageId)) {
+      debugLog('NotificationService',
+          '⚠️ Background message already processed, ignoring');
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final notificationsEnabled = prefs.getBool('notifications_enabled') ?? true;
+
+    if (!notificationsEnabled) {
+      debugLog('NotificationService', '📱 Notifications disabled, skipping');
+      return;
+    }
+
+    _processedMessageIds.add(message.messageId ?? '');
+
+    if (message.notification?.title != null &&
+        message.notification?.body != null) {
+      await showLocalNotification(
+        title: message.notification!.title!,
+        body: message.notification!.body!,
+        payload: json.encode(message.data),
+        notificationId: notificationId,
+      );
+    }
+
+    await _handleMessage(message);
   }
 
   static Future<void> _onDidReceiveNotificationResponse(
@@ -352,7 +447,6 @@ class NotificationService {
       try {
         final data = json.decode(response.payload!);
 
-        // Navigate to appropriate screen
         NotificationService._instance._notificationStreamController.add({
           'type': 'notification_clicked',
           'data': data,
@@ -371,9 +465,9 @@ class NotificationService {
     required String body,
     String? payload,
     int? id,
+    String? notificationId,
   }) async {
     try {
-      // Check if we should show this notification
       final prefs = await SharedPreferences.getInstance();
       final notificationsEnabled =
           prefs.getBool('notifications_enabled') ?? true;
@@ -381,6 +475,30 @@ class NotificationService {
       if (!notificationsEnabled) {
         debugLog('NotificationService', '📱 Notifications disabled, skipping');
         return;
+      }
+
+      // Check if this exact notification was shown recently (within 5 seconds)
+      final String uniqueId = notificationId ?? '$title$body$payload';
+      final now = DateTime.now();
+      final lastShown = _lastNotificationTime[uniqueId];
+
+      if (lastShown != null && now.difference(lastShown).inSeconds < 5) {
+        debugLog('NotificationService',
+            '⚠️ Notification suppressed (duplicate within 5 seconds): $title');
+        return;
+      }
+
+      _lastNotificationTime[uniqueId] = now;
+
+      // Clean up old entries
+      if (_lastNotificationTime.length > 100) {
+        final keysToRemove = _lastNotificationTime.keys
+            .where((key) =>
+                now.difference(_lastNotificationTime[key]!).inMinutes > 5)
+            .toList();
+        for (final key in keysToRemove) {
+          _lastNotificationTime.remove(key);
+        }
       }
 
       const androidDetails = AndroidNotificationDetails(
@@ -392,24 +510,38 @@ class NotificationService {
         ticker: 'ticker',
         enableVibration: true,
         playSound: true,
+        onlyAlertOnce: true, // Prevent duplicate alerts
       );
 
       const iosDetails = DarwinNotificationDetails(
         presentAlert: true,
         presentBadge: true,
         presentSound: true,
+        threadIdentifier: 'family_academy',
+      );
+
+      final linuxDetails = LinuxNotificationDetails(
+        actions: [
+          LinuxNotificationAction(
+            key: 'open',
+            label: 'Open',
+          ),
+        ],
       );
 
       final notificationDetails = NotificationDetails(
         android: androidDetails,
         iOS: iosDetails,
+        linux: linuxDetails,
       );
 
+      final notificationIdValue =
+          id ?? (title.hashCode + body.hashCode) & 0x7fffffff;
       await _localNotifications.show(
-        id ?? DateTime.now().millisecondsSinceEpoch % 2147483647,
-        title,
-        body,
-        notificationDetails,
+        id: notificationIdValue,
+        title: title,
+        body: body,
+        notificationDetails: notificationDetails,
         payload: payload,
       );
 
@@ -443,7 +575,6 @@ class NotificationService {
     bool allowWhileIdle = true,
   }) async {
     try {
-      // Check if notifications are enabled
       final prefs = await SharedPreferences.getInstance();
       final notificationsEnabled =
           prefs.getBool('notifications_enabled') ?? true;
@@ -478,11 +609,11 @@ class NotificationService {
       final tzDateTime = tz.TZDateTime.from(scheduledTime, tz.local);
 
       await _localNotifications.zonedSchedule(
-        id ?? 0,
-        title,
-        body,
-        tzDateTime,
-        notificationDetails,
+        id: id ?? 0,
+        title: title,
+        body: body,
+        scheduledDate: tzDateTime,
+        notificationDetails: notificationDetails,
         androidScheduleMode: allowWhileIdle
             ? AndroidScheduleMode.exactAllowWhileIdle
             : AndroidScheduleMode.exact,
@@ -509,9 +640,9 @@ class NotificationService {
 
   Future<void> cancelScheduledNotifications() async {
     try {
-      await _localNotifications.cancel(1001);
-      await _localNotifications.cancel(1002);
-      await _localNotifications.cancel(1003);
+      await _localNotifications.cancel(id: 1001);
+      await _localNotifications.cancel(id: 1002);
+      await _localNotifications.cancel(id: 1003);
       debugLog('NotificationService', '🗑️ Scheduled notifications cancelled');
     } catch (e) {
       debugLog('NotificationService',
@@ -521,7 +652,12 @@ class NotificationService {
 
   Future<void> dispose() async {
     try {
+      _processedMessageIds.clear();
+      _preventDuplicateIds.clear();
+      _lastNotificationTime.clear();
       await _notificationStreamController.close();
+      _listenersSetUp = false;
+      _isInitialized = false;
       debugLog('NotificationService', '🔄 Notification service disposed');
     } catch (e) {
       debugLog(
@@ -582,42 +718,14 @@ class NotificationService {
     );
   }
 
-  // Check if notifications are enabled
   Future<bool> areNotificationsEnabled() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool('notifications_enabled') ?? true;
   }
-}
 
-@pragma('vm:entry-point')
-Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp();
-
-  debugLog('NotificationService',
-      'Background message received: ${message.notification?.title}');
-
-  final prefs = await SharedPreferences.getInstance();
-  final notificationsEnabled = prefs.getBool('notifications_enabled') ?? true;
-
-  if (!notificationsEnabled) {
-    debugLog('NotificationService',
-        'Notifications are disabled, skipping background notification');
-    return;
-  }
-
-  // Don't show duplicate notification - Firebase handles it in background
-  // Just save the notification data
-  try {
-    if (message.notification?.title != null &&
-        message.notification?.body != null) {
-      final notificationService = NotificationService();
-      await notificationService.showLocalNotification(
-        title: message.notification!.title!,
-        body: message.notification!.body!,
-        payload: json.encode(message.data),
-      );
-    }
-  } catch (e) {
-    debugLog('NotificationService', 'Background handler error: $e');
+  void clearProcessedMessages() {
+    _processedMessageIds.clear();
+    _preventDuplicateIds.clear();
+    _lastNotificationTime.clear();
   }
 }

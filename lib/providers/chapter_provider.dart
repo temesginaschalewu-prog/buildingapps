@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../services/device_service.dart';
 import '../models/chapter_model.dart';
 import '../utils/helpers.dart';
 
 class ChapterProvider with ChangeNotifier {
   final ApiService apiService;
+  final DeviceService deviceService;
 
   List<Chapter> _chapters = [];
   Map<int, List<Chapter>> _chaptersByCourse = {};
@@ -14,14 +17,19 @@ class ChapterProvider with ChangeNotifier {
   bool _isLoading = false;
   String? _error;
 
-  // Cache duration: 5 minutes
-  static const Duration cacheDuration = Duration(minutes: 5);
+  StreamController<Map<int, List<Chapter>>> _chaptersUpdateController =
+      StreamController<Map<int, List<Chapter>>>.broadcast();
 
-  ChapterProvider({required this.apiService});
+  static const Duration cacheDuration = Duration(minutes: 15);
+
+  ChapterProvider({required this.apiService, required this.deviceService});
 
   List<Chapter> get chapters => _chapters;
   bool get isLoading => _isLoading;
   String? get error => _error;
+
+  Stream<Map<int, List<Chapter>>> get chaptersUpdates =>
+      _chaptersUpdateController.stream;
 
   bool hasLoadedForCourse(int courseId) =>
       _hasLoadedForCourse[courseId] ?? false;
@@ -44,12 +52,10 @@ class ChapterProvider with ChangeNotifier {
 
   Future<void> loadChaptersByCourse(int courseId,
       {bool forceRefresh = false}) async {
-    // Check if already loading for this course
     if (_isLoadingForCourse[courseId] == true) {
       return;
     }
 
-    // Check cache: if we have data and it's not expired, don't reload
     final lastLoaded = _lastLoadedTime[courseId];
     final hasCache = _hasLoadedForCourse[courseId] == true;
     final isCacheValid = lastLoaded != null &&
@@ -61,10 +67,26 @@ class ChapterProvider with ChangeNotifier {
       return;
     }
 
-    // Set loading state for this course only
+    if (!forceRefresh) {
+      final cachedChapters = await deviceService
+          .getCacheItem<List<Chapter>>('chapters_course_$courseId');
+      if (cachedChapters != null) {
+        _chaptersByCourse[courseId] = cachedChapters;
+        _hasLoadedForCourse[courseId] = true;
+        _lastLoadedTime[courseId] = DateTime.now();
+
+        _addToGlobalList(cachedChapters);
+
+        _chaptersUpdateController.add({courseId: cachedChapters});
+
+        debugLog('ChapterProvider',
+            '✅ Loaded ${cachedChapters.length} chapters from cache for course $courseId');
+        return;
+      }
+    }
+
     _isLoadingForCourse[courseId] = true;
     _error = null;
-    notifyListeners();
 
     try {
       debugLog('ChapterProvider', '📚 Loading chapters for course: $courseId');
@@ -78,42 +100,53 @@ class ChapterProvider with ChangeNotifier {
         final loadedChapters =
             List<Chapter>.from(chaptersData.map((x) => Chapter.fromJson(x)));
 
-        // Update cache
         _chaptersByCourse[courseId] = loadedChapters;
         _hasLoadedForCourse[courseId] = true;
         _lastLoadedTime[courseId] = DateTime.now();
 
-        // Add to global list, avoiding duplicates
-        for (final chapter in loadedChapters) {
-          if (!_chapters.any((c) => c.id == chapter.id)) {
-            _chapters.add(chapter);
-          }
-        }
+        await deviceService.saveCacheItem(
+            'chapters_course_$courseId', loadedChapters,
+            ttl: cacheDuration);
+
+        _addToGlobalList(loadedChapters);
 
         debugLog('ChapterProvider',
             '✅ Loaded ${loadedChapters.length} chapters for course $courseId');
+
+        _chaptersUpdateController.add({courseId: loadedChapters});
       } else {
+        _chaptersByCourse[courseId] = [];
+        _hasLoadedForCourse[courseId] = true;
+        _lastLoadedTime[courseId] = DateTime.now();
+
+        await deviceService.saveCacheItem('chapters_course_$courseId', [],
+            ttl: cacheDuration);
+
+        _chaptersUpdateController.add({courseId: []});
+      }
+    } catch (e) {
+      _error = e.toString();
+      debugLog('ChapterProvider', '❌ loadChaptersByCourse error: $e');
+
+      if (!_hasLoadedForCourse[courseId]!) {
         _chaptersByCourse[courseId] = [];
         _hasLoadedForCourse[courseId] = true;
         _lastLoadedTime[courseId] = DateTime.now();
       }
 
-      notifyListeners();
-    } catch (e) {
-      _error = e.toString();
-      debugLog('ChapterProvider', '❌ loadChaptersByCourse error: $e');
-
-      // If we have cache, keep it even if refresh fails
-      if (!_hasLoadedForCourse[courseId]!) {
-        _chaptersByCourse[courseId] = [];
-      }
-
-      notifyListeners();
-      rethrow;
+      _chaptersUpdateController.add({courseId: []});
     } finally {
       _isLoadingForCourse[courseId] = false;
       _isLoading = false;
-      notifyListeners();
+      _notifySafely();
+    }
+  }
+
+  void _addToGlobalList(List<Chapter> newChapters) {
+    for (final chapter in newChapters) {
+      if (!_chapters.any((c) => c.id == chapter.id)) {
+        _chapters.add(chapter);
+      }
     }
   }
 
@@ -125,32 +158,74 @@ class ChapterProvider with ChangeNotifier {
     }
   }
 
-  // Clear cache for specific course
-  void clearChaptersForCourse(int courseId) {
+  Future<void> clearChaptersForCourse(int courseId) async {
     _hasLoadedForCourse.remove(courseId);
     _lastLoadedTime.remove(courseId);
 
-    // Remove chapters for this course from global list
     final courseChapters = _chaptersByCourse[courseId] ?? [];
     _chapters.removeWhere(
         (chapter) => courseChapters.any((c) => c.id == chapter.id));
     _chaptersByCourse.remove(courseId);
 
-    notifyListeners();
+    await deviceService.removeCacheItem('chapters_course_$courseId');
+
+    _chaptersUpdateController.add({courseId: []});
+
+    _notifySafely();
   }
 
-  // Clear all cache
-  void clearAllChapters() {
+  Future<void> clearUserData() async {
+    debugLog('ChapterProvider', 'Clearing chapter data');
+
+    await deviceService.clearCacheByPrefix('chapters_course_');
+
     _chapters.clear();
     _chaptersByCourse.clear();
     _hasLoadedForCourse.clear();
     _lastLoadedTime.clear();
     _isLoadingForCourse.clear();
-    notifyListeners();
+
+    _chaptersUpdateController.close();
+    _chaptersUpdateController =
+        StreamController<Map<int, List<Chapter>>>.broadcast();
+
+    _chaptersUpdateController.add({});
+
+    _notifySafely();
   }
 
-  void clearError() {
+  Future<void> clearAllChapters() async {
+    await deviceService.clearCacheByPrefix('chapters_course_');
+
+    _chapters.clear();
+    _chaptersByCourse.clear();
+    _hasLoadedForCourse.clear();
+    _lastLoadedTime.clear();
+    _isLoadingForCourse.clear();
+
+    _chaptersUpdateController.add({});
+
+    _notifySafely();
+  }
+
+  Future<void> clearError() async {
     _error = null;
-    notifyListeners();
+    _notifySafely();
+  }
+
+  @override
+  void dispose() {
+    _chaptersUpdateController.close();
+    super.dispose();
+  }
+
+  void _notifySafely() {
+    if (hasListeners) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (hasListeners) {
+          notifyListeners();
+        }
+      });
+    }
   }
 }

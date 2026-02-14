@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../services/device_service.dart';
 import '../models/user_model.dart';
 import '../models/subscription_model.dart';
 import '../models/payment_model.dart';
@@ -8,6 +10,7 @@ import '../utils/helpers.dart';
 
 class UserProvider with ChangeNotifier {
   final ApiService apiService;
+  final DeviceService deviceService;
 
   User? _currentUser;
   List<Payment> _payments = [];
@@ -18,87 +21,277 @@ class UserProvider with ChangeNotifier {
   bool _hasLoadedPayments = false;
   String? _error;
 
-  // Cache timestamps
-  DateTime? _lastProfileLoadTime;
-  DateTime? _lastNotificationsLoadTime;
-  DateTime? _lastPaymentsLoadTime;
-  static const Duration _cacheDuration = Duration(minutes: 5);
+  // Telegram-style caching
+  bool _isBackgroundRefreshing = false;
+  bool _hasInitialCache = false;
+  Timer? _backgroundRefreshTimer;
+  StreamController<User?> _userUpdateController =
+      StreamController<User?>.broadcast();
+  StreamController<List<Payment>> _paymentsUpdateController =
+      StreamController<List<Payment>>.broadcast();
+  StreamController<List<AppNotification.Notification>>
+      _notificationsUpdateController =
+      StreamController<List<AppNotification.Notification>>.broadcast();
 
-  UserProvider({required this.apiService});
+  // Cache with expiration
+  DateTime? _lastProfileCacheTime;
+  DateTime? _lastNotificationsCacheTime;
+  DateTime? _lastPaymentsCacheTime;
+  static const Duration _cacheExpiry = Duration(minutes: 10);
+  static const Duration _backgroundRefreshInterval = Duration(minutes: 10);
+  static const Duration _minRefreshInterval = Duration(minutes: 2);
+  static final Map<String, DateTime> _lastRefreshTime = {};
+
+  // Track ongoing refreshes to prevent duplicates
+  final Map<String, Completer<bool>> _ongoingRefreshes = {};
+
+  UserProvider({required this.apiService, required this.deviceService});
 
   User? get currentUser => _currentUser;
   List<Payment> get payments => List.unmodifiable(_payments);
   List<AppNotification.Notification> get notifications =>
       List.unmodifiable(_notifications);
   bool get isLoading => _isLoading;
-  bool get hasLoadedProfile => _hasLoadedProfile;
-  bool get hasLoadedNotifications => _hasLoadedNotifications;
-  bool get hasLoadedPayments => _hasLoadedPayments;
+  bool get isBackgroundRefreshing => _isBackgroundRefreshing;
+  bool get hasInitialCache => _hasInitialCache;
   String? get error => _error;
 
-  bool _shouldReload(DateTime? lastLoadTime) {
-    if (lastLoadTime == null) return true;
-    return DateTime.now().difference(lastLoadTime) > _cacheDuration;
+  Stream<User?> get userUpdates => _userUpdateController.stream;
+  Stream<List<Payment>> get paymentsUpdates => _paymentsUpdateController.stream;
+  Stream<List<AppNotification.Notification>> get notificationsUpdates =>
+      _notificationsUpdateController.stream;
+
+  bool _shouldRefresh(String type, {bool forceRefresh = false}) {
+    if (forceRefresh) return true;
+
+    final lastRefresh = _lastRefreshTime[type];
+    if (lastRefresh == null) return true;
+
+    final secondsSinceLastRefresh =
+        DateTime.now().difference(lastRefresh).inSeconds;
+    return secondsSinceLastRefresh >= _minRefreshInterval.inSeconds;
   }
 
-  Future<void> loadUserProfile({bool forceRefresh = false}) async {
-    if (_isLoading && !forceRefresh) return;
+  Future<bool> _executeRefresh(
+    String type,
+    Future<void> Function() refreshFunction, {
+    bool forceRefresh = false,
+  }) async {
+    if (!_shouldRefresh(type, forceRefresh: forceRefresh)) {
+      debugLog('UserProvider', '⏰ Skipping $type refresh - too soon');
+      return false;
+    }
 
-    // Check cache
-    if (!forceRefresh &&
-        _hasLoadedProfile &&
-        !_shouldReload(_lastProfileLoadTime)) {
-      debugLog('UserProvider', 'Using cached profile data');
+    if (_ongoingRefreshes.containsKey(type)) {
+      debugLog(
+          'UserProvider', '⏳ $type refresh already in progress, waiting...');
+      return await _ongoingRefreshes[type]!.future;
+    }
+
+    final completer = Completer<bool>();
+    _ongoingRefreshes[type] = completer;
+
+    try {
+      await refreshFunction();
+      _lastRefreshTime[type] = DateTime.now();
+      completer.complete(true);
+      return true;
+    } catch (e) {
+      completer.complete(false);
+      return false;
+    } finally {
+      _ongoingRefreshes.remove(type);
+    }
+  }
+
+  // Telegram-style cache-first loading
+  Future<void> loadUserProfile({bool forceRefresh = false}) async {
+    // Don't show loading if we have cache (Telegram style)
+    if (!forceRefresh && _hasLoadedProfile && _currentUser != null) {
+      debugLog('UserProvider', '📦 Using cached profile data');
+      _userUpdateController.add(_currentUser);
       return;
     }
 
-    _isLoading = true;
-    _error = null;
-    _notifySafely();
+    // Show loading only if no cache
+    if (!_hasLoadedProfile || forceRefresh) {
+      _isLoading = true;
+      _notifySafely();
+    }
 
     try {
-      debugLog('UserProvider', 'Loading user profile');
+      debugLog('UserProvider', '🔄 Loading user profile');
+
+      // Try cache first
+      if (!forceRefresh) {
+        final cachedUser =
+            await deviceService.getCacheItem<User>('user_profile');
+        if (cachedUser != null) {
+          _currentUser = cachedUser;
+          _hasLoadedProfile = true;
+          _hasInitialCache = true;
+          _lastProfileCacheTime = DateTime.now();
+          _userUpdateController.add(_currentUser);
+          debugLog('UserProvider',
+              '✅ Loaded user profile from cache: ${_currentUser?.id}');
+
+          // Start background refresh if cache is stale
+          if (_isCacheStale(_lastProfileCacheTime)) {
+            unawaited(_refreshProfileInBackground());
+          }
+
+          return;
+        }
+      }
+
+      // Load fresh data
       final response = await apiService.getMyProfile();
-      _currentUser = response.data;
+
+      if (response.success) {
+        if (response.data is User) {
+          _currentUser = response.data;
+        } else if (response.data is Map<String, dynamic>) {
+          _currentUser = User.fromJson(response.data as Map<String, dynamic>);
+        }
+      } else {
+        throw Exception('Failed to load profile: ${response.message}');
+      }
+
       _hasLoadedProfile = true;
-      _lastProfileLoadTime = DateTime.now();
-      debugLog('UserProvider', 'Loaded user profile: ${_currentUser?.id}');
+      _hasInitialCache = true;
+      _lastProfileCacheTime = DateTime.now();
+
+      // Save to cache
+      if (_currentUser != null) {
+        await deviceService.saveCacheItem('user_profile', _currentUser!,
+            ttl: _cacheExpiry, isUserSpecific: true);
+      }
+
+      _userUpdateController.add(_currentUser);
+      debugLog('UserProvider', '✅ Loaded user profile: ${_currentUser?.id}');
+
+      // Start background refresh timer
+      _startBackgroundRefresh();
     } catch (e) {
       _error = e.toString();
-      debugLog('UserProvider', 'loadUserProfile error: $e');
-      rethrow;
+      debugLog('UserProvider', '❌ loadUserProfile error: $e');
+
+      // If we have cache, use it even on error
+      if (!forceRefresh && _currentUser != null) {
+        _userUpdateController.add(_currentUser);
+      } else {
+        rethrow;
+      }
     } finally {
       _isLoading = false;
       _notifySafely();
     }
   }
 
-  Future<void> loadPayments({bool forceRefresh = false}) async {
-    if (_isLoading && !forceRefresh) return;
+  Future<void> _refreshProfileInBackground() async {
+    if (_isBackgroundRefreshing) return;
 
-    // Check cache
-    if (!forceRefresh &&
-        _hasLoadedPayments &&
-        !_shouldReload(_lastPaymentsLoadTime)) {
-      debugLog('UserProvider', 'Using cached payments data');
+    await _executeRefresh('profile', () async {
+      _isBackgroundRefreshing = true;
+
+      try {
+        debugLog('UserProvider', '🔄 Background refreshing profile...');
+
+        final response = await apiService.getMyProfile();
+
+        if (response.success) {
+          User? updatedUser;
+          if (response.data is User) {
+            updatedUser = response.data;
+          } else if (response.data is Map<String, dynamic>) {
+            updatedUser = User.fromJson(response.data as Map<String, dynamic>);
+          }
+
+          if (updatedUser != null && _currentUser?.id == updatedUser.id) {
+            _currentUser = updatedUser;
+            _lastProfileCacheTime = DateTime.now();
+
+            // Update cache
+            await deviceService.saveCacheItem('user_profile', _currentUser!,
+                ttl: _cacheExpiry, isUserSpecific: true);
+
+            // Notify only if there are actual changes
+            if (_currentUser != null) {
+              _userUpdateController.add(_currentUser);
+              debugLog('UserProvider', '✅ Background profile refresh complete');
+            }
+          }
+        }
+      } catch (e) {
+        // Check for rate limiting
+        if (e.toString().contains('429') ||
+            e.toString().contains('Too many requests')) {
+          debugLog('UserProvider', '⚠️ Rate limited in background refresh');
+        } else {
+          debugLog('UserProvider', '⚠️ Background refresh failed: $e');
+        }
+      } finally {
+        _isBackgroundRefreshing = false;
+      }
+    });
+  }
+
+  Future<void> loadPayments({bool forceRefresh = false}) async {
+    if (!forceRefresh && _hasLoadedPayments && _payments.isNotEmpty) {
+      debugLog('UserProvider', '📦 Using cached payments data');
+      _paymentsUpdateController.add(_payments);
       return;
     }
 
-    _isLoading = true;
-    _error = null;
-    _notifySafely();
+    if (!_hasLoadedPayments || forceRefresh) {
+      _isLoading = true;
+      _notifySafely();
+    }
 
     try {
-      debugLog('UserProvider', 'Loading payments');
+      debugLog('UserProvider', '🔄 Loading payments');
+
+      // Cache first
+      if (!forceRefresh) {
+        final cachedPayments =
+            await deviceService.getCacheItem<List<Payment>>('user_payments');
+        if (cachedPayments != null) {
+          _payments = cachedPayments;
+          _hasLoadedPayments = true;
+          _lastPaymentsCacheTime = DateTime.now();
+          _paymentsUpdateController.add(_payments);
+          debugLog('UserProvider',
+              '✅ Loaded payments from cache: ${_payments.length}');
+
+          if (_isCacheStale(_lastPaymentsCacheTime)) {
+            unawaited(_refreshPaymentsInBackground());
+          }
+
+          return;
+        }
+      }
+
+      // Fresh load
       final response = await apiService.getMyPayments();
       _payments = response.data ?? [];
       _hasLoadedPayments = true;
-      _lastPaymentsLoadTime = DateTime.now();
-      debugLog('UserProvider', 'Loaded payments: ${_payments.length}');
+      _lastPaymentsCacheTime = DateTime.now();
+
+      // Cache it
+      await deviceService.saveCacheItem('user_payments', _payments,
+          ttl: _cacheExpiry, isUserSpecific: true);
+
+      _paymentsUpdateController.add(_payments);
+      debugLog('UserProvider', '✅ Loaded payments: ${_payments.length}');
     } catch (e) {
       _error = e.toString();
-      debugLog('UserProvider', 'loadPayments error: $e');
-      rethrow;
+      debugLog('UserProvider', '❌ loadPayments error: $e');
+
+      if (!forceRefresh && _payments.isNotEmpty) {
+        _paymentsUpdateController.add(_payments);
+      } else {
+        rethrow;
+      }
     } finally {
       _isLoading = false;
       _notifySafely();
@@ -106,36 +299,158 @@ class UserProvider with ChangeNotifier {
   }
 
   Future<void> loadNotifications({bool forceRefresh = false}) async {
-    if (_isLoading && !forceRefresh) return;
-
-    // Check cache
-    if (!forceRefresh &&
-        _hasLoadedNotifications &&
-        !_shouldReload(_lastNotificationsLoadTime)) {
-      debugLog('UserProvider', 'Using cached notifications data');
+    if (!forceRefresh && _hasLoadedNotifications && _notifications.isNotEmpty) {
+      debugLog('UserProvider', '📦 Using cached notifications data');
+      _notificationsUpdateController.add(_notifications);
       return;
     }
 
-    _isLoading = true;
-    _error = null;
-    _notifySafely();
+    if (!_hasLoadedNotifications || forceRefresh) {
+      _isLoading = true;
+      _notifySafely();
+    }
 
     try {
-      debugLog('UserProvider', 'Loading notifications');
+      debugLog('UserProvider', '🔄 Loading notifications');
+
+      // Cache first
+      if (!forceRefresh) {
+        final cachedNotifications = await deviceService.getCacheItem<
+            List<AppNotification.Notification>>('user_notifications');
+        if (cachedNotifications != null) {
+          _notifications = cachedNotifications;
+          _hasLoadedNotifications = true;
+          _lastNotificationsCacheTime = DateTime.now();
+          _notificationsUpdateController.add(_notifications);
+          debugLog('UserProvider',
+              '✅ Loaded notifications from cache: ${_notifications.length}');
+
+          if (_isCacheStale(_lastNotificationsCacheTime)) {
+            unawaited(_refreshNotificationsInBackground());
+          }
+
+          return;
+        }
+      }
+
+      // Fresh load
       final response = await apiService.getMyNotifications();
       _notifications = response.data ?? [];
       _hasLoadedNotifications = true;
-      _lastNotificationsLoadTime = DateTime.now();
+      _lastNotificationsCacheTime = DateTime.now();
+
+      // Cache it
+      await deviceService.saveCacheItem('user_notifications', _notifications,
+          ttl: _cacheExpiry, isUserSpecific: true);
+
+      _notificationsUpdateController.add(_notifications);
       debugLog(
-          'UserProvider', 'Loaded notifications: ${_notifications.length}');
+          'UserProvider', '✅ Loaded notifications: ${_notifications.length}');
     } catch (e) {
       _error = e.toString();
-      debugLog('UserProvider', 'loadNotifications error: $e');
-      rethrow;
+      debugLog('UserProvider', '❌ loadNotifications error: $e');
+
+      if (!forceRefresh && _notifications.isNotEmpty) {
+        _notificationsUpdateController.add(_notifications);
+      } else {
+        rethrow;
+      }
     } finally {
       _isLoading = false;
       _notifySafely();
     }
+  }
+
+  // Telegram-style background refresh
+  void _startBackgroundRefresh() {
+    _stopBackgroundRefresh();
+
+    _backgroundRefreshTimer = Timer.periodic(
+      _backgroundRefreshInterval,
+      (timer) async {
+        if (!_isLoading && !_isBackgroundRefreshing) {
+          await _refreshAllInBackground();
+        }
+      },
+    );
+
+    debugLog('UserProvider',
+        '⏰ Started background refresh timer (every 10 minutes)');
+  }
+
+  void _stopBackgroundRefresh() {
+    if (_backgroundRefreshTimer != null) {
+      _backgroundRefreshTimer!.cancel();
+      _backgroundRefreshTimer = null;
+    }
+  }
+
+  Future<void> _refreshAllInBackground() async {
+    debugLog('UserProvider', '🔄 Refreshing all data in background');
+
+    await Future.wait([
+      _refreshProfileInBackground(),
+      _refreshPaymentsInBackground(),
+      _refreshNotificationsInBackground(),
+    ], eagerError: false); // Don't let one failure stop others
+  }
+
+  Future<void> _refreshPaymentsInBackground() async {
+    await _executeRefresh('payments', () async {
+      try {
+        final response = await apiService.getMyPayments();
+        if (response.data != null && response.data!.isNotEmpty) {
+          _payments = response.data!;
+          _lastPaymentsCacheTime = DateTime.now();
+
+          await deviceService.saveCacheItem('user_payments', _payments,
+              ttl: _cacheExpiry, isUserSpecific: true);
+
+          _paymentsUpdateController.add(_payments);
+          debugLog('UserProvider', '✅ Background payments refresh complete');
+        }
+      } catch (e) {
+        if (e.toString().contains('429') ||
+            e.toString().contains('Too many requests')) {
+          debugLog('UserProvider', '⚠️ Rate limited in payments refresh');
+        } else {
+          debugLog('UserProvider', '⚠️ Background payments refresh failed: $e');
+        }
+      }
+    });
+  }
+
+  Future<void> _refreshNotificationsInBackground() async {
+    await _executeRefresh('notifications', () async {
+      try {
+        final response = await apiService.getMyNotifications();
+        if (response.data != null) {
+          _notifications = response.data!;
+          _lastNotificationsCacheTime = DateTime.now();
+
+          await deviceService.saveCacheItem(
+              'user_notifications', _notifications,
+              ttl: _cacheExpiry, isUserSpecific: true);
+
+          _notificationsUpdateController.add(_notifications);
+          debugLog(
+              'UserProvider', '✅ Background notifications refresh complete');
+        }
+      } catch (e) {
+        if (e.toString().contains('429') ||
+            e.toString().contains('Too many requests')) {
+          debugLog('UserProvider', '⚠️ Rate limited in notifications refresh');
+        } else {
+          debugLog(
+              'UserProvider', '⚠️ Background notifications refresh failed: $e');
+        }
+      }
+    });
+  }
+
+  bool _isCacheStale(DateTime? cacheTime) {
+    if (cacheTime == null) return true;
+    return DateTime.now().difference(cacheTime) > _cacheExpiry;
   }
 
   Future<void> updateProfile({
@@ -150,16 +465,15 @@ class UserProvider with ChangeNotifier {
     _notifySafely();
 
     try {
-      debugLog('UserProvider', 'Updating profile: email=$email phone=$phone');
+      debugLog('UserProvider', '✏️ Updating profile...');
       await apiService.updateMyProfile(
         email: email,
         phone: phone,
         profileImage: profileImage,
       );
 
-      // Update local user data
       if (_currentUser != null) {
-        _currentUser = User(
+        final updatedUser = User(
           id: _currentUser!.id,
           username: _currentUser!.username,
           email: email ?? _currentUser!.email,
@@ -179,13 +493,20 @@ class UserProvider with ChangeNotifier {
           createdAt: _currentUser!.createdAt,
           updatedAt: DateTime.now(),
         );
-        _hasLoadedProfile =
-            true; // Keep as loaded but mark for refresh on next call
-        _lastProfileLoadTime = DateTime.now();
+
+        _currentUser = updatedUser;
+        _lastProfileCacheTime = DateTime.now();
+
+        // Update cache
+        await deviceService.saveCacheItem('user_profile', _currentUser!,
+            ttl: _cacheExpiry, isUserSpecific: true);
+
+        _userUpdateController.add(_currentUser);
+        debugLog('UserProvider', '✅ Profile updated successfully');
       }
     } catch (e) {
       _error = e.toString();
-      debugLog('UserProvider', 'updateProfile error: $e');
+      debugLog('UserProvider', '❌ updateProfile error: $e');
       rethrow;
     } finally {
       _isLoading = false;
@@ -210,19 +531,55 @@ class UserProvider with ChangeNotifier {
         deliveredAt: notification.deliveredAt,
         sentBy: notification.sentBy,
       );
-      debugLog('UserProvider', 'Marked notification $logId as read');
+
+      // Update cache
+      await deviceService.saveCacheItem('user_notifications', _notifications,
+          ttl: _cacheExpiry, isUserSpecific: true);
+
+      _notificationsUpdateController.add(_notifications);
+      debugLog('UserProvider', '✅ Marked notification $logId as read');
       _notifySafely();
     }
   }
 
-  Future<int?> getCategoryIdByName(String categoryName) async {
-    return null;
+  Future<void> clearUserData() async {
+    debugLog('UserProvider', '🧹 Clearing user data');
+
+    await deviceService.clearCacheByPrefix('user_profile');
+    await deviceService.clearCacheByPrefix('user_payments');
+    await deviceService.clearCacheByPrefix('user_notifications');
+
+    _currentUser = null;
+    _payments.clear();
+    _notifications.clear();
+    _hasLoadedProfile = false;
+    _hasLoadedNotifications = false;
+    _hasLoadedPayments = false;
+    _hasInitialCache = false;
+    _lastProfileCacheTime = null;
+    _lastNotificationsCacheTime = null;
+    _lastPaymentsCacheTime = null;
+    _lastRefreshTime.clear();
+    _ongoingRefreshes.clear();
+
+    _stopBackgroundRefresh();
+
+    _userUpdateController.add(null);
+    _paymentsUpdateController.add(_payments);
+    _notificationsUpdateController.add(_notifications);
+
+    debugLog('UserProvider', '✅ User data cleared');
+    _notifySafely();
   }
 
-  Future<void> clearNotifications() async {
+  void clearNotifications() async {
+    await deviceService.removeCacheItem('user_notifications');
+
     _notifications.clear();
     _hasLoadedNotifications = false;
-    _lastNotificationsLoadTime = null;
+    _lastNotificationsCacheTime = null;
+
+    _notificationsUpdateController.add(_notifications);
     _notifySafely();
   }
 
@@ -231,17 +588,13 @@ class UserProvider with ChangeNotifier {
     _notifySafely();
   }
 
-  void clearAllData() {
-    _currentUser = null;
-    _payments.clear();
-    _notifications.clear();
-    _hasLoadedProfile = false;
-    _hasLoadedNotifications = false;
-    _hasLoadedPayments = false;
-    _lastProfileLoadTime = null;
-    _lastNotificationsLoadTime = null;
-    _lastPaymentsLoadTime = null;
-    _notifySafely();
+  @override
+  void dispose() {
+    _stopBackgroundRefresh();
+    _userUpdateController.close();
+    _paymentsUpdateController.close();
+    _notificationsUpdateController.close();
+    super.dispose();
   }
 
   void _notifySafely() {

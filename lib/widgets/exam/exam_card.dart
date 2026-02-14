@@ -1,52 +1,68 @@
-import 'package:flutter/material.dart';
-import 'package:familyacademyclient/models/exam_model.dart';
 import 'package:familyacademyclient/themes/app_colors.dart';
+import 'package:familyacademyclient/themes/app_text_styles.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:familyacademyclient/themes/app_themes.dart';
+import 'package:familyacademyclient/utils/responsive.dart';
+import 'package:familyacademyclient/models/exam_model.dart';
+import 'package:shimmer/shimmer.dart';
 
 class ExamCard extends StatelessWidget {
   final Exam exam;
   final VoidCallback onTap;
+  final int index; // For staggered animations
 
   const ExamCard({
     super.key,
     required this.exam,
     required this.onTap,
+    this.index = 0,
   });
 
-  Color _getStatusColor() {
+  Color _getStatusColor(BuildContext context) {
     if (exam.canTakeExam) {
-      return AppColors.success;
+      return AppColors.telegramGreen;
     } else if (exam.requiresPayment) {
-      return AppColors.locked;
+      return AppColors.telegramBlue;
     } else if (exam.maxAttemptsReached) {
-      return AppColors.error;
+      return AppColors.telegramRed;
     } else if (exam.isUpcoming) {
-      return Colors.blue;
+      return AppColors.telegramYellow;
     } else if (exam.isEnded) {
-      return Colors.grey;
+      return AppColors.telegramGray;
+    } else if (exam.isInProgress) {
+      return AppColors.telegramBlue;
     }
-    return Colors.orange;
+    return AppColors.telegramBlue;
+  }
+
+  Color _getStatusBackgroundColor(BuildContext context) {
+    final color = _getStatusColor(context);
+    return color.withOpacity(0.1);
   }
 
   IconData _getStatusIcon() {
     if (exam.canTakeExam) {
-      return Icons.assignment_turned_in;
+      return Icons.play_circle_rounded;
     } else if (exam.requiresPayment) {
-      return Icons.lock;
+      return Icons.lock_rounded;
     } else if (exam.maxAttemptsReached) {
-      return Icons.block;
+      return Icons.block_rounded;
     } else if (exam.isUpcoming) {
-      return Icons.schedule;
+      return Icons.schedule_rounded;
     } else if (exam.isEnded) {
-      return Icons.assignment_late;
+      return Icons.history_rounded;
+    } else if (exam.isInProgress) {
+      return Icons.hourglass_bottom_rounded;
     }
-    return Icons.assignment;
+    return Icons.assignment_rounded;
   }
 
   String _getStatusText() {
     if (exam.canTakeExam) {
       return 'TAKE EXAM';
     } else if (exam.requiresPayment) {
-      return 'PAYMENT REQUIRED';
+      return 'LOCKED';
     } else if (exam.maxAttemptsReached) {
       return 'MAX ATTEMPTS';
     } else if (exam.isUpcoming) {
@@ -60,189 +76,414 @@ class ExamCard extends StatelessWidget {
   }
 
   String _getTimeInfo() {
+    final now = DateTime.now();
+
     if (exam.hasUserTimeLimit) {
-      return '${exam.userTimeLimit} min/attempt';
+      return '${exam.userTimeLimit} min';
     }
 
-    final now = DateTime.now();
     if (now.isBefore(exam.startDate)) {
       final days = exam.startDate.difference(now).inDays;
-      return 'Starts in $days ${days == 1 ? 'day' : 'days'}';
-    } else if (now.isBefore(exam.endDate)) {
-      final hours = exam.endDate.difference(now).inHours;
-      if (hours < 24) {
-        return 'Ends in $hours ${hours == 1 ? 'hour' : 'hours'}';
+      if (days < 1) {
+        final hours = exam.startDate.difference(now).inHours;
+        return 'Starts in $hours h';
       }
+      return 'Starts in $days d';
+    } else if (now.isBefore(exam.endDate)) {
       final days = exam.endDate.difference(now).inDays;
-      return 'Ends in $days ${days == 1 ? 'day' : 'days'}';
+      if (days < 1) {
+        final hours = exam.endDate.difference(now).inHours;
+        return 'Ends in $hours h';
+      }
+      return 'Ends in $days d';
     }
     return 'Ended';
   }
 
-  Widget _buildTimeIndicator() {
-    if (exam.hasUserTimeLimit) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(
-          color: Colors.blue.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(4),
-          border: Border.all(color: Colors.blue.withOpacity(0.3)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.person, size: 10, color: Colors.blue),
-            const SizedBox(width: 2),
-            Text(
-              '${exam.userTimeLimit}min',
-              style: const TextStyle(
-                fontSize: 10,
-                color: Colors.blue,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
+  @override
+  Widget build(BuildContext context) {
+    final statusColor = _getStatusColor(context);
+    final statusBgColor = _getStatusBackgroundColor(context);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      margin: EdgeInsets.only(bottom: AppThemes.spacingL),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
+          splashColor: AppColors.telegramBlue.withOpacity(0.1),
+          highlightColor: Colors.transparent,
+          child: Container(
+            padding: EdgeInsets.all(ScreenSize.responsiveValue(
+              context: context,
+              mobile: AppThemes.spacingL,
+              tablet: AppThemes.spacingXL,
+              desktop: AppThemes.spacingXXL,
+            )),
+            decoration: BoxDecoration(
+              color: AppColors.getCard(context),
+              borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
+              border: Border.all(
+                color: Theme.of(context).dividerTheme.color ??
+                    AppColors.lightDivider,
+                width: 0.5,
+              ),
+            ),
+            child: Row(
+              children: [
+                // Left side - Status indicator
+                Container(
+                  width: ScreenSize.responsiveValue(
+                    context: context,
+                    mobile: 48,
+                    tablet: 56,
+                    desktop: 64,
+                  ),
+                  height: ScreenSize.responsiveValue(
+                    context: context,
+                    mobile: 48,
+                    tablet: 56,
+                    desktop: 64,
+                  ),
+                  decoration: BoxDecoration(
+                    color: statusBgColor,
+                    borderRadius:
+                        BorderRadius.circular(AppThemes.borderRadiusMedium),
+                    border: Border.all(
+                      color: statusColor,
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Icon(
+                    _getStatusIcon(),
+                    color: statusColor,
+                    size: ScreenSize.responsiveValue(
+                      context: context,
+                      mobile: 24,
+                      tablet: 28,
+                      desktop: 32,
+                    ),
+                  ),
+                ),
+
+                SizedBox(width: AppThemes.spacingL),
+
+                // Middle - Content
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Title
+                      Text(
+                        exam.title,
+                        style: AppTextStyles.titleMedium.copyWith(
+                          color: AppColors.getTextPrimary(context),
+                          fontSize: ScreenSize.responsiveFontSize(
+                            context: context,
+                            mobile: 16,
+                            tablet: 18,
+                            desktop: 20,
+                          ),
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+
+                      SizedBox(height: AppThemes.spacingS),
+
+                      // Metadata row
+                      Row(
+                        children: [
+                          // Status badge
+                          Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: AppThemes.spacingS,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: statusBgColor,
+                              borderRadius: BorderRadius.circular(
+                                  AppThemes.borderRadiusFull),
+                              border: Border.all(
+                                color: statusColor,
+                                width: 1,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  _getStatusIcon(),
+                                  size: 12,
+                                  color: statusColor,
+                                ),
+                                SizedBox(width: 4),
+                                Text(
+                                  _getStatusText(),
+                                  style: AppTextStyles.caption.copyWith(
+                                    color: statusColor,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          SizedBox(width: AppThemes.spacingM),
+
+                          // Time badge
+                          Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: AppThemes.spacingS,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color:
+                                  Theme.of(context).colorScheme.surfaceVariant,
+                              borderRadius: BorderRadius.circular(
+                                  AppThemes.borderRadiusFull),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.timer_rounded,
+                                  size: 12,
+                                  color: AppColors.getTextSecondary(context),
+                                ),
+                                SizedBox(width: 4),
+                                Text(
+                                  _getTimeInfo(),
+                                  style: AppTextStyles.caption.copyWith(
+                                    color: AppColors.getTextSecondary(context),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      // Attempts info
+                      if (exam.attemptsTaken > 0)
+                        Padding(
+                          padding: EdgeInsets.only(top: AppThemes.spacingS),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.history_rounded,
+                                size: 12,
+                                color: AppColors.getTextSecondary(context),
+                              ),
+                              SizedBox(width: 4),
+                              Text(
+                                'Attempts: ${exam.attemptsTaken}/${exam.maxAttempts}',
+                                style: AppTextStyles.caption.copyWith(
+                                  color: AppColors.getTextSecondary(context),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                      // Course info (on tablet/desktop)
+                      if (ScreenSize.isTablet(context) ||
+                          ScreenSize.isDesktop(context))
+                        Padding(
+                          padding: EdgeInsets.only(top: AppThemes.spacingS),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.book_rounded,
+                                size: 12,
+                                color: AppColors.getTextSecondary(context),
+                              ),
+                              SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  exam.courseName,
+                                  style: AppTextStyles.caption.copyWith(
+                                    color: AppColors.getTextSecondary(context),
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+
+                // Right arrow
+                Icon(
+                  exam.canTakeExam
+                      ? Icons.chevron_right_rounded
+                      : Icons.lock_rounded,
+                  size: ScreenSize.responsiveValue(
+                    context: context,
+                    mobile: 20,
+                    tablet: 24,
+                    desktop: 28,
+                  ),
+                  color: exam.canTakeExam
+                      ? AppColors.telegramBlue
+                      : AppColors.getTextSecondary(context),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    )
+        .animate()
+        .fadeIn(
+          duration: AppThemes.animationDurationMedium,
+          delay: (index * 50).ms,
+        )
+        .slideX(
+          begin: 0.1,
+          end: 0,
+          duration: AppThemes.animationDurationMedium,
+          delay: (index * 50).ms,
+        );
+  }
+}
+
+// Skeleton loader for ExamCard
+class ExamCardShimmer extends StatelessWidget {
+  final int index;
+
+  const ExamCardShimmer({super.key, this.index = 0});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Container(
+      margin: EdgeInsets.only(bottom: AppThemes.spacingL),
+      padding: EdgeInsets.all(ScreenSize.responsiveValue(
+        context: context,
+        mobile: AppThemes.spacingL,
+        tablet: AppThemes.spacingXL,
+        desktop: AppThemes.spacingXXL,
+      )),
       decoration: BoxDecoration(
-        color: Colors.grey.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: Colors.grey.withOpacity(0.3)),
+        color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+        borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
+        border: Border.all(
+          color: isDark
+              ? AppColors.darkDivider.withOpacity(0.3)
+              : AppColors.lightDivider.withOpacity(0.3),
+          width: 1,
+        ),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.group, size: 10, color: Colors.grey),
-          const SizedBox(width: 2),
-          Text(
-            '${exam.duration}min',
-            style: const TextStyle(
-              fontSize: 10,
-              color: Colors.grey,
-              fontWeight: FontWeight.w600,
+          // Status indicator shimmer
+          Shimmer.fromColors(
+            baseColor: isDark ? Colors.grey[800]! : Colors.grey[300]!,
+            highlightColor: isDark ? Colors.grey[700]! : Colors.grey[100]!,
+            child: Container(
+              width: ScreenSize.responsiveValue(
+                context: context,
+                mobile: 48,
+                tablet: 56,
+                desktop: 64,
+              ),
+              height: ScreenSize.responsiveValue(
+                context: context,
+                mobile: 48,
+                tablet: 56,
+                desktop: 64,
+              ),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius:
+                    BorderRadius.circular(AppThemes.borderRadiusMedium),
+              ),
+            ),
+          ),
+
+          SizedBox(width: AppThemes.spacingL),
+
+          // Content shimmer
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Shimmer.fromColors(
+                  baseColor: isDark ? Colors.grey[800]! : Colors.grey[300]!,
+                  highlightColor:
+                      isDark ? Colors.grey[700]! : Colors.grey[100]!,
+                  child: Container(
+                    width: double.infinity,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius:
+                          BorderRadius.circular(AppThemes.borderRadiusSmall),
+                    ),
+                  ),
+                ),
+                SizedBox(height: AppThemes.spacingS),
+                Row(
+                  children: [
+                    Shimmer.fromColors(
+                      baseColor: isDark ? Colors.grey[800]! : Colors.grey[300]!,
+                      highlightColor:
+                          isDark ? Colors.grey[700]! : Colors.grey[100]!,
+                      child: Container(
+                        width: 80,
+                        height: 20,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius:
+                              BorderRadius.circular(AppThemes.borderRadiusFull),
+                        ),
+                      ),
+                    ),
+                    SizedBox(width: AppThemes.spacingM),
+                    Shimmer.fromColors(
+                      baseColor: isDark ? Colors.grey[800]! : Colors.grey[300]!,
+                      highlightColor:
+                          isDark ? Colors.grey[700]! : Colors.grey[100]!,
+                      child: Container(
+                        width: 60,
+                        height: 20,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius:
+                              BorderRadius.circular(AppThemes.borderRadiusFull),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          // Right arrow shimmer
+          Shimmer.fromColors(
+            baseColor: isDark ? Colors.grey[800]! : Colors.grey[300]!,
+            highlightColor: isDark ? Colors.grey[700]! : Colors.grey[100]!,
+            child: Container(
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+              ),
             ),
           ),
         ],
       ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: InkWell(
-        onTap: exam.canTakeExam ? onTap : null,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _getStatusColor().withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: _getStatusColor()),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          _getStatusIcon(),
-                          size: 12,
-                          color: _getStatusColor(),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          _getStatusText(),
-                          style:
-                              Theme.of(context).textTheme.labelSmall?.copyWith(
-                                    color: _getStatusColor(),
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  _buildTimeIndicator(),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Text(
-                exam.title,
-                style: Theme.of(context).textTheme.headlineSmall,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  const Icon(Icons.book,
-                      size: 14, color: AppColors.textSecondary),
-                  const SizedBox(width: 4),
-                  Text(
-                    exam.courseName,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  const SizedBox(width: 12),
-                  const Icon(Icons.category,
-                      size: 14, color: AppColors.textSecondary),
-                  const SizedBox(width: 4),
-                  Text(
-                    exam.categoryName,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  const Icon(Icons.timer,
-                      size: 14, color: AppColors.textSecondary),
-                  const SizedBox(width: 4),
-                  Text(
-                    _getTimeInfo(),
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  const Spacer(),
-                  if (exam.attemptsTaken > 0)
-                    Text(
-                      '${exam.attemptsTaken}/${exam.maxAttempts} attempts',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: AppColors.textSecondary,
-                          ),
-                    ),
-                ],
-              ),
-              if (exam.requiresPayment && !exam.canTakeExam)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    'Purchase "${exam.categoryName}" to unlock',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: Colors.orange,
-                          fontStyle: FontStyle.italic,
-                        ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
+    ).animate().fadeIn(
+          duration: AppThemes.animationDurationMedium,
+          delay: (index * 50).ms,
+        );
   }
 }

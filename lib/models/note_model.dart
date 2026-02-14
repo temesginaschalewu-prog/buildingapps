@@ -51,18 +51,10 @@ class Note {
     };
   }
 
-  String? get fullFilePath => filePath != null
+  String? get fullNoteFilePath => filePath != null
       ? (filePath!.startsWith('http')
           ? filePath
           : '${AppConstants.baseUrl}$filePath')
-      : null;
-}
-
-extension NoteExtensions on Note {
-  String? get fullFilePath => filePath != null
-      ? (filePath!.startsWith('http')
-          ? filePath
-          : 'http://192.168.29.52:3000$filePath')
       : null;
 
   bool get hasFile => filePath != null && filePath!.isNotEmpty;

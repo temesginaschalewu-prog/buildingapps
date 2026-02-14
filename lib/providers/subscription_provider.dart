@@ -1,26 +1,55 @@
 import 'dart:async';
+import 'package:familyacademyclient/providers/category_provider.dart';
 import 'package:flutter/material.dart';
-import 'package:familyacademyclient/services/api_service.dart';
-import 'package:familyacademyclient/models/subscription_model.dart';
-import 'package:familyacademyclient/utils/helpers.dart';
+import '../services/api_service.dart';
+import '../services/device_service.dart';
+import '../models/subscription_model.dart';
+import '../utils/helpers.dart';
 
 class SubscriptionProvider with ChangeNotifier {
   final ApiService apiService;
+  final DeviceService deviceService;
 
   Map<int, Subscription> _subscriptionsByCategory = {};
   List<Subscription> _allSubscriptions = [];
   Map<int, bool> _categoryAccessCache = {};
+  Map<int, bool> _categoryCheckComplete = {};
+  Map<int, DateTime> _lastCheckTime = {};
+
   bool _isLoading = false;
   bool _hasLoaded = false;
   String? _error;
-  Timer? _refreshTimer;
 
-  SubscriptionProvider({required this.apiService}) {
-    _refreshTimer = Timer.periodic(const Duration(minutes: 5), (_) {
-      if (_hasLoaded) {
-        loadSubscriptions(forceRefresh: true);
-      }
-    });
+  Timer? _backgroundRefreshTimer;
+  // CHANGED: Increased from 30 seconds to 5 minutes
+  static const Duration _backgroundRefreshInterval = Duration(minutes: 5);
+  static const Duration _cacheDuration = Duration(minutes: 30);
+
+  // NEW: Track last background refresh time to prevent multiple refreshes
+  DateTime? _lastBackgroundRefreshTime;
+
+  final StreamController<Map<int, bool>> _subscriptionUpdateController =
+      StreamController<Map<int, bool>>.broadcast();
+  final StreamController<List<Subscription>> _subscriptionsUpdateController =
+      StreamController<List<Subscription>>.broadcast();
+  final StreamController<int> _subscriptionStatusChangedController =
+      StreamController<int>.broadcast();
+
+  final Map<int, Completer<bool>> _categoryCheckCompleters = {};
+  static const Duration _categoryCheckTimeout = Duration(seconds: 10);
+
+  CategoryProvider? _categoryProvider;
+
+  SubscriptionProvider({
+    required this.apiService,
+    required this.deviceService,
+  }) {
+    _initBackgroundRefresh();
+  }
+
+  void setCategoryProvider(CategoryProvider categoryProvider) {
+    _categoryProvider = categoryProvider;
+    debugLog('SubscriptionProvider', '✅ CategoryProvider reference set');
   }
 
   List<Subscription> get allSubscriptions =>
@@ -43,32 +72,163 @@ class SubscriptionProvider with ChangeNotifier {
     return _allSubscriptions.where((sub) => sub.isExpiringSoon).toList();
   }
 
+  Stream<Map<int, bool>> get subscriptionUpdates =>
+      _subscriptionUpdateController.stream;
+  Stream<List<Subscription>> get subscriptionsUpdates =>
+      _subscriptionsUpdateController.stream;
+  Stream<int> get subscriptionStatusChanged =>
+      _subscriptionStatusChangedController.stream;
+
+  void _initBackgroundRefresh() {
+    _backgroundRefreshTimer = Timer.periodic(_backgroundRefreshInterval, (_) {
+      if (_hasLoaded && !_isLoading) {
+        _performBackgroundRefresh();
+      }
+    });
+  }
+
+  // NEW: Separate method for background refresh with time tracking
+  Future<void> _performBackgroundRefresh() async {
+    // Check if we've refreshed recently
+    if (_lastBackgroundRefreshTime != null) {
+      final minutesSinceLastRefresh =
+          DateTime.now().difference(_lastBackgroundRefreshTime!).inMinutes;
+
+      // Don't refresh if less than 2 minutes have passed
+      if (minutesSinceLastRefresh < 2) {
+        debugLog('SubscriptionProvider',
+            '⏰ Skipping background refresh - only $minutesSinceLastRefresh minutes since last refresh');
+        return;
+      }
+    }
+
+    _lastBackgroundRefreshTime = DateTime.now();
+    await _refreshInBackground();
+  }
+
+  Future<void> _refreshInBackground() async {
+    debugLog('SubscriptionProvider', '🔄 Background refresh started');
+
+    try {
+      final response = await apiService.getMySubscriptions();
+
+      if (response.success && response.data != null) {
+        final newSubscriptions = response.data!;
+
+        bool hasChanges = _hasSubscriptionChanges(newSubscriptions);
+
+        if (hasChanges) {
+          debugLog(
+              'SubscriptionProvider', '📦 Changes detected, updating cache');
+          _allSubscriptions = newSubscriptions;
+          await deviceService.saveCacheItem('subscriptions', _allSubscriptions,
+              ttl: _cacheDuration, isUserSpecific: true);
+
+          _rebuildCacheFromSubscriptions();
+          _notifyChanges();
+        } else {
+          debugLog('SubscriptionProvider', '✅ No changes detected');
+        }
+      } else {
+        debugLog(
+            'SubscriptionProvider', '⚠️ Background refresh returned no data');
+      }
+    } catch (e) {
+      // Check if it's a 429 rate limit error
+      if (e.toString().contains('429') ||
+          e.toString().contains('Too many requests')) {
+        debugLog('SubscriptionProvider',
+            '⚠️ Rate limited in background, will retry later');
+      } else {
+        debugLog('SubscriptionProvider', '⚠️ Background refresh failed: $e');
+      }
+    }
+  }
+
+  bool _hasSubscriptionChanges(List<Subscription> newSubscriptions) {
+    if (_allSubscriptions.length != newSubscriptions.length) return true;
+
+    for (int i = 0; i < newSubscriptions.length; i++) {
+      if (!_allSubscriptions.any((s) =>
+          s.id == newSubscriptions[i].id &&
+          s.isActive == newSubscriptions[i].isActive)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   Future<void> loadSubscriptions({bool forceRefresh = false}) async {
     if (_isLoading && !forceRefresh) return;
-    if (_hasLoaded && !forceRefresh && !_isLoading) return;
+
+    if (_hasLoaded && !forceRefresh && _allSubscriptions.isNotEmpty) {
+      debugLog('SubscriptionProvider', '📦 Using cached subscriptions');
+      return;
+    }
 
     _isLoading = true;
     _error = null;
     _notifySafely();
 
     try {
-      debugLog('SubscriptionProvider', 'Loading subscriptions...');
+      debugLog('SubscriptionProvider', '📥 Loading subscriptions...');
+
+      if (!forceRefresh) {
+        final cachedSubscriptions = await deviceService
+            .getCacheItem<List<Subscription>>('subscriptions',
+                isUserSpecific: true);
+
+        if (cachedSubscriptions != null && cachedSubscriptions.isNotEmpty) {
+          _allSubscriptions = cachedSubscriptions;
+          _rebuildCacheFromSubscriptions();
+          _hasLoaded = true;
+          _isLoading = false;
+          _notifySafely();
+          _subscriptionsUpdateController.add(_allSubscriptions);
+
+          if (_categoryProvider != null) {
+            final statusMap = <int, bool>{};
+            for (final sub in _allSubscriptions) {
+              statusMap[sub.categoryId] = sub.isActive;
+            }
+            unawaited(
+                _categoryProvider!.batchUpdateSubscriptionStatus(statusMap));
+          }
+
+          debugLog('SubscriptionProvider',
+              '✅ Loaded ${_allSubscriptions.length} subscriptions from cache');
+
+          // Don't auto-refresh after cache load - let the timer handle it
+          // unawaited(_refreshInBackground());
+          return;
+        }
+      }
+
       final response = await apiService.getMySubscriptions();
 
       if (response.success && response.data != null) {
         _allSubscriptions = response.data!;
 
-        _subscriptionsByCategory = {};
-        _categoryAccessCache = {};
+        await deviceService.saveCacheItem('subscriptions', _allSubscriptions,
+            ttl: _cacheDuration, isUserSpecific: true);
 
-        for (final sub in _allSubscriptions) {
-          _subscriptionsByCategory[sub.categoryId] = sub;
-          _categoryAccessCache[sub.categoryId] = sub.isActive;
-        }
-
+        _rebuildCacheFromSubscriptions();
         _hasLoaded = true;
+
         debugLog('SubscriptionProvider',
             '✅ Loaded ${_allSubscriptions.length} subscriptions, ${activeSubscriptions.length} active');
+
+        _notifyChanges();
+
+        if (_categoryProvider != null) {
+          final statusMap = <int, bool>{};
+          for (final sub in _allSubscriptions) {
+            statusMap[sub.categoryId] = sub.isActive;
+          }
+          unawaited(
+              _categoryProvider!.batchUpdateSubscriptionStatus(statusMap));
+        }
       } else {
         _error = response.message;
         debugLog('SubscriptionProvider',
@@ -76,111 +236,283 @@ class SubscriptionProvider with ChangeNotifier {
       }
     } catch (e, stackTrace) {
       _error = e.toString();
-      debugLog('SubscriptionProvider',
-          '❌ Error loading subscriptions: $e\n$stackTrace');
-      _allSubscriptions = [];
-      _subscriptionsByCategory = {};
-      _categoryAccessCache = {};
+      debugLog('SubscriptionProvider', '❌ Error loading subscriptions: $e');
+
+      // Check if it's a rate limit error
+      if (e.toString().contains('429') ||
+          e.toString().contains('Too many requests')) {
+        debugLog('SubscriptionProvider', '⚠️ Rate limited, using cached data');
+        // Don't clear cache on rate limit
+        if (_allSubscriptions.isEmpty) {
+          // Try to get from cache again
+          final cachedSubscriptions = await deviceService
+              .getCacheItem<List<Subscription>>('subscriptions',
+                  isUserSpecific: true);
+          if (cachedSubscriptions != null && cachedSubscriptions.isNotEmpty) {
+            _allSubscriptions = cachedSubscriptions;
+            _rebuildCacheFromSubscriptions();
+            _hasLoaded = true;
+            debugLog('SubscriptionProvider',
+                '✅ Recovered from cache after rate limit');
+          }
+        }
+      } else if (_allSubscriptions.isEmpty) {
+        _allSubscriptions = [];
+        _rebuildCacheFromSubscriptions();
+      }
     } finally {
       _isLoading = false;
       _notifySafely();
     }
   }
 
-  Future<bool> checkHasActiveSubscriptionForCategory(int categoryId) async {
+  void _rebuildCacheFromSubscriptions() {
+    debugLog('SubscriptionProvider',
+        '🔄 Rebuilding cache from ${_allSubscriptions.length} subscriptions');
+
+    _subscriptionsByCategory = {};
+    _categoryAccessCache = {};
+    _categoryCheckComplete = {};
+    _lastCheckTime = {};
+
+    for (final sub in _allSubscriptions) {
+      final isActive = sub.isActive;
+
+      _subscriptionsByCategory[sub.categoryId] = sub;
+      _categoryAccessCache[sub.categoryId] = isActive;
+      _categoryCheckComplete[sub.categoryId] = true;
+      _lastCheckTime[sub.categoryId] = DateTime.now();
+
+      debugLog('SubscriptionProvider',
+          '✅ Category ${sub.categoryId} access set to: $isActive');
+    }
+  }
+
+  void _notifyChanges() {
+    _subscriptionsUpdateController.add(_allSubscriptions);
+    _subscriptionUpdateController.add(Map.from(_categoryAccessCache));
+    for (final categoryId in _categoryAccessCache.keys) {
+      _subscriptionStatusChangedController.add(categoryId);
+    }
+  }
+
+  bool hasActiveSubscriptionForCategory(int categoryId) {
     if (_categoryAccessCache.containsKey(categoryId)) {
       return _categoryAccessCache[categoryId]!;
     }
 
     final subscription = _subscriptionsByCategory[categoryId];
     if (subscription != null) {
-      final hasAccess = subscription.isActive;
-      _categoryAccessCache[categoryId] = hasAccess;
-      return hasAccess;
+      final isActive = subscription.isActive;
+      _categoryAccessCache[categoryId] = isActive;
+      _categoryCheckComplete[categoryId] = true;
+      _lastCheckTime[categoryId] = DateTime.now();
+      return isActive;
     }
 
-    try {
+    return false;
+  }
+
+  Future<bool> checkHasActiveSubscriptionForCategory(int categoryId) async {
+    debugLog('SubscriptionProvider',
+        '🔍 Checking subscription for category: $categoryId');
+
+    if (_categoryAccessCache.containsKey(categoryId)) {
+      final result = _categoryAccessCache[categoryId]!;
       debugLog('SubscriptionProvider',
-          'Checking subscription status for category: $categoryId');
+          '✅ Cache hit - category $categoryId: $result');
+      return result;
+    }
+
+    if (_categoryCheckCompleters.containsKey(categoryId)) {
+      debugLog('SubscriptionProvider',
+          '⏳ Waiting for existing check for category: $categoryId');
+      try {
+        return await _categoryCheckCompleters[categoryId]!
+            .future
+            .timeout(_categoryCheckTimeout);
+      } on TimeoutException {
+        debugLog(
+            'SubscriptionProvider', '⏰ Category check timeout for $categoryId');
+        return false;
+      }
+    }
+
+    final completer = Completer<bool>();
+    _categoryCheckCompleters[categoryId] = completer;
+
+    try {
       final response = await apiService.checkSubscriptionStatus(categoryId);
 
       if (response.success && response.data != null) {
         final data = response.data as Map<String, dynamic>;
+        final hasSubscription = data['has_subscription'] == true;
 
-        if (data['has_subscription'] == true) {
-          final subscription = Subscription.fromJson({
-            'id': data['id'] ?? 0,
-            'user_id': data['user_id'] ?? 0,
-            'category_id': categoryId,
-            'start_date':
-                data['start_date'] ?? DateTime.now().toIso8601String(),
-            'expiry_date': data['expiry_date'] ??
-                DateTime.now().add(const Duration(days: 30)).toIso8601String(),
-            'status': (data['current_status'] ?? data['status'] ?? 'active')
-                .toString(),
-            'billing_cycle': (data['billing_cycle'] ?? 'monthly').toString(),
-            'category_name': data['category_name'] ?? '',
-            'price': data['price'] ?? 0.0,
-          });
+        _categoryAccessCache[categoryId] = hasSubscription;
+        _categoryCheckComplete[categoryId] = true;
+        _lastCheckTime[categoryId] = DateTime.now();
+
+        if (hasSubscription && data['id'] != null) {
+          final subscription = Subscription(
+            id: data['id'] as int? ?? 0,
+            userId: data['user_id'] as int? ?? 0,
+            categoryId: categoryId,
+            startDate: DateTime.parse(data['start_date'] as String),
+            expiryDate: DateTime.parse(data['expiry_date'] as String),
+            status: data['status'] as String? ?? 'active',
+            billingCycle: data['billing_cycle'] as String? ?? 'monthly',
+            paymentId: data['payment_id'] as int?,
+            createdAt: data['created_at'] != null
+                ? DateTime.parse(data['created_at'] as String)
+                : null,
+            updatedAt: data['updated_at'] != null
+                ? DateTime.parse(data['updated_at'] as String)
+                : null,
+            categoryName: data['category_name'] as String?,
+            price: data['price'] != null
+                ? double.parse(data['price'].toString())
+                : null,
+          );
 
           _subscriptionsByCategory[categoryId] = subscription;
-
           if (!_allSubscriptions.any((s) => s.id == subscription.id)) {
             _allSubscriptions.add(subscription);
+            unawaited(deviceService.saveCacheItem(
+                'subscriptions', _allSubscriptions,
+                ttl: _cacheDuration, isUserSpecific: true));
           }
-
-          final hasAccess = subscription.isActive;
-          _categoryAccessCache[categoryId] = hasAccess;
-
-          _notifySafely();
-          return hasAccess;
         }
+
+        _subscriptionUpdateController.add({categoryId: hasSubscription});
+        _subscriptionStatusChangedController.add(categoryId);
+
+        if (_categoryProvider != null) {
+          unawaited(_categoryProvider!
+              .updateCategorySubscriptionStatus(categoryId, hasSubscription));
+        }
+
+        debugLog('SubscriptionProvider',
+            '✅ API check - category $categoryId: $hasSubscription');
+        completer.complete(hasSubscription);
+        return hasSubscription;
       }
 
       _categoryAccessCache[categoryId] = false;
+      _categoryCheckComplete[categoryId] = true;
+      _lastCheckTime[categoryId] = DateTime.now();
+
+      _subscriptionUpdateController.add({categoryId: false});
+      _subscriptionStatusChangedController.add(categoryId);
+
+      if (_categoryProvider != null) {
+        unawaited(_categoryProvider!
+            .updateCategorySubscriptionStatus(categoryId, false));
+      }
+
+      completer.complete(false);
       return false;
     } catch (e) {
-      debugLog(
-          'SubscriptionProvider', '❌ Error checking subscription status: $e');
+      debugLog('SubscriptionProvider', '❌ Error checking subscription: $e');
 
-      _categoryAccessCache[categoryId] = false;
+      completer.complete(false);
       return false;
+    } finally {
+      _categoryCheckCompleters.remove(categoryId);
     }
   }
 
-  bool hasActiveSubscriptionForCategory(int categoryId) {
-    return _categoryAccessCache[categoryId] ?? false;
+  Future<Map<int, bool>> checkSubscriptionsForCategories(
+      List<int> categoryIds) async {
+    final results = <int, bool>{};
+    final updates = <int, bool>{};
+
+    debugLog('SubscriptionProvider',
+        '🔄 Checking subscriptions for categories: $categoryIds');
+
+    for (final categoryId in categoryIds) {
+      if (_categoryAccessCache.containsKey(categoryId)) {
+        results[categoryId] = _categoryAccessCache[categoryId]!;
+        updates[categoryId] = results[categoryId]!;
+      }
+    }
+
+    final missingIds =
+        categoryIds.where((id) => !results.containsKey(id)).toList();
+
+    if (missingIds.isNotEmpty) {
+      final futures =
+          missingIds.map((id) => checkHasActiveSubscriptionForCategory(id));
+      final newResults = await Future.wait(futures);
+
+      for (int i = 0; i < missingIds.length; i++) {
+        results[missingIds[i]] = newResults[i];
+        updates[missingIds[i]] = newResults[i];
+      }
+    }
+
+    if (_categoryProvider != null && updates.isNotEmpty) {
+      unawaited(_categoryProvider!.batchUpdateSubscriptionStatus(updates));
+    }
+
+    debugLog(
+        'SubscriptionProvider', '✅ Final subscription check results: $results');
+    return results;
   }
 
-  bool hasPendingPaymentForCategory(int categoryId) {
-    return false;
-  }
+  Future<void> preCheckActiveCategories(List<int> categoryIds) async {
+    if (categoryIds.isEmpty) return;
 
-  Subscription? getSubscriptionForCategory(int categoryId) {
-    return _subscriptionsByCategory[categoryId];
+    debugLog('SubscriptionProvider',
+        '🔍 Pre-checking ${categoryIds.length} categories');
+
+    final futures = <Future>[];
+    final updates = <int, bool>{};
+
+    for (final categoryId in categoryIds) {
+      if (!_categoryAccessCache.containsKey(categoryId)) {
+        futures.add(
+            checkHasActiveSubscriptionForCategory(categoryId).then((result) {
+          updates[categoryId] = result;
+        }));
+      }
+    }
+
+    if (futures.isNotEmpty) {
+      await Future.wait(futures);
+
+      if (_categoryProvider != null && updates.isNotEmpty) {
+        unawaited(_categoryProvider!.batchUpdateSubscriptionStatus(updates));
+      }
+    }
   }
 
   Future<void> refreshAfterPaymentVerification() async {
     debugLog(
         'SubscriptionProvider', '🔄 Refreshing after payment verification');
 
+    await deviceService.clearCacheByPrefix('subscriptions');
+
     _allSubscriptions = [];
     _subscriptionsByCategory = {};
     _categoryAccessCache = {};
+    _categoryCheckComplete = {};
+    _lastCheckTime = {};
     _hasLoaded = false;
 
     await loadSubscriptions(forceRefresh: true);
-
     debugLog('SubscriptionProvider', '✅ Subscriptions refreshed');
-    _notifySafely();
   }
 
   Future<void> refreshCategorySubscription(int categoryId) async {
     try {
+      await deviceService.removeCacheItem('category_access_$categoryId',
+          isUserSpecific: true);
+
       _categoryAccessCache.remove(categoryId);
+      _categoryCheckComplete.remove(categoryId);
+      _lastCheckTime.remove(categoryId);
 
-      await loadSubscriptions(forceRefresh: true);
-
+      await checkHasActiveSubscriptionForCategory(categoryId);
       debugLog('SubscriptionProvider',
           '✅ Refreshed subscription for category: $categoryId');
     } catch (e) {
@@ -189,11 +521,37 @@ class SubscriptionProvider with ChangeNotifier {
     }
   }
 
-  void clearSubscriptions() {
+  Future<void> forceRefreshAllCategories() async {
+    debugLog('SubscriptionProvider',
+        '🔄 Force refreshing all category subscriptions');
+
+    _categoryAccessCache.clear();
+    _categoryCheckComplete.clear();
+    _lastCheckTime.clear();
+    _categoryCheckCompleters.clear();
+
+    await deviceService.clearCacheByPrefix('subscriptions');
+    await loadSubscriptions(forceRefresh: true);
+
+    debugLog('SubscriptionProvider', '✅ All categories refreshed');
+  }
+
+  Future<void> clearUserData() async {
+    debugLog('SubscriptionProvider', '🧹 Clearing subscription data');
+
+    await deviceService.clearCacheByPrefix('subscriptions');
+
     _allSubscriptions = [];
     _subscriptionsByCategory = {};
     _categoryAccessCache = {};
+    _categoryCheckComplete = {};
+    _lastCheckTime = {};
     _hasLoaded = false;
+    _categoryCheckCompleters.clear();
+
+    _subscriptionUpdateController.add({});
+    _subscriptionsUpdateController.add([]);
+
     _notifySafely();
   }
 
@@ -204,7 +562,11 @@ class SubscriptionProvider with ChangeNotifier {
 
   @override
   void dispose() {
-    _refreshTimer?.cancel();
+    _backgroundRefreshTimer?.cancel();
+    _subscriptionUpdateController.close();
+    _subscriptionsUpdateController.close();
+    _subscriptionStatusChangedController.close();
+    _categoryCheckCompleters.clear();
     super.dispose();
   }
 

@@ -1,23 +1,38 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../services/device_service.dart';
 import '../models/payment_model.dart';
 import '../models/setting_model.dart';
 import '../utils/helpers.dart';
+import '../utils/constants.dart';
 
 class PaymentProvider with ChangeNotifier {
   final ApiService apiService;
+  final DeviceService deviceService;
 
   List<Payment> _payments = [];
-  List<Setting> _paymentSettings = [];
   bool _isLoading = false;
   String? _error;
 
-  PaymentProvider({required this.apiService});
+  Timer? _refreshTimer;
+  StreamController<List<Payment>> _paymentsUpdateController =
+      StreamController<List<Payment>>.broadcast();
+
+  static const Duration _cacheDuration = Duration(minutes: 10);
+  static const Duration _refreshInterval = Duration(minutes: 5);
+
+  PaymentProvider({required this.apiService, required this.deviceService}) {
+    _refreshTimer = Timer.periodic(_refreshInterval, (_) {
+      _refreshDataInBackground();
+    });
+  }
 
   List<Payment> get payments => List.unmodifiable(_payments);
-  List<Setting> get paymentSettings => List.unmodifiable(_paymentSettings);
   bool get isLoading => _isLoading;
   String? get error => _error;
+
+  Stream<List<Payment>> get paymentsUpdates => _paymentsUpdateController.stream;
 
   List<Payment> getPendingPayments() {
     return _payments.where((p) => p.isPending).toList();
@@ -31,8 +46,19 @@ class PaymentProvider with ChangeNotifier {
     return _payments.where((p) => p.isRejected).toList();
   }
 
-  Future<void> loadPayments() async {
+  Future<void> _refreshDataInBackground() async {
     if (_isLoading) return;
+
+    try {
+      debugLog('PaymentProvider', '🔄 Background refresh of payment data');
+      await _loadPaymentsFromCacheOrApi(forceRefresh: true);
+    } catch (e) {
+      debugLog('PaymentProvider', 'Background refresh error: $e');
+    }
+  }
+
+  Future<void> loadPayments({bool forceRefresh = false}) async {
+    if (_isLoading && !forceRefresh) return;
 
     _isLoading = true;
     _error = null;
@@ -40,9 +66,7 @@ class PaymentProvider with ChangeNotifier {
 
     try {
       debugLog('PaymentProvider', 'Loading payments');
-      final response = await apiService.getMyPayments();
-      _payments = response.data ?? [];
-      debugLog('PaymentProvider', 'Loaded payments: ${_payments.length}');
+      await _loadPaymentsFromCacheOrApi(forceRefresh: forceRefresh);
     } catch (e) {
       _error = e.toString();
       debugLog('PaymentProvider', 'loadPayments error: $e');
@@ -53,27 +77,27 @@ class PaymentProvider with ChangeNotifier {
     }
   }
 
-  Future<void> loadPaymentSettings() async {
-    if (_isLoading) return;
-
-    _isLoading = true;
-    _error = null;
-    _notifySafely();
-
-    try {
-      debugLog('PaymentProvider', 'Loading payment settings');
-      final response = await apiService.getSettingsByCategory('payment');
-      _paymentSettings = response.data ?? [];
-      debugLog('PaymentProvider',
-          'Loaded payment settings: ${_paymentSettings.length}');
-    } catch (e) {
-      _error = e.toString();
-      debugLog('PaymentProvider', 'loadPaymentSettings error: $e');
-      rethrow;
-    } finally {
-      _isLoading = false;
-      _notifySafely();
+  Future<void> _loadPaymentsFromCacheOrApi({bool forceRefresh = false}) async {
+    if (!forceRefresh) {
+      final cachedPayments =
+          await deviceService.getCacheItem<List<Payment>>('payments');
+      if (cachedPayments != null) {
+        _payments = cachedPayments;
+        _paymentsUpdateController.add(_payments);
+        debugLog('PaymentProvider',
+            'Loaded ${_payments.length} payments from cache');
+        return;
+      }
     }
+
+    final response = await apiService.getMyPayments();
+    _payments = response.data ?? [];
+
+    await deviceService.saveCacheItem('payments', _payments,
+        ttl: _cacheDuration);
+    _paymentsUpdateController.add(_payments);
+
+    debugLog('PaymentProvider', 'Loaded payments: ${_payments.length}');
   }
 
   Future<Map<String, dynamic>> submitPayment({
@@ -91,9 +115,8 @@ class PaymentProvider with ChangeNotifier {
 
     try {
       debugLog('PaymentProvider',
-          'Submitting payment category:$categoryId amount:$amount proof:$proofImagePath');
+          'Submitting payment category:$categoryId amount:$amount method:$paymentMethod proof:$proofImagePath');
 
-      // Get the FULL ApiResponse, not just the data
       final apiResponse = await apiService.submitPayment(
         categoryId: categoryId,
         paymentType: paymentType,
@@ -102,7 +125,6 @@ class PaymentProvider with ChangeNotifier {
         proofImagePath: proofImagePath,
       );
 
-      // Debug the response
       debugLog(
           'PaymentProvider', 'Submit payment response: ${apiResponse.data}');
       debugLog(
@@ -110,17 +132,20 @@ class PaymentProvider with ChangeNotifier {
       debugLog(
           'PaymentProvider', 'Submit payment message: ${apiResponse.message}');
 
-      // CRITICAL FIX: Return the full response including success status
+      if (apiResponse.success) {
+        await deviceService.removeCacheItem('payments');
+        await _loadPaymentsFromCacheOrApi(forceRefresh: true);
+      }
+
       return {
         'success': apiResponse.success,
         'message': apiResponse.message,
-        'data': apiResponse.data, // This is where the payment details are
+        'data': apiResponse.data,
       };
     } catch (e, stackTrace) {
       _error = e.toString();
       debugLog('PaymentProvider', 'submitPayment error: $e\n$stackTrace');
 
-      // Return error map
       return {
         'success': false,
         'message': e.toString(),
@@ -132,43 +157,31 @@ class PaymentProvider with ChangeNotifier {
     }
   }
 
-  Setting? getPaymentSetting(String key) {
-    try {
-      return _paymentSettings.firstWhere((s) => s.settingKey == key);
-    } catch (e) {
-      return null;
-    }
-  }
+  Future<void> clearUserData() async {
+    debugLog('PaymentProvider', 'Clearing payment data');
 
-  String getPaymentInstructions() {
-    final setting = getPaymentSetting('payment_instructions');
-    return setting?.settingValue ??
-        'Please contact support for payment instructions.';
-  }
+    await deviceService.clearCacheByPrefix('payment');
 
-  String getBankName() {
-    final setting = getPaymentSetting('payment_bank_name');
-    return setting?.settingValue ?? 'Commercial Bank of Ethiopia';
-  }
-
-  String getAccountNumber() {
-    final setting = getPaymentSetting('payment_account_number');
-    return setting?.settingValue ?? '100034567890';
-  }
-
-  String getTelebirrNumber() {
-    final setting = getPaymentSetting('payment_telebirr_number');
-    return setting?.settingKey ?? 'payment_telebirr_number';
-  }
-
-  void clearPayments() {
     _payments = [];
+
+    _paymentsUpdateController.close();
+    _paymentsUpdateController = StreamController<List<Payment>>.broadcast();
+
+    _paymentsUpdateController.add(_payments);
+
     _notifySafely();
   }
 
   void clearError() {
     _error = null;
     _notifySafely();
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    _paymentsUpdateController.close();
+    super.dispose();
   }
 
   void _notifySafely() {

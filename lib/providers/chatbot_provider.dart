@@ -1,196 +1,152 @@
-// lib/providers/chatbot_provider.dart - COMPLETELY FREE VERSION
-import 'dart:convert';
+import 'dart:math';
+
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import '../services/chatbot_service.dart';
 import '../utils/helpers.dart';
 
 class ChatbotProvider with ChangeNotifier {
-  // List of free public AI APIs (no API keys needed)
-  static const List<String> _freeApis = [
-    // Option 1: DeepInfra (has free tier, uses public models)
-    'https://api.deepinfra.com/v1/openai/chat/completions',
+  final ChatbotService _chatbotService = ChatbotService();
 
-    // Option 2: Hugging Face Inference API (some models are free)
-    'https://api-inference.huggingface.co/models/microsoft/DialoGPT-small',
-
-    // Option 3: LocalAI (if you set it up locally)
-    'http://localhost:8080/v1/chat/completions',
-  ];
-
-  int _messagesUsedToday = 0;
-  DateTime? _lastMessageDate;
   bool _isLoading = false;
   String? _error;
+  final List<Map<String, dynamic>> _messages = [];
 
-  int get messagesUsedToday => _messagesUsedToday;
   bool get isLoading => _isLoading;
   String? get error => _error;
-
-  void _checkAndResetCounter() {
-    final now = DateTime.now();
-    if (_lastMessageDate == null ||
-        _lastMessageDate!.day != now.day ||
-        _lastMessageDate!.month != now.month ||
-        _lastMessageDate!.year != now.year) {
-      _messagesUsedToday = 0;
-      _lastMessageDate = now;
-    }
-  }
-
-  bool get hasMessagesLeft {
-    _checkAndResetCounter();
-    return _messagesUsedToday < 100; // 100 messages per day free limit
-  }
+  List<Map<String, dynamic>> get messages => _messages;
+  int get messagesUsedToday => _chatbotService.messagesUsedToday;
+  int get remainingMessages => _chatbotService.remainingMessages;
+  bool get hasMessagesLeft => _chatbotService.hasMessagesLeft;
 
   Future<String> sendMessage(String message) async {
-    _checkAndResetCounter();
+    if (message.trim().isEmpty) {
+      return 'Please enter a message';
+    }
 
     if (!hasMessagesLeft) {
-      return 'Daily message limit reached. Please try again tomorrow.';
+      return 'Daily message limit reached. You can send more messages tomorrow.';
     }
 
     _isLoading = true;
     _error = null;
+
+    _addUserMessage(message);
     notifyListeners();
 
     try {
-      debugLog('ChatbotProvider', 'Sending message: $message');
+      debugLog('ChatbotProvider',
+          'Sending message: ${message.substring(0, min(50, message.length))}...');
 
-      // If no specific keyword found, use a general response
-      final response = _getGeneralResponse(message);
-      _incrementCounter();
-      return response;
-    } catch (e) {
-      _error = e.toString();
-      debugLog('ChatbotProvider', 'sendMessage error: $e');
+      final response = await _chatbotService.sendMessage(message);
+
+      _addAiMessage(response);
       _isLoading = false;
       notifyListeners();
 
-      // Fallback to basic response
-      return 'I understand you\'re asking about education. For specific help with school subjects like math, science, or languages, please ask a more specific question.';
+      return response;
+    } catch (e) {
+      _error = 'Failed to get response: $e';
+      debugLog('ChatbotProvider', 'Error: $e');
+
+      final fallbackResponse = _getFallbackResponse(message);
+      _addAiMessage(fallbackResponse);
+
+      _isLoading = false;
+      notifyListeners();
+
+      return fallbackResponse;
     }
   }
 
-  String _getGeneralResponse(String message) {
-    if (message.contains('?') ||
-        message.contains('how') ||
-        message.contains('what') ||
-        message.contains('why')) {
-      return 'That\'s a good question! For detailed explanations on school subjects, I recommend checking your textbooks or asking your teacher. I can help with general study tips and subject overviews.';
-    } else if (message.length < 3) {
-      return 'Hello! I\'m here to help with your studies. Please ask me about mathematics, science, languages, history, or study techniques.';
-    } else {
-      return 'I\'m an educational assistant. I can help you understand school subjects like mathematics, science, English, and history. What specific topic would you like to learn about?';
-    }
-  }
-
-  void _incrementCounter() {
-    _messagesUsedToday++;
-    _lastMessageDate = DateTime.now();
-    _isLoading = false;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (hasListeners) {
-        notifyListeners();
-      }
+  void _addUserMessage(String message) {
+    _messages.add({
+      'id': DateTime.now().millisecondsSinceEpoch,
+      'text': message.trim(),
+      'isUser': true,
+      'timestamp': DateTime.now(),
+      'status': 'sent',
     });
+  }
+
+  void _addAiMessage(String message) {
+    _messages.add({
+      'id': DateTime.now().millisecondsSinceEpoch + 1,
+      'text': message.trim(),
+      'isUser': false,
+      'timestamp': DateTime.now(),
+      'status': 'received',
+    });
+  }
+
+  String _getFallbackResponse(String message) {
+    final lowerMessage = message.toLowerCase();
+
+    if (lowerMessage.contains('hello') ||
+        lowerMessage.contains('hi') ||
+        lowerMessage.contains('hey')) {
+      return 'Hello! I\'m your educational assistant. How can I help with your studies today?';
+    } else if (lowerMessage.contains('thank')) {
+      return 'You\'re welcome! Keep up the great work with your studies.';
+    } else if (lowerMessage.contains('help') ||
+        lowerMessage.contains('support')) {
+      return 'I\'m here to help with educational topics. Please ask about specific subjects or study techniques.';
+    } else if (lowerMessage.contains('name')) {
+      return 'I\'m your Family Academy AI Tutor, here to help you learn and understand various subjects.';
+    } else if (lowerMessage.contains('subject') ||
+        lowerMessage.contains('topic')) {
+      return 'I can help with Mathematics, Science, Languages, Social Studies, and Computer Science. Which subject would you like to learn about?';
+    } else {
+      return '''Thanks for your message! I specialize in educational topics including:
+
+📚 **Core Subjects**: Math, Science, English, Social Studies
+💡 **Study Help**: Exam prep, homework assistance, learning techniques
+🎯 **Skill Building**: Critical thinking, problem-solving, research skills
+
+Please ask a specific question about what you\'re studying, and I\'ll provide detailed guidance.''';
+    }
   }
 
   void clearError() {
     _error = null;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (hasListeners) {
-        notifyListeners();
-      }
-    });
+    notifyListeners();
   }
 
-  // For testing - reset counter
-  void resetCounter() {
-    _messagesUsedToday = 0;
-    _lastMessageDate = DateTime.now();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (hasListeners) {
-        notifyListeners();
-      }
-    });
+  void clearConversation() {
+    _messages.clear();
+    _chatbotService.clearHistory();
+    notifyListeners();
   }
 
-  // If you want to add a real AI API later, use this method
-  Future<String?> _tryFreeApi(String message, String apiUrl) async {
-    try {
-      debugLog('ChatbotProvider', 'Trying API: $apiUrl');
+  void addTestMessage(String message, bool isUser) {
+    _messages.add({
+      'id': DateTime.now().millisecondsSinceEpoch,
+      'text': message,
+      'isUser': isUser,
+      'timestamp': DateTime.now(),
+      'status': isUser ? 'sent' : 'received',
+    });
+    notifyListeners();
+  }
 
-      final headers = {
-        'Content-Type': 'application/json',
-      };
+  int get userMessageCount {
+    return _messages.where((msg) => msg['isUser'] == true).length;
+  }
 
-      Map<String, dynamic> body;
+  int get aiMessageCount {
+    return _messages.where((msg) => msg['isUser'] == false).length;
+  }
 
-      if (apiUrl.contains('deepinfra')) {
-        headers['Authorization'] =
-            'Bearer '; // Some free endpoints don't need auth
-        body = {
-          'model': 'meta-llama/Llama-2-70b-chat-hf',
-          'messages': [
-            {
-              'role': 'system',
-              'content':
-                  'You are an educational assistant for Ethiopian students. Help with school subjects only.',
-            },
-            {
-              'role': 'user',
-              'content': message,
-            }
-          ],
-          'max_tokens': 200,
-        };
-      } else if (apiUrl.contains('huggingface')) {
-        body = {
-          'inputs': message,
-        };
-      } else {
-        body = {
-          'model': 'gpt-3.5-turbo',
-          'messages': [
-            {
-              'role': 'user',
-              'content': message,
-            }
-          ],
-          'max_tokens': 150,
-        };
-      }
+  bool get lastMessageFromUser {
+    if (_messages.isEmpty) return false;
+    return _messages.last['isUser'] == true;
+  }
 
-      final response = await http
-          .post(
-            Uri.parse(apiUrl),
-            headers: headers,
-            body: json.encode(body),
-          )
-          .timeout(const Duration(seconds: 10));
+  Duration get conversationDuration {
+    if (_messages.isEmpty) return Duration.zero;
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        String responseText = '';
+    final firstMessageTime = _messages.first['timestamp'] as DateTime;
+    final lastMessageTime = _messages.last['timestamp'] as DateTime;
 
-        if (apiUrl.contains('deepinfra') || apiUrl.contains('localhost')) {
-          final choices = data['choices'];
-          if (choices != null && choices.isNotEmpty) {
-            responseText = choices[0]['message']['content'] ?? '';
-          }
-        } else if (apiUrl.contains('huggingface')) {
-          final generatedText = data[0]['generated_text'];
-          if (generatedText != null) {
-            responseText = generatedText;
-          }
-        }
-
-        return responseText.isNotEmpty ? responseText : null;
-      }
-    } catch (e) {
-      debugLog('ChatbotProvider', 'API $apiUrl failed: $e');
-    }
-
-    return null;
+    return lastMessageTime.difference(firstMessageTime);
   }
 }

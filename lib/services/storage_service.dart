@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
 import '../utils/constants.dart';
 import '../models/user_model.dart';
 import '../utils/helpers.dart';
@@ -9,198 +8,490 @@ import '../utils/helpers.dart';
 class StorageService {
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
   late SharedPreferences _prefs;
+  bool _initialized = false;
+  final Map<String, dynamic> _memoryCache = {};
+  final Map<String, DateTime> _cacheTimestamps = {};
+  static const Duration _defaultCacheTTL = Duration(days: 7);
 
   Future<void> init() async {
-    debugLog('StorageService', 'Initializing SharedPreferences');
+    if (_initialized) return;
+
+    debugLog('StorageService', '🔄 Initializing storage service');
     _prefs = await SharedPreferences.getInstance();
-    debugLog('StorageService', 'SharedPreferences initialized');
+
+    // Clear old cache format if exists
+    await _migrateOldCache();
+
+    _initialized = true;
+    debugLog('StorageService', '✅ Storage service initialized');
   }
 
-  // Token Management
+  Future<void> _migrateOldCache() async {
+    try {
+      final keys = _prefs.getKeys();
+      for (final key in keys) {
+        if (key.startsWith('cache_') && !key.contains('offline_')) {
+          final value = _prefs.getString(key);
+          if (value != null) {
+            final newKey = key.replaceFirst('cache_', 'offline_');
+            await _prefs.setString(newKey, value);
+            await _prefs.remove(key);
+            debugLog('StorageService', 'Migrated cache key: $key -> $newKey');
+          }
+        }
+      }
+    } catch (e) {
+      debugLog('StorageService', 'Cache migration error: $e');
+    }
+  }
+
+  Future<void> ensureInitialized() async {
+    if (!_initialized) await init();
+  }
+
+  // 🔑 Token Management
   Future<void> saveToken(String token) async {
-    debugLog('StorageService', 'Saving token present: ${token != null}');
+    await ensureInitialized();
     await _secureStorage.write(key: AppConstants.tokenKey, value: token);
+    await _setLastUpdate('token');
+    debugLog('StorageService', '✅ Token saved');
   }
 
   Future<String?> getToken() async {
-    final token = await _secureStorage.read(key: AppConstants.tokenKey);
-    debugLog('StorageService', 'getToken present: ${token != null}');
-    return token;
+    await ensureInitialized();
+    return await _secureStorage.read(key: AppConstants.tokenKey);
   }
 
   Future<void> saveRefreshToken(String refreshToken) async {
-    debugLog('StorageService', 'Saving refresh token');
+    await ensureInitialized();
     await _secureStorage.write(
-      key: AppConstants.refreshTokenKey,
-      value: refreshToken,
-    );
+        key: AppConstants.refreshTokenKey, value: refreshToken);
+    debugLog('StorageService', '✅ Refresh token saved');
   }
 
   Future<String?> getRefreshToken() async {
+    await ensureInitialized();
     return await _secureStorage.read(key: AppConstants.refreshTokenKey);
   }
 
   Future<void> clearTokens() async {
-    debugLog('StorageService', 'Clearing tokens');
+    await ensureInitialized();
     await _secureStorage.delete(key: AppConstants.tokenKey);
     await _secureStorage.delete(key: AppConstants.refreshTokenKey);
+    await _prefs.remove('last_update_token');
+    debugLog('StorageService', '✅ Tokens cleared');
   }
 
-  // User Data Management
+  // 👤 User Management
   Future<void> saveUser(User user) async {
-    debugLog('StorageService', 'Saving user ID: ${user.id}');
-    await _prefs.setString(
-      AppConstants.userDataKey,
-      json.encode(user.toJson()),
-    );
+    await ensureInitialized();
+    final userJson = json.encode(user.toJson());
+    await _saveOfflineData(AppConstants.userDataKey, userJson);
+    await _setLastUpdate('user');
+    debugLog('StorageService', '✅ User saved: ${user.username}');
   }
 
   Future<User?> getUser() async {
-    final userJson = _prefs.getString(AppConstants.userDataKey);
-    debugLog('StorageService', 'getUser raw: ${userJson != null}');
+    await ensureInitialized();
+    final userJson = await _getOfflineData<String>(AppConstants.userDataKey);
     if (userJson != null) {
       try {
-        final user = User.fromJson(json.decode(userJson));
-        debugLog('StorageService', 'getUser parsed ID: ${user.id}');
-        return user;
+        return User.fromJson(json.decode(userJson));
       } catch (e) {
-        debugLog('StorageService', 'getUser parse error: $e');
-        return null;
+        debugLog('StorageService', '❌ User parse error: $e');
       }
     }
     return null;
   }
 
   Future<void> clearUser() async {
-    await _prefs.remove(AppConstants.userDataKey);
+    await ensureInitialized();
+    await _removeOfflineData(AppConstants.userDataKey);
+    await _prefs.remove('session_start');
+    debugLog('StorageService', '✅ User data cleared');
   }
 
-  // Device Management
-  Future<void> saveDeviceId(String deviceId) async {
-    debugLog('StorageService', 'Saving deviceId: $deviceId');
-    await _prefs.setString(AppConstants.deviceIdKey, deviceId);
+  // 💾 Offline Data Management
+  Future<void> _saveOfflineData<T>(String key, T value, {Duration? ttl}) async {
+    await ensureInitialized();
+
+    final cacheData = {
+      'value': value,
+      'timestamp': DateTime.now().toIso8601String(),
+      'ttl': (ttl ?? _defaultCacheTTL).inSeconds,
+      'synced': true,
+    };
+
+    _memoryCache[key] = cacheData;
+    _cacheTimestamps[key] = DateTime.now();
+
+    try {
+      await _prefs.setString('offline_$key', json.encode(cacheData));
+    } catch (e) {
+      debugLog('StorageService', 'Error saving offline data: $e');
+    }
   }
 
-  Future<String?> getDeviceId() async {
-    final id = _prefs.getString(AppConstants.deviceIdKey);
-    debugLog('StorageService', 'getDeviceId: $id');
-    return id;
-  }
+  Future<T?> _getOfflineData<T>(String key) async {
+    await ensureInitialized();
 
-  Future<void> clearDeviceId() async {
-    await _prefs.remove(AppConstants.deviceIdKey);
-  }
-
-  // Theme Management
-  Future<void> saveThemeMode(String themeMode) async {
-    await _prefs.setString(AppConstants.themeModeKey, themeMode);
-  }
-
-  Future<String?> getThemeMode() async {
-    return _prefs.getString(AppConstants.themeModeKey);
-  }
-
-  // Notification Settings
-  Future<void> saveNotificationsEnabled(bool enabled) async {
-    await _prefs.setBool(AppConstants.notificationsEnabledKey, enabled);
-  }
-
-  Future<bool> getNotificationsEnabled() async {
-    return _prefs.getBool(AppConstants.notificationsEnabledKey) ?? true;
-  }
-
-  // Cache Management
-  Future<void> saveLastCacheCleanup(DateTime date) async {
-    await _prefs.setString('last_cache_cleanup', date.toIso8601String());
-  }
-
-  Future<DateTime?> getLastCacheCleanup() async {
-    final dateString = _prefs.getString('last_cache_cleanup');
-    if (dateString != null) {
-      try {
-        return DateTime.parse(dateString);
-      } catch (e) {
-        return null;
+    // Check memory cache first
+    if (_memoryCache.containsKey(key)) {
+      final cacheData = _memoryCache[key] as Map<String, dynamic>;
+      if (_isCacheValid(cacheData)) {
+        return cacheData['value'] as T;
+      } else {
+        _memoryCache.remove(key);
+        _cacheTimestamps.remove(key);
       }
     }
+
+    // Check persistent storage
+    try {
+      final cachedStr = _prefs.getString('offline_$key');
+      if (cachedStr != null) {
+        final cacheData = json.decode(cachedStr) as Map<String, dynamic>;
+        if (_isCacheValid(cacheData)) {
+          _memoryCache[key] = cacheData;
+          _cacheTimestamps[key] = DateTime.parse(cacheData['timestamp']);
+          return cacheData['value'] as T;
+        } else {
+          await _prefs.remove('offline_$key');
+        }
+      }
+    } catch (e) {
+      debugLog('StorageService', 'Error reading offline data: $e');
+      await _prefs.remove('offline_$key');
+    }
+
     return null;
   }
 
-  // App State
-  Future<void> saveLastAppState(String state) async {
-    await _prefs.setString('last_app_state', state);
+  bool _isCacheValid(Map<String, dynamic> cacheData) {
+    try {
+      final timestamp = DateTime.parse(cacheData['timestamp']);
+      final ttl =
+          Duration(seconds: cacheData['ttl'] ?? _defaultCacheTTL.inSeconds);
+      return DateTime.now().difference(timestamp) <= ttl;
+    } catch (e) {
+      return false;
+    }
   }
 
-  Future<String?> getLastAppState() async {
-    return _prefs.getString('last_app_state');
+  Future<void> _removeOfflineData(String key) async {
+    await ensureInitialized();
+    _memoryCache.remove(key);
+    _cacheTimestamps.remove(key);
+    await _prefs.remove('offline_$key');
   }
 
-  Future<void> clearAll() async {
-    debugLog('StorageService', 'Clearing all storage');
+  // 📝 Data Management
+  Future<void> saveData<T>(String key, T data,
+      {Duration? ttl, bool syncWithBackend = false}) async {
+    await ensureInitialized();
 
-    // Clear secure storage (tokens)
-    await _secureStorage.deleteAll();
+    final cacheData = {
+      'value': data,
+      'timestamp': DateTime.now().toIso8601String(),
+      'ttl': (ttl ?? Duration(days: 30)).inSeconds,
+      'synced':
+          !syncWithBackend, // If syncWithBackend is true, mark as not synced
+    };
 
-    // Clear user data but NOT device ID
-    await _prefs.remove(AppConstants.userDataKey);
-    await _prefs.remove(AppConstants.themeModeKey);
-    await _prefs.remove(AppConstants.notificationsEnabledKey);
-    // DO NOT clear device ID: await _prefs.remove(AppConstants.deviceIdKey);
+    if (data is Map || data is List) {
+      await _prefs.setString('data_$key', json.encode(cacheData));
+    } else if (data is String) {
+      await _prefs.setString('data_$key', json.encode(cacheData));
+    } else if (data is int) {
+      await _prefs.setInt('data_$key', data);
+    } else if (data is double) {
+      await _prefs.setDouble('data_$key', data);
+    } else if (data is bool) {
+      await _prefs.setBool('data_$key', data);
+    }
 
-    debugLog('StorageService', 'Storage cleared (device ID preserved)');
+    debugLog('StorageService', '💾 Saved data: $key');
   }
 
-  // Video Cache Management
-  Future<void> saveVideoCacheInfo(String videoId, String path, int size) async {
-    final cacheKey = 'video_cache_$videoId';
+  Future<T?> getData<T>(String key) async {
+    await ensureInitialized();
+
+    try {
+      if (T == Map || T == List) {
+        final cachedStr = _prefs.getString('data_$key');
+        if (cachedStr != null) {
+          final cacheData = json.decode(cachedStr) as Map<String, dynamic>;
+          if (_isCacheValid(cacheData)) {
+            return cacheData['value'] as T;
+          } else {
+            await _prefs.remove('data_$key');
+          }
+        }
+      } else if (T == String) {
+        return _prefs.getString('data_$key') as T?;
+      } else if (T == int) {
+        return _prefs.getInt('data_$key') as T?;
+      } else if (T == double) {
+        return _prefs.getDouble('data_$key') as T?;
+      } else if (T == bool) {
+        return _prefs.getBool('data_$key') as T?;
+      }
+    } catch (e) {
+      debugLog('StorageService', 'Error getting data $key: $e');
+    }
+
+    return null;
+  }
+
+  Future<void> removeData(String key) async {
+    await ensureInitialized();
+    await _prefs.remove('data_$key');
+  }
+
+  // ⏰ Session Management
+  Future<void> saveSessionStart() async {
+    await ensureInitialized();
+    await _prefs.setString('session_start', DateTime.now().toIso8601String());
+    debugLog('StorageService', '⏰ Session start saved');
+  }
+
+  Future<bool> isSessionValid(Duration sessionDuration) async {
+    await ensureInitialized();
+
+    final sessionStartStr = _prefs.getString('session_start');
+    if (sessionStartStr == null) {
+      debugLog('StorageService', '⚠️ No session start found');
+      return false;
+    }
+
+    try {
+      final sessionStart = DateTime.parse(sessionStartStr);
+      final sessionAge = DateTime.now().difference(sessionStart);
+      final isValid = sessionAge <= sessionDuration;
+
+      debugLog('StorageService',
+          '⏰ Session check: age ${sessionAge.inHours}h, valid: $isValid');
+
+      return isValid;
+    } catch (e) {
+      debugLog('StorageService', '❌ Session check error: $e');
+      return false;
+    }
+  }
+
+  // 🏫 School Management
+  Future<void> saveSelectedSchool(int schoolId) async {
+    await ensureInitialized();
+    await _prefs.setInt('selected_school_id', schoolId);
+    await _setLastUpdate('school');
+    debugLog('StorageService', '🏫 School saved: $schoolId');
+  }
+
+  Future<int?> getSelectedSchool() async {
+    await ensureInitialized();
+    return _prefs.getInt('selected_school_id');
+  }
+
+  Future<void> clearSelectedSchool() async {
+    await ensureInitialized();
+    await _prefs.remove('selected_school_id');
+    debugLog('StorageService', '🧹 Selected school cleared');
+  }
+
+  // 📱 FCM Token
+  Future<void> saveFcmToken(String fcmToken) async {
+    await ensureInitialized();
+    await _prefs.setString('fcm_token', fcmToken);
+    debugLog('StorageService', '📱 FCM token saved');
+  }
+
+  Future<String?> getFcmToken() async {
+    await ensureInitialized();
+    return _prefs.getString('fcm_token');
+  }
+
+  // 🔔 Notifications
+  Future<void> saveNotificationPreferences(bool enabled) async {
+    await ensureInitialized();
+    await _prefs.setBool('notifications_enabled', enabled);
+    debugLog('StorageService', '🔔 Notification preferences saved: $enabled');
+  }
+
+  Future<bool> getNotificationPreferences() async {
+    await ensureInitialized();
+    return _prefs.getBool('notifications_enabled') ?? true;
+  }
+
+  // 📝 Registration
+  Future<bool> hasCompletedRegistration() async {
+    await ensureInitialized();
+    final result = _prefs.getBool('registration_complete') ?? false;
+    debugLog('StorageService', '📝 Registration complete: $result');
+    return result;
+  }
+
+  Future<void> markRegistrationComplete() async {
+    await ensureInitialized();
+    await _prefs.setBool('registration_complete', true);
+    debugLog('StorageService', '✅ Registration marked as complete');
+  }
+
+  Future<void> clearRegistrationComplete() async {
+    await ensureInitialized();
+    await _prefs.remove('registration_complete');
+    debugLog('StorageService', '🧹 Registration complete cleared');
+  }
+
+  // 🔄 Last Update Tracking
+  Future<void> _setLastUpdate(String type) async {
+    await ensureInitialized();
     await _prefs.setString(
-      cacheKey,
-      json.encode({
-        'path': path,
-        'size': size,
-        'cached_at': DateTime.now().toIso8601String(),
-        'accessed_at': DateTime.now().toIso8601String(),
-      }),
-    );
+        'last_update_$type', DateTime.now().toIso8601String());
   }
 
-  Future<Map<String, dynamic>?> getVideoCacheInfo(String videoId) async {
-    final cacheKey = 'video_cache_$videoId';
-    final infoJson = _prefs.getString(cacheKey);
-    if (infoJson != null) {
+  Future<DateTime?> getLastUpdate(String type) async {
+    await ensureInitialized();
+    final lastUpdateStr = _prefs.getString('last_update_$type');
+    if (lastUpdateStr != null) {
       try {
-        return json.decode(infoJson);
+        return DateTime.parse(lastUpdateStr);
       } catch (e) {
-        return null;
+        debugLog('StorageService', 'Error parsing last update: $e');
       }
     }
     return null;
   }
 
-  Future<void> updateVideoAccessTime(String videoId) async {
-    final cacheKey = 'video_cache_$videoId';
-    final infoJson = _prefs.getString(cacheKey);
-    if (infoJson != null) {
-      try {
-        final info = json.decode(infoJson);
-        info['accessed_at'] = DateTime.now().toIso8601String();
-        await _prefs.setString(cacheKey, json.encode(info));
-      } catch (e) {
-        // Ignore error
+  // 🧹 Cleanup
+  Future<void> clearAllUserData() async {
+    await ensureInitialized();
+    debugLog('StorageService', '🚪 Clearing all user storage');
+
+    await _secureStorage.deleteAll();
+    await _clearAllOfflineData();
+
+    final keys = _prefs.getKeys();
+    for (final key in keys) {
+      if (key.startsWith('user_') ||
+          key == 'session_start' ||
+          key == 'registration_complete' ||
+          key == 'selected_school_id' ||
+          key == 'fcm_token' ||
+          key == 'notifications_enabled' ||
+          key.startsWith('last_update_')) {
+        await _prefs.remove(key);
+        debugLog('StorageService', '🧹 Removed: $key');
+      }
+    }
+
+    _memoryCache.clear();
+    _cacheTimestamps.clear();
+
+    debugLog('StorageService', '✅ All user data cleared');
+  }
+
+  Future<void> _clearAllOfflineData() async {
+    final keys = _prefs.getKeys();
+    for (final key in keys) {
+      if (key.startsWith('offline_') || key.startsWith('data_')) {
+        await _prefs.remove(key);
       }
     }
   }
 
-  Future<void> removeVideoCache(String videoId) async {
-    final cacheKey = 'video_cache_$videoId';
-    await _prefs.remove(cacheKey);
+  // 📊 Statistics
+  Future<Map<String, dynamic>> getStorageStats() async {
+    await ensureInitialized();
+
+    final keys = _prefs.getKeys();
+    int offlineCount = 0;
+    int dataCount = 0;
+    int otherCount = 0;
+
+    for (final key in keys) {
+      if (key.startsWith('offline_')) {
+        offlineCount++;
+      } else if (key.startsWith('data_')) {
+        dataCount++;
+      } else {
+        otherCount++;
+      }
+    }
+
+    return {
+      'total_keys': keys.length,
+      'offline_data': offlineCount,
+      'app_data': dataCount,
+      'other_data': otherCount,
+      'memory_cache': _memoryCache.length,
+      'has_token': (await getToken()) != null,
+      'has_user': (await getUser()) != null,
+      'initialized': _initialized,
+    };
   }
 
-  Future<List<String>> getAllCachedVideoIds() async {
+  // 🔄 Cache Management
+  Future<void> clearExpiredCache() async {
+    await ensureInitialized();
+    debugLog('StorageService', '🧹 Clearing expired cache');
+
     final keys = _prefs.getKeys();
-    return keys
-        .where((key) => key.startsWith('video_cache_'))
-        .map((key) => key.replaceFirst('video_cache_', ''))
-        .toList();
+    int clearedCount = 0;
+
+    for (final key in keys) {
+      if (key.startsWith('offline_') || key.startsWith('data_')) {
+        try {
+          final cachedStr = _prefs.getString(key);
+          if (cachedStr != null) {
+            final cacheData = json.decode(cachedStr) as Map<String, dynamic>;
+            if (!_isCacheValid(cacheData)) {
+              await _prefs.remove(key);
+              clearedCount++;
+            }
+          }
+        } catch (e) {
+          await _prefs.remove(key);
+          clearedCount++;
+        }
+      }
+    }
+
+    // Clear memory cache
+    final now = DateTime.now();
+    final expiredKeys = <String>[];
+
+    for (final entry in _cacheTimestamps.entries) {
+      if (_memoryCache.containsKey(entry.key)) {
+        final cacheData = _memoryCache[entry.key] as Map<String, dynamic>;
+        if (!_isCacheValid(cacheData)) {
+          expiredKeys.add(entry.key);
+        }
+      }
+    }
+
+    for (final key in expiredKeys) {
+      _memoryCache.remove(key);
+      _cacheTimestamps.remove(key);
+    }
+
+    debugLog('StorageService', '✅ Cleared $clearedCount expired cache items');
+  }
+
+  // 🗑️ Bulk Operations
+  Future<void> clearCacheByPrefix(String prefix) async {
+    await ensureInitialized();
+    debugLog('StorageService', '🧹 Clearing cache with prefix: $prefix');
+
+    final keys = _prefs.getKeys();
+    for (final key in keys) {
+      if (key.startsWith('offline_$prefix') || key.startsWith('data_$prefix')) {
+        await _prefs.remove(key);
+
+        final memoryKey =
+            key.replaceFirst('offline_', '').replaceFirst('data_', '');
+        _memoryCache.remove(memoryKey);
+        _cacheTimestamps.remove(memoryKey);
+      }
+    }
   }
 }

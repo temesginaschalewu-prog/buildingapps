@@ -1,18 +1,24 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../services/device_service.dart';
 import '../models/course_model.dart';
 import '../utils/helpers.dart';
 
 class CourseProvider with ChangeNotifier {
   final ApiService apiService;
+  final DeviceService deviceService;
 
   List<Course> _courses = [];
   Map<int, List<Course>> _coursesByCategory = {};
   Map<int, bool> _hasLoadedCategory = {};
+  Map<int, bool> _isLoadingCategory = {};
+  Map<int, DateTime> _lastLoadedTime = {};
   bool _isLoading = false;
   String? _error;
 
-  CourseProvider({required this.apiService});
+  static const Duration _cacheDuration = Duration(minutes: 10);
+
+  CourseProvider({required this.apiService, required this.deviceService});
 
   List<Course> get courses => List.unmodifiable(_courses);
   bool get isLoading => _isLoading;
@@ -26,60 +32,96 @@ class CourseProvider with ChangeNotifier {
     return _hasLoadedCategory[categoryId] ?? false;
   }
 
+  bool isLoadingCategory(int categoryId) {
+    return _isLoadingCategory[categoryId] ?? false;
+  }
+
   Future<void> loadCoursesByCategory(int categoryId,
-      {bool forceRefresh = false}) async {
-    // If we already have data and not forcing refresh, just return cached data
-    if (_hasLoadedCategory[categoryId] == true &&
-        !forceRefresh &&
-        !_isLoading) {
+      {bool forceRefresh = false, bool? hasAccess}) async {
+    if (_isLoadingCategory[categoryId] == true && !forceRefresh) {
       return;
     }
 
+    if (!forceRefresh && _hasLoadedCategory[categoryId] == true) {
+      final lastLoaded = _lastLoadedTime[categoryId];
+      if (lastLoaded != null &&
+          DateTime.now().difference(lastLoaded) < _cacheDuration) {
+        debugLog('CourseProvider',
+            '✅ Using cached courses for category: $categoryId');
+        return;
+      }
+    }
+
+    _isLoadingCategory[categoryId] = true;
     _isLoading = true;
     _error = null;
     _notifySafely();
 
     try {
       debugLog('CourseProvider', 'Loading courses for category: $categoryId');
+
+      if (!forceRefresh) {
+        final cachedCourses = await deviceService
+            .getCacheItem<List<Course>>('courses_$categoryId');
+        if (cachedCourses != null) {
+          _coursesByCategory[categoryId] = cachedCourses;
+          _hasLoadedCategory[categoryId] = true;
+          _lastLoadedTime[categoryId] = DateTime.now();
+          _updateMainCoursesList(cachedCourses);
+          debugLog('CourseProvider',
+              '✅ Loaded ${cachedCourses.length} courses from cache for category $categoryId');
+          return;
+        }
+      }
+
       final response = await apiService.getCoursesByCategory(categoryId);
 
       final responseData = response.data ?? {};
       final categoryData = responseData['category'] ?? {};
       final coursesData = responseData['courses'] ?? [];
 
-      bool categoryHasAccess = categoryData['has_access'] ?? false;
+      bool categoryHasAccess =
+          hasAccess ?? (categoryData['has_access'] ?? false);
 
       if (coursesData is List) {
         List<Course> parsedCourses = [];
 
         for (var courseData in coursesData) {
           try {
-            final course = Course.fromJson(courseData);
+            if (courseData is Map<String, dynamic>) {
+              final course = Course.fromJson(courseData);
 
-            parsedCourses.add(Course(
-              id: course.id,
-              name: course.name,
-              categoryId: course.categoryId,
-              description: course.description,
-              chapterCount: course.chapterCount,
-              access: categoryHasAccess ? 'full' : 'limited',
-              message: categoryHasAccess
-                  ? 'Full access to all content'
-                  : 'Limited access to free chapters only',
-              hasPendingPayment: false,
-              requiresPayment: !categoryHasAccess,
-            ));
+              parsedCourses.add(Course(
+                id: course.id,
+                name: course.name,
+                categoryId: course.categoryId,
+                description: course.description,
+                chapterCount: course.chapterCount,
+                access: categoryHasAccess ? 'full' : 'limited',
+                message: categoryHasAccess
+                    ? 'Full access to all content'
+                    : 'Limited access to free chapters only',
+                hasPendingPayment: false,
+                requiresPayment: !categoryHasAccess,
+              ));
+            }
           } catch (e) {
             debugLog('CourseProvider',
                 'Error parsing course: $e, data: $courseData');
           }
         }
 
+        await deviceService.saveCacheItem('courses_$categoryId', parsedCourses,
+            ttl: _cacheDuration);
+
         _coursesByCategory[categoryId] = parsedCourses;
         _hasLoadedCategory[categoryId] = true;
+        _lastLoadedTime[categoryId] = DateTime.now();
+
+        _updateMainCoursesList(parsedCourses);
 
         debugLog('CourseProvider',
-            'Parsed ${parsedCourses.length} courses for category $categoryId, access: $categoryHasAccess');
+            '✅ Parsed ${parsedCourses.length} courses for category $categoryId, access: $categoryHasAccess');
 
         if (parsedCourses.isEmpty) {
           debugLog(
@@ -90,28 +132,30 @@ class CourseProvider with ChangeNotifier {
             'Courses data is not a list: ${coursesData.runtimeType}');
         _coursesByCategory[categoryId] = [];
         _hasLoadedCategory[categoryId] = true;
+        _lastLoadedTime[categoryId] = DateTime.now();
       }
-
-      // Update main courses list without duplicates
-      final currentIds = _courses.map((c) => c.id).toSet();
-      final newCourses = _coursesByCategory[categoryId]!
-          .where((course) => !currentIds.contains(course.id))
-          .toList();
-      _courses.addAll(newCourses);
-
-      debugLog('CourseProvider',
-          'Loaded ${_coursesByCategory[categoryId]!.length} courses for category $categoryId');
     } catch (e) {
       _error = e.toString();
       debugLog('CourseProvider', 'loadCoursesByCategory error: $e');
-      // Keep existing data if available
-      if (!_hasLoadedCategory[categoryId]!) {
+
+      if (!(_hasLoadedCategory[categoryId] ?? false)) {
         _coursesByCategory[categoryId] = [];
         _hasLoadedCategory[categoryId] = true;
+        _lastLoadedTime[categoryId] = DateTime.now();
       }
     } finally {
+      _isLoadingCategory[categoryId] = false;
       _isLoading = false;
       _notifySafely();
+    }
+  }
+
+  void _updateMainCoursesList(List<Course> newCourses) {
+    final currentIds = _courses.map((c) => c.id).toSet();
+    for (final course in newCourses) {
+      if (!currentIds.contains(course.id)) {
+        _courses.add(course);
+      }
     }
   }
 
@@ -121,33 +165,17 @@ class CourseProvider with ChangeNotifier {
       debugLog('CourseProvider',
           'Refreshing courses for category $categoryId with access: $hasAccess');
 
-      // Clear cache for this category
+      await deviceService.removeCacheItem('courses_$categoryId');
+
       _coursesByCategory.remove(categoryId);
       _hasLoadedCategory.remove(categoryId);
+      _isLoadingCategory.remove(categoryId);
+      _lastLoadedTime.remove(categoryId);
 
-      await loadCoursesByCategory(categoryId);
+      await loadCoursesByCategory(categoryId,
+          forceRefresh: true, hasAccess: hasAccess);
 
-      final courses = _coursesByCategory[categoryId] ?? [];
-      if (courses.isNotEmpty) {
-        final updatedCourses = courses
-            .map((course) => Course(
-                  id: course.id,
-                  name: course.name,
-                  categoryId: course.categoryId,
-                  description: course.description,
-                  chapterCount: course.chapterCount,
-                  access: hasAccess ? 'full' : 'limited',
-                  message: hasAccess
-                      ? 'Full access to all content'
-                      : 'Limited access to free chapters only',
-                  hasPendingPayment: false,
-                  requiresPayment: !hasAccess,
-                ))
-            .toList();
-
-        _coursesByCategory[categoryId] = updatedCourses;
-        _notifySafely();
-      }
+      debugLog('CourseProvider', '✅ Courses refreshed with access: $hasAccess');
     } catch (e) {
       debugLog('CourseProvider', 'refreshCoursesWithAccessCheck error: $e');
     }
@@ -161,10 +189,34 @@ class CourseProvider with ChangeNotifier {
     }
   }
 
-  void clearCourses() {
-    _courses = [];
-    _coursesByCategory = {};
-    _hasLoadedCategory = {};
+  Future<void> clearUserData() async {
+    debugLog('CourseProvider', 'Clearing course data');
+
+    for (final categoryId in _coursesByCategory.keys) {
+      await deviceService.removeCacheItem('courses_$categoryId');
+    }
+
+    _courses.clear();
+    _coursesByCategory.clear();
+    _hasLoadedCategory.clear();
+    _isLoadingCategory.clear();
+    _lastLoadedTime.clear();
+
+    _notifySafely();
+  }
+
+  void clearCoursesForCategory(int categoryId) async {
+    await deviceService.removeCacheItem('courses_$categoryId');
+
+    final categoryCourses = _coursesByCategory[categoryId] ?? [];
+    _courses
+        .removeWhere((course) => categoryCourses.any((c) => c.id == course.id));
+
+    _coursesByCategory.remove(categoryId);
+    _hasLoadedCategory.remove(categoryId);
+    _isLoadingCategory.remove(categoryId);
+    _lastLoadedTime.remove(categoryId);
+
     _notifySafely();
   }
 
