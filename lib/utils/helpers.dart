@@ -10,26 +10,62 @@ void debugLog(String tag, String message) {
 }
 
 void showSnackBar(BuildContext context, String message,
-    {bool isError = false, int durationSeconds = 1}) {
-  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    {bool isError = false, int durationSeconds = 2}) {
+  // Check if context is still mounted/valid
+  if (!context.mounted) return;
 
-  final snackBar = SnackBar(
-    content: Text(message),
-    backgroundColor: isError ? Colors.red : Colors.green,
-    behavior: SnackBarBehavior.floating,
-    duration: Duration(seconds: durationSeconds),
-    action: SnackBarAction(
-      label: 'OK',
-      textColor: Colors.white,
-      onPressed: () {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      },
-    ),
-  );
+  try {
+    // Hide any current snackbar first
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
 
-  ScaffoldMessenger.of(context).showSnackBar(snackBar);
+    final snackBar = SnackBar(
+      content: Text(message),
+      backgroundColor: isError ? Colors.red : Colors.green,
+      behavior: SnackBarBehavior.floating,
+      duration: Duration(seconds: durationSeconds),
+      // Remove the action button since you can swipe to dismiss
+      // This prevents the "OK" button from causing errors
+      action: SnackBarAction(
+        label: 'OK',
+        textColor: Colors.white,
+        onPressed: () {
+          // Safe check before using context
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          }
+        },
+      ),
+    );
+
+    ScaffoldMessenger.of(context).showSnackBar(snackBar);
+  } catch (e) {
+    debugLog('Helpers', 'Error showing snackbar: $e');
+  }
 }
 
+// Alternative simpler snackbar without action button
+void showSimpleSnackBar(BuildContext context, String message,
+    {bool isError = false, int durationSeconds = 2}) {
+  if (!context.mounted) return;
+
+  try {
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+    final snackBar = SnackBar(
+      content: Text(message),
+      backgroundColor: isError ? Colors.red : Colors.green,
+      behavior: SnackBarBehavior.floating,
+      duration: Duration(seconds: durationSeconds),
+      // No action button, just swipe to dismiss
+    );
+
+    ScaffoldMessenger.of(context).showSnackBar(snackBar);
+  } catch (e) {
+    debugLog('Helpers', 'Error showing simple snackbar: $e');
+  }
+}
+
+// Rest of the file remains the same...
 double ensureDouble(dynamic value) {
   if (value is double) return value;
   if (value is int) return value.toDouble();

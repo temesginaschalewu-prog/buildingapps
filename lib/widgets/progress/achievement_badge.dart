@@ -12,6 +12,7 @@ class AchievementBadge extends StatelessWidget {
   final Color color;
   final double progress;
   final bool unlocked;
+  final DateTime? earnedDate;
 
   const AchievementBadge({
     super.key,
@@ -21,6 +22,7 @@ class AchievementBadge extends StatelessWidget {
     required this.color,
     this.progress = 1.0,
     this.unlocked = false,
+    this.earnedDate,
   });
 
   @override
@@ -180,6 +182,24 @@ class AchievementBadge extends StatelessWidget {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
+          if (unlocked && earnedDate != null)
+            Padding(
+              padding: EdgeInsets.only(
+                top: ScreenSize.responsiveValue(
+                  context: context,
+                  mobile: AppThemes.spacingS,
+                  tablet: AppThemes.spacingM,
+                  desktop: AppThemes.spacingL,
+                ),
+              ),
+              child: Text(
+                _formatDate(earnedDate!),
+                style: AppTextStyles.labelSmall.copyWith(
+                  color: AppColors.getTextSecondary(context),
+                  fontSize: 10,
+                ),
+              ),
+            ),
           if (!unlocked && progress > 0)
             Padding(
               padding: EdgeInsets.only(
@@ -236,5 +256,16 @@ class AchievementBadge extends StatelessWidget {
           begin: const Offset(0.95, 0.95),
           end: const Offset(1, 1),
         );
+  }
+
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    final difference = now.difference(date);
+
+    if (difference.inDays == 0) return 'Today';
+    if (difference.inDays == 1) return 'Yesterday';
+    if (difference.inDays < 7) return '${difference.inDays} days ago';
+
+    return '${date.day}/${date.month}/${date.year}';
   }
 }

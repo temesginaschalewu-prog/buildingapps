@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - master
+  workflow_dispatch:  # Allow manual trigger
 
 jobs:
   build:
@@ -16,14 +17,52 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          cache: true
 
-      - run: flutter config --enable-windows-desktop
+      - name: Enable Windows Desktop
+        run: flutter config --enable-windows-desktop
 
-      - run: flutter pub get
+      - name: Clean
+        run: flutter clean
 
-      - run: flutter build windows --release
+      - name: Get dependencies
+        run: flutter pub get
 
-      - uses: actions/upload-artifact@v4
+      - name: Create .env file
+        run: |
+          echo "BASE_URL=https://family-academy-backend-a12l.onrender.com" > .env
+          echo "API_VERSION=v1" >> .env
+          echo "API_BASE_URL=https://family-academy-backend-a12l.onrender.com/api/v1" >> .env
+          echo "APP_NAME=Family Academy" >> .env
+          echo "APP_VERSION=1.4.2" >> .env
+          echo "APP_ENVIRONMENT=production" >> .env
+
+      - name: Build Windows Release
+        run: flutter build windows --release
+
+      - name: Create Installer Structure
+        run: |
+          mkdir installer
+          copy build\windows\x64\runner\Release\*.exe installer\
+          copy build\windows\x64\runner\Release\*.dll installer\
+          xcopy /E /I build\windows\x64\runner\Release\data installer\data\
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: windows-release
-          path: build/windows/x64/runner/Release/
+          name: family-academy-windows
+          path: installer/
+          compression-level: 9
+
+      - name: Create ZIP for easy download
+        run: |
+          cd installer
+          powershell Compress-Archive -Path * -DestinationPath ..\family-academy-windows.zip
+          cd ..
+
+      - name: Upload ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: family-academy-windows-zip
+          path: family-academy-windows.zip
+          compression-level: 9

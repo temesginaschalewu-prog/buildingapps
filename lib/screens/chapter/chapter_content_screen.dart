@@ -42,7 +42,6 @@ import 'package:lottie/lottie.dart';
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/themes/app_text_styles.dart';
 
-// Platform-specific imports
 import 'package:media_kit/media_kit.dart' as media_kit;
 import 'package:media_kit_video/media_kit_video.dart' as media_kit_video;
 
@@ -91,8 +90,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   media_kit_video.VideoController? _mediaKitVideoController;
   int? _currentPlayingVideoId;
   bool _isPlayingVideo = false;
+  bool _isVideoDialogOpen = false;
   bool _useMediaKit =
       Platform.isLinux || Platform.isMacOS || Platform.isWindows;
+  bool _isPlayerInitialized = false;
 
   final Map<int, String?> _selectedAnswers = {};
   final Map<int, bool> _showExplanation = {};
@@ -139,20 +140,147 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
   @override
   void dispose() {
-    _disposeVideoPlayer();
-    _disposeMediaKitPlayer();
+    _disposeAllPlayers();
     _cleanupResources();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
-  void _disposeMediaKitPlayer() {
+  // FIXED: Comprehensive player disposal for all platforms
+  void _disposeAllPlayers() {
+    _isVideoDialogOpen = false;
+    _isPlayingVideo = false;
+    _isPlayerInitialized = false;
+
+    // Dispose MediaKit player first (if any)
     try {
-      _mediaKitVideoController = null;
-      _mediaKitPlayer?.dispose();
-      _mediaKitPlayer = null;
+      if (_mediaKitPlayer != null) {
+        // First pause to stop audio
+        _mediaKitPlayer?.pause();
+        // Then dispose
+        _mediaKitPlayer?.dispose();
+        _mediaKitPlayer = null;
+      }
     } catch (e) {
       debugLog('ChapterContent', 'Error disposing MediaKit player: $e');
+    } finally {
+      _mediaKitVideoController = null;
+    }
+
+    // Dispose video_player/chewie
+    try {
+      if (_chewieController != null) {
+        _chewieController?.pause();
+        _chewieController?.dispose();
+        _chewieController = null;
+      }
+
+      if (_videoController != null) {
+        _videoController?.pause();
+        _videoController?.dispose();
+        _videoController = null;
+      }
+    } catch (e) {
+      debugLog('ChapterContent', 'Error disposing video_player: $e');
+    }
+
+    // Ensure wakelock is disabled
+    try {
+      WakelockPlus.disable();
+    } catch (e) {
+      debugLog('ChapterContent', 'Error disabling wakelock: $e');
+    }
+
+    _currentPlayingVideoId = null;
+  }
+
+  // FIXED: Proper MediaKit player disposal
+  void _disposeMediaKitPlayer() {
+    try {
+      if (_mediaKitPlayer != null) {
+        // First pause the player to stop audio immediately
+        _mediaKitPlayer?.pause();
+
+        // Small delay to ensure pause completes
+        Future.delayed(const Duration(milliseconds: 100), () {
+          if (mounted) {
+            try {
+              _mediaKitPlayer?.dispose();
+            } catch (e) {
+              debugLog('ChapterContent', 'Error disposing MediaKit player: $e');
+            } finally {
+              _mediaKitPlayer = null;
+              _mediaKitVideoController = null;
+            }
+          } else {
+            // If widget is not mounted, dispose immediately
+            try {
+              _mediaKitPlayer?.dispose();
+            } catch (e) {
+              debugLog('ChapterContent', 'Error disposing MediaKit player: $e');
+            } finally {
+              _mediaKitPlayer = null;
+              _mediaKitVideoController = null;
+            }
+          }
+        });
+      } else {
+        _mediaKitVideoController = null;
+      }
+    } catch (e) {
+      debugLog('ChapterContent', 'Error in MediaKit player disposal: $e');
+    } finally {
+      _currentPlayingVideoId = null;
+      _isPlayingVideo = false;
+      _isVideoDialogOpen = false;
+      _isPlayerInitialized = false;
+
+      // Disable wakelock with error handling
+      try {
+        WakelockPlus.disable();
+      } catch (e) {
+        debugLog('ChapterContent', 'Error disabling wakelock: $e');
+      }
+    }
+  }
+
+  // FIXED: Proper video_player/chewie disposal
+  void _disposeVideoPlayer() {
+    try {
+      _isVideoDialogOpen = false;
+      _isPlayerInitialized = false;
+
+      if (_chewieController != null) {
+        try {
+          _chewieController?.pause();
+        } catch (e) {}
+        try {
+          _chewieController?.dispose();
+        } catch (e) {}
+        _chewieController = null;
+      }
+
+      if (_videoController != null) {
+        try {
+          _videoController?.pause();
+        } catch (e) {}
+        try {
+          _videoController?.dispose();
+        } catch (e) {}
+        _videoController = null;
+      }
+    } catch (e) {
+      debugLog('ChapterContent', 'Error disposing video player: $e');
+    } finally {
+      _currentPlayingVideoId = null;
+      _isPlayingVideo = false;
+
+      // Disable wakelock with error handling
+      try {
+        WakelockPlus.disable();
+      } catch (e) {
+        debugLog('ChapterContent', 'Error disabling wakelock: $e');
+      }
     }
   }
 
@@ -377,6 +505,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     }
   }
 
+  // FIXED: Check access logic - FREE chapters should ALWAYS be accessible
   Future<void> _checkAccessAndLoadData({bool forceRefresh = false}) async {
     final authProvider = context.read<AuthProvider>();
     final subscriptionProvider = context.read<SubscriptionProvider>();
@@ -401,7 +530,11 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       return;
     }
 
-    if (_category != null) {
+    // FIX: Chapter.isFree should ALWAYS override category subscription check
+    if (_chapter!.isFree) {
+      _hasAccess = true;
+      debugLog('ChapterContent', '✅ Chapter is FREE - granting access');
+    } else if (_category != null) {
       if (forceRefresh) {
         _hasAccess = await subscriptionProvider
             .checkHasActiveSubscriptionForCategory(_category!.id);
@@ -409,8 +542,11 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         _hasAccess = subscriptionProvider
             .hasActiveSubscriptionForCategory(_category!.id);
       }
+      debugLog('ChapterContent',
+          '📊 Chapter is PAID - checking subscription: $_hasAccess');
     } else {
-      _hasAccess = _chapter!.isFree;
+      _hasAccess = false;
+      debugLog('ChapterContent', '❌ No category found - access denied');
     }
 
     debugLog('ChapterContent',
@@ -519,62 +655,69 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   }
 
   void _pauseVideo() {
-    if (_useMediaKit) {
-      if (_mediaKitPlayer?.state.playing == true) {
-        _mediaKitPlayer?.pause();
+    if (!_isPlayingVideo || _isVideoDialogOpen) return;
+
+    try {
+      if (_useMediaKit) {
+        if (_mediaKitPlayer?.state.playing == true) {
+          _mediaKitPlayer?.pause();
+        }
+      } else {
+        if (_chewieController?.isPlaying == true) {
+          _chewieController?.pause();
+        }
       }
-    } else {
-      if (_chewieController?.isPlaying == true) {
-        _chewieController?.pause();
-      }
+    } catch (e) {
+      debugLog('ChapterContent', 'Error pausing video: $e');
     }
-    WakelockPlus.disable();
+
+    try {
+      WakelockPlus.disable();
+    } catch (e) {
+      debugLog('ChapterContent', 'Error disabling wakelock: $e');
+    }
   }
 
   void _resumeVideoIfNeeded() {
-    if (_useMediaKit) {
-      if (_mediaKitPlayer != null && !_mediaKitPlayer!.state.playing) {
-        _mediaKitPlayer?.play();
-      }
-    } else {
-      if (_chewieController != null && !_chewieController!.isPlaying) {
-        _chewieController?.play();
-      }
-    }
-    WakelockPlus.enable();
-  }
+    if (!_isPlayingVideo || _isVideoDialogOpen || !_isPlayerInitialized) return;
 
-  void _disposeVideoPlayer() {
     try {
       if (_useMediaKit) {
-        _disposeMediaKitPlayer();
+        if (_mediaKitPlayer != null && !_mediaKitPlayer!.state.playing) {
+          _mediaKitPlayer?.play();
+        }
       } else {
-        _chewieController?.pause();
-        _chewieController?.dispose();
-        _videoController?.dispose();
+        if (_chewieController != null && !_chewieController!.isPlaying) {
+          _chewieController?.play();
+        }
       }
     } catch (e) {
-      debugLog('ChapterContent', 'Error disposing video player: $e');
-    } finally {
-      _chewieController = null;
-      _videoController = null;
-      _mediaKitVideoController = null;
-      _mediaKitPlayer = null;
-      _currentPlayingVideoId = null;
-      _isPlayingVideo = false;
-      WakelockPlus.disable();
+      debugLog('ChapterContent', 'Error resuming video: $e');
+    }
+
+    try {
+      WakelockPlus.enable();
+    } catch (e) {
+      debugLog('ChapterContent', 'Error enabling wakelock: $e');
     }
   }
 
   Future<void> _playVideo(Video video) async {
-    if (_isPlayingVideo) {
-      _disposeVideoPlayer();
+    // If dialog is already open, don't open another
+    if (_isVideoDialogOpen) {
+      debugLog('ChapterContent', '⚠️ Video dialog already open');
+      return;
     }
+
+    // Clean up any existing player completely
+    _disposeAllPlayers();
 
     try {
       setState(() {
         _currentPlayingVideoId = video.id;
         _isPlayingVideo = true;
+        _isVideoDialogOpen = true;
+        _isPlayerInitialized = false;
       });
 
       final videoUrl = _cachedVideoPaths.containsKey(video.id)
@@ -591,11 +734,16 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       }
     } catch (e) {
       debugLog('ChapterContent', 'Video play error: $e');
+      setState(() {
+        _isVideoDialogOpen = false;
+        _isPlayingVideo = false;
+        _isPlayerInitialized = false;
+      });
 
       if (_useMediaKit) {
         debugLog('ChapterContent', 'Falling back to video_player');
         _useMediaKit = false;
-        await _playWithVideoPlayer(video, video.fullVideoUrl);
+        await _playVideo(video);
       } else {
         if (mounted) {
           showSnackBar(
@@ -604,7 +752,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
             isError: true,
           );
         }
-        _disposeVideoPlayer();
       }
     }
   }
@@ -686,12 +833,21 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       },
     );
 
-    await WakelockPlus.enable();
+    setState(() {
+      _isPlayerInitialized = true;
+    });
+
+    try {
+      await WakelockPlus.enable();
+    } catch (e) {
+      debugLog('ChapterContent', 'Error enabling wakelock: $e');
+    }
 
     if (!mounted) return;
 
     await showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (context) => Dialog(
         insetPadding: EdgeInsets.all(ScreenSize.responsiveValue(
           context: context,
@@ -719,6 +875,12 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   child: IconButton(
                     icon: const Icon(Icons.close, color: Colors.white),
                     onPressed: () {
+                      // FIX: Pause immediately when X is pressed
+                      if (_chewieController != null) {
+                        try {
+                          _chewieController?.pause();
+                        } catch (e) {}
+                      }
                       Navigator.pop(context);
                       _onVideoClosed(video);
                     },
@@ -732,10 +894,12 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     );
   }
 
+  // FIXED: Updated MediaKit player with proper pause on close
   Future<void> _playWithMediaKit(Video video, String videoUrl) async {
     debugLog('ChapterContent', 'Playing with MediaKit');
 
-    _mediaKitPlayer ??= media_kit.Player();
+    // Create fresh player
+    _mediaKitPlayer = media_kit.Player();
 
     _mediaKitVideoController = media_kit_video.VideoController(
       _mediaKitPlayer!,
@@ -763,12 +927,21 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       );
     }
 
-    await WakelockPlus.enable();
+    setState(() {
+      _isPlayerInitialized = true;
+    });
+
+    try {
+      await WakelockPlus.enable();
+    } catch (e) {
+      debugLog('ChapterContent', 'Error enabling wakelock: $e');
+    }
 
     if (!mounted) return;
 
     await showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (context) => Dialog(
         insetPadding: EdgeInsets.all(ScreenSize.responsiveValue(
           context: context,
@@ -798,7 +971,15 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   ),
                   child: IconButton(
                     icon: const Icon(Icons.close, color: Colors.white),
-                    onPressed: () {
+                    onPressed: () async {
+                      // FIX: Pause immediately when X is pressed
+                      if (_mediaKitPlayer != null) {
+                        try {
+                          await _mediaKitPlayer!.pause();
+                        } catch (e) {
+                          debugLog('ChapterContent', 'Error pausing: $e');
+                        }
+                      }
                       Navigator.pop(context);
                       _onVideoClosed(video);
                     },
@@ -813,6 +994,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   }
 
   Future<void> _onVideoClosed(Video video) async {
+    setState(() {
+      _isVideoDialogOpen = false;
+    });
+
     try {
       final videoProvider = context.read<VideoProvider>();
       final progressProvider = context.read<ProgressProvider>();
@@ -820,18 +1005,26 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       int progress = 0;
 
       if (_useMediaKit && _mediaKitPlayer != null) {
-        final position = _mediaKitPlayer!.state.position;
-        final duration = _mediaKitPlayer!.state.duration;
-        progress = duration.inSeconds > 0
-            ? (position.inSeconds / duration.inSeconds * 100).toInt()
-            : 0;
+        try {
+          final position = _mediaKitPlayer!.state.position;
+          final duration = _mediaKitPlayer!.state.duration;
+          progress = duration.inSeconds > 0
+              ? (position.inSeconds / duration.inSeconds * 100).toInt()
+              : 0;
+        } catch (e) {
+          debugLog('ChapterContent', 'Error getting MediaKit progress: $e');
+        }
       } else if (_videoController != null &&
           _videoController!.value.isInitialized) {
-        final position = _videoController!.value.position;
-        final duration = _videoController!.value.duration;
-        progress = duration.inSeconds > 0
-            ? (position.inSeconds / duration.inSeconds * 100).toInt()
-            : 0;
+        try {
+          final position = _videoController!.value.position;
+          final duration = _videoController!.value.duration;
+          progress = duration.inSeconds > 0
+              ? (position.inSeconds / duration.inSeconds * 100).toInt()
+              : 0;
+        } catch (e) {
+          debugLog('ChapterContent', 'Error getting video_player progress: $e');
+        }
       }
 
       await progressProvider.saveChapterProgress(
@@ -845,14 +1038,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     } catch (e) {
       debugLog('ChapterContent', 'Error tracking video progress: $e');
     } finally {
-      _disposeVideoPlayer();
-
-      if (mounted) {
-        setState(() {
-          _isPlayingVideo = false;
-          _currentPlayingVideoId = null;
-        });
-      }
+      _disposeAllPlayers();
     }
   }
 
@@ -1117,70 +1303,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     });
   }
 
-  Widget _buildOfflineBanner() {
-    if (!_isOffline && !_hasCachedData) return const SizedBox.shrink();
-
-    return Container(
-      margin: EdgeInsets.symmetric(
-        horizontal: ScreenSize.responsiveValue(
-          context: context,
-          mobile: AppThemes.spacingL,
-          tablet: AppThemes.spacingXL,
-          desktop: AppThemes.spacingXXL,
-        ),
-        vertical: AppThemes.spacingS,
-      ),
-      padding: EdgeInsets.all(AppThemes.spacingM),
-      decoration: BoxDecoration(
-        color: _isOffline
-            ? AppColors.telegramYellow.withOpacity(0.1)
-            : AppColors.telegramBlue.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
-        border: Border.all(
-          color: _isOffline
-              ? AppColors.telegramYellow.withOpacity(0.3)
-              : AppColors.telegramBlue.withOpacity(0.3),
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            _isOffline
-                ? Icons.signal_wifi_off_rounded
-                : Icons.cloud_done_rounded,
-            color:
-                _isOffline ? AppColors.telegramYellow : AppColors.telegramBlue,
-            size: 20,
-          ),
-          SizedBox(width: AppThemes.spacingM),
-          Expanded(
-            child: Text(
-              _isOffline
-                  ? 'Offline mode - showing cached content'
-                  : 'Using cached data - refreshing in background',
-              style: AppTextStyles.bodySmall.copyWith(
-                color: _isOffline
-                    ? AppColors.telegramYellow
-                    : AppColors.telegramBlue,
-              ),
-            ),
-          ),
-          if (_isOffline)
-            TextButton(
-              onPressed: _manualRefresh,
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.telegramBlue,
-                padding: EdgeInsets.zero,
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: Text('Retry'),
-            ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildAccessDeniedScreen() {
     final isFree = _chapter?.isFree ?? false;
 
@@ -1339,7 +1461,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
   void _showPaymentDialog() {
     if (_category == null) {
-      showSnackBar(context, 'Category not found', isError: true);
+      showSimpleSnackBar(context, 'Category not found', isError: true);
       return;
     }
 
@@ -2665,7 +2787,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       ),
       body: Column(
         children: [
-          _buildOfflineBanner(),
           Expanded(
             child: TabBarView(
               controller: _tabController,
@@ -2698,10 +2819,10 @@ class NoteDetailScreen extends StatelessWidget {
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri);
       } else {
-        showSnackBar(context, 'Cannot open file', isError: true);
+        showSimpleSnackBar(context, 'Cannot open file', isError: true);
       }
     } catch (e) {
-      showSnackBar(context, 'Error opening file: $e', isError: true);
+      showSimpleSnackBar(context, 'Error opening file: $e', isError: true);
     }
   }
 

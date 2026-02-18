@@ -19,6 +19,7 @@ import '../../widgets/auth/password_field.dart';
 import '../../utils/api_response.dart';
 import '../../widgets/common/loading_indicator.dart';
 import '../../widgets/common/error_widget.dart';
+import '../../utils/router.dart'; // Add this import
 
 class DeviceChangeScreen extends StatefulWidget {
   const DeviceChangeScreen({super.key});
@@ -74,10 +75,8 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
   }
 
   void _initializeArgs() {
-    // CRITICAL FIX: Try both GoRouter and ModalRoute for arguments
     Map<String, dynamic>? routeArgs;
 
-    // Try GoRouter first
     try {
       final goRouter = GoRouter.of(context);
       final state = goRouter.routerDelegate.currentConfiguration;
@@ -91,7 +90,6 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
       debugLog('DeviceChangeScreen', '⚠️ Error getting GoRouter args: $e');
     }
 
-    // If not in GoRouter, try ModalRoute (for MaterialPage)
     if (routeArgs == null || routeArgs.isEmpty) {
       try {
         final modalRoute = ModalRoute.of(context);
@@ -149,7 +147,8 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
       debugLog('DeviceChangeScreen', '❌ No arguments provided');
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_mounted) {
-          showSnackBar(context, 'Invalid device change request', isError: true);
+          showSimpleSnackBar(context, 'Invalid device change request',
+              isError: true);
           context.go('/auth/login');
         }
       });
@@ -174,7 +173,8 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     } catch (e) {
       debugLog('DeviceChangeScreen', 'Error initializing device: $e');
       if (_mounted) {
-        showSnackBar(context, 'Failed to initialize device', isError: true);
+        showSimpleSnackBar(context, 'Failed to initialize device',
+            isError: true);
       }
     }
   }
@@ -182,7 +182,8 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
   Future<void> _approveDeviceChange() async {
     if (!_formKey.currentState!.validate()) return;
     if (!_confirmChange) {
-      showSnackBar(context, 'Please confirm the device change', isError: true);
+      showSimpleSnackBar(context, 'Please confirm the device change',
+          isError: true);
       return;
     }
     if (!_canChangeDevice) {
@@ -212,7 +213,9 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
           'DeviceChangeScreen', 'Approving device change for user: $_username');
 
       debugLog('DeviceChangeScreen', 'Calling device change approval API...');
+
       final response = await apiService.approveDeviceChange(
+        username: _username,
         password: password,
         deviceId: _newDeviceId ?? _deviceId,
       );
@@ -241,24 +244,34 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
 
           await deviceProvider.initialize();
 
-          showSnackBar(context, 'Device change approved successfully!');
+          showSimpleSnackBar(context, 'Device change approved successfully!');
 
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!_mounted) return;
+          // Set navigation flags BEFORE navigating
+          if (authProvider.currentUser?.schoolId == null) {
+            appRouter.setNavigatingToSchoolSelection(true);
+            appRouter.setPendingDestination('/school-selection');
+          } else {
+            appRouter.setNavigatingToHome(true);
+            appRouter.setPendingDestination('/');
+          }
 
-            if (authProvider.currentUser?.schoolId == null) {
-              context.go('/school-selection');
-            } else {
-              context.go('/');
-            }
-          });
+          // Small delay to ensure state updates
+          await Future.delayed(const Duration(milliseconds: 100));
+
+          if (!_mounted) return;
+
+          if (authProvider.currentUser?.schoolId == null) {
+            context.go('/school-selection');
+          } else {
+            context.go('/');
+          }
         } else {
           if (_mounted) {
             setState(() {
               _error =
                   loginResult['message'] ?? 'Login after device change failed';
             });
-            showSnackBar(context, _error!, isError: true);
+            showSimpleSnackBar(context, _error!, isError: true);
           }
         }
       } else {
@@ -266,7 +279,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
           setState(() {
             _error = response.message ?? 'Device change approval failed';
           });
-          showSnackBar(context, _error!, isError: true);
+          showSimpleSnackBar(context, _error!, isError: true);
         }
       }
     } catch (e) {
@@ -290,7 +303,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
         setState(() {
           _error = errorMessage;
         });
-        showSnackBar(context, errorMessage, isError: true);
+        showSimpleSnackBar(context, errorMessage, isError: true);
       }
     } finally {
       if (_mounted) {
@@ -364,7 +377,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
                     child: ElevatedButton(
                       onPressed: () {
                         Navigator.pop(context);
-                        // Clear device change requirement before navigating
+
                         context
                             .read<AuthProvider>()
                             .clearDeviceChangeRequirement();
@@ -508,7 +521,6 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     );
   }
 
-  // ⚠️ Warning Banner
   Widget _buildWarningBanner() {
     return Container(
       padding: EdgeInsets.all(AppThemes.spacingXL),
@@ -522,7 +534,6 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
       ),
       child: Row(
         children: [
-          // Animated warning icon
           AnimatedBuilder(
             animation: _pulseAnimationController,
             builder: (context, child) {
@@ -543,9 +554,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
               );
             },
           ),
-
           SizedBox(width: AppThemes.spacingXL),
-
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -575,7 +584,6 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
         );
   }
 
-  // 📱 Mobile Layout
   Widget _buildMobileLayout() {
     if (_isInitializing) {
       return _buildLoadingScreen();
@@ -618,20 +626,11 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _buildWarningBanner(),
-
                 SizedBox(height: AppThemes.spacingXL),
-
-                // Device Information Card
                 _buildDeviceInfoCard(),
-
                 SizedBox(height: AppThemes.spacingL),
-
-                // Device Limits Card
                 _buildDeviceLimitsCard(),
-
                 SizedBox(height: AppThemes.spacingXL),
-
-                // Password Field
                 PasswordField(
                   controller: _passwordController,
                   label: 'Verify Password',
@@ -643,20 +642,11 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
                     return null;
                   },
                 ),
-
                 SizedBox(height: AppThemes.spacingL),
-
-                // Confirmation Card
                 _buildConfirmationCard(),
-
                 SizedBox(height: AppThemes.spacingXXL),
-
-                // Action Buttons
                 _buildActionButtons(),
-
                 SizedBox(height: AppThemes.spacingL),
-
-                // Note
                 _buildNote(),
               ],
             ),
@@ -666,7 +656,6 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     );
   }
 
-  // 💻 Desktop/Tablet Layout
   Widget _buildDesktopLayout() {
     if (_isInitializing) {
       return _buildLoadingScreen();
@@ -708,12 +697,8 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 SizedBox(height: AppThemes.spacingXXL),
-
                 _buildWarningBanner(),
-
                 SizedBox(height: AppThemes.spacingXXXL),
-
-                // Two Column Layout
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -726,10 +711,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
                     ),
                   ],
                 ),
-
                 SizedBox(height: AppThemes.spacingXXXL),
-
-                // Password and Confirmation Card
                 Card(
                   shape: RoundedRectangleBorder(
                     borderRadius:
@@ -767,17 +749,10 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
                     ),
                   ),
                 ),
-
                 SizedBox(height: AppThemes.spacingXXXL),
-
-                // Action Buttons
                 _buildActionButtons(),
-
                 SizedBox(height: AppThemes.spacingXXL),
-
-                // Note
                 _buildNote(),
-
                 SizedBox(height: AppThemes.spacingXXXL),
               ],
             ),
@@ -787,7 +762,6 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     );
   }
 
-  // 📇 Device Info Card
   Widget _buildDeviceInfoCard() {
     return Container(
       padding: EdgeInsets.all(ScreenSize.responsiveValue(
@@ -906,7 +880,6 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     );
   }
 
-  // 📊 Device Limits Card
   Widget _buildDeviceLimitsCard() {
     final remainingColor = _remainingChanges == 0
         ? AppColors.telegramRed
@@ -1074,7 +1047,6 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     );
   }
 
-  // ✅ Confirmation Card
   Widget _buildConfirmationCard() {
     return Container(
       padding: EdgeInsets.all(AppThemes.spacingL),
@@ -1127,7 +1099,6 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     );
   }
 
-  // 🚀 Action Buttons
   Widget _buildActionButtons() {
     return Row(
       children: [
@@ -1217,7 +1188,6 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     );
   }
 
-  // 📝 Note
   Widget _buildNote() {
     return Container(
       padding: EdgeInsets.all(AppThemes.spacingL),
@@ -1251,7 +1221,6 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     );
   }
 
-  // 🦴 Loading Screen
   Widget _buildLoadingScreen() {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
@@ -1294,7 +1263,6 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     );
   }
 
-  // ❌ Error Screen
   Widget _buildErrorScreen() {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),

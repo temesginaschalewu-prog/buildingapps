@@ -85,7 +85,7 @@ class ChapterCard extends StatelessWidget {
 
     final category = categoryProvider.getCategoryById(categoryId);
     if (category == null) {
-      showSnackBar(context, 'Category not found', isError: true);
+      showSimpleSnackBar(context, 'Category not found', isError: true);
       return;
     }
 

@@ -105,6 +105,7 @@ class PaymentProvider with ChangeNotifier {
     required String paymentType,
     required String paymentMethod,
     required double amount,
+    String? accountHolderName,
     String? proofImagePath,
   }) async {
     if (_isLoading) return {'success': false, 'message': 'Already processing'};
@@ -115,13 +116,14 @@ class PaymentProvider with ChangeNotifier {
 
     try {
       debugLog('PaymentProvider',
-          'Submitting payment category:$categoryId amount:$amount method:$paymentMethod proof:$proofImagePath');
+          'Submitting payment category:$categoryId amount:$amount method:$paymentMethod accountHolder:$accountHolderName proof:$proofImagePath');
 
       final apiResponse = await apiService.submitPayment(
         categoryId: categoryId,
         paymentType: paymentType,
         paymentMethod: paymentMethod,
         amount: amount,
+        accountHolderName: accountHolderName,
         proofImagePath: proofImagePath,
       );
 

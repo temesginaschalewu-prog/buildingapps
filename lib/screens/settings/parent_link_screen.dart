@@ -120,7 +120,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
             Provider.of<ParentLinkProvider>(context, listen: false);
         try {
           await parentLinkProvider.unlinkParent();
-          showSnackBar(context, 'Parent unlinked successfully');
+          showSimpleSnackBar(context, 'Parent unlinked successfully');
         } catch (e) {
           showSnackBar(
             context,
@@ -323,7 +323,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                       child: ElevatedButton(
                         onPressed: () async {
                           await Clipboard.setData(ClipboardData(text: token));
-                          showSnackBar(context, 'Copied to clipboard');
+                          showSimpleSnackBar(context, 'Copied to clipboard');
                           GoRouter.of(context).pop();
                         },
                         style: ElevatedButton.styleFrom(

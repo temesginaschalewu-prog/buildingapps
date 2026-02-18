@@ -36,6 +36,12 @@ class ApiService {
   static const int _maxRetries = 3;
   static const int _baseRetryDelaySeconds = 2;
 
+  // Stream for device deactivation events
+  final StreamController<Map<String, dynamic>> _deviceDeactivationController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  Stream<Map<String, dynamic>> get deviceDeactivationStream =>
+      _deviceDeactivationController.stream;
+
   Dio get dio => _dio;
 
   ApiService() {
@@ -156,6 +162,40 @@ class ApiService {
 
     final path = error.requestOptions.path;
     final currentRetryCount = _retryCounts[path] ?? 0;
+
+    // Handle device deactivation (403 with action: device_deactivated)
+    if (error.response?.statusCode == 403) {
+      final responseData = error.response?.data;
+      if (responseData is Map &&
+          responseData['action'] == 'device_deactivated') {
+        debugLog(
+            'ApiService', '🚫 Device has been deactivated - forcing logout');
+
+        // Emit device deactivation event
+        _deviceDeactivationController.add({
+          'message': responseData['message'] ?? 'Device has been deactivated',
+          'action': 'device_deactivated',
+          'forceLogout': true,
+          'timestamp': DateTime.now().toIso8601String(),
+        });
+
+        // Clear all local data
+        await _clearUserDataOnly();
+
+        // Return a special response that can be caught by the provider
+        handler.resolve(Response(
+          requestOptions: error.requestOptions,
+          statusCode: 403,
+          data: {
+            'success': false,
+            'message': responseData['message'] ?? 'Device deactivated',
+            'action': 'device_deactivated',
+            'forceLogout': true,
+          },
+        ));
+        return;
+      }
+    }
 
     // Handle rate limiting (429)
     if (error.response?.statusCode == 429) {
@@ -809,38 +849,6 @@ class ApiService {
     }
   }
 
-  Future<ApiResponse<Map<String, dynamic>>> submitDeviceChangePayment({
-    required String username,
-    required String password,
-    required String paymentMethod,
-    required double amount,
-    required String proofImagePath,
-    required String deviceId,
-  }) async {
-    try {
-      final response = await _dio.post(
-        AppConstants.submitPaymentEndpoint,
-        data: {
-          'username': username,
-          'password': password,
-          'payment_method': paymentMethod,
-          'payment_type': 'device_change',
-          'amount': amount,
-          'proof_image_path': proofImagePath,
-          'device_id': deviceId,
-        },
-      );
-      return ApiResponse.fromJson(
-          response.data, (data) => data as Map<String, dynamic>);
-    } on DioException catch (e) {
-      throw ApiError(
-        message: e.response?.data['message'] ??
-            'Failed to submit device change payment',
-        statusCode: e.response?.statusCode,
-      );
-    }
-  }
-
   Future<ApiResponse<Map<String, dynamic>>> getCoursesByCategory(
       int categoryId) async {
     try {
@@ -1273,11 +1281,12 @@ class ApiService {
     required String paymentType,
     required String paymentMethod,
     required double amount,
+    String? accountHolderName,
     String? proofImagePath,
   }) async {
     try {
       debugLog('ApiService',
-          'Submitting payment: category=$categoryId, amount=$amount, method=$paymentMethod, proof=$proofImagePath');
+          'Submitting payment: category=$categoryId, amount=$amount, method=$paymentMethod, accountHolder=$accountHolderName, proof=$proofImagePath');
 
       final response = await _dio.post(
         AppConstants.submitPaymentEndpoint,
@@ -1286,6 +1295,7 @@ class ApiService {
           'payment_type': paymentType,
           'payment_method': paymentMethod,
           'amount': amount,
+          'account_holder_name': accountHolderName,
           'proof_image_path': proofImagePath,
         },
       );
@@ -2081,6 +2091,54 @@ class ApiService {
     }
   }
 
+  Future<ApiResponse<void>> saveUserProgress({
+    required int chapterId,
+    int? videoProgress,
+    bool? notesViewed,
+    int? questionsAttempted,
+    int? questionsCorrect,
+  }) async {
+    try {
+      final data = {
+        'chapter_id': chapterId,
+        if (videoProgress != null) 'video_progress': videoProgress,
+        if (notesViewed != null) 'notes_viewed': notesViewed ? 1 : 0,
+        if (questionsAttempted != null)
+          'questions_attempted': questionsAttempted,
+        if (questionsCorrect != null) 'questions_correct': questionsCorrect,
+      };
+
+      debugLog('ApiService', 'Saving progress: $data');
+
+      final response = await _dio.post('/progress/save', data: data);
+
+      debugLog('ApiService', 'Save progress response: ${response.data}');
+
+      if (response.data is Map && response.data['success'] == true) {
+        return ApiResponse(
+            success: true,
+            message: response.data['message'] ?? 'Progress saved');
+      } else {
+        return ApiResponse(
+            success: false,
+            message: response.data['message'] ?? 'Failed to save progress');
+      }
+    } on DioException catch (e) {
+      debugLog('ApiService', 'Save progress error: ${e.response?.data}');
+
+      // If it's a 429 (rate limit), return success to avoid breaking the UI
+      if (e.response?.statusCode == 429) {
+        return ApiResponse(
+            success: true, message: 'Progress saved locally (rate limited)');
+      }
+
+      return ApiResponse(
+        success: false,
+        message: e.response?.data['message'] ?? 'Failed to save progress',
+      );
+    }
+  }
+
   Future<ApiResponse<Map<String, dynamic>>> getOverallProgress() async {
     try {
       final response = await _dio.get('/progress/overall');
@@ -2108,33 +2166,6 @@ class ApiService {
       throw ApiError(
         message:
             e.response?.data['message'] ?? 'Failed to fetch course progress',
-        statusCode: e.response?.statusCode,
-      );
-    }
-  }
-
-  Future<ApiResponse<void>> saveUserProgress({
-    required int chapterId,
-    int? videoProgress,
-    bool? notesViewed,
-    int? questionsAttempted,
-    int? questionsCorrect,
-  }) async {
-    try {
-      final data = {
-        'chapter_id': chapterId,
-        if (videoProgress != null) 'video_progress': videoProgress,
-        if (notesViewed != null) 'notes_viewed': notesViewed ? 1 : 0,
-        if (questionsAttempted != null)
-          'questions_attempted': questionsAttempted,
-        if (questionsCorrect != null) 'questions_correct': questionsCorrect,
-      };
-
-      final response = await _dio.post('/progress/save', data: data);
-      return ApiResponse(success: true, message: response.data['message']);
-    } on DioException catch (e) {
-      throw ApiError(
-        message: e.response?.data['message'] ?? 'Failed to save progress',
         statusCode: e.response?.statusCode,
       );
     }
@@ -2198,6 +2229,7 @@ class ApiService {
   }
 
   Future<ApiResponse<Map<String, dynamic>>> approveDeviceChange({
+    required String username,
     required String password,
     required String deviceId,
   }) async {
@@ -2205,6 +2237,7 @@ class ApiService {
       final response = await _dio.post(
         '/auth/approve-device-change',
         data: {
+          'username': username,
           'password': password,
           'deviceId': deviceId,
         },

@@ -2,7 +2,6 @@ import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/themes/app_text_styles.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:lottie/lottie.dart';
 import '../../themes/app_themes.dart';
 import '../../utils/responsive.dart';
 import '../../models/streak_model.dart';
@@ -25,11 +24,11 @@ class StreakWidget extends StatelessWidget {
 
   Color _getStreakColor(BuildContext context) {
     final count = streak?.currentStreak ?? 0;
-    if (count >= 30) return Color(0xFFFF9500); // Orange for legendary
-    if (count >= 20) return Color(0xFFAF52DE); // Purple for superstar
-    if (count >= 10) return Color(0xFF34C759); // Green for dedicated
-    if (count >= 5) return Color(0xFF5AC8FA); // Light blue for consistent
-    return Color(0xFF2AABEE); // Blue for growing/new
+    if (count >= 30) return Color(0xFFFF9500);
+    if (count >= 20) return Color(0xFFAF52DE);
+    if (count >= 10) return Color(0xFF34C759);
+    if (count >= 5) return Color(0xFF5AC8FA);
+    return Color(0xFF2AABEE);
   }
 
   IconData _getStreakIcon(int count) {
@@ -52,7 +51,6 @@ class StreakWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDesktop = ScreenSize.isDesktop(context);
-    final isTablet = ScreenSize.isTablet(context);
     final count = streak?.currentStreak ?? 0;
     final weekStreak = streak?.weekStreak ?? 0;
     final streakColor = _getStreakColor(context);
@@ -86,7 +84,6 @@ class StreakWidget extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header with streak info
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -151,10 +148,7 @@ class StreakWidget extends StatelessWidget {
                 ),
               ],
             ),
-
             const SizedBox(height: AppThemes.spacingL),
-
-            // Weekly progress
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -208,16 +202,12 @@ class StreakWidget extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: AppThemes.spacingS),
-
-                // Weekly day indicators
                 if (!isDesktop) ...[
                   _buildWeekDays(context, weekStreak),
                   const SizedBox(height: AppThemes.spacingM),
                 ],
               ],
             ),
-
-            // Motivational message
             if (count > 0)
               Container(
                 margin: const EdgeInsets.only(top: AppThemes.spacingL),
@@ -248,8 +238,6 @@ class StreakWidget extends StatelessWidget {
                   ],
                 ),
               ),
-
-            // Desktop view: Show week days on the side
             if (isDesktop) ...[
               const SizedBox(height: AppThemes.spacingL),
               _buildWeekDays(context, weekStreak),
@@ -267,7 +255,7 @@ class StreakWidget extends StatelessWidget {
   Widget _buildWeekDays(BuildContext context, int weekStreak) {
     final days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
     final now = DateTime.now();
-    final todayIndex = now.weekday - 1; // Monday = 0
+    final todayIndex = now.weekday - 1;
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,

@@ -15,10 +15,18 @@ class ProgressProvider with ChangeNotifier {
   List<UserProgress> _userProgress = [];
   Map<int, UserProgress> _progressByChapter = {};
   Map<String, dynamic> _overallStats = {};
+  List<Map<String, dynamic>> _achievements = [];
+  List<Map<String, dynamic>> _recentActivity = [];
+  List<DateTime> _streakHistory = [];
+
   bool _isLoading = false;
   bool _isLoadingOverall = false;
+  bool _hasLoadedOverall = false;
+  bool _hasLoadedProgress = false;
   String? _error;
-  Timer? _progressSyncTimer;
+
+  final Set<int> _pendingSaves = {};
+  final Map<int, Timer> _saveDebounceTimers = {};
 
   StreamController<List<UserProgress>> _progressUpdateController =
       StreamController<List<UserProgress>>.broadcast();
@@ -27,23 +35,33 @@ class ProgressProvider with ChangeNotifier {
   StreamController<Map<String, dynamic>> _overallStatsController =
       StreamController<Map<String, dynamic>>.broadcast();
 
-  static const Duration _cacheDuration = Duration(minutes: 10);
-  static const Duration _syncInterval = Duration(seconds: 30);
+  static const Duration _cacheDuration = Duration(minutes: 30);
+  static const Duration _syncInterval = Duration(seconds: 60);
+  static const Duration _saveDebounceDuration = Duration(seconds: 5);
 
   ProgressProvider({
     required this.apiService,
     required this.deviceService,
     required this.streakProvider,
   }) {
-    _progressSyncTimer = Timer.periodic(_syncInterval, (_) {
-      _syncProgressWithBackend();
-    });
+    _init();
+  }
+
+  Future<void> _init() async {
+    await _loadCachedProgress();
   }
 
   List<UserProgress> get userProgress => List.unmodifiable(_userProgress);
   Map<String, dynamic> get overallStats => Map.unmodifiable(_overallStats);
+  List<Map<String, dynamic>> get achievements =>
+      List.unmodifiable(_achievements);
+  List<Map<String, dynamic>> get recentActivity =>
+      List.unmodifiable(_recentActivity);
+  List<DateTime> get streakHistory => List.unmodifiable(_streakHistory);
   bool get isLoading => _isLoading;
   bool get isLoadingOverall => _isLoadingOverall;
+  bool get hasLoadedOverall => _hasLoadedOverall;
+  bool get hasLoadedProgress => _hasLoadedProgress;
   String? get error => _error;
 
   Stream<List<UserProgress>> get progressUpdates =>
@@ -89,51 +107,168 @@ class ProgressProvider with ChangeNotifier {
     return (correctQuestions / attemptedQuestions) * 100;
   }
 
-  void initializeEmptyStats() {
-    _setEmptyProgressData();
-    debugLog('ProgressProvider', 'Initialized with empty stats');
+  Future<void> _loadCachedProgress() async {
+    try {
+      final cachedProgress = await deviceService
+          .getCacheItem<Map<String, dynamic>>('all_user_progress',
+              isUserSpecific: true);
+
+      if (cachedProgress != null) {
+        final progressList = cachedProgress['progress'] as List? ?? [];
+        _userProgress = progressList
+            .map((json) => UserProgress.fromJson(json as Map<String, dynamic>))
+            .toList();
+        _progressByChapter = {for (var p in _userProgress) p.chapterId: p};
+        _hasLoadedProgress = true;
+
+        _progressUpdateController.add(_userProgress);
+        _chapterProgressController.add(_progressByChapter);
+
+        debugLog('ProgressProvider',
+            '✅ Loaded ${_userProgress.length} progress items from cache');
+      }
+
+      final cachedStats = await deviceService
+          .getCacheItem<Map<String, dynamic>>('overall_stats',
+              isUserSpecific: true);
+      if (cachedStats != null) {
+        _overallStats = cachedStats;
+        _hasLoadedOverall = true;
+
+        if (_overallStats['achievements'] != null &&
+            _overallStats['achievements'] is List) {
+          _achievements = List<Map<String, dynamic>>.from(
+              _overallStats['achievements'] as List);
+        }
+
+        if (_overallStats['recent_activity'] != null &&
+            _overallStats['recent_activity'] is List) {
+          _recentActivity = List<Map<String, dynamic>>.from(
+              _overallStats['recent_activity'] as List);
+        }
+
+        if (_overallStats['streak_history'] != null &&
+            _overallStats['streak_history'] is List) {
+          _streakHistory = (_overallStats['streak_history'] as List)
+              .map((date) => DateTime.parse(date).toLocal())
+              .toList();
+        }
+
+        _overallStatsController.add(_overallStats);
+        notifyListeners();
+
+        debugLog('ProgressProvider', '✅ Loaded overall stats from cache');
+      }
+
+      _loadAllProgressFromApi();
+    } catch (e) {
+      debugLog('ProgressProvider', 'Error loading cached progress: $e');
+    }
   }
 
-  Future<void> loadUserProgressForCourse(int courseId) async {
+  Future<void> _loadAllProgressFromApi() async {
+    try {
+      debugLog(
+          'ProgressProvider', 'Loading all progress from API in background');
+
+      final response = await apiService.getOverallProgress();
+
+      if (response.success && response.data != null) {
+        _overallStats = response.data!;
+
+        if (_overallStats['achievements'] != null &&
+            _overallStats['achievements'] is List) {
+          _achievements = List<Map<String, dynamic>>.from(
+              _overallStats['achievements'] as List);
+          debugLog('ProgressProvider',
+              '✅ Loaded ${_achievements.length} achievements');
+        }
+
+        if (_overallStats['recent_activity'] != null &&
+            _overallStats['recent_activity'] is List) {
+          _recentActivity = List<Map<String, dynamic>>.from(
+              _overallStats['recent_activity'] as List);
+          debugLog('ProgressProvider',
+              '✅ Loaded ${_recentActivity.length} recent activities');
+        }
+
+        if (_overallStats['streak_history'] != null &&
+            _overallStats['streak_history'] is List) {
+          _streakHistory = (_overallStats['streak_history'] as List)
+              .map((date) => DateTime.parse(date).toLocal())
+              .toList();
+          debugLog('ProgressProvider',
+              '✅ Loaded ${_streakHistory.length} streak history entries');
+        }
+
+        await deviceService.saveCacheItem('overall_stats', _overallStats,
+            ttl: _cacheDuration, isUserSpecific: true);
+
+        _hasLoadedOverall = true;
+        _overallStatsController.add(_overallStats);
+        notifyListeners();
+      }
+    } catch (e) {
+      debugLog('ProgressProvider', 'Error loading all progress: $e');
+    }
+  }
+
+  Future<void> loadUserProgressForCourse(int courseId,
+      {bool forceRefresh = false}) async {
     if (_isLoading) return;
+
+    if (!forceRefresh && _hasLoadedProgress && _userProgress.isNotEmpty) {
+      debugLog(
+          'ProgressProvider', '📦 Using cached progress for course: $courseId');
+      _progressUpdateController.add(_userProgress);
+      _chapterProgressController.add(_progressByChapter);
+      return;
+    }
 
     _isLoading = true;
     _error = null;
     _notifySafely();
 
     try {
-      debugLog('ProgressProvider', 'Loading progress for course:$courseId');
+      debugLog('ProgressProvider', 'Loading progress for course: $courseId');
 
       final cacheKey = 'progress_course_$courseId';
-      final cachedProgress =
-          await deviceService.getCacheItem<List<dynamic>>(cacheKey);
+      final cachedProgress = await deviceService
+          .getCacheItem<List<dynamic>>(cacheKey, isUserSpecific: true);
 
-      if (cachedProgress != null) {
-        _userProgress =
-            cachedProgress.map((json) => UserProgress.fromJson(json)).toList();
+      if (cachedProgress != null && !forceRefresh) {
+        _userProgress = cachedProgress
+            .map((json) => UserProgress.fromJson(json as Map<String, dynamic>))
+            .toList();
         _progressByChapter = {for (var p in _userProgress) p.chapterId: p};
+        _hasLoadedProgress = true;
 
         _progressUpdateController.add(_userProgress);
         _chapterProgressController.add(_progressByChapter);
 
         debugLog('ProgressProvider',
             '✅ Loaded ${_userProgress.length} progress entries from cache');
+
+        _refreshCourseProgressInBackground(courseId);
         return;
       }
 
       final response = await apiService.getUserProgressForCourse(courseId);
-      _userProgress = response.data ?? [];
-      _progressByChapter = {for (var p in _userProgress) p.chapterId: p};
+      if (response.success && response.data != null) {
+        _userProgress = response.data!;
+        _progressByChapter = {for (var p in _userProgress) p.chapterId: p};
+        _hasLoadedProgress = true;
 
-      final progressJson = _userProgress.map((p) => p.toJson()).toList();
-      await deviceService.saveCacheItem(cacheKey, progressJson,
-          ttl: _cacheDuration);
+        await deviceService.saveCacheItem(
+            cacheKey, _userProgress.map((p) => p.toJson()).toList(),
+            ttl: _cacheDuration, isUserSpecific: true);
 
-      _progressUpdateController.add(_userProgress);
-      _chapterProgressController.add(_progressByChapter);
+        _progressUpdateController.add(_userProgress);
+        _chapterProgressController.add(_progressByChapter);
 
-      debugLog('ProgressProvider',
-          '✅ Loaded ${_userProgress.length} progress entries');
+        debugLog('ProgressProvider',
+            '✅ Loaded ${_userProgress.length} progress entries from API');
+      }
     } on ApiError catch (e) {
       _error = e.userFriendlyMessage;
       debugLog('ProgressProvider', 'ApiError loading progress: ${e.message}');
@@ -146,8 +281,40 @@ class ProgressProvider with ChangeNotifier {
     }
   }
 
-  Future<void> loadOverallProgress({required bool forceRefresh}) async {
+  Future<void> _refreshCourseProgressInBackground(int courseId) async {
+    try {
+      final response = await apiService.getUserProgressForCourse(courseId);
+      if (response.success && response.data != null) {
+        _userProgress = response.data!;
+        _progressByChapter = {for (var p in _userProgress) p.chapterId: p};
+
+        final cacheKey = 'progress_course_$courseId';
+        await deviceService.saveCacheItem(
+            cacheKey, _userProgress.map((p) => p.toJson()).toList(),
+            ttl: _cacheDuration, isUserSpecific: true);
+
+        _progressUpdateController.add(_userProgress);
+        _chapterProgressController.add(_progressByChapter);
+
+        debugLog('ProgressProvider',
+            '✅ Background refresh complete for course: $courseId');
+      }
+    } catch (e) {
+      debugLog('ProgressProvider', 'Background refresh error: $e');
+    }
+  }
+
+  Future<void> loadOverallProgress({bool forceRefresh = false}) async {
     if (_isLoadingOverall) return;
+
+    if (!forceRefresh && _hasLoadedOverall && _overallStats.isNotEmpty) {
+      debugLog('ProgressProvider', '📦 Using cached overall stats');
+      _overallStatsController.add(_overallStats);
+      notifyListeners();
+
+      _refreshOverallProgressInBackground();
+      return;
+    }
 
     _isLoadingOverall = true;
     _error = null;
@@ -157,11 +324,35 @@ class ProgressProvider with ChangeNotifier {
       debugLog('ProgressProvider', 'Loading overall progress');
 
       final cachedStats = await deviceService
-          .getCacheItem<Map<String, dynamic>>('overall_stats');
-      if (cachedStats != null) {
+          .getCacheItem<Map<String, dynamic>>('overall_stats',
+              isUserSpecific: true);
+      if (cachedStats != null && !forceRefresh) {
         _overallStats = cachedStats;
+        _hasLoadedOverall = true;
+
+        if (_overallStats['achievements'] != null &&
+            _overallStats['achievements'] is List) {
+          _achievements = List<Map<String, dynamic>>.from(
+              _overallStats['achievements'] as List);
+        }
+
+        if (_overallStats['recent_activity'] != null &&
+            _overallStats['recent_activity'] is List) {
+          _recentActivity = List<Map<String, dynamic>>.from(
+              _overallStats['recent_activity'] as List);
+        }
+
+        if (_overallStats['streak_history'] != null &&
+            _overallStats['streak_history'] is List) {
+          _streakHistory = (_overallStats['streak_history'] as List)
+              .map((date) => DateTime.parse(date).toLocal())
+              .toList();
+        }
+
         _overallStatsController.add(_overallStats);
         debugLog('ProgressProvider', '✅ Loaded overall stats from cache');
+
+        _refreshOverallProgressInBackground();
         return;
       }
 
@@ -169,9 +360,31 @@ class ProgressProvider with ChangeNotifier {
 
       if (response.success && response.data != null) {
         _overallStats = response.data!;
+        _hasLoadedOverall = true;
+
+        if (_overallStats['achievements'] != null &&
+            _overallStats['achievements'] is List) {
+          _achievements = List<Map<String, dynamic>>.from(
+              _overallStats['achievements'] as List);
+        }
+
+        if (_overallStats['recent_activity'] != null &&
+            _overallStats['recent_activity'] is List) {
+          _recentActivity = List<Map<String, dynamic>>.from(
+              _overallStats['recent_activity'] as List);
+        }
+
+        if (_overallStats['streak_history'] != null &&
+            _overallStats['streak_history'] is List) {
+          _streakHistory = (_overallStats['streak_history'] as List)
+              .map((date) => DateTime.parse(date).toLocal())
+              .toList();
+        }
+
         await deviceService.saveCacheItem('overall_stats', _overallStats,
-            ttl: _cacheDuration);
+            ttl: _cacheDuration, isUserSpecific: true);
         _overallStatsController.add(_overallStats);
+        notifyListeners();
 
         debugLog('ProgressProvider', '✅ Loaded overall progress stats');
       } else {
@@ -190,6 +403,45 @@ class ProgressProvider with ChangeNotifier {
     }
   }
 
+  Future<void> _refreshOverallProgressInBackground() async {
+    try {
+      final response = await apiService.getOverallProgress();
+      if (response.success && response.data != null) {
+        _overallStats = response.data!;
+
+        if (_overallStats['achievements'] != null &&
+            _overallStats['achievements'] is List) {
+          _achievements = List<Map<String, dynamic>>.from(
+              _overallStats['achievements'] as List);
+        }
+
+        if (_overallStats['recent_activity'] != null &&
+            _overallStats['recent_activity'] is List) {
+          _recentActivity = List<Map<String, dynamic>>.from(
+              _overallStats['recent_activity'] as List);
+        }
+
+        if (_overallStats['streak_history'] != null &&
+            _overallStats['streak_history'] is List) {
+          _streakHistory = (_overallStats['streak_history'] as List)
+              .map((date) => DateTime.parse(date).toLocal())
+              .toList();
+        }
+
+        await deviceService.saveCacheItem('overall_stats', _overallStats,
+            ttl: _cacheDuration, isUserSpecific: true);
+
+        _overallStatsController.add(_overallStats);
+        notifyListeners();
+
+        debugLog('ProgressProvider',
+            '✅ Background refresh complete for overall stats');
+      }
+    } catch (e) {
+      debugLog('ProgressProvider', 'Background refresh error: $e');
+    }
+  }
+
   void _setEmptyProgressData() {
     _overallStats = {
       'stats': {
@@ -202,7 +454,12 @@ class ProgressProvider with ChangeNotifier {
       },
       'recent_activity': [],
       'streak_history': [],
+      'achievements': [],
     };
+    _achievements = [];
+    _recentActivity = [];
+    _streakHistory = [];
+    _hasLoadedOverall = true;
     _overallStatsController.add(_overallStats);
     debugLog('ProgressProvider', 'Set empty progress data');
   }
@@ -215,156 +472,218 @@ class ProgressProvider with ChangeNotifier {
     int? questionsCorrect,
   }) async {
     try {
-      debugLog('ProgressProvider', 'Saving progress for chapter:$chapterId');
+      debugLog('ProgressProvider', 'Saving progress for chapter: $chapterId');
 
-      await apiService.saveUserProgress(
-        chapterId: chapterId,
-        videoProgress: videoProgress,
-        notesViewed: notesViewed,
-        questionsAttempted: questionsAttempted,
-        questionsCorrect: questionsCorrect,
-      );
+      _saveDebounceTimers[chapterId]?.cancel();
 
-      final existingProgress = _progressByChapter[chapterId];
-      final now = DateTime.now();
+      final completer = Completer<void>();
 
-      UserProgress newProgress;
+      _saveDebounceTimers[chapterId] = Timer(_saveDebounceDuration, () async {
+        _pendingSaves.add(chapterId);
 
-      if (existingProgress != null) {
-        newProgress = UserProgress(
-          chapterId: chapterId,
-          completed: existingProgress.completed || (videoProgress ?? 0) >= 90,
-          videoProgress: videoProgress ?? existingProgress.videoProgress,
-          notesViewed: notesViewed ?? existingProgress.notesViewed,
-          questionsAttempted:
-              questionsAttempted ?? existingProgress.questionsAttempted,
-          questionsCorrect:
-              questionsCorrect ?? existingProgress.questionsCorrect,
-          lastAccessed: now,
-        );
-      } else {
-        newProgress = UserProgress(
-          chapterId: chapterId,
-          completed: (videoProgress ?? 0) >= 90,
-          videoProgress: videoProgress ?? 0,
-          notesViewed: notesViewed ?? false,
-          questionsAttempted: questionsAttempted ?? 0,
-          questionsCorrect: questionsCorrect ?? 0,
-          lastAccessed: now,
-        );
-      }
+        try {
+          final existingProgress = _progressByChapter[chapterId];
+          final now = DateTime.now();
 
-      _progressByChapter[chapterId] = newProgress;
-      _userProgress = _progressByChapter.values.toList();
+          UserProgress newProgress;
 
-      final courseId = await _getCourseIdForChapter(chapterId);
-      if (courseId != null) {
-        final cacheKey = 'progress_course_$courseId';
-        final progressJson = _userProgress.map((p) => p.toJson()).toList();
-        await deviceService.saveCacheItem(cacheKey, progressJson,
-            ttl: _cacheDuration);
-      }
+          if (existingProgress != null) {
+            newProgress = UserProgress(
+              chapterId: chapterId,
+              completed:
+                  existingProgress.completed || (videoProgress ?? 0) >= 90,
+              videoProgress: videoProgress ?? existingProgress.videoProgress,
+              notesViewed: notesViewed ?? existingProgress.notesViewed,
+              questionsAttempted:
+                  questionsAttempted ?? existingProgress.questionsAttempted,
+              questionsCorrect:
+                  questionsCorrect ?? existingProgress.questionsCorrect,
+              lastAccessed: now,
+            );
+          } else {
+            newProgress = UserProgress(
+              chapterId: chapterId,
+              completed: (videoProgress ?? 0) >= 90,
+              videoProgress: videoProgress ?? 0,
+              notesViewed: notesViewed ?? false,
+              questionsAttempted: questionsAttempted ?? 0,
+              questionsCorrect: questionsCorrect ?? 0,
+              lastAccessed: now,
+            );
+          }
 
-      if (videoProgress != null ||
-          notesViewed == true ||
-          questionsAttempted != null) {
-        await streakProvider.updateStreak();
-      }
+          _progressByChapter[chapterId] = newProgress;
+          _userProgress = _progressByChapter.values.toList();
 
-      _progressUpdateController.add(_userProgress);
-      _chapterProgressController.add(_progressByChapter);
+          await _saveToLocalCache(chapterId, newProgress);
 
-      debugLog('ProgressProvider', 'Progress saved for chapter:$chapterId');
-      _notifySafely();
+          _progressUpdateController.add(_userProgress);
+          _chapterProgressController.add(_progressByChapter);
+          _notifySafely();
 
-      await loadOverallProgress(forceRefresh: true);
-    } on ApiError catch (e) {
-      _error = e.userFriendlyMessage;
-      debugLog('ProgressProvider', 'ApiError saving progress: $e');
-      rethrow;
+          try {
+            await apiService.saveUserProgress(
+              chapterId: chapterId,
+              videoProgress: newProgress.videoProgress,
+              notesViewed: newProgress.notesViewed,
+              questionsAttempted: newProgress.questionsAttempted,
+              questionsCorrect: newProgress.questionsCorrect,
+            );
+
+            if (videoProgress != null ||
+                notesViewed == true ||
+                questionsAttempted != null) {
+              await streakProvider.updateStreak();
+            }
+
+            await loadOverallProgress(forceRefresh: true);
+
+            debugLog('ProgressProvider',
+                '✅ Progress saved to API for chapter: $chapterId');
+
+            completer.complete();
+          } catch (apiError) {
+            debugLog('ProgressProvider',
+                '⚠️ API save failed, will retry later: $apiError');
+            await _markAsPendingSync(chapterId, newProgress);
+            completer.complete();
+          }
+        } catch (e) {
+          debugLog('ProgressProvider', 'Error in debounced save: $e');
+          completer.completeError(e);
+        } finally {
+          _pendingSaves.remove(chapterId);
+          _saveDebounceTimers.remove(chapterId);
+        }
+      });
+
+      return completer.future;
     } catch (e) {
-      _error = 'Failed to save progress: ${e.toString()}';
       debugLog('ProgressProvider', 'Error saving progress: $e');
       rethrow;
     }
   }
 
-  Future<void> markChapterAsCompleted(int chapterId) async {
+  Future<void> _saveToLocalCache(int chapterId, UserProgress progress) async {
     try {
-      debugLog('ProgressProvider', 'Marking chapter $chapterId as completed');
+      final cacheKey = 'progress_chapter_$chapterId';
+      await deviceService.saveCacheItem(cacheKey, progress.toJson(),
+          ttl: _cacheDuration, isUserSpecific: true);
 
-      await apiService.saveUserProgress(
-        chapterId: chapterId,
-        videoProgress: 100,
-        notesViewed: true,
-        questionsAttempted: 1,
-        questionsCorrect: 1,
-      );
+      final allProgressKey = 'all_user_progress';
+      final allProgressData = {
+        'progress': _userProgress.map((p) => p.toJson()).toList(),
+        'last_updated': DateTime.now().toIso8601String(),
+      };
+      await deviceService.saveCacheItem(allProgressKey, allProgressData,
+          ttl: _cacheDuration, isUserSpecific: true);
+    } catch (e) {
+      debugLog('ProgressProvider', 'Error saving to cache: $e');
+    }
+  }
 
-      final progress = _progressByChapter[chapterId];
-      if (progress != null) {
-        final completedProgress = UserProgress(
-          chapterId: chapterId,
-          completed: true,
-          videoProgress: 100,
-          notesViewed: true,
-          questionsAttempted: progress.questionsAttempted + 1,
-          questionsCorrect: progress.questionsCorrect + 1,
-          lastAccessed: DateTime.now(),
-        );
+  Future<void> _markAsPendingSync(int chapterId, UserProgress progress) async {
+    try {
+      final pendingKey = 'pending_progress';
+      final existing = await deviceService
+              .getCacheItem<List<dynamic>>(pendingKey, isUserSpecific: true) ??
+          [];
 
-        _progressByChapter[chapterId] = completedProgress;
-        _userProgress = _progressByChapter.values.toList();
+      final updated = [
+        ...existing,
+        {
+          'chapter_id': chapterId,
+          'progress': progress.toJson(),
+          'timestamp': DateTime.now().toIso8601String(),
+        }
+      ];
 
-        final courseId = await _getCourseIdForChapter(chapterId);
-        if (courseId != null) {
-          final cacheKey = 'progress_course_$courseId';
-          final progressJson = _userProgress.map((p) => p.toJson()).toList();
-          await deviceService.saveCacheItem(cacheKey, progressJson,
-              ttl: _cacheDuration);
+      await deviceService.saveCacheItem(pendingKey, updated,
+          ttl: const Duration(days: 7), isUserSpecific: true);
+    } catch (e) {
+      debugLog('ProgressProvider', 'Error marking pending sync: $e');
+    }
+  }
+
+  Future<void> _syncPendingProgress() async {
+    try {
+      final pendingKey = 'pending_progress';
+      final pendingItems = await deviceService
+          .getCacheItem<List<dynamic>>(pendingKey, isUserSpecific: true);
+
+      if (pendingItems == null || pendingItems.isEmpty) return;
+
+      debugLog('ProgressProvider',
+          '🔄 Syncing ${pendingItems.length} pending progress items');
+
+      final List<dynamic> failedItems = [];
+
+      for (final item in pendingItems) {
+        try {
+          final chapterId = item['chapter_id'] as int;
+          final progressData = item['progress'] as Map<String, dynamic>;
+
+          await apiService.saveUserProgress(
+            chapterId: chapterId,
+            videoProgress: progressData['video_progress'] as int?,
+            notesViewed: progressData['notes_viewed'] as bool?,
+            questionsAttempted: progressData['questions_attempted'] as int?,
+            questionsCorrect: progressData['questions_correct'] as int?,
+          );
+
+          debugLog(
+              'ProgressProvider', '✅ Synced progress for chapter: $chapterId');
+        } catch (e) {
+          debugLog('ProgressProvider', '❌ Failed to sync item: $e');
+          failedItems.add(item);
         }
       }
 
-      await streakProvider.updateStreak();
-
-      _progressUpdateController.add(_userProgress);
-      _chapterProgressController.add(_progressByChapter);
-
-      await loadOverallProgress(forceRefresh: true);
-
-      _notifySafely();
-    } on ApiError catch (e) {
-      debugLog('ProgressProvider', 'ApiError marking chapter completed: $e');
-      rethrow;
+      if (failedItems.isEmpty) {
+        await deviceService.removeCacheItem(pendingKey, isUserSpecific: true);
+      } else {
+        await deviceService.saveCacheItem(pendingKey, failedItems,
+            ttl: const Duration(days: 7), isUserSpecific: true);
+      }
     } catch (e) {
-      debugLog('ProgressProvider', 'Error marking chapter as completed: $e');
-      rethrow;
+      debugLog('ProgressProvider', 'Error syncing pending progress: $e');
     }
   }
 
-  Future<void> _syncProgressWithBackend() async {
-    if (_userProgress.isEmpty) return;
-
-    try {
-      debugLog('ProgressProvider', '🔄 Syncing progress with backend...');
-    } catch (e) {
-      debugLog('ProgressProvider', 'Error syncing progress: $e');
-    }
+  Future<void> markChapterAsCompleted(int chapterId) async {
+    await saveChapterProgress(
+      chapterId: chapterId,
+      videoProgress: 100,
+      notesViewed: true,
+      questionsAttempted: 1,
+      questionsCorrect: 1,
+    );
   }
 
-  Future<int?> _getCourseIdForChapter(int chapterId) async {
-    return null;
+  Future<void> forceSyncPending() async {
+    await _syncPendingProgress();
   }
 
   Future<void> clearUserData() async {
     debugLog('ProgressProvider', 'Clearing progress data');
 
+    for (final timer in _saveDebounceTimers.values) {
+      timer.cancel();
+    }
+    _saveDebounceTimers.clear();
+    _pendingSaves.clear();
+
     await deviceService.clearCacheByPrefix('progress_');
-    await deviceService.clearCacheByPrefix('overall_stats');
+    await deviceService.clearCacheByPrefix('pending_');
 
     _userProgress = [];
     _progressByChapter = {};
     _overallStats = {};
+    _achievements = [];
+    _recentActivity = [];
+    _streakHistory = [];
+    _hasLoadedOverall = false;
+    _hasLoadedProgress = false;
 
     _progressUpdateController.close();
     _chapterProgressController.close();
@@ -391,7 +710,9 @@ class ProgressProvider with ChangeNotifier {
 
   @override
   void dispose() {
-    _progressSyncTimer?.cancel();
+    for (final timer in _saveDebounceTimers.values) {
+      timer.cancel();
+    }
     _progressUpdateController.close();
     _chapterProgressController.close();
     _overallStatsController.close();

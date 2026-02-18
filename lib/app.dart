@@ -44,6 +44,8 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
   final Map<String, DateTime> _lastRouteVisited = {};
   Timer? _sessionCheckTimer;
 
+  StreamSubscription? _deviceDeactivatedSubscription;
+
   @override
   void initState() {
     super.initState();
@@ -72,6 +74,7 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _sessionCheckTimer?.cancel();
+    _deviceDeactivatedSubscription?.cancel();
     super.dispose();
   }
 
@@ -132,6 +135,17 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
           final authProvider =
               Provider.of<AuthProvider>(context, listen: false);
 
+          _deviceDeactivatedSubscription =
+              authProvider.deviceDeactivated.listen((message) {
+            if (!mounted) return;
+
+            debugLog('FamilyAcademyApp',
+                '🚫 Device deactivated event received: $message');
+
+            _showDeviceDeactivatedDialog(message ??
+                'Your device has been deactivated because you logged in on another device.');
+          });
+
           await authProvider.initialize();
 
           if (authProvider.isAuthenticated) {
@@ -150,6 +164,31 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
     } catch (e) {
       debugLog('FamilyAcademyApp', '❌ App initialization error: $e');
     }
+  }
+
+  void _showDeviceDeactivatedDialog(String message) {
+    if (!mounted || !context.mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Device Deactivated'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+
+              if (mounted && context.mounted) {
+                GoRouter.of(context).go('/auth/login');
+              }
+            },
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _initializeAuthenticatedProviders() async {
@@ -417,22 +456,12 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
       builder: (context, themeProvider, child) {
         return Consumer<AuthProvider>(
           builder: (context, authProvider, child) {
-            if (authProvider.isInitializing) {
-              return MaterialApp(
-                home: const SplashScreen(),
-                debugShowCheckedModeBanner: false,
-                theme: themeProvider.lightTheme,
-                darkTheme: themeProvider.darkTheme,
-                themeMode: themeProvider.themeMode,
-              );
-            }
-
             return MaterialApp.router(
               title: 'Family Academy',
               theme: themeProvider.lightTheme,
               darkTheme: themeProvider.darkTheme,
               themeMode: themeProvider.themeMode,
-              routerConfig: AppRouter().router,
+              routerConfig: appRouter.router,
               debugShowCheckedModeBanner: false,
               builder: (context, child) {
                 return MediaQuery(

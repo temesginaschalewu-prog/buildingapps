@@ -16,11 +16,8 @@ import '../../providers/category_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/theme_provider.dart';
-import '../../services/device_service.dart';
 import '../../widgets/category/category_card.dart';
-import '../../widgets/common/loading_indicator.dart';
 import '../../widgets/common/empty_state.dart';
-import '../../widgets/common/error_widget.dart';
 import '../../utils/helpers.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -54,7 +51,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeProviders();
-      _loadHomeScreen(); // Changed from _loadInitialData
+      _loadHomeScreen();
       _setupStreamListeners();
     });
   }
@@ -84,7 +81,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
     });
 
-    // Refresh every 10 minutes in background
     _refreshTimer = Timer.periodic(const Duration(minutes: 10), (_) {
       if (mounted && !_isRefreshing) {
         _silentRefresh();
@@ -92,23 +88,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
   }
 
-  // 🎯 NEW: Telegram-style cache-first loading
   Future<void> _loadHomeScreen() async {
-    // First, check if we have ANY cached data
     final hasCachedCategories =
         _categoryProvider.hasLoaded && _categoryProvider.categories.isNotEmpty;
 
     if (hasCachedCategories) {
       debugLog('HomeScreen', '📦 Showing cached categories immediately');
 
-      // Show cached data right away
       setState(() {
         _hasCachedCategories = true;
         _isFirstLoad = false;
         _isOffline = false;
       });
 
-      // Load subscription cache
       final activeCategories = _categoryProvider.activeCategories;
       if (activeCategories.isNotEmpty) {
         for (final category in activeCategories) {
@@ -118,12 +110,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         }
       }
 
-      // Then try to refresh in background
       _refreshInBackground();
       return;
     }
 
-    // No cache, show loading but with skeleton
     setState(() {
       _isFirstLoad = true;
     });
@@ -133,6 +123,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
       await _categoryProvider.loadCategories(forceRefresh: false);
       await _subscriptionProvider.loadSubscriptions(forceRefresh: false);
+      await _loadNotifications();
 
       final activeCategories = _categoryProvider.activeCategories;
       if (activeCategories.isNotEmpty) {
@@ -170,7 +161,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  // 🔄 Background refresh (no UI blocking)
   Future<void> _refreshInBackground() async {
     if (_isRefreshing) return;
 
@@ -178,9 +168,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     debugLog('HomeScreen', '🔄 Background refresh started');
 
     try {
-      // Force refresh providers
       await _subscriptionProvider.loadSubscriptions(forceRefresh: true);
       await _categoryProvider.loadCategories(forceRefresh: true);
+      await _loadNotifications();
 
       final activeCategories = _categoryProvider.activeCategories;
       if (activeCategories.isNotEmpty) {
@@ -198,14 +188,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
       debugLog('HomeScreen', '✅ Background refresh complete');
 
-      // Show subtle success indicator
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Content updated'),
+            content: const Text('Content updated'),
             backgroundColor: AppColors.telegramGreen,
             behavior: SnackBarBehavior.floating,
-            duration: Duration(seconds: 1),
+            duration: const Duration(seconds: 1),
             margin: EdgeInsets.all(AppThemes.spacingL),
           ),
         );
@@ -218,7 +207,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  // 🔄 Manual pull-to-refresh
   Future<void> _manualRefresh() async {
     if (_isRefreshing) return;
 
@@ -229,6 +217,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     try {
       await _subscriptionProvider.loadSubscriptions(forceRefresh: true);
       await _categoryProvider.loadCategories(forceRefresh: true);
+      await _loadNotifications();
 
       final activeCategories = _categoryProvider.activeCategories;
       if (activeCategories.isNotEmpty) {
@@ -249,10 +238,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Content refreshed'),
+          content: const Text('Content refreshed'),
           backgroundColor: AppColors.telegramGreen,
           behavior: SnackBarBehavior.floating,
-          duration: Duration(seconds: 1),
+          duration: const Duration(seconds: 1),
         ),
       );
     } catch (e) {
@@ -263,7 +252,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Refresh failed, using cached data'),
+          content: const Text('Refresh failed, using cached data'),
           backgroundColor: AppColors.telegramRed,
           behavior: SnackBarBehavior.floating,
         ),
@@ -282,6 +271,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     try {
       await _subscriptionProvider.loadSubscriptions(forceRefresh: true);
       await _categoryProvider.loadCategories(forceRefresh: true);
+      await _loadNotifications();
 
       if (mounted) {
         final activeCategories = _categoryProvider.activeCategories;
@@ -290,10 +280,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               .hasActiveSubscriptionForCategory(category.id);
           _categorySubscriptionCache[category.id] = status;
         }
-        setState(() {}); // Trigger rebuild with new data
+        setState(() {});
       }
     } catch (e) {
-      // Silent fail - keep using cache
+      // Silent fail
     }
   }
 
@@ -315,110 +305,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return _categorySubscriptionCache[categoryId]!;
     }
 
-    // Fallback to provider
     final status =
         _subscriptionProvider.hasActiveSubscriptionForCategory(categoryId);
     _categorySubscriptionCache[categoryId] = status;
     return status;
-  }
-
-  // 🏷️ Telegram-style header
-  Widget _buildHeader() {
-    return Container(
-      padding: EdgeInsets.only(
-        left: AppThemes.spacingL,
-        right: AppThemes.spacingL,
-        top: MediaQuery.of(context).padding.top + AppThemes.spacingM,
-        bottom: AppThemes.spacingM,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.getBackground(context),
-        border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).dividerColor,
-            width: 0.5,
-          ),
-        ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          // Logo and title
-          Row(
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: AppColors.blueGradient,
-                  ),
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: Icon(
-                    Icons.school_rounded,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                ),
-              ),
-              SizedBox(width: AppThemes.spacingM),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Family Academy',
-                    style: AppTextStyles.titleMedium.copyWith(
-                      color: AppColors.getTextPrimary(context),
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  Text(
-                    _isOffline ? 'Offline Mode' : 'Learn. Grow. Succeed.',
-                    style: AppTextStyles.caption.copyWith(
-                      color: _isOffline
-                          ? AppColors.telegramYellow
-                          : AppColors.getTextSecondary(context),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-
-          // Actions
-          Row(
-            children: [
-              // Refresh indicator
-              if (_isRefreshing)
-                Container(
-                  width: 36,
-                  height: 36,
-                  child: Center(
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation(
-                          AppColors.telegramBlue,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-
-              // Theme toggle
-              _buildThemeToggleButton(),
-
-              // Notifications
-              _buildNotificationButton(),
-            ],
-          ),
-        ],
-      ),
-    );
   }
 
   Widget _buildNotificationButton() {
@@ -426,15 +316,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       onTap: () async {
         try {
           await _notificationProvider.loadNotifications();
-          GoRouter.of(context).push('/notifications');
+          if (mounted) {
+            GoRouter.of(context).push('/notifications');
+          }
         } catch (e) {
-          showSnackBar(context, 'Failed to load notifications', isError: true);
+          if (mounted) {
+            showSimpleSnackBar(context, 'Failed to load notifications',
+                isError: true);
+          }
         }
       },
       child: Container(
-        width: 36,
-        height: 36,
-        margin: EdgeInsets.only(left: AppThemes.spacingXS),
+        width: 40,
+        height: 40,
         decoration: BoxDecoration(
           color: AppColors.getSurface(context),
           shape: BoxShape.circle,
@@ -442,12 +336,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         child: Center(
           child: _unreadNotifications > 0
               ? badges.Badge(
-                  position: badges.BadgePosition.topEnd(top: -2, end: -2),
+                  position: badges.BadgePosition.topEnd(top: -4, end: -4),
                   badgeContent: Text(
                     _unreadNotifications > 9
                         ? '9+'
                         : _unreadNotifications.toString(),
-                    style: AppTextStyles.labelSmall.copyWith(
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 9,
                       fontWeight: FontWeight.bold,
@@ -455,19 +349,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   ),
                   badgeStyle: badges.BadgeStyle(
                     badgeColor: AppColors.telegramRed,
-                    padding: const EdgeInsets.all(3),
+                    padding: const EdgeInsets.all(4),
                     borderRadius:
                         BorderRadius.circular(AppThemes.borderRadiusFull),
                   ),
                   child: Icon(
                     Icons.notifications_outlined,
-                    size: 18,
+                    size: 22,
                     color: AppColors.getTextPrimary(context),
                   ),
                 )
               : Icon(
                   Icons.notifications_outlined,
-                  size: 18,
+                  size: 22,
                   color: AppColors.getTextPrimary(context),
                 ),
         ),
@@ -481,9 +375,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         return GestureDetector(
           onTap: themeProvider.toggleTheme,
           child: Container(
-            width: 36,
-            height: 36,
-            margin: EdgeInsets.only(left: AppThemes.spacingXS),
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(
               color: AppColors.getSurface(context),
               shape: BoxShape.circle,
@@ -493,7 +386,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 themeProvider.themeMode == ThemeMode.dark
                     ? Icons.light_mode_outlined
                     : Icons.dark_mode_outlined,
-                size: 18,
+                size: 22,
                 color: AppColors.getTextPrimary(context),
               ),
             ),
@@ -503,70 +396,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  // 🌐 Offline banner
-  Widget _buildOfflineBanner() {
-    if (!_isOffline && _hasCachedCategories) return SizedBox.shrink();
-
-    return Container(
-      margin: EdgeInsets.all(AppThemes.spacingL),
-      padding: EdgeInsets.all(AppThemes.spacingM),
-      decoration: BoxDecoration(
-        color: _isOffline
-            ? AppColors.telegramYellow.withOpacity(0.1)
-            : AppColors.telegramBlue.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
-        border: Border.all(
-          color: _isOffline
-              ? AppColors.telegramYellow.withOpacity(0.3)
-              : AppColors.telegramBlue.withOpacity(0.3),
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            _isOffline
-                ? Icons.signal_wifi_off_rounded
-                : Icons.cloud_done_rounded,
-            color:
-                _isOffline ? AppColors.telegramYellow : AppColors.telegramBlue,
-            size: 20,
-          ),
-          SizedBox(width: AppThemes.spacingM),
-          Expanded(
-            child: Text(
-              _isOffline
-                  ? 'Offline mode - showing cached content'
-                  : 'Using cached data - refreshing in background',
-              style: AppTextStyles.bodySmall.copyWith(
-                color: _isOffline
-                    ? AppColors.telegramYellow
-                    : AppColors.telegramBlue,
-              ),
-            ),
-          ),
-          if (_isOffline)
-            TextButton(
-              onPressed: _manualRefresh,
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.telegramBlue,
-                padding: EdgeInsets.zero,
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: Text('Retry'),
-            ),
-        ],
-      ),
-    );
-  }
-
-  // 🎨 Main content builder
   Widget _buildContent() {
     final activeCategories = _categoryProvider.activeCategories;
     final comingSoonCategories = _categoryProvider.comingSoonCategories;
 
     if (_isFirstLoad) {
-      // Show skeleton loading instead of full-screen loader
       return _buildSkeletonGrid();
     }
 
@@ -578,14 +412,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
 
     return CustomScrollView(
-      physics: const BouncingScrollPhysics(),
+      physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
-        // Offline banner
-        SliverToBoxAdapter(
-          child: _buildOfflineBanner(),
-        ),
-
-        // Active categories
         if (activeCategories.isNotEmpty) ...[
           SliverPadding(
             padding: EdgeInsets.fromLTRB(
@@ -616,7 +444,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
           ),
           SliverPadding(
-            padding: EdgeInsets.symmetric(horizontal: AppThemes.spacingL),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
             sliver: SliverGrid(
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: ScreenSize.responsiveGridCount(
@@ -625,9 +453,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   tablet: 3,
                   desktop: 4,
                 ),
-                crossAxisSpacing: AppThemes.spacingL,
-                mainAxisSpacing: AppThemes.spacingL,
-                childAspectRatio: 0.85,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+                childAspectRatio: 0.7,
               ),
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
@@ -638,11 +466,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   return CategoryCard(
                     category: category,
                     hasSubscription: hasSubscription,
-                    isCheckingSubscription: false, // Always false now
+                    isCheckingSubscription: false,
                     hasCachedData: _hasCachedCategories,
                     isRefreshInProgress: _isRefreshing,
                     onTap: () {
-                      if (category.isActive) {
+                      if (category.isActive && mounted) {
                         GoRouter.of(context).push('/category/${category.id}');
                       }
                     },
@@ -654,8 +482,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
           ),
         ],
-
-        // Coming soon section
         if (comingSoonCategories.isNotEmpty) ...[
           SliverPadding(
             padding: EdgeInsets.all(AppThemes.spacingL),
@@ -683,7 +509,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
           ),
           SliverPadding(
-            padding: EdgeInsets.symmetric(horizontal: AppThemes.spacingL),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
             sliver: SliverGrid(
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: ScreenSize.responsiveGridCount(
@@ -692,9 +518,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   tablet: 3,
                   desktop: 4,
                 ),
-                crossAxisSpacing: AppThemes.spacingL,
-                mainAxisSpacing: AppThemes.spacingL,
-                childAspectRatio: 0.85,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+                childAspectRatio: 0.7,
               ),
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
@@ -712,8 +538,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
           ),
         ],
-
-        // Bottom padding
         SliverToBoxAdapter(
           child: SizedBox(height: AppThemes.spacingXXL),
         ),
@@ -721,7 +545,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  // 🦴 Skeleton loading grid (Telegram style)
   Widget _buildSkeletonGrid() {
     return CustomScrollView(
       physics: const NeverScrollableScrollPhysics(),
@@ -767,7 +590,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         ),
         SliverPadding(
-          padding: EdgeInsets.symmetric(horizontal: AppThemes.spacingL),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
           sliver: SliverGrid(
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: ScreenSize.responsiveGridCount(
@@ -776,9 +599,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 tablet: 3,
                 desktop: 4,
               ),
-              crossAxisSpacing: AppThemes.spacingL,
-              mainAxisSpacing: AppThemes.spacingL,
-              childAspectRatio: 0.85,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+              childAspectRatio: 0.7,
             ),
             delegate: SliverChildBuilderDelegate(
               (context, index) => CategoryCardShimmer(index: index),
@@ -810,18 +633,218 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
-      body: Column(
-        children: [
-          _buildHeader(),
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: _manualRefresh,
-              color: AppColors.telegramBlue,
-              backgroundColor: AppColors.getSurface(context),
-              child: _buildContent(),
+      body: NestedScrollView(
+        headerSliverBuilder: (context, innerBoxIsScrolled) {
+          return [
+            SliverAppBar(
+              backgroundColor: AppColors.getBackground(context),
+              foregroundColor: AppColors.getTextPrimary(context),
+              elevation: 0,
+              surfaceTintColor: Colors.transparent,
+              pinned: true,
+              floating: true,
+              snap: true,
+              expandedHeight: ScreenSize.responsiveValue(
+                context: context,
+                mobile: 120.0,
+                tablet: 140.0,
+                desktop: 160.0,
+              ),
+              flexibleSpace: FlexibleSpaceBar(
+                background: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        AppColors.telegramBlue.withOpacity(0.05),
+                        AppColors.getBackground(context),
+                      ],
+                    ),
+                  ),
+                  padding: EdgeInsets.only(
+                    left: AppThemes.spacingL,
+                    right: AppThemes.spacingL,
+                    top: MediaQuery.of(context).padding.top + 16,
+                    bottom: AppThemes.spacingM,
+                  ),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Top row with title and buttons
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Logo and title
+                              Expanded(
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 36,
+                                      height: 36,
+                                      decoration: const BoxDecoration(
+                                        gradient: LinearGradient(
+                                          colors: AppColors.blueGradient,
+                                        ),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Center(
+                                        child: Icon(
+                                          Icons.school_rounded,
+                                          color: Colors.white,
+                                          size: 20,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            alignment: Alignment.centerLeft,
+                                            child: Text(
+                                              'Family Academy',
+                                              style: AppTextStyles.titleMedium
+                                                  .copyWith(
+                                                color: AppColors.getTextPrimary(
+                                                    context),
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            alignment: Alignment.centerLeft,
+                                            child: Text(
+                                              _isOffline
+                                                  ? 'Offline Mode'
+                                                  : 'Learn. Grow. Succeed.',
+                                              style: AppTextStyles.caption
+                                                  .copyWith(
+                                                color: _isOffline
+                                                    ? AppColors.telegramYellow
+                                                    : AppColors
+                                                        .getTextSecondary(
+                                                            context),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              // Buttons row
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (_isRefreshing)
+                                    Padding(
+                                      padding:
+                                          const EdgeInsets.only(right: 8.0),
+                                      child: SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor: AlwaysStoppedAnimation(
+                                            AppColors.telegramBlue,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  _buildThemeToggleButton(),
+                                  const SizedBox(width: 8),
+                                  _buildNotificationButton(),
+                                ],
+                              ),
+                            ],
+                          ),
+
+                          // Welcome message - only show if there's enough space
+                          if (constraints.maxHeight > 100) ...[
+                            const Spacer(),
+                            Row(
+                              children: [
+                                Container(
+                                  width: 36,
+                                  height: 36,
+                                  decoration: const BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: AppColors.purpleGradient,
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    ),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Center(
+                                    child: Icon(
+                                      Icons.person,
+                                      size: 18,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Welcome back!',
+                                        style:
+                                            AppTextStyles.titleSmall.copyWith(
+                                          color:
+                                              AppColors.getTextPrimary(context),
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      Text(
+                                        'Continue your learning journey',
+                                        style:
+                                            AppTextStyles.labelSmall.copyWith(
+                                          color: AppColors.getTextSecondary(
+                                              context),
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ),
             ),
-          ),
-        ],
+          ];
+        },
+        body: RefreshIndicator(
+          onRefresh: _manualRefresh,
+          color: AppColors.telegramBlue,
+          backgroundColor: AppColors.getSurface(context),
+          child: _buildContent(),
+        ),
       ),
     );
   }

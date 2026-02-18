@@ -23,7 +23,7 @@ class AuthProvider with ChangeNotifier {
   bool _requiresDeviceChange = false;
   String? _error;
 
-  // CRITICAL FIX: Store last login result for device change
+  // Store last login result for device change
   Map<String, dynamic>? _lastLoginResult;
 
   Timer? _autoLogoutTimer;
@@ -41,16 +41,26 @@ class AuthProvider with ChangeNotifier {
   StreamController<bool> _deviceChangeController =
       StreamController<bool>.broadcast();
 
+  // NEW: Stream for device deactivation events
+  StreamController<String?> _deviceDeactivatedController =
+      StreamController<String?>.broadcast();
+
   bool _isCheckingSubscriptionOnLogin = false;
 
   List<VoidCallback> _onLogoutCallbacks = [];
   List<VoidCallback> _onLoginCallbacks = [];
 
+  // NEW: Stream subscription for device deactivation from ApiService
+  StreamSubscription? _deviceDeactivationSubscription;
+
   AuthProvider({
     required this.apiService,
     required this.storageService,
     required this.deviceService,
-  });
+  }) {
+    // NEW: Listen to device deactivation events from ApiService
+    _listenToDeviceDeactivation();
+  }
 
   User? get currentUser => _currentUser;
   bool get isAuthenticated => _isAuthenticated;
@@ -61,18 +71,24 @@ class AuthProvider with ChangeNotifier {
   String? get error => _error;
   bool get isCheckingSubscriptionOnLogin => _isCheckingSubscriptionOnLogin;
 
-  // CRITICAL FIX: Getter for last login result
+  // Getter for last login result
   Map<String, dynamic>? get lastLoginResult => _lastLoginResult;
 
-  // CRITICAL FIX: New method to check if auth is truly ready for navigation
+  // Check if auth is truly ready for navigation
   bool get isReadyForNavigation {
     return _isInitialized &&
         (!_isAuthenticated || (_isAuthenticated && _currentUser != null));
   }
 
+  // NEW: Check if the last error was device deactivation
+  bool get isDeviceDeactivated => _error?.contains('deactivated') ?? false;
+
   Stream<bool> get authStateChanges => _authStateController.stream;
   Stream<User?> get userChanges => _userController.stream;
   Stream<bool> get deviceChangeRequired => _deviceChangeController.stream;
+
+  // NEW: Stream for device deactivation events
+  Stream<String?> get deviceDeactivated => _deviceDeactivatedController.stream;
 
   void registerOnLogoutCallback(VoidCallback callback) {
     _onLogoutCallbacks.add(callback);
@@ -80,6 +96,60 @@ class AuthProvider with ChangeNotifier {
 
   void registerOnLoginCallback(VoidCallback callback) {
     _onLoginCallbacks.add(callback);
+  }
+
+  // NEW: Listen to device deactivation events from ApiService
+  void _listenToDeviceDeactivation() {
+    _deviceDeactivationSubscription =
+        apiService.deviceDeactivationStream.listen(
+      (event) {
+        debugLog(
+            'AuthProvider', '🚫 Device deactivation event received: $event');
+        _handleDeviceDeactivation(
+            event['message'] ?? 'Device has been deactivated');
+      },
+      onError: (error) {
+        debugLog('AuthProvider', 'Error in device deactivation stream: $error');
+      },
+    );
+  }
+
+  // NEW: Handle device deactivation
+  Future<void> _handleDeviceDeactivation(String message) async {
+    debugLog('AuthProvider', '🔌 Processing device deactivation: $message');
+
+    // Stop all timers
+    _stopAutoLogoutTimer();
+    _stopTokenRefreshTimer();
+    _stopProactiveRefreshTimer();
+
+    // Execute logout callbacks
+    _executeLogoutCallbacks();
+
+    // Clear all device and user data
+    await deviceService.clearUserCache();
+    await deviceService.clearCurrentUserId();
+    await storageService.clearAllUserData();
+
+    // Reset state
+    _currentUser = null;
+    _isAuthenticated = false;
+    _requiresDeviceChange = false;
+    _error = message;
+    _isCheckingSubscriptionOnLogin = false;
+    _lastLoginResult = null;
+
+    // Emit device deactivated event
+    _deviceDeactivatedController.add(message);
+
+    // Update auth state
+    _authStateController.add(false);
+    _userController.add(null);
+    _deviceChangeController.add(false);
+
+    debugLog(
+        'AuthProvider', '✅ Device deactivation processed - user logged out');
+    notifyListeners();
   }
 
   Future<void> initialize() async {
@@ -274,7 +344,7 @@ class AuthProvider with ChangeNotifier {
         _requiresDeviceChange = false;
         _lastLoginResult = null; // Clear any pending device change
 
-        // CRITICAL FIX: Mark auth as initialized and NOT initializing
+        // Mark auth as initialized and NOT initializing
         _isInitialized = true;
         _isInitializing = false;
 
@@ -329,7 +399,7 @@ class AuthProvider with ChangeNotifier {
       if (_requiresDeviceChange) {
         _deviceChangeController.add(true);
 
-        // CRITICAL FIX: Store the complete login result for the router
+        // Store the complete login result for the router
         final deviceId = await deviceService.getDeviceId();
         _lastLoginResult = {
           'success': false,
@@ -430,7 +500,7 @@ class AuthProvider with ChangeNotifier {
         _requiresDeviceChange = false;
         _lastLoginResult = null; // Clear any pending device change
 
-        // CRITICAL FIX: Mark auth as initialized
+        // Mark auth as initialized
         _isInitialized = true;
         _isInitializing = false;
 
@@ -514,7 +584,7 @@ class AuthProvider with ChangeNotifier {
     _isCheckingSubscriptionOnLogin = false;
     _lastLoginResult = null; // Clear any pending device change
 
-    // CRITICAL FIX: DO NOT reset isInitialized on manual logout
+    // DO NOT reset isInitialized on manual logout
     // Only reset on app start or token expiry
     if (!manual) {
       _isInitialized = false;
@@ -817,6 +887,8 @@ class AuthProvider with ChangeNotifier {
     _authStateController.close();
     _userController.close();
     _deviceChangeController.close();
+    _deviceDeactivatedController.close();
+    _deviceDeactivationSubscription?.cancel();
     _onLogoutCallbacks.clear();
     _onLoginCallbacks.clear();
     super.dispose();

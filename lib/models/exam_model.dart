@@ -14,14 +14,18 @@ class Exam {
   final int courseId;
   final int categoryId;
   final String categoryName;
+  final String categoryStatus;
   final int attemptsTaken;
   final String? lastAttemptStatus;
+  final int questionCount;
   final String status;
   final String message;
   final bool canTakeExam;
   final bool requiresPayment;
+  final bool hasAccess;
   final int actualDuration;
   final String timingType;
+  final bool hasPendingPayment;
 
   Exam({
     required this.id,
@@ -33,47 +37,59 @@ class Exam {
     this.userTimeLimit,
     required this.passingScore,
     required this.maxAttempts,
-    this.autoSubmit = true,
-    this.showResultsImmediately = false,
+    required this.autoSubmit,
+    required this.showResultsImmediately,
     required this.courseName,
     required this.courseId,
     required this.categoryId,
     required this.categoryName,
+    required this.categoryStatus,
     required this.attemptsTaken,
     this.lastAttemptStatus,
+    required this.questionCount,
     required this.status,
     required this.message,
     required this.canTakeExam,
-    this.requiresPayment = false,
+    required this.requiresPayment,
+    required this.hasAccess,
     required this.actualDuration,
-    this.timingType = 'exam_wide',
+    required this.timingType,
+    this.hasPendingPayment = false,
   });
 
   factory Exam.fromJson(Map<String, dynamic> json) {
     return Exam(
-      id: json['id'],
-      title: json['title'],
-      examType: json['exam_type'],
-      startDate: DateTime.parse(json['start_date']),
-      endDate: DateTime.parse(json['end_date']),
-      duration: json['duration'],
+      id: json['id'] ?? 0,
+      title: json['title'] ?? '',
+      examType: json['exam_type'] ?? '',
+      startDate: json['start_date'] != null
+          ? DateTime.parse(json['start_date'])
+          : DateTime.now(),
+      endDate: json['end_date'] != null
+          ? DateTime.parse(json['end_date'])
+          : DateTime.now(),
+      duration: json['duration'] ?? 0,
       userTimeLimit: json['user_time_limit'],
-      passingScore: json['passing_score'],
-      maxAttempts: json['max_attempts'],
+      passingScore: json['passing_score'] ?? 50,
+      maxAttempts: json['max_attempts'] ?? 1,
       autoSubmit: json['auto_submit'] ?? true,
       showResultsImmediately: json['show_results_immediately'] ?? false,
-      courseName: json['course_name'],
-      courseId: json['course_id'],
+      courseName: json['course_name'] ?? '',
+      courseId: json['course_id'] ?? 0,
       categoryId: json['category_id'] ?? 0,
-      categoryName: json['category_name'],
+      categoryName: json['category_name'] ?? '',
+      categoryStatus: json['category_status'] ?? '',
       attemptsTaken: json['attempts_taken'] ?? 0,
       lastAttemptStatus: json['last_attempt_status'],
-      status: json['status'] ?? 'available',
-      message: json['message'] ?? 'Available for attempt',
+      questionCount: json['question_count'] ?? 0,
+      status: json['status'] ?? 'unknown',
+      message: json['message'] ?? '',
       canTakeExam: json['canTakeExam'] ?? false,
       requiresPayment: json['requiresPayment'] ?? false,
-      actualDuration: json['actual_duration'] ?? json['duration'],
+      hasAccess: json['hasAccess'] ?? false,
+      actualDuration: json['actual_duration'] ?? json['duration'] ?? 0,
       timingType: json['timing_type'] ?? 'exam_wide',
+      hasPendingPayment: json['hasPendingPayment'] ?? false,
     );
   }
 
@@ -94,31 +110,30 @@ class Exam {
       'course_id': courseId,
       'category_id': categoryId,
       'category_name': categoryName,
+      'category_status': categoryStatus,
       'attempts_taken': attemptsTaken,
       'last_attempt_status': lastAttemptStatus,
+      'question_count': questionCount,
       'status': status,
       'message': message,
       'canTakeExam': canTakeExam,
       'requiresPayment': requiresPayment,
+      'hasAccess': hasAccess,
       'actual_duration': actualDuration,
       'timing_type': timingType,
+      'hasPendingPayment': hasPendingPayment,
     };
   }
 
-  bool get isAvailable => status == 'available';
-  bool get isUpcoming => status == 'upcoming';
-  bool get isEnded => status == 'ended';
-  bool get isInProgress => status == 'in_progress';
-  bool get maxAttemptsReached => status == 'max_attempts_reached';
-  bool get hasUserTimeLimit => userTimeLimit != null;
+  // Add this missing getter
+  bool get hasUserTimeLimit => userTimeLimit != null && userTimeLimit! > 0;
 
-  Duration get remainingTime {
-    final now = DateTime.now();
-    if (now.isBefore(startDate)) {
-      return startDate.difference(now);
-    } else if (now.isBefore(endDate)) {
-      return endDate.difference(now);
-    }
-    return Duration.zero;
-  }
+  bool get isUpcoming => DateTime.now().isBefore(startDate);
+  bool get isEnded => DateTime.now().isAfter(endDate);
+  bool get isInProgress =>
+      !isUpcoming && !isEnded && !canTakeExam && attemptsTaken > 0;
+  bool get maxAttemptsReached => attemptsTaken >= maxAttempts;
+
+  bool get isBlockedByPendingPayment =>
+      requiresPayment && !hasAccess && hasPendingPayment;
 }

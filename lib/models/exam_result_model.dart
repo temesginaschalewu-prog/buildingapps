@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:ui';
 
 class ExamResult {
   final int id;
@@ -40,26 +41,40 @@ class ExamResult {
   });
 
   factory ExamResult.fromJson(Map<String, dynamic> json) {
+    // Parse score correctly - handle both string and number
+    double parsedScore = 0.0;
+    if (json['score'] != null) {
+      if (json['score'] is double) {
+        parsedScore = json['score'];
+      } else if (json['score'] is int) {
+        parsedScore = (json['score'] as int).toDouble();
+      } else if (json['score'] is String) {
+        parsedScore = double.tryParse(json['score']) ?? 0.0;
+      }
+    }
+
     return ExamResult(
-      id: json['id'],
-      examId: json['exam_id'],
-      userId: json['user_id'],
-      score: double.parse(json['score'].toString()),
-      totalQuestions: json['total_questions'],
-      correctAnswers: json['correct_answers'],
-      timeTaken: json['time_taken'],
-      startedAt: DateTime.parse(json['started_at']),
+      id: json['id'] ?? 0,
+      examId: json['exam_id'] ?? 0,
+      userId: json['user_id'] ?? 0,
+      score: parsedScore,
+      totalQuestions: json['total_questions'] ?? 0,
+      correctAnswers: json['correct_answers'] ?? 0,
+      timeTaken: json['time_taken'] ?? 0,
+      startedAt: json['started_at'] != null
+          ? DateTime.parse(json['started_at']).toLocal()
+          : DateTime.now(),
       completedAt: json['completed_at'] != null
-          ? DateTime.parse(json['completed_at'])
+          ? DateTime.parse(json['completed_at']).toLocal()
           : null,
-      status: json['status'],
+      status: json['status'] ?? 'unknown',
       examCode: json['exam_code'],
       answerDetails: json['answer_details'],
-      title: json['title'],
-      examType: json['exam_type'],
-      duration: json['duration'],
-      passingScore: json['passing_score'],
-      courseName: json['course_name'],
+      title: json['title'] ?? 'Unknown Exam',
+      examType: json['exam_type'] ?? 'unknown',
+      duration: json['duration'] ?? 0,
+      passingScore: json['passing_score'] ?? 50,
+      courseName: json['course_name'] ?? 'Unknown Course',
     );
   }
 
@@ -72,8 +87,8 @@ class ExamResult {
       'total_questions': totalQuestions,
       'correct_answers': correctAnswers,
       'time_taken': timeTaken,
-      'started_at': startedAt.toIso8601String(),
-      'completed_at': completedAt?.toIso8601String(),
+      'started_at': startedAt.toUtc().toIso8601String(),
+      'completed_at': completedAt?.toUtc().toIso8601String(),
       'status': status,
       'exam_code': examCode,
       'answer_details': answerDetails,
@@ -89,18 +104,42 @@ class ExamResult {
   bool get isInProgress => status == 'in_progress';
   bool get isAbandoned => status == 'abandoned';
 
-  bool get showResultsImmediately =>
-      true; // Default to true for completed exams
+  bool get passed => totalQuestions > 0 && score >= passingScore;
 
-  bool get passed => score >= passingScore;
-
-  double get percentage => (correctAnswers / totalQuestions) * 100;
+  double get percentage {
+    if (totalQuestions == 0) return 0;
+    return (correctAnswers / totalQuestions) * 100;
+  }
 
   String get formattedTime {
     final minutes = (timeTaken / 60).floor();
     final seconds = timeTaken % 60;
-    return '${minutes}m ${seconds}s';
+    if (minutes > 0) {
+      return '${minutes}m ${seconds}s';
+    }
+    return '${seconds}s';
   }
 
-  String get formattedScore => '${score.toStringAsFixed(2)}%';
+  String get formattedScore {
+    if (score == 0 && totalQuestions > 0 && correctAnswers > 0) {
+      // Calculate from correct answers if score is 0 but we have data
+      final calculatedScore = (correctAnswers / totalQuestions) * 100;
+      return '${calculatedScore.toStringAsFixed(1)}%';
+    }
+    return '${score.toStringAsFixed(1)}%';
+  }
+
+  String get statusDisplay {
+    if (isCompleted) return passed ? 'Passed' : 'Failed';
+    if (isInProgress) return 'In Progress';
+    return status;
+  }
+
+  Color get statusColor {
+    if (isCompleted) {
+      return passed ? const Color(0xFF34C759) : const Color(0xFFFF3B30);
+    }
+    if (isInProgress) return const Color(0xFF007AFF);
+    return const Color(0xFF8E8E93);
+  }
 }

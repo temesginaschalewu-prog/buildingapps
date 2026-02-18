@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:familyacademyclient/models/payment_model.dart';
+import 'package:familyacademyclient/models/progress_model.dart';
 import 'package:familyacademyclient/models/school_model.dart';
 import 'package:familyacademyclient/models/setting_model.dart';
 import 'package:familyacademyclient/models/subscription_model.dart';
@@ -11,6 +12,7 @@ import 'package:familyacademyclient/models/category_model.dart';
 import 'package:familyacademyclient/models/course_model.dart';
 import 'package:familyacademyclient/models/chapter_model.dart';
 import 'package:familyacademyclient/models/exam_model.dart';
+import 'package:familyacademyclient/models/exam_result_model.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/constants.dart';
@@ -207,6 +209,10 @@ class DeviceService {
       return value.toJson();
     } else if (value is Exam) {
       return value.toJson();
+    } else if (value is ExamResult) {
+      return value.toJson();
+    } else if (value is UserProgress) {
+      return value.toJson();
     }
     return value;
   }
@@ -269,31 +275,52 @@ class DeviceService {
       if (T == bool) return value as T;
       if (T == Map<String, dynamic>) return value as T;
 
-      if (value is List && T == List<Subscription>) {
-        return value.map((item) => Subscription.fromJson(item)).toList() as T;
-      }
-      if (value is List && T == List<Payment>) {
-        return value.map((item) => Payment.fromJson(item)).toList() as T;
-      }
-      if (value is List && T == List<Setting>) {
-        return value.map((item) => Setting.fromJson(item)).toList() as T;
-      }
-      if (value is List && T == List<School>) {
-        return value.map((item) => School.fromJson(item)).toList() as T;
-      }
-      if (value is List && T == List<Category>) {
-        return value.map((item) => Category.fromJson(item)).toList() as T;
-      }
-      if (value is List && T == List<Course>) {
-        return value.map((item) => Course.fromJson(item)).toList() as T;
-      }
-      if (value is List && T == List<Chapter>) {
-        return value.map((item) => Chapter.fromJson(item)).toList() as T;
-      }
-      if (value is List && T == List<Exam>) {
-        return value.map((item) => Exam.fromJson(item)).toList() as T;
+      // Handle List types
+      if (value is List) {
+        if (T == List<Subscription>) {
+          return value.map((item) => Subscription.fromJson(item)).toList() as T;
+        }
+        if (T == List<Payment>) {
+          return value.map((item) => Payment.fromJson(item)).toList() as T;
+        }
+        if (T == List<Setting>) {
+          return value.map((item) => Setting.fromJson(item)).toList() as T;
+        }
+        if (T == List<School>) {
+          return value.map((item) => School.fromJson(item)).toList() as T;
+        }
+        if (T == List<Category>) {
+          return value.map((item) => Category.fromJson(item)).toList() as T;
+        }
+        if (T == List<Course>) {
+          return value.map((item) => Course.fromJson(item)).toList() as T;
+        }
+        if (T == List<Chapter>) {
+          return value.map((item) => Chapter.fromJson(item)).toList() as T;
+        }
+        if (T == List<Exam>) {
+          return value.map((item) => Exam.fromJson(item)).toList() as T;
+        }
+        // FIX: Add ExamResult handling
+        if (T == List<ExamResult>) {
+          return value
+              .map((item) {
+                if (item is Map<String, dynamic>) {
+                  return ExamResult.fromJson(item);
+                } else if (item is ExamResult) {
+                  return item;
+                }
+                return ExamResult.fromJson({});
+              })
+              .where((item) => item.id != 0)
+              .toList() as T;
+        }
+        if (T == List<UserProgress>) {
+          return value.map((item) => UserProgress.fromJson(item)).toList() as T;
+        }
       }
 
+      // Handle single object types
       if (T == Subscription && value is Map) {
         return Subscription.fromJson(value as Map<String, dynamic>) as T;
       }
@@ -317,6 +344,12 @@ class DeviceService {
       }
       if (T == Exam && value is Map) {
         return Exam.fromJson(value as Map<String, dynamic>) as T;
+      }
+      if (T == ExamResult && value is Map) {
+        return ExamResult.fromJson(value as Map<String, dynamic>) as T;
+      }
+      if (T == UserProgress && value is Map) {
+        return UserProgress.fromJson(value as Map<String, dynamic>) as T;
       }
 
       return value as T?;

@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:badges/badges.dart' as badges;
 import 'package:pull_to_refresh/pull_to_refresh.dart';
+import 'package:flutter/services.dart';
 
 import 'package:familyacademyclient/providers/settings_provider.dart';
 import 'package:familyacademyclient/widgets/common/loading_indicator.dart';
@@ -45,11 +46,13 @@ class _SupportScreenState extends State<SupportScreen>
     )..repeat(reverse: true);
 
     _tabController = TabController(length: 3, vsync: this);
+
     _refreshControllers.addAll([
       RefreshController(), // Contact tab
       RefreshController(), // FAQ tab
       RefreshController(), // Actions tab
     ]);
+
     _loadContactSettings();
   }
 
@@ -63,7 +66,6 @@ class _SupportScreenState extends State<SupportScreen>
     super.dispose();
   }
 
-  // UPDATED: _loadContactSettings with better logging and error handling
   Future<void> _loadContactSettings() async {
     if (_isLoading) return;
 
@@ -79,18 +81,15 @@ class _SupportScreenState extends State<SupportScreen>
 
       debugLog('SupportScreen', '🔄 Loading contact settings...');
 
-      // First try to load ALL settings (this will now fetch everything)
       await settingsProvider.getAllSettings();
       debugLog('SupportScreen', '✅ getAllSettings completed');
 
-      // Then specifically ensure contact settings are loaded
       await settingsProvider.loadContactSettings(forceRefresh: true);
       debugLog('SupportScreen', '✅ loadContactSettings completed');
 
       final contactInfo = settingsProvider.getContactInfoList();
       debugLog('SupportScreen', '📞 Contact info items: ${contactInfo.length}');
 
-      // Log each contact item
       for (final info in contactInfo) {
         debugLog('SupportScreen', '   - ${info.title}: "${info.value}"');
       }
@@ -117,7 +116,6 @@ class _SupportScreenState extends State<SupportScreen>
       final settingsProvider =
           Provider.of<SettingsProvider>(context, listen: false);
 
-      // Force refresh all settings
       await settingsProvider.getAllSettings();
       await settingsProvider.loadContactSettings(forceRefresh: true);
 
@@ -127,7 +125,6 @@ class _SupportScreenState extends State<SupportScreen>
         _errorMessage = null;
       });
 
-      // Show success feedback
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Support information refreshed'),
@@ -184,22 +181,67 @@ class _SupportScreenState extends State<SupportScreen>
         final username = value.replaceAll('@', '');
         uri = Uri.parse('https://t.me/$username');
         break;
+      case ContactType.website:
+        final url = value.startsWith('http') ? value : 'https://$value';
+        uri = Uri.parse(url);
+        break;
+      case ContactType.social:
+        final url = value.startsWith('http') ? value : 'https://$value';
+        uri = Uri.parse(url);
+        break;
       case ContactType.address:
         final encodedAddress = Uri.encodeComponent(value);
         uri = Uri.parse('https://maps.google.com/?q=$encodedAddress');
         break;
       case ContactType.hours:
         return;
+      case ContactType.other:
+        if (value.startsWith('http')) {
+          uri = Uri.parse(value);
+        } else {
+          _showCopyDialog(context, value);
+          return;
+        }
+        break;
     }
 
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
-      showSnackBar(context, 'Cannot open $value', isError: true);
+      if (type == ContactType.other) {
+        _showCopyDialog(context, value);
+      } else {
+        showSimpleSnackBar(context, 'Cannot open $value', isError: true);
+      }
     }
   }
 
-  // 🎨 Contact Card - Redesigned with Telegram style
+  void _showCopyDialog(BuildContext context, String value) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Copy to Clipboard'),
+        content: Text(value),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: value));
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Copied to clipboard')),
+              );
+            },
+            child: const Text('Copy'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildContactCard(
     BuildContext context,
     String title,
@@ -242,7 +284,6 @@ class _SupportScreenState extends State<SupportScreen>
             ),
             child: Row(
               children: [
-                // Icon with colored background
                 Container(
                   width: ScreenSize.responsiveValue(
                     context: context,
@@ -276,10 +317,7 @@ class _SupportScreenState extends State<SupportScreen>
                     color: color,
                   ),
                 ),
-
                 SizedBox(width: AppThemes.spacingL),
-
-                // Content
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -308,14 +346,18 @@ class _SupportScreenState extends State<SupportScreen>
                             Text(
                               type == ContactType.address
                                   ? 'View on map'
-                                  : 'Tap to contact',
+                                  : type == ContactType.other
+                                      ? 'Tap to copy'
+                                      : 'Tap to contact',
                               style: AppTextStyles.caption.copyWith(
                                 color: color,
                               ),
                             ),
                             SizedBox(width: 4),
                             Icon(
-                              Icons.open_in_new_rounded,
+                              type == ContactType.other
+                                  ? Icons.copy_rounded
+                                  : Icons.open_in_new_rounded,
                               size: 12,
                               color: color,
                             ),
@@ -325,8 +367,6 @@ class _SupportScreenState extends State<SupportScreen>
                     ],
                   ),
                 ),
-
-                // Right arrow for tappable items
                 if (canTap)
                   Icon(
                     Icons.chevron_right_rounded,
@@ -352,7 +392,115 @@ class _SupportScreenState extends State<SupportScreen>
         );
   }
 
-  // ❓ FAQ Item - Redesigned with Telegram style
+  Widget _buildActionsTab(BuildContext context) {
+    return SmartRefresher(
+      controller: _refreshControllers[2],
+      onRefresh: () => _refreshData(2),
+      enablePullDown: true,
+      enablePullUp: false,
+      header: WaterDropHeader(
+        waterDropColor: AppColors.telegramBlue,
+        refresh: SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            valueColor: AlwaysStoppedAnimation(AppColors.telegramBlue),
+          ),
+        ),
+      ),
+      child: CustomScrollView(
+        physics: const ClampingScrollPhysics(),
+        slivers: [
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.all(AppThemes.spacingL),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSectionHeader('Quick Actions'),
+                  _buildQuickActionGrid(context),
+                  SizedBox(height: AppThemes.spacingXXL),
+                  _buildSectionHeader('Support Hours'),
+                  _buildSupportHoursCard(context),
+                  SizedBox(height: AppThemes.spacingXXL),
+                  _buildSectionHeader('Response Time'),
+                  _buildResponseTimeCard(context),
+                  SizedBox(height: AppThemes.spacingXXXL),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickActionGrid(BuildContext context) {
+    return GridView.count(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisCount: 2,
+      crossAxisSpacing: AppThemes.spacingL,
+      mainAxisSpacing: AppThemes.spacingL,
+      childAspectRatio: 1.2,
+      children: [
+        _buildQuickActionCard(
+          context,
+          'Report Issue',
+          'Report a problem with the app',
+          Icons.report_problem_rounded,
+          () => _showComingSoon(context, 'Report Issue'),
+          AppColors.telegramRed,
+          index: 0,
+        ),
+        _buildQuickActionCard(
+          context,
+          'Request Feature',
+          'Suggest a new feature',
+          Icons.lightbulb_rounded,
+          () => _showComingSoon(context, 'Request Feature'),
+          AppColors.telegramBlue,
+          index: 1,
+        ),
+        _buildQuickActionCard(
+          context,
+          'Chat with Us',
+          'Start a live chat',
+          Icons.chat_rounded,
+          () => _showComingSoon(context, 'Live Chat'),
+          AppColors.telegramGreen,
+          index: 2,
+        ),
+        _buildQuickActionCard(
+          context,
+          'FAQ',
+          'Frequently asked questions',
+          Icons.help_rounded,
+          () => _tabController.animateTo(1),
+          AppColors.telegramYellow,
+          index: 3,
+        ),
+      ],
+    );
+  }
+
+  void _showComingSoon(BuildContext context, String feature) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(feature),
+        content: Text('This feature is coming soon!'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildFAQItem(BuildContext context, String question, String answer,
       {int index = 0}) {
     return Container(
@@ -448,26 +596,29 @@ class _SupportScreenState extends State<SupportScreen>
         );
   }
 
-  // ⚡ Quick Action Card - Redesigned with Telegram style
-  Widget _buildQuickActionCard(BuildContext context, String title,
-      String subtitle, IconData icon, VoidCallback onTap, Color? color,
-      {int index = 0}) {
-    final actionColor = color ?? AppColors.telegramBlue;
-
+  Widget _buildQuickActionCard(
+    BuildContext context,
+    String title,
+    String subtitle,
+    IconData icon,
+    VoidCallback onTap,
+    Color color, {
+    int index = 0,
+  }) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
-        splashColor: actionColor.withOpacity(0.1),
+        splashColor: color.withOpacity(0.1),
         highlightColor: Colors.transparent,
         child: Container(
           padding: EdgeInsets.all(
             ScreenSize.responsiveValue(
               context: context,
-              mobile: AppThemes.spacingL,
-              tablet: AppThemes.spacingXL,
-              desktop: AppThemes.spacingXXL,
+              mobile: AppThemes.spacingM,
+              tablet: AppThemes.spacingL,
+              desktop: AppThemes.spacingXL,
             ),
           ),
           decoration: BoxDecoration(
@@ -479,47 +630,44 @@ class _SupportScreenState extends State<SupportScreen>
             ),
           ),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Icon with colored background
               Container(
-                width: 48,
-                height: 48,
+                width: 40,
+                height: 40,
                 decoration: BoxDecoration(
-                  color: actionColor.withOpacity(0.1),
+                  color: color.withOpacity(0.1),
                   borderRadius:
                       BorderRadius.circular(AppThemes.borderRadiusMedium),
                   border: Border.all(
-                    color: actionColor,
+                    color: color,
                     width: 1.5,
                   ),
                 ),
                 child: Icon(
                   icon,
-                  size: 24,
-                  color: actionColor,
+                  size: 20,
+                  color: color,
                 ),
               ),
-
-              SizedBox(height: AppThemes.spacingL),
-
-              // Title
+              SizedBox(height: AppThemes.spacingM),
               Text(
                 title,
                 style: AppTextStyles.titleSmall.copyWith(
                   fontWeight: FontWeight.w600,
                   color: AppColors.getTextPrimary(context),
                 ),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-
-              SizedBox(height: 4),
-
-              // Subtitle
+              SizedBox(height: 2),
               Text(
                 subtitle,
-                style: AppTextStyles.bodySmall.copyWith(
+                style: AppTextStyles.caption.copyWith(
                   color: AppColors.getTextSecondary(context),
                 ),
+                textAlign: TextAlign.center,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -541,7 +689,6 @@ class _SupportScreenState extends State<SupportScreen>
         );
   }
 
-  // 📞 Response Time Card
   Widget _buildResponseTimeCard(BuildContext context) {
     return Container(
       padding: EdgeInsets.all(AppThemes.spacingL),
@@ -555,7 +702,6 @@ class _SupportScreenState extends State<SupportScreen>
       ),
       child: Column(
         children: [
-          // Animated 24h badge
           AnimatedBuilder(
             animation: _pulseAnimationController,
             builder: (context, child) {
@@ -585,9 +731,7 @@ class _SupportScreenState extends State<SupportScreen>
               );
             },
           ),
-
           SizedBox(height: AppThemes.spacingL),
-
           Text(
             'Quick Response',
             style: AppTextStyles.titleMedium.copyWith(
@@ -595,9 +739,7 @@ class _SupportScreenState extends State<SupportScreen>
               color: AppColors.getTextPrimary(context),
             ),
           ),
-
           SizedBox(height: AppThemes.spacingS),
-
           Text(
             'We typically respond within 24 hours during business days',
             style: AppTextStyles.bodyMedium.copyWith(
@@ -610,8 +752,10 @@ class _SupportScreenState extends State<SupportScreen>
     ).animate().fadeIn(duration: AppThemes.animationDurationMedium);
   }
 
-  // 🕒 Support Hours Card
   Widget _buildSupportHoursCard(BuildContext context) {
+    final settingsProvider = Provider.of<SettingsProvider>(context);
+    final hours = settingsProvider.getOfficeHours();
+
     return Container(
       padding: EdgeInsets.all(AppThemes.spacingL),
       decoration: BoxDecoration(
@@ -624,7 +768,6 @@ class _SupportScreenState extends State<SupportScreen>
       ),
       child: Column(
         children: [
-          // Header
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -643,80 +786,19 @@ class _SupportScreenState extends State<SupportScreen>
               ),
             ],
           ),
-
           SizedBox(height: AppThemes.spacingL),
-
-          // Weekdays
-          _buildHoursRow(
-            day: 'Monday - Friday',
-            hours: '9:00 AM - 6:00 PM',
-          ),
-
-          SizedBox(height: AppThemes.spacingM),
-
-          // Saturday
-          _buildHoursRow(
-            day: 'Saturday',
-            hours: '10:00 AM - 4:00 PM',
-          ),
-
-          SizedBox(height: AppThemes.spacingM),
-
-          // Sunday
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: EdgeInsets.symmetric(
-                  horizontal: AppThemes.spacingM,
-                  vertical: AppThemes.spacingXS,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.telegramRed.withOpacity(0.1),
-                  borderRadius:
-                      BorderRadius.circular(AppThemes.borderRadiusFull),
-                  border: Border.all(
-                    color: AppColors.telegramRed,
-                    width: 1,
-                  ),
-                ),
-                child: Text(
-                  'Sunday - Closed',
-                  style: AppTextStyles.labelSmall.copyWith(
-                    color: AppColors.telegramRed,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
+          Text(
+            hours,
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: AppColors.getTextSecondary(context),
+            ),
+            textAlign: TextAlign.center,
           ),
         ],
       ),
     ).animate().fadeIn(duration: AppThemes.animationDurationMedium);
   }
 
-  Widget _buildHoursRow({required String day, required String hours}) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          day,
-          style: AppTextStyles.bodyMedium.copyWith(
-            color: AppColors.getTextSecondary(context),
-          ),
-        ),
-        Text(
-          hours,
-          style: AppTextStyles.bodyMedium.copyWith(
-            color: AppColors.getTextPrimary(context),
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
-    );
-  }
-
-  // 📌 Section Header
   Widget _buildSectionHeader(String title) {
     return Padding(
       padding: EdgeInsets.only(
@@ -733,7 +815,6 @@ class _SupportScreenState extends State<SupportScreen>
     );
   }
 
-  // 🎨 Color helpers
   Color _getIconColorForType(ContactType type, BuildContext context) {
     switch (type) {
       case ContactType.phone:
@@ -748,6 +829,9 @@ class _SupportScreenState extends State<SupportScreen>
         return AppColors.telegramYellow;
       case ContactType.hours:
         return AppColors.telegramYellow;
+      case ContactType.website:
+        return AppColors.telegramBlue;
+      case ContactType.social:
       default:
         return AppColors.telegramBlue;
     }
@@ -767,155 +851,17 @@ class _SupportScreenState extends State<SupportScreen>
         return AppColors.telegramYellow.withOpacity(0.1);
       case ContactType.hours:
         return AppColors.telegramYellow.withOpacity(0.1);
+      case ContactType.website:
+        return AppColors.telegramBlue.withOpacity(0.1);
+      case ContactType.social:
       default:
         return AppColors.telegramBlue.withOpacity(0.1);
     }
   }
 
-  // 📱 Mobile Layout
-  Widget _buildMobileLayout(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.getBackground(context),
-      appBar: AppBar(
-        title: Text(
-          'Support',
-          style: AppTextStyles.appBarTitle.copyWith(
-            color: AppColors.getTextPrimary(context),
-          ),
-        ),
-        backgroundColor: AppColors.getBackground(context),
-        elevation: 0,
-        surfaceTintColor: Colors.transparent,
-        leading: IconButton(
-          icon: Icon(
-            Icons.arrow_back_rounded,
-            color: AppColors.getTextPrimary(context),
-          ),
-          onPressed: () => GoRouter.of(context).pop(),
-        ),
-        actions: [
-          IconButton(
-            icon: _isRefreshing
-                ? SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: AppColors.telegramBlue,
-                    ),
-                  )
-                : Icon(
-                    Icons.refresh_rounded,
-                    color: AppColors.getTextSecondary(context),
-                  ),
-            onPressed:
-                _isRefreshing ? null : () => _refreshData(_tabController.index),
-            tooltip: 'Refresh',
-          ),
-        ],
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: AppColors.telegramBlue,
-          indicatorWeight: 3,
-          labelColor: AppColors.telegramBlue,
-          unselectedLabelColor: AppColors.getTextSecondary(context),
-          labelStyle: AppTextStyles.labelMedium,
-          unselectedLabelStyle: AppTextStyles.labelMedium,
-          tabs: const [
-            Tab(text: 'Contact'),
-            Tab(text: 'FAQ'),
-            Tab(text: 'Actions'),
-          ],
-        ),
-      ),
-      body: _buildBody(context),
-    );
-  }
-
-  // 💻 Desktop/Tablet Layout
-  Widget _buildDesktopLayout(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.getBackground(context),
-      appBar: AppBar(
-        title: Text(
-          'Support',
-          style: AppTextStyles.appBarTitle.copyWith(
-            color: AppColors.getTextPrimary(context),
-          ),
-        ),
-        backgroundColor: AppColors.getBackground(context),
-        elevation: 0,
-        surfaceTintColor: Colors.transparent,
-        leading: IconButton(
-          icon: Icon(
-            Icons.arrow_back_rounded,
-            color: AppColors.getTextPrimary(context),
-          ),
-          onPressed: () => GoRouter.of(context).pop(),
-        ),
-        actions: [
-          IconButton(
-            icon: _isRefreshing
-                ? SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: AppColors.telegramBlue,
-                    ),
-                  )
-                : Icon(
-                    Icons.refresh_rounded,
-                    color: AppColors.getTextSecondary(context),
-                  ),
-            onPressed:
-                _isRefreshing ? null : () => _refreshData(_tabController.index),
-            tooltip: 'Refresh',
-          ),
-        ],
-      ),
-      body: _buildDesktopBody(context),
-    );
-  }
-
-  Widget _buildBody(BuildContext context) {
-    if (_isLoading && !_isRefreshing) {
-      return Center(
-        child: LoadingIndicator(
-          message: 'Loading support information...',
-          type: LoadingType.circular,
-          color: AppColors.telegramBlue,
-        ),
-      );
-    }
-
-    if (_hasError) {
-      return ErrorState(
-        title: 'Failed to Load',
-        message: _errorMessage ?? 'Unable to load support information.',
-        actionText: 'Retry',
-        onAction: _loadContactSettings,
-      );
-    }
-
+  Widget _buildContactTab(BuildContext context) {
     final settingsProvider = Provider.of<SettingsProvider>(context);
-
-    if (ScreenSize.isMobile(context)) {
-      return TabBarView(
-        controller: _tabController,
-        children: [
-          _buildContactTab(context, settingsProvider),
-          _buildFAQTab(context),
-          _buildActionsTab(context),
-        ],
-      );
-    } else {
-      return _buildDesktopBody(context);
-    }
-  }
-
-  Widget _buildContactTab(BuildContext context, SettingsProvider settings) {
-    final contactInfo = settings.getContactInfoList();
+    final contactInfo = settingsProvider.getContactInfoList();
 
     return SmartRefresher(
       controller: _refreshControllers[0],
@@ -1082,293 +1028,266 @@ class _SupportScreenState extends State<SupportScreen>
     );
   }
 
-  Widget _buildActionsTab(BuildContext context) {
-    return SmartRefresher(
-      controller: _refreshControllers[2],
-      onRefresh: () => _refreshData(2),
-      enablePullDown: true,
-      enablePullUp: false,
-      header: WaterDropHeader(
-        waterDropColor: AppColors.telegramBlue,
-        refresh: SizedBox(
-          width: 24,
-          height: 24,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            valueColor: AlwaysStoppedAnimation(AppColors.telegramBlue),
+  Widget _buildMobileLayout(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.getBackground(context),
+      appBar: AppBar(
+        title: Text(
+          'Support',
+          style: AppTextStyles.appBarTitle.copyWith(
+            color: AppColors.getTextPrimary(context),
           ),
         ),
-      ),
-      child: CustomScrollView(
-        physics: const ClampingScrollPhysics(),
-        slivers: [
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.all(AppThemes.spacingL),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildSectionHeader('Quick Actions'),
-                  GridView.count(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    crossAxisCount: ScreenSize.isMobile(context) ? 2 : 3,
-                    crossAxisSpacing: AppThemes.spacingL,
-                    mainAxisSpacing: AppThemes.spacingL,
-                    childAspectRatio: 1.0,
-                    children: [
-                      _buildQuickActionCard(
-                        context,
-                        'Feedback',
-                        'Share your suggestions',
-                        Icons.feedback_rounded,
-                        () => _handleContactTap(ContactType.email,
-                            'feedback@familyacademy.com', context),
-                        AppColors.telegramGreen,
-                        index: 1,
-                      ),
-                      _buildQuickActionCard(
-                        context,
-                        'Business',
-                        'Business inquiries',
-                        Icons.business_center_rounded,
-                        () => _handleContactTap(ContactType.email,
-                            'business@familyacademy.com', context),
-                        AppColors.telegramBlue,
-                        index: 2,
-                      ),
-                      if (!ScreenSize.isMobile(context)) ...[
-                        _buildQuickActionCard(
-                          context,
-                          'Call Now',
-                          'Speak with support',
-                          Icons.call_rounded,
-                          () => _handleContactTap(
-                              ContactType.phone, '+251911223355', context),
-                          AppColors.telegramGreen,
-                          index: 3,
-                        ),
-                      ],
-                    ],
-                  ),
-                  SizedBox(height: AppThemes.spacingXXL),
-                  _buildSectionHeader('Support Hours'),
-                  _buildSupportHoursCard(context),
-                  SizedBox(height: AppThemes.spacingXXXL),
-                ],
-              ),
-            ),
+        backgroundColor: AppColors.getBackground(context),
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        leading: IconButton(
+          icon: Icon(
+            Icons.arrow_back_rounded,
+            color: AppColors.getTextPrimary(context),
           ),
+          onPressed: () => GoRouter.of(context).pop(),
+        ),
+        actions: [
+          IconButton(
+            icon: _isRefreshing
+                ? SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.telegramBlue,
+                    ),
+                  )
+                : Icon(
+                    Icons.refresh_rounded,
+                    color: AppColors.getTextSecondary(context),
+                  ),
+            onPressed:
+                _isRefreshing ? null : () => _refreshData(_tabController.index),
+            tooltip: 'Refresh',
+          ),
+        ],
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: AppColors.telegramBlue,
+          indicatorWeight: 3,
+          labelColor: AppColors.telegramBlue,
+          unselectedLabelColor: AppColors.getTextSecondary(context),
+          labelStyle: AppTextStyles.labelMedium,
+          unselectedLabelStyle: AppTextStyles.labelMedium,
+          tabs: const [
+            Tab(text: 'Contact'),
+            Tab(text: 'FAQ'),
+            Tab(text: 'Actions'),
+          ],
+        ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _buildContactTab(context),
+          _buildFAQTab(context),
+          _buildActionsTab(context),
         ],
       ),
     );
   }
 
-  Widget _buildDesktopBody(BuildContext context) {
+  Widget _buildDesktopLayout(BuildContext context) {
     final settingsProvider = Provider.of<SettingsProvider>(context);
     final contactInfo = settingsProvider.getContactInfoList();
 
-    return SingleChildScrollView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      child: AdaptiveContainer(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(height: AppThemes.spacingXL),
-
-            // Hero Banner
-            Container(
-              padding: EdgeInsets.all(
-                ScreenSize.responsiveValue(
-                  context: context,
-                  mobile: AppThemes.spacingL,
-                  tablet: AppThemes.spacingXL,
-                  desktop: AppThemes.spacingXXL,
-                ),
-              ),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: AppColors.blueGradient,
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius:
-                    BorderRadius.circular(AppThemes.borderRadiusLarge),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.support_agent_rounded,
-                    size: ScreenSize.responsiveValue(
-                      context: context,
-                      mobile: 36,
-                      tablet: 40,
-                      desktop: 44,
+    return Scaffold(
+      backgroundColor: AppColors.getBackground(context),
+      appBar: AppBar(
+        title: Text(
+          'Support',
+          style: AppTextStyles.appBarTitle.copyWith(
+            color: AppColors.getTextPrimary(context),
+          ),
+        ),
+        backgroundColor: AppColors.getBackground(context),
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        leading: IconButton(
+          icon: Icon(
+            Icons.arrow_back_rounded,
+            color: AppColors.getTextPrimary(context),
+          ),
+          onPressed: () => GoRouter.of(context).pop(),
+        ),
+        actions: [
+          IconButton(
+            icon: _isRefreshing
+                ? SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.telegramBlue,
                     ),
-                    color: Colors.white,
+                  )
+                : Icon(
+                    Icons.refresh_rounded,
+                    color: AppColors.getTextSecondary(context),
                   ),
-                  SizedBox(width: AppThemes.spacingL),
+            onPressed:
+                _isRefreshing ? null : () => _refreshData(_tabController.index),
+            tooltip: 'Refresh',
+          ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: AdaptiveContainer(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(height: AppThemes.spacingXL),
+              Container(
+                padding: EdgeInsets.all(
+                  ScreenSize.responsiveValue(
+                    context: context,
+                    mobile: AppThemes.spacingL,
+                    tablet: AppThemes.spacingXL,
+                    desktop: AppThemes.spacingXXL,
+                  ),
+                ),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: AppColors.blueGradient,
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius:
+                      BorderRadius.circular(AppThemes.borderRadiusLarge),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.support_agent_rounded,
+                      size: ScreenSize.responsiveValue(
+                        context: context,
+                        mobile: 36,
+                        tablet: 40,
+                        desktop: 44,
+                      ),
+                      color: Colors.white,
+                    ),
+                    SizedBox(width: AppThemes.spacingL),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'We\'re Here to Help',
+                            style: AppTextStyles.headlineMedium.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            'Get help with your account, payments, subscriptions, or any other questions.',
+                            style: AppTextStyles.bodyLarge.copyWith(
+                              color: Colors.white.withOpacity(0.9),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(height: AppThemes.spacingXXL),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'We\'re Here to Help',
-                          style: AppTextStyles.headlineMedium.copyWith(
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                          ),
-                        ),
-                        SizedBox(height: 4),
-                        Text(
-                          'Get help with your account, payments, subscriptions, or any other questions.',
-                          style: AppTextStyles.bodyLarge.copyWith(
-                            color: Colors.white.withOpacity(0.9),
-                          ),
-                        ),
+                        _buildSectionHeader('Contact Information'),
+                        ...contactInfo
+                            .asMap()
+                            .entries
+                            .map((entry) => _buildContactCard(
+                                  context,
+                                  entry.value.title,
+                                  entry.value.value,
+                                  entry.value.icon,
+                                  entry.value.type,
+                                  index: entry.key,
+                                )),
+                        SizedBox(height: AppThemes.spacingXXL),
+                        _buildSectionHeader('Response Time'),
+                        _buildResponseTimeCard(context),
+                      ],
+                    ),
+                  ),
+                  SizedBox(width: AppThemes.spacingXXL),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildSectionHeader('Quick Actions'),
+                        _buildQuickActionGrid(context),
+                        SizedBox(height: AppThemes.spacingXXL),
+                        _buildSectionHeader('Support Hours'),
+                        _buildSupportHoursCard(context),
                       ],
                     ),
                   ),
                 ],
               ),
-            ),
-
-            SizedBox(height: AppThemes.spacingXXL),
-
-            // Two Column Layout
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Left Column - Contact Info
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildSectionHeader('Contact Information'),
-                      ...contactInfo
-                          .asMap()
-                          .entries
-                          .map((entry) => _buildContactCard(
-                                context,
-                                entry.value.title,
-                                entry.value.value,
-                                entry.value.icon,
-                                entry.value.type,
-                                index: entry.key,
-                              )),
-                      SizedBox(height: AppThemes.spacingXXL),
-                      _buildSectionHeader('Response Time'),
-                      _buildResponseTimeCard(context),
-                    ],
-                  ),
-                ),
-
-                SizedBox(width: AppThemes.spacingXXL),
-
-                // Right Column - Quick Actions & Hours
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildSectionHeader('Quick Actions'),
-                      GridView.count(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        crossAxisCount: 2,
-                        crossAxisSpacing: AppThemes.spacingL,
-                        mainAxisSpacing: AppThemes.spacingL,
-                        childAspectRatio: 1.0,
-                        children: [
-                          _buildQuickActionCard(
-                            context,
-                            'Feedback',
-                            'Share your suggestions',
-                            Icons.feedback_rounded,
-                            () => _handleContactTap(ContactType.email,
-                                'feedback@familyacademy.com', context),
-                            AppColors.telegramGreen,
-                            index: 1,
-                          ),
-                          _buildQuickActionCard(
-                            context,
-                            'Business',
-                            'Business inquiries',
-                            Icons.business_center_rounded,
-                            () => _handleContactTap(ContactType.email,
-                                'business@familyacademy.com', context),
-                            AppColors.telegramBlue,
-                            index: 2,
-                          ),
-                          _buildQuickActionCard(
-                            context,
-                            'Call Now',
-                            'Speak with support',
-                            Icons.call_rounded,
-                            () => _handleContactTap(
-                                ContactType.phone, '+251911223355', context),
-                            AppColors.telegramGreen,
-                            index: 3,
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: AppThemes.spacingXXL),
-                      _buildSectionHeader('Support Hours'),
-                      _buildSupportHoursCard(context),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-
-            SizedBox(height: AppThemes.spacingXXL),
-
-            // FAQ Section (Full Width)
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildSectionHeader('Frequently Asked Questions'),
-                ...const [
-                  {
-                    'question': 'How do I reset my password?',
-                    'answer':
-                        'Please contact support using the phone or email provided. We will verify your identity and reset your password for you.',
-                  },
-                  {
-                    'question': 'Why is my payment not verified?',
-                    'answer':
-                        'Payments are manually verified by our admin team. This usually takes 24-48 hours. Ensure your payment proof includes transaction ID and is clearly visible.',
-                  },
-                  {
-                    'question': 'Can I change my device?',
-                    'answer':
-                        'Yes, you can change your device but it requires a device change payment. Go to Profile → Device Settings to initiate the process.',
-                  },
-                  {
-                    'question': 'How do I access paid content?',
-                    'answer':
-                        'First, make a payment for the category you want to access. Once your payment is verified, all content in that category will be unlocked.',
-                  },
-                  {
-                    'question': 'What happens when my subscription expires?',
-                    'answer':
-                        'You will lose access to paid content in that category. You can renew your subscription before it expires to maintain continuous access.',
-                  },
-                  {
-                    'question': 'How do I link my parent account?',
-                    'answer':
-                        'Go to Profile → Parent Link to generate a unique code. Share this code with your parent through Telegram to complete the linking process.',
-                  },
-                ].asMap().entries.map((entry) => _buildFAQItem(
-                      context,
-                      entry.value['question']!,
-                      entry.value['answer']!,
-                      index: entry.key,
-                    )),
-              ],
-            ),
-
-            SizedBox(height: AppThemes.spacingXXXL),
-          ],
+              SizedBox(height: AppThemes.spacingXXL),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSectionHeader('Frequently Asked Questions'),
+                  ...const [
+                    {
+                      'question': 'How do I reset my password?',
+                      'answer':
+                          'Please contact support using the phone or email provided. We will verify your identity and reset your password for you.',
+                    },
+                    {
+                      'question': 'Why is my payment not verified?',
+                      'answer':
+                          'Payments are manually verified by our admin team. This usually takes 24-48 hours. Ensure your payment proof includes transaction ID and is clearly visible.',
+                    },
+                    {
+                      'question': 'Can I change my device?',
+                      'answer':
+                          'Yes, you can change your device but it requires a device change payment. Go to Profile → Device Settings to initiate the process.',
+                    },
+                    {
+                      'question': 'How do I access paid content?',
+                      'answer':
+                          'First, make a payment for the category you want to access. Once your payment is verified, all content in that category will be unlocked.',
+                    },
+                    {
+                      'question': 'What happens when my subscription expires?',
+                      'answer':
+                          'You will lose access to paid content in that category. You can renew your subscription before it expires to maintain continuous access.',
+                    },
+                    {
+                      'question': 'How do I link my parent account?',
+                      'answer':
+                          'Go to Profile → Parent Link to generate a unique code. Share this code with your parent through Telegram to complete the linking process.',
+                    },
+                  ].asMap().entries.map((entry) => _buildFAQItem(
+                        context,
+                        entry.value['question']!,
+                        entry.value['answer']!,
+                        index: entry.key,
+                      )),
+                ],
+              ),
+              SizedBox(height: AppThemes.spacingXXXL),
+            ],
+          ),
         ),
       ),
     );

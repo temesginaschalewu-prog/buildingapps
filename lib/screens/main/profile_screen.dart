@@ -24,6 +24,7 @@ import 'package:familyacademyclient/services/device_service.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:badges/badges.dart' as badges;
 import 'package:shimmer/shimmer.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -39,6 +40,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final _formKey = GlobalKey<FormState>();
 
   File? _profileImageFile;
+  String? _tempProfileImageUrl; // Temporary URL for preview after upload
   bool _isEditing = false;
   bool _isUploadingImage = false;
   bool _isSaving = false;
@@ -75,6 +77,46 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _emailController.dispose();
     _phoneController.dispose();
     super.dispose();
+  }
+
+  Future<void> _openTelegramGroup() async {
+    final username = 's_upport_familyacademy';
+
+    try {
+      debugLog('ProfileScreen',
+          'Attempting to open Telegram with username: $username');
+
+      // Try to open Telegram app first
+      final telegramUrl = 'https://t.me/$username';
+      debugLog('ProfileScreen', 'Telegram URL: $telegramUrl');
+
+      final uri = Uri.parse(telegramUrl);
+      debugLog('ProfileScreen', 'Parsed URI: $uri');
+
+      if (await canLaunchUrl(uri)) {
+        debugLog('ProfileScreen', 'Can launch URL, attempting...');
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+        debugLog('ProfileScreen', 'Launch attempted successfully');
+      } else {
+        debugLog(
+            'ProfileScreen', 'Cannot launch Telegram app, trying web fallback');
+        // Fallback to web
+        final webUrl = 'https://web.telegram.org/k/#/$username';
+        debugLog('ProfileScreen', 'Web URL: $webUrl');
+
+        final webUri = Uri.parse(webUrl);
+        if (await canLaunchUrl(webUri)) {
+          await launchUrl(webUri, mode: LaunchMode.externalApplication);
+        } else {
+          debugLog('ProfileScreen', 'Cannot launch web URL either');
+          _showToast('Could not open Telegram');
+        }
+      }
+    } catch (e, stackTrace) {
+      debugLog('ProfileScreen', 'Error opening Telegram: $e');
+      debugLog('ProfileScreen', 'Stack trace: $stackTrace');
+      _showToast('Could not open Telegram');
+    }
   }
 
   // 🎯 Telegram-style cache-first loading
@@ -451,6 +493,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  // FIXED: _pickProfileImage - Shows image immediately after selection
   Future<void> _pickProfileImage() async {
     if (!_isEditing) return;
 
@@ -471,18 +514,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
           return;
         }
 
-        setState(() => _isUploadingImage = true);
+        // Show the selected image immediately
+        setState(() {
+          _profileImageFile = imageFile;
+          _isUploadingImage = true;
+        });
 
         try {
           final compressedFile = await _compressImage(imageFile);
 
-          setState(() {
-            _profileImageFile = compressedFile;
-          });
+          // Update with compressed version if needed
+          if (compressedFile != imageFile) {
+            setState(() {
+              _profileImageFile = compressedFile;
+            });
+          }
 
           await _uploadProfileImage(compressedFile!);
         } catch (e) {
           _showToast('Failed to process image');
+          // Revert on error
+          setState(() {
+            _profileImageFile = null;
+          });
         } finally {
           if (mounted) {
             setState(() => _isUploadingImage = false);
@@ -508,26 +562,47 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  // FIXED: _uploadProfileImage - Stores the URL and updates preview
   Future<void> _uploadProfileImage(File imageFile) async {
     try {
       final apiService = Provider.of<ApiService>(context, listen: false);
       final response = await apiService.uploadImage(imageFile);
 
       if (response.success && response.data != null) {
+        final imageUrl = response.data!;
+
+        // Store the URL temporarily
+        setState(() {
+          _tempProfileImageUrl = imageUrl;
+        });
+
         final userProvider = Provider.of<UserProvider>(context, listen: false);
-        await userProvider.updateProfile(profileImage: response.data!);
+        await userProvider.updateProfile(profileImage: imageUrl);
 
         _showToast('Profile image updated');
-        setState(() => _profileImageFile = null);
+
+        // Clear the local file after successful upload
+        setState(() {
+          _profileImageFile = null;
+          _tempProfileImageUrl = null;
+        });
       } else {
         _showToast('Failed to upload image');
+        // Revert on error
+        setState(() {
+          _profileImageFile = null;
+        });
       }
     } catch (e) {
       debugLog('ProfileScreen', 'Error uploading image: $e');
       _showToast('Failed to upload image');
+      setState(() {
+        _profileImageFile = null;
+      });
     }
   }
 
+// FIXED: _saveProfile - This will show the error message
   Future<void> _saveProfile() async {
     if (_isSaving || !_formKey.currentState!.validate()) return;
 
@@ -538,23 +613,44 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final phone = _phoneController.text.trim();
 
       final userProvider = Provider.of<UserProvider>(context, listen: false);
+
       await userProvider.updateProfile(
         email: email.isNotEmpty ? email : null,
         phone: phone.isNotEmpty ? phone : null,
       );
 
-      _showToast('Profile updated');
+      // If we get here, it succeeded
+      _showToast('Profile updated successfully');
       setState(() {
         _isEditing = false;
         _isSaving = false;
       });
 
-      // Refresh in background after save
-      _refreshInBackground();
+      // Refresh to get updated data
+      await userProvider.loadUserProfile(forceRefresh: true);
     } catch (e) {
-      debugLog('ProfileScreen', 'Error saving profile: $e');
-      _showToast('Failed to update profile');
+      // Handle specific error messages
+      String errorMessage = e.toString().replaceFirst('Exception: ', '');
+
+      // Show the error in a red SnackBar
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(errorMessage),
+          backgroundColor: AppColors.telegramRed,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 3),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
+          ),
+        ),
+      );
+
       setState(() => _isSaving = false);
+      // Stay in edit mode so user can try again
+    }
+
+    if (!_isSaving) {
+      _refreshInBackground();
     }
   }
 
@@ -564,71 +660,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   bool _isValidPhone(String phone) {
     return RegExp(r'^[0-9+\-()\s]{10,15}$').hasMatch(phone);
-  }
-
-  // 🌐 Offline banner
-  Widget _buildOfflineBanner() {
-    if (!_isOffline && !_hasCachedData) return const SizedBox.shrink();
-
-    return Container(
-      margin: EdgeInsets.symmetric(
-        horizontal: ScreenSize.responsiveValue(
-          context: context,
-          mobile: AppThemes.spacingL,
-          tablet: AppThemes.spacingXL,
-          desktop: AppThemes.spacingXXL,
-        ),
-        vertical: AppThemes.spacingS,
-      ),
-      padding: EdgeInsets.all(AppThemes.spacingM),
-      decoration: BoxDecoration(
-        color: _isOffline
-            ? AppColors.telegramYellow.withOpacity(0.1)
-            : AppColors.telegramBlue.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
-        border: Border.all(
-          color: _isOffline
-              ? AppColors.telegramYellow.withOpacity(0.3)
-              : AppColors.telegramBlue.withOpacity(0.3),
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            _isOffline
-                ? Icons.signal_wifi_off_rounded
-                : Icons.cloud_done_rounded,
-            color:
-                _isOffline ? AppColors.telegramYellow : AppColors.telegramBlue,
-            size: 20,
-          ),
-          SizedBox(width: AppThemes.spacingM),
-          Expanded(
-            child: Text(
-              _isOffline
-                  ? 'Offline mode - showing cached profile'
-                  : 'Using cached data - refreshing in background',
-              style: AppTextStyles.bodySmall.copyWith(
-                color: _isOffline
-                    ? AppColors.telegramYellow
-                    : AppColors.telegramBlue,
-              ),
-            ),
-          ),
-          if (_isOffline)
-            TextButton(
-              onPressed: _manualRefresh,
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.telegramBlue,
-                padding: EdgeInsets.zero,
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: Text('Retry'),
-            ),
-        ],
-      ),
-    );
   }
 
   Widget _buildNotificationButton() {
@@ -708,6 +739,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  // FIXED: _buildProfileHeader - Improved tap area for edit icon
   Widget _buildProfileHeader(User user) {
     final avatarSize = ScreenSize.responsiveValue(
       context: context,
@@ -734,6 +766,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               // Profile image circle
               GestureDetector(
                 onTap: _isEditing ? _pickProfileImage : null,
+                behavior: HitTestBehavior.opaque,
                 child: Container(
                   width: avatarSize,
                   height: avatarSize,
@@ -787,31 +820,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
               ),
-              // Edit pen icon
+              // Edit pen icon - FIXED: Separate GestureDetector with larger hit area
               if (_isEditing && !_isUploadingImage)
                 Positioned(
                   bottom: 0,
                   right: 0,
-                  child: Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: AppColors.telegramBlue,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                          color: AppColors.getBackground(context), width: 3),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.2),
-                          blurRadius: 4,
-                          offset: const Offset(0, 2),
+                  child: GestureDetector(
+                    onTap: _pickProfileImage,
+                    behavior: HitTestBehavior.opaque,
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      padding: const EdgeInsets.all(4),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: AppColors.telegramBlue,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                              color: AppColors.getBackground(context),
+                              width: 3),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.2),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                    child: const Icon(
-                      Icons.edit_rounded,
-                      size: 14,
-                      color: Colors.white,
+                        child: const Icon(
+                          Icons.edit_rounded,
+                          size: 14,
+                          color: Colors.white,
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -1146,6 +1187,59 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  // FIXED: _buildMenuCard with optional iconColor parameter
+  Widget _buildMenuCard({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+    Color? iconColor, // Added optional iconColor parameter
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppThemes.spacingM),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppColors.getSurface(context),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  icon,
+                  color: iconColor ??
+                      AppColors.getTextSecondary(
+                          context), // Use iconColor if provided
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: AppThemes.spacingM),
+              Expanded(
+                child: Text(
+                  title,
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.getTextPrimary(context),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: AppColors.getTextSecondary(context),
+                size: 20,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildMenuSection() {
     return Container(
       padding: EdgeInsets.all(
@@ -1196,6 +1290,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           const Divider(),
           _buildMenuCard(
+            icon: Icons.feedback_outlined,
+            title: 'Feedback & Support',
+            onTap: _openTelegramGroup,
+          ),
+          const Divider(),
+          _buildMenuCard(
             icon: Icons.support_outlined,
             title: 'Help & Support',
             onTap: () => context.push('/support'),
@@ -1209,55 +1309,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ],
       ),
     ).animate().slideY(begin: 0.1, end: 0).fadeIn();
-  }
-
-  Widget _buildMenuCard({
-    required IconData icon,
-    required String title,
-    required VoidCallback onTap,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: AppThemes.spacingM),
-          child: Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: AppColors.getSurface(context),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  icon,
-                  color: AppColors.getTextSecondary(context),
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: AppThemes.spacingM),
-              Expanded(
-                child: Text(
-                  title,
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.getTextPrimary(context),
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: AppColors.getTextSecondary(context),
-                size: 20,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 
   Widget _buildSettingsSection() {
@@ -1863,9 +1914,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       physics: const BouncingScrollPhysics(),
       slivers: [
         _buildAppBar(context),
-        SliverToBoxAdapter(
-          child: _buildOfflineBanner(),
-        ),
         SliverList(
           delegate: SliverChildListDelegate([
             // Profile header

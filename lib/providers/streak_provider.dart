@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
@@ -12,8 +13,24 @@ class StreakProvider with ChangeNotifier {
   bool _isLoading = false;
   String? _error;
   List<DateTime> _streakHistory = [];
+  Timer? _refreshTimer;
 
-  StreakProvider({required this.apiService, required this.deviceService});
+  static const Duration _refreshInterval = Duration(minutes: 5);
+  static const Duration _cacheDuration = Duration(hours: 1);
+
+  StreakProvider({required this.apiService, required this.deviceService}) {
+    _init();
+  }
+
+  Future<void> _init() async {
+    _refreshTimer = Timer.periodic(_refreshInterval, (_) {
+      if (!_isLoading) {
+        loadStreak(forceRefresh: true);
+      }
+    });
+
+    await loadStreak(forceRefresh: false);
+  }
 
   Streak? get streak => _streak;
   bool get isLoading => _isLoading;
@@ -22,7 +39,39 @@ class StreakProvider with ChangeNotifier {
 
   int get currentStreak => _streak?.currentStreak ?? 0;
 
-  Future<void> loadStreak({required bool forceRefresh}) async {
+  String get streakLevel {
+    final count = currentStreak;
+    if (count >= 365) return 'Legendary 🔥🔥🔥';
+    if (count >= 100) return 'Elite 🏆';
+    if (count >= 50) return 'Master ⭐';
+    if (count >= 30) return 'Dedicated 📚';
+    if (count >= 14) return 'Committed 💪';
+    if (count >= 7) return 'Consistent 🚀';
+    if (count >= 3) return 'Growing 🌱';
+    return 'New ✨';
+  }
+
+  Color get streakColor {
+    final count = currentStreak;
+    if (count >= 100) return const Color(0xFFFFD700);
+    if (count >= 50) return const Color(0xFFC0C0C0);
+    if (count >= 30) return const Color(0xFFCD7F32);
+    if (count >= 14) return const Color(0xFF34C759);
+    if (count >= 7) return const Color(0xFF2AABEE);
+    return const Color(0xFFFF9500);
+  }
+
+  IconData get streakIcon {
+    final count = currentStreak;
+    if (count >= 100) return Icons.emoji_events;
+    if (count >= 50) return Icons.military_tech;
+    if (count >= 30) return Icons.workspace_premium;
+    if (count >= 14) return Icons.star;
+    if (count >= 7) return Icons.local_fire_department;
+    return Icons.bolt;
+  }
+
+  Future<void> loadStreak({bool forceRefresh = false}) async {
     if (_isLoading) return;
 
     _isLoading = true;
@@ -32,29 +81,29 @@ class StreakProvider with ChangeNotifier {
     try {
       debugLog('StreakProvider', 'Loading streak');
 
-      final cachedStreak = await deviceService.getCacheItem<Streak>('streak');
-      if (cachedStreak != null) {
-        _streak = cachedStreak;
-        _streakHistory = cachedStreak.history;
-        _isLoading = false;
-        _notifySafely();
-        debugLog('StreakProvider', '✅ Loaded streak from cache');
-        return;
+      if (!forceRefresh) {
+        final cachedStreak = await deviceService
+            .getCacheItem<Map<String, dynamic>>('streak', isUserSpecific: true);
+        if (cachedStreak != null) {
+          _streak = Streak.fromJson(cachedStreak);
+          _streakHistory = _streak?.history ?? [];
+          _isLoading = false;
+          _notifySafely();
+          debugLog('StreakProvider', '✅ Loaded streak from cache');
+          return;
+        }
       }
 
       final response = await apiService.getMyStreak();
-      if (response.data != null) {
+      if (response.success && response.data != null) {
         _streak = Streak.fromJson(response.data!);
+        _streakHistory = _streak?.history ?? [];
 
-        final historyData = response.data!['history'] ?? [];
-        _streakHistory = List<DateTime>.from(
-          (historyData as List).map((dateStr) => DateTime.parse(dateStr)),
-        );
+        await deviceService.saveCacheItem('streak', response.data!,
+            ttl: _cacheDuration, isUserSpecific: true);
 
-        await deviceService.saveCacheItem('streak', _streak,
-            ttl: Duration(minutes: 5));
+        debugLog('StreakProvider', 'Loaded streak: ${_streak?.currentStreak}');
       }
-      debugLog('StreakProvider', 'Loaded streak: ${_streak?.currentStreak}');
     } catch (e) {
       _error = e.toString();
       debugLog('StreakProvider', 'loadStreak error: $e');
@@ -74,7 +123,6 @@ class StreakProvider with ChangeNotifier {
     try {
       debugLog('StreakProvider', 'Updating streak');
       await apiService.updateStreak();
-
       await loadStreak(forceRefresh: true);
     } catch (e) {
       _error = e.toString();
@@ -123,10 +171,25 @@ class StreakProvider with ChangeNotifier {
     return days;
   }
 
+  String getMotivationalMessage() {
+    final count = currentStreak;
+
+    if (count >= 365) return "ONE YEAR! You're a true legend! 🏆";
+    if (count >= 100) return "100 days! You're in the elite club! 👑";
+    if (count >= 50) return "50 days of dedication! You're a master! ⭐";
+    if (count >= 30) return "30 days! You've built an incredible habit! 📚";
+    if (count >= 14) return "Two weeks strong! Keep going! 💪";
+    if (count >= 7) return "One week! Consistency is your superpower! 🚀";
+    if (count >= 3) return "3 days in a row! You're building momentum! 🌱";
+    if (count == 2) return "Two days! Come back tomorrow! 🔥";
+    if (count == 1) return "Great start! Make it two tomorrow! ✨";
+    return "Start your streak today! 📅";
+  }
+
   Future<void> clearUserData() async {
     debugLog('StreakProvider', 'Clearing streak data');
 
-    await deviceService.removeCacheItem('streak');
+    await deviceService.removeCacheItem('streak', isUserSpecific: true);
 
     _streak = null;
     _streakHistory = [];
@@ -137,6 +200,12 @@ class StreakProvider with ChangeNotifier {
   void clearError() {
     _error = null;
     _notifySafely();
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
   }
 
   void _notifySafely() {

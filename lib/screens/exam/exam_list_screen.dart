@@ -11,12 +11,15 @@ import 'package:familyacademyclient/utils/responsive.dart';
 import 'package:familyacademyclient/providers/auth_provider.dart';
 import 'package:familyacademyclient/providers/exam_provider.dart';
 import 'package:familyacademyclient/providers/subscription_provider.dart';
+import 'package:familyacademyclient/providers/payment_provider.dart';
 import 'package:familyacademyclient/models/exam_model.dart';
+import 'package:familyacademyclient/models/payment_model.dart';
 import 'package:familyacademyclient/widgets/common/loading_indicator.dart';
 import 'package:familyacademyclient/widgets/common/empty_state.dart';
 import 'package:familyacademyclient/widgets/exam/exam_card.dart';
 import '../../utils/helpers.dart';
 import '../../utils/api_response.dart';
+import '../../services/device_service.dart';
 
 class ExamListScreen extends StatefulWidget {
   final int? courseId;
@@ -35,6 +38,7 @@ class ExamListScreen extends StatefulWidget {
 class _ExamListScreenState extends State<ExamListScreen> {
   late StreamSubscription<Map<int, bool>> _subscriptionListener;
   late StreamSubscription<List<Exam>> _examsListener;
+  late StreamSubscription<List<Payment>> _paymentsListener;
   final _refreshKey = GlobalKey<RefreshIndicatorState>();
   bool _isRefreshing = false;
   bool _isOnline = true;
@@ -51,6 +55,7 @@ class _ExamListScreenState extends State<ExamListScreen> {
   void dispose() {
     _subscriptionListener.cancel();
     _examsListener.cancel();
+    _paymentsListener.cancel();
     super.dispose();
   }
 
@@ -60,6 +65,8 @@ class _ExamListScreenState extends State<ExamListScreen> {
     final examProvider = Provider.of<ExamProvider>(context, listen: false);
     final subscriptionProvider =
         Provider.of<SubscriptionProvider>(context, listen: false);
+    final paymentProvider =
+        Provider.of<PaymentProvider>(context, listen: false);
 
     try {
       final cachedExams = await _loadCachedExams();
@@ -91,10 +98,31 @@ class _ExamListScreenState extends State<ExamListScreen> {
         await subscriptionProvider
             .preCheckActiveCategories(categoryIds.toList());
 
+        await paymentProvider.loadPayments(forceRefresh: widget.forceRefresh);
+        await _updatePendingPaymentStatus(paymentProvider, examProvider);
+
         await _cacheExams(exams);
       }
     } catch (e) {
       debugLog('ExamListScreen', 'Init data error: $e');
+    }
+  }
+
+  Future<void> _updatePendingPaymentStatus(
+    PaymentProvider paymentProvider,
+    ExamProvider examProvider,
+  ) async {
+    final pendingPayments = paymentProvider.getPendingPayments();
+    final pendingByCategory = <int, bool>{};
+
+    for (final payment in pendingPayments) {
+      if (payment.categoryId != null) {
+        pendingByCategory[payment.categoryId!] = true;
+      }
+    }
+
+    if (pendingByCategory.isNotEmpty) {
+      await examProvider.updatePendingPayments(pendingByCategory);
     }
   }
 
@@ -121,7 +149,7 @@ class _ExamListScreenState extends State<ExamListScreen> {
           : 'cached_exams_all';
 
       await deviceService.saveCacheItem(cacheKey, exams,
-          ttl: Duration(hours: 24), isUserSpecific: true);
+          ttl: const Duration(hours: 24), isUserSpecific: true);
 
       setState(() {
         _cachedExams = exams;
@@ -134,6 +162,9 @@ class _ExamListScreenState extends State<ExamListScreen> {
   void _setupListeners() {
     final subscriptionProvider =
         Provider.of<SubscriptionProvider>(context, listen: false);
+    final paymentProvider =
+        Provider.of<PaymentProvider>(context, listen: false);
+    final examProvider = Provider.of<ExamProvider>(context, listen: false);
 
     _subscriptionListener =
         subscriptionProvider.subscriptionUpdates.listen((statusMap) {
@@ -144,7 +175,14 @@ class _ExamListScreenState extends State<ExamListScreen> {
       }
     });
 
-    final examProvider = Provider.of<ExamProvider>(context, listen: false);
+    _paymentsListener = paymentProvider.paymentsUpdates.listen((payments) {
+      if (mounted) {
+        debugLog(
+            'ExamListScreen', 'Payments updated: ${payments.length} payments');
+        _updatePendingPaymentStatus(paymentProvider, examProvider);
+      }
+    });
+
     _examsListener = examProvider.examsUpdates.listen((exams) {
       if (mounted) {
         setState(() {
@@ -164,6 +202,8 @@ class _ExamListScreenState extends State<ExamListScreen> {
       final examProvider = Provider.of<ExamProvider>(context, listen: false);
       final subscriptionProvider =
           Provider.of<SubscriptionProvider>(context, listen: false);
+      final paymentProvider =
+          Provider.of<PaymentProvider>(context, listen: false);
 
       if (widget.courseId != null) {
         await examProvider.loadExamsByCourse(widget.courseId!,
@@ -173,19 +213,21 @@ class _ExamListScreenState extends State<ExamListScreen> {
       }
 
       await subscriptionProvider.loadSubscriptions(forceRefresh: true);
-
+      await paymentProvider.loadPayments(forceRefresh: true);
       await examProvider.loadMyExamResults(forceRefresh: true);
+
+      await _updatePendingPaymentStatus(paymentProvider, examProvider);
 
       debugLog('ExamListScreen', '✅ Data refreshed successfully');
     } on ApiError catch (e) {
       if (e.isUnauthorized) {
         _handleUnauthorizedError();
       } else {
-        showSnackBar(context, e.userFriendlyMessage, isError: true);
+        showSimpleSnackBar(context, e.userFriendlyMessage, isError: true);
       }
     } catch (e) {
       debugLog('ExamListScreen', 'Refresh error: $e');
-      showSnackBar(context, 'Failed to refresh exams. Please try again.',
+      showSimpleSnackBar(context, 'Failed to refresh exams. Please try again.',
           isError: true);
     } finally {
       _isRefreshing = false;
@@ -207,9 +249,11 @@ class _ExamListScreenState extends State<ExamListScreen> {
     final subscriptionProvider =
         Provider.of<SubscriptionProvider>(context, listen: false);
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final paymentProvider =
+        Provider.of<PaymentProvider>(context, listen: false);
 
     if (!authProvider.isAuthenticated) {
-      showSnackBar(context, 'Please login to take exams', isError: true);
+      showSimpleSnackBar(context, 'Please login to take exams', isError: true);
       GoRouter.of(context).go('/auth/login');
       return;
     }
@@ -219,13 +263,25 @@ class _ExamListScreenState extends State<ExamListScreen> {
         final hasAccess = await subscriptionProvider
             .checkHasActiveSubscriptionForCategory(exam.categoryId);
 
+        final hasPendingPayment = paymentProvider.payments.any(
+          (payment) =>
+              payment.status == 'pending' &&
+              payment.categoryId == exam.categoryId,
+        );
+
+        if (!hasAccess && hasPendingPayment) {
+          _showPendingPaymentDialog(context, exam);
+          return;
+        }
+
         if (!hasAccess) {
           _showPaymentDialog(context, exam);
           return;
         }
       } catch (e) {
         debugLog('ExamListScreen', 'Subscription check error: $e');
-        showSnackBar(context, 'Unable to verify access. Please try again.',
+        showSimpleSnackBar(
+            context, 'Unable to verify access. Please try again.',
             isError: true);
         return;
       }
@@ -237,17 +293,83 @@ class _ExamListScreenState extends State<ExamListScreen> {
         extra: exam,
       );
     } else if (exam.isEnded) {
-      showSnackBar(context, 'This exam has ended', isError: true);
+      showSimpleSnackBar(context, 'This exam has ended', isError: true);
     } else if (exam.isUpcoming) {
-      showSnackBar(context, 'This exam will start soon', isError: false);
+      showSimpleSnackBar(context, 'This exam will start soon', isError: false);
     } else if (exam.maxAttemptsReached) {
-      showSnackBar(context, 'Maximum attempts reached for this exam',
+      showSimpleSnackBar(context, 'Maximum attempts reached for this exam',
           isError: true);
     } else if (exam.isInProgress) {
-      showSnackBar(context, 'You have an exam in progress', isError: false);
+      showSimpleSnackBar(context, 'You have an exam in progress',
+          isError: false);
     } else {
-      showSnackBar(context, exam.message, isError: true);
+      showSimpleSnackBar(context, exam.message, isError: true);
     }
+  }
+
+  void _showPendingPaymentDialog(BuildContext context, Exam exam) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
+        ),
+        backgroundColor: AppColors.getCard(context),
+        child: Padding(
+          padding: EdgeInsets.all(AppThemes.spacingXL),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: EdgeInsets.all(AppThemes.spacingL),
+                decoration: BoxDecoration(
+                  color: AppColors.statusPending.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.schedule_rounded,
+                  color: AppColors.statusPending,
+                  size: 32,
+                ),
+              ),
+              SizedBox(height: AppThemes.spacingL),
+              Text(
+                'Payment Pending',
+                style: AppTextStyles.titleLarge.copyWith(
+                  color: AppColors.getTextPrimary(context),
+                ),
+              ),
+              SizedBox(height: AppThemes.spacingM),
+              Text(
+                'You have a pending payment for "${exam.categoryName}". '
+                'Please wait for admin verification (1-3 working days).',
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.getTextSecondary(context),
+                ),
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: AppThemes.spacingXL),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.telegramBlue,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius:
+                          BorderRadius.circular(AppThemes.borderRadiusMedium),
+                    ),
+                    padding: EdgeInsets.symmetric(vertical: AppThemes.spacingM),
+                  ),
+                  child: Text('OK', style: AppTextStyles.buttonMedium),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _showPaymentDialog(BuildContext context, Exam exam) {
@@ -602,16 +724,5 @@ class _ExamListScreenState extends State<ExamListScreen> {
         ],
       ),
     );
-  }
-}
-
-class DeviceService {
-  Future<T?> getCacheItem<T>(String key, {bool isUserSpecific = false}) {
-    throw UnimplementedError();
-  }
-
-  Future<void> saveCacheItem<T>(String key, T value,
-      {Duration? ttl, bool isUserSpecific = false}) {
-    throw UnimplementedError();
   }
 }

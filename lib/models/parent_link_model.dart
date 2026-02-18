@@ -3,6 +3,7 @@ class ParentLink {
   final int userId;
   final String token;
   final String? parentTelegramUsername;
+  final int? parentTelegramId;
   final DateTime tokenExpiresAt;
   final DateTime? linkedAt;
   final DateTime? unlinkedAt;
@@ -16,6 +17,7 @@ class ParentLink {
     required this.userId,
     required this.token,
     this.parentTelegramUsername,
+    this.parentTelegramId,
     required this.tokenExpiresAt,
     this.linkedAt,
     this.unlinkedAt,
@@ -26,22 +28,46 @@ class ParentLink {
   });
 
   factory ParentLink.fromJson(Map<String, dynamic> json) {
+    // FIXED: Proper date parsing for MySQL datetime format
+    DateTime parseDate(String? dateStr) {
+      if (dateStr == null || dateStr.isEmpty) return DateTime.now();
+      try {
+        // Try parsing as ISO string
+        return DateTime.parse(dateStr).toLocal();
+      } catch (e) {
+        try {
+          // Try parsing MySQL datetime format (YYYY-MM-DD HH:MM:SS)
+          if (dateStr.contains(' ')) {
+            return DateTime.parse(dateStr.replaceFirst(' ', 'T')).toLocal();
+          }
+          return DateTime.parse(dateStr).toLocal();
+        } catch (e2) {
+          print('Error parsing date: $dateStr');
+          return DateTime.now();
+        }
+      }
+    }
+
     return ParentLink(
       id: json['id'] ?? 0,
       userId: json['user_id'] ?? 0,
-      token: json['token'] ?? '',
-      parentTelegramUsername: json['parent_telegram_username'],
-      tokenExpiresAt: DateTime.parse(
-          json['token_expires_at'] ?? DateTime.now().toIso8601String()),
-      linkedAt:
-          json['linked_at'] != null ? DateTime.parse(json['linked_at']) : null,
-      unlinkedAt: json['unlinked_at'] != null
-          ? DateTime.parse(json['unlinked_at'])
+      token: json['token']?.toString() ?? '',
+      parentTelegramUsername: json['parent_telegram_username']?.toString(),
+      parentTelegramId: json['parent_telegram_id'] != null
+          ? int.tryParse(json['parent_telegram_id'].toString())
           : null,
-      status: json['status'] ?? 'pending',
-      username: json['username'],
-      accountStatus: json['account_status'],
-      parentName: json['parent_name'] ?? json['parent_telegram_username'],
+      tokenExpiresAt: parseDate(json['token_expires_at']?.toString()),
+      linkedAt: json['linked_at'] != null
+          ? parseDate(json['linked_at']?.toString())
+          : null,
+      unlinkedAt: json['unlinked_at'] != null
+          ? parseDate(json['unlinked_at']?.toString())
+          : null,
+      status: json['status']?.toString() ?? 'pending',
+      username: json['username']?.toString(),
+      accountStatus: json['account_status']?.toString(),
+      parentName: json['parent_name']?.toString() ??
+          json['parent_telegram_username']?.toString(),
     );
   }
 
@@ -51,9 +77,10 @@ class ParentLink {
       'user_id': userId,
       'token': token,
       'parent_telegram_username': parentTelegramUsername,
-      'token_expires_at': tokenExpiresAt.toIso8601String(),
-      'linked_at': linkedAt?.toIso8601String(),
-      'unlinked_at': unlinkedAt?.toIso8601String(),
+      'parent_telegram_id': parentTelegramId,
+      'token_expires_at': tokenExpiresAt.toUtc().toIso8601String(),
+      'linked_at': linkedAt?.toUtc().toIso8601String(),
+      'unlinked_at': unlinkedAt?.toUtc().toIso8601String(),
       'status': status,
       'username': username,
       'account_status': accountStatus,

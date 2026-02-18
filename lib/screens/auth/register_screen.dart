@@ -12,6 +12,7 @@ import '../../services/device_service.dart';
 import '../../services/notification_service.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
+import '../../utils/router.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -82,10 +83,8 @@ class _RegisterScreenState extends State<RegisterScreen>
 
       final deviceId = await _deviceService!.getDeviceId();
 
-      // Initialize notification service
       await _notificationService.init();
 
-      // Only get FCM token on mobile platforms
       String? fcmToken;
       if (Platform.isAndroid || Platform.isIOS) {
         fcmToken = await _notificationService.getFCMToken();
@@ -107,7 +106,7 @@ class _RegisterScreenState extends State<RegisterScreen>
         setState(() {
           _isInitializing = false;
         });
-        // Only show error for mobile platforms
+
         if (Platform.isAndroid || Platform.isIOS) {
           _showTelegramSnackBar(
             context,
@@ -208,7 +207,6 @@ class _RegisterScreenState extends State<RegisterScreen>
     final username = _usernameController.text.trim();
     final password = _passwordController.text;
 
-    // Only get FCM token on mobile platforms
     if (Platform.isAndroid || Platform.isIOS && _fcmToken == null) {
       try {
         final fcmToken = await _notificationService.getFCMToken();
@@ -240,18 +238,22 @@ class _RegisterScreenState extends State<RegisterScreen>
           await _deviceService!.clearUserCache();
         }
 
-        // Show success message
         _showTelegramSnackBar(context, 'Registration successful!');
 
-        // ADD DELAY for better UX
-        await Future.delayed(const Duration(milliseconds: 800));
+        await Future.delayed(const Duration(milliseconds: 100));
 
         if (_mounted) {
           if (result['next_step'] == 'select_school') {
             debugLog('RegisterScreen', '🏫 Redirecting to school selection');
+
+            appRouter.setNavigatingToSchoolSelection(true);
+            appRouter.setPendingDestination('/school-selection');
             context.go('/school-selection');
           } else {
             debugLog('RegisterScreen', '🏠 Redirecting to home');
+
+            appRouter.setNavigatingToHome(true);
+            appRouter.setPendingDestination('/');
             context.go('/');
           }
         }
@@ -273,7 +275,6 @@ class _RegisterScreenState extends State<RegisterScreen>
     }
   }
 
-  // 🎨 Logo Header
   Widget _buildHeader() {
     return Column(
       children: [
@@ -324,7 +325,6 @@ class _RegisterScreenState extends State<RegisterScreen>
     );
   }
 
-  // 👤 Username Field
   Widget _buildUsernameField() {
     return Container(
       decoration: BoxDecoration(
@@ -387,7 +387,6 @@ class _RegisterScreenState extends State<RegisterScreen>
         );
   }
 
-  // 🔒 Password Field
   Widget _buildPasswordField() {
     bool _obscureText = true;
 
@@ -454,7 +453,6 @@ class _RegisterScreenState extends State<RegisterScreen>
         );
   }
 
-  // 🔐 Confirm Password Field
   Widget _buildConfirmPasswordField() {
     bool _obscureText = true;
 
@@ -521,105 +519,6 @@ class _RegisterScreenState extends State<RegisterScreen>
         );
   }
 
-  // 📱 Device Status Indicator
-  Widget _buildDeviceStatus() {
-    if (_isInitializing) {
-      return Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppColors.telegramBlue.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
-          border: Border.all(
-            color: AppColors.telegramBlue,
-            width: 1,
-          ),
-        ),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation(AppColors.telegramBlue),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Initializing device...',
-                    style: AppTextStyles.labelMedium.copyWith(
-                      color: AppColors.telegramBlue,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Setting up your device for the best experience',
-                    style: AppTextStyles.caption.copyWith(
-                      color: AppColors.telegramBlue.withOpacity(0.7),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ).animate().fadeIn(duration: 300.ms);
-    }
-
-    if (_deviceId != null) {
-      return Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppColors.telegramGreen.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
-          border: Border.all(
-            color: AppColors.telegramGreen,
-            width: 1,
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              Icons.check_circle_rounded,
-              color: AppColors.telegramGreen,
-              size: 20,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Device Ready',
-                    style: AppTextStyles.labelMedium.copyWith(
-                      color: AppColors.telegramGreen,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Your device is connected and ready',
-                    style: AppTextStyles.caption.copyWith(
-                      color: AppColors.telegramGreen.withOpacity(0.7),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ).animate().fadeIn(duration: 300.ms);
-    }
-
-    return const SizedBox.shrink();
-  }
-
-  // 🚀 Register Button
   Widget _buildRegisterButton() {
     final isDisabled = _isLoading || _isInitializing || _deviceId == null;
 
@@ -681,7 +580,6 @@ class _RegisterScreenState extends State<RegisterScreen>
         );
   }
 
-  // 🔗 Login Link
   Widget _buildLoginLink() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -707,7 +605,6 @@ class _RegisterScreenState extends State<RegisterScreen>
     );
   }
 
-  // 📝 Form
   Widget _buildForm() {
     return Form(
       key: _formKey,
@@ -721,8 +618,6 @@ class _RegisterScreenState extends State<RegisterScreen>
           _buildPasswordField(),
           const SizedBox(height: 16),
           _buildConfirmPasswordField(),
-          const SizedBox(height: 24),
-          _buildDeviceStatus(),
           const SizedBox(height: 32),
           _buildRegisterButton(),
           const SizedBox(height: 24),
@@ -733,7 +628,6 @@ class _RegisterScreenState extends State<RegisterScreen>
     );
   }
 
-  // 📱 Mobile Layout
   Widget _buildMobileLayout() {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
@@ -746,7 +640,6 @@ class _RegisterScreenState extends State<RegisterScreen>
     );
   }
 
-  // 📱 Tablet Layout
   Widget _buildTabletLayout() {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
@@ -783,7 +676,6 @@ class _RegisterScreenState extends State<RegisterScreen>
     );
   }
 
-  // 💻 Desktop Layout
   Widget _buildDesktopLayout() {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
@@ -793,7 +685,6 @@ class _RegisterScreenState extends State<RegisterScreen>
             constraints: const BoxConstraints(maxWidth: 1000, maxHeight: 700),
             child: Row(
               children: [
-                // Left Side - Welcome Panel
                 Expanded(
                   child: Container(
                     padding: const EdgeInsets.all(48),
@@ -845,8 +736,6 @@ class _RegisterScreenState extends State<RegisterScreen>
                     ),
                   ),
                 ),
-
-                // Right Side - Registration Form
                 Expanded(
                   child: Container(
                     decoration: BoxDecoration(

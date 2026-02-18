@@ -700,18 +700,7 @@ class CachedDataWidget extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.cloud_done_rounded,
-            color: AppColors.telegramGreen,
-            size: 32,
-          ),
           SizedBox(height: AppThemes.spacingM),
-          Text(
-            'Data updated',
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.getTextPrimary(context),
-            ),
-          ),
         ],
       ),
     );

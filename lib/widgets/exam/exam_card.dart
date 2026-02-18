@@ -20,7 +20,9 @@ class ExamCard extends StatelessWidget {
   });
 
   Color _getStatusColor(BuildContext context) {
-    if (exam.canTakeExam) {
+    if (exam.isBlockedByPendingPayment) {
+      return AppColors.statusPending;
+    } else if (exam.canTakeExam) {
       return AppColors.telegramGreen;
     } else if (exam.requiresPayment) {
       return AppColors.telegramBlue;
@@ -42,7 +44,9 @@ class ExamCard extends StatelessWidget {
   }
 
   IconData _getStatusIcon() {
-    if (exam.canTakeExam) {
+    if (exam.isBlockedByPendingPayment) {
+      return Icons.schedule_rounded;
+    } else if (exam.canTakeExam) {
       return Icons.play_circle_rounded;
     } else if (exam.requiresPayment) {
       return Icons.lock_rounded;
@@ -59,7 +63,9 @@ class ExamCard extends StatelessWidget {
   }
 
   String _getStatusText() {
-    if (exam.canTakeExam) {
+    if (exam.isBlockedByPendingPayment) {
+      return 'PENDING';
+    } else if (exam.canTakeExam) {
       return 'TAKE EXAM';
     } else if (exam.requiresPayment) {
       return 'LOCKED';
@@ -265,6 +271,34 @@ class ExamCard extends StatelessWidget {
                         ],
                       ),
 
+                      // Access message if blocked by pending payment
+                      if (exam.isBlockedByPendingPayment)
+                        Padding(
+                          padding: EdgeInsets.only(top: AppThemes.spacingS),
+                          child: Text(
+                            'Payment pending verification',
+                            style: AppTextStyles.caption.copyWith(
+                              color: AppColors.statusPending,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+
+                      // Access message if requires payment
+                      if (exam.requiresPayment &&
+                          !exam.hasAccess &&
+                          !exam.isBlockedByPendingPayment)
+                        Padding(
+                          padding: EdgeInsets.only(top: AppThemes.spacingS),
+                          child: Text(
+                            'Purchase "${exam.categoryName}" to access',
+                            style: AppTextStyles.caption.copyWith(
+                              color: AppColors.telegramBlue,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+
                       // Attempts info
                       if (exam.attemptsTaken > 0)
                         Padding(
@@ -321,7 +355,9 @@ class ExamCard extends StatelessWidget {
                 Icon(
                   exam.canTakeExam
                       ? Icons.chevron_right_rounded
-                      : Icons.lock_rounded,
+                      : exam.isBlockedByPendingPayment
+                          ? Icons.schedule_rounded
+                          : Icons.lock_rounded,
                   size: ScreenSize.responsiveValue(
                     context: context,
                     mobile: 20,
@@ -330,7 +366,9 @@ class ExamCard extends StatelessWidget {
                   ),
                   color: exam.canTakeExam
                       ? AppColors.telegramBlue
-                      : AppColors.getTextSecondary(context),
+                      : exam.isBlockedByPendingPayment
+                          ? AppColors.statusPending
+                          : AppColors.getTextSecondary(context),
                 ),
               ],
             ),

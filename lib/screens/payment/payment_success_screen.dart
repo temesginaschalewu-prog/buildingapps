@@ -36,6 +36,11 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
   String _paymentType = 'first_time';
   double _amount = 0.0;
   String _paymentMethod = '';
+  String _paymentMethodName = '';
+  String _categoryName = '';
+  String _username = '';
+  String _billingCycle = '';
+  String? _accountHolderName;
   bool _animationComplete = false;
   Timer? _redirectTimer;
   int _secondsRemaining = 5;
@@ -82,21 +87,37 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
       if (args != null && args.isNotEmpty) {
         debugLog('PaymentSuccessScreen', '📦 Processing payment success data');
 
-        final categoryId = args['category_id'] as int?;
+        // Extract all data from args
         _paymentType = args['payment_type'] as String? ?? 'first_time';
         _amount = (args['amount'] as num?)?.toDouble() ?? 0.0;
         _paymentMethod = args['payment_method'] as String? ?? 'unknown';
+        _paymentMethodName =
+            args['payment_method_name'] as String? ?? _paymentMethod;
+        _categoryName = args['category_name'] as String? ?? '';
+        _username = args['username'] as String? ?? '';
+        _billingCycle = args['billing_cycle'] as String? ?? 'monthly';
+        _accountHolderName = args['account_holder_name'] as String?;
 
-        if (categoryId != null) {
-          final categoryProvider =
-              Provider.of<CategoryProvider>(context, listen: false);
-          final category = categoryProvider.getCategoryById(categoryId);
+        final categoryId = args['category_id'] as int?;
+        final category = args['category'];
+
+        if (category is Category) {
           setState(() {
             _category = category;
             _isLoading = false;
           });
+        } else if (categoryId != null) {
+          final categoryProvider =
+              Provider.of<CategoryProvider>(context, listen: false);
+          final cat = categoryProvider.getCategoryById(categoryId);
+          setState(() {
+            _category = cat;
+            _isLoading = false;
+          });
         } else {
-          _tryToLoadFromCache();
+          setState(() {
+            _isLoading = false;
+          });
         }
       } else {
         _tryToLoadFromCache();
@@ -162,6 +183,14 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
           _paymentType = cachedPaymentData['paymentType'] ?? 'first_time';
           _amount = (cachedPaymentData['amount'] as num?)?.toDouble() ?? 0.0;
           _paymentMethod = cachedPaymentData['paymentMethod'] ?? 'unknown';
+          _paymentMethodName =
+              cachedPaymentData['paymentMethodName'] ?? _paymentMethod;
+          _categoryName =
+              cachedPaymentData['categoryName'] ?? category?.name ?? '';
+          _username = cachedPaymentData['username'] ?? '';
+          _billingCycle = cachedPaymentData['billingCycle'] ?? 'monthly';
+          _accountHolderName =
+              cachedPaymentData['accountHolderName'] as String?;
           _isLoading = false;
         });
       } else {
@@ -326,8 +355,8 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
         ? 'Payment Submitted!'
         : 'Renewal Submitted!';
 
-    final message = _category != null
-        ? 'Your payment for "${_category!.name}" has been submitted successfully.'
+    final message = _categoryName.isNotEmpty
+        ? 'Your payment for "$_categoryName" has been submitted successfully.'
         : 'Your payment has been submitted successfully.';
 
     return Column(
@@ -383,12 +412,12 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
           ),
         ),
         SizedBox(height: AppThemes.spacingXL),
-        if (_category != null) _buildPaymentDetails(context),
+        _buildPaymentDetails(),
       ],
     );
   }
 
-  Widget _buildPaymentDetails(BuildContext context) {
+  Widget _buildPaymentDetails() {
     return Container(
       width: double.infinity,
       padding: EdgeInsets.all(AppThemes.spacingL),
@@ -405,7 +434,9 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
           _buildDetailRow(
             icon: Icons.category_rounded,
             label: 'Category',
-            value: _category!.name,
+            value: _categoryName.isNotEmpty
+                ? _categoryName
+                : (_category?.name ?? 'N/A'),
           ),
           SizedBox(height: AppThemes.spacingM),
           _buildDetailRow(
@@ -413,12 +444,36 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
             label: 'Amount',
             value: '${_amount.toStringAsFixed(0)} ETB',
           ),
-          if (_paymentMethod.isNotEmpty) ...[
+          if (_paymentMethodName.isNotEmpty) ...[
             SizedBox(height: AppThemes.spacingM),
             _buildDetailRow(
               icon: Icons.payment_rounded,
               label: 'Method',
-              value: _paymentMethod.toUpperCase(),
+              value: _paymentMethodName,
+            ),
+          ],
+          if (_accountHolderName != null && _accountHolderName!.isNotEmpty) ...[
+            SizedBox(height: AppThemes.spacingM),
+            _buildDetailRow(
+              icon: Icons.person_rounded,
+              label: 'Account Holder',
+              value: _accountHolderName!,
+            ),
+          ],
+          if (_username.isNotEmpty) ...[
+            SizedBox(height: AppThemes.spacingM),
+            _buildDetailRow(
+              icon: Icons.person_rounded,
+              label: 'Username',
+              value: _username,
+            ),
+          ],
+          if (_billingCycle.isNotEmpty) ...[
+            SizedBox(height: AppThemes.spacingM),
+            _buildDetailRow(
+              icon: Icons.calendar_today_rounded,
+              label: 'Billing Cycle',
+              value: _billingCycle.toUpperCase(),
             ),
           ],
           SizedBox(height: AppThemes.spacingM),

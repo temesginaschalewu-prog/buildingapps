@@ -76,7 +76,7 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
 
   Future<void> _selectSchool() async {
     if (_selectedSchoolId == null) {
-      showSnackBar(context, 'Please select a school', isError: true);
+      showSimpleSnackBar(context, 'Please select a school', isError: true);
       return;
     }
 
@@ -116,7 +116,7 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
           await authProvider.updateUser(updatedUser);
         }
 
-        showSnackBar(context, 'School selected successfully');
+        showSimpleSnackBar(context, 'School selected successfully');
 
         await Future.delayed(const Duration(milliseconds: 100));
 
@@ -146,7 +146,8 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
           context.go('/auth/login');
         }
       } else {
-        showSnackBar(context, 'Failed to select school: $e', isError: true);
+        showSimpleSnackBar(context, 'Failed to select school: $e',
+            isError: true);
       }
     } finally {
       if (mounted) {
@@ -165,7 +166,8 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
     try {
       schoolProvider.selectSchool(0);
 
-      showSnackBar(context, 'Proceeding without specific school selection');
+      showSimpleSnackBar(
+          context, 'Proceeding without specific school selection');
 
       await Future.delayed(const Duration(milliseconds: 100));
 
@@ -174,7 +176,7 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
       }
     } catch (e) {
       if (mounted) {
-        showSnackBar(context, 'Failed to proceed: $e', isError: true);
+        showSimpleSnackBar(context, 'Failed to proceed: $e', isError: true);
       }
     } finally {
       if (mounted) {

@@ -483,7 +483,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
 
   void _showPaymentDialog() {
     if (_category == null) {
-      showSnackBar(context, 'Category not found', isError: true);
+      showSimpleSnackBar(context, 'Category not found', isError: true);
       return;
     }
 
@@ -681,28 +681,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
               SizedBox(height: AppThemes.spacingXL),
 
               // Action buttons
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    context.go('/profile');
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.telegramBlue,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius:
-                          BorderRadius.circular(AppThemes.borderRadiusMedium),
-                    ),
-                    padding: EdgeInsets.symmetric(vertical: AppThemes.spacingL),
-                  ),
-                  child: Text(
-                    'View Payments',
-                    style: AppTextStyles.buttonMedium,
-                  ),
-                ),
-              ),
+
               SizedBox(height: AppThemes.spacingL),
               SizedBox(
                 width: double.infinity,
@@ -720,71 +699,6 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  // 🌐 Offline banner
-  Widget _buildOfflineBanner() {
-    if (!_isOffline && !_hasCachedData) return SizedBox.shrink();
-
-    return Container(
-      margin: EdgeInsets.symmetric(
-        horizontal: ScreenSize.responsiveValue(
-          context: context,
-          mobile: AppThemes.spacingL,
-          tablet: AppThemes.spacingXL,
-          desktop: AppThemes.spacingXXL,
-        ),
-        vertical: AppThemes.spacingS,
-      ),
-      padding: EdgeInsets.all(AppThemes.spacingM),
-      decoration: BoxDecoration(
-        color: _isOffline
-            ? AppColors.telegramYellow.withOpacity(0.1)
-            : AppColors.telegramBlue.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
-        border: Border.all(
-          color: _isOffline
-              ? AppColors.telegramYellow.withOpacity(0.3)
-              : AppColors.telegramBlue.withOpacity(0.3),
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            _isOffline
-                ? Icons.signal_wifi_off_rounded
-                : Icons.cloud_done_rounded,
-            color:
-                _isOffline ? AppColors.telegramYellow : AppColors.telegramBlue,
-            size: 20,
-          ),
-          SizedBox(width: AppThemes.spacingM),
-          Expanded(
-            child: Text(
-              _isOffline
-                  ? 'Offline mode - showing cached content'
-                  : 'Using cached data - refreshing in background',
-              style: AppTextStyles.bodySmall.copyWith(
-                color: _isOffline
-                    ? AppColors.telegramYellow
-                    : AppColors.telegramBlue,
-              ),
-            ),
-          ),
-          if (_isOffline)
-            TextButton(
-              onPressed: _manualRefresh,
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.telegramBlue,
-                padding: EdgeInsets.zero,
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: Text('Retry'),
-            ),
-        ],
       ),
     );
   }
@@ -817,8 +731,6 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         color: AppColors.statusPending,
         title: 'Payment Pending',
         message: 'Please wait for admin verification (1-3 working days)',
-        actionText: 'View Payments',
-        onAction: () => context.go('/profile'),
       );
     }
 
@@ -1130,11 +1042,6 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         child: CustomScrollView(
           physics: const BouncingScrollPhysics(),
           slivers: [
-            // Offline banner
-            SliverToBoxAdapter(
-              child: _buildOfflineBanner(),
-            ),
-
             // Access banner
             SliverToBoxAdapter(
               child: _buildAccessBanner(),

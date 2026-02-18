@@ -16,11 +16,9 @@ class SettingsProvider with ChangeNotifier {
   bool _isLoading = false;
   String? _error;
 
-  // Track last load time per category
   final Map<String, DateTime> _lastCategoryLoadTime = {};
   static const Duration _categoryLoadMinInterval = Duration(minutes: 5);
 
-  // Prevent duplicate loads
   final Map<String, Completer<bool>> _ongoingLoads = {};
 
   StreamController<List<Setting>> _settingsUpdateController =
@@ -58,9 +56,210 @@ class SettingsProvider with ChangeNotifier {
     if (lastLoad == null) return true;
 
     final minutesSinceLastLoad = DateTime.now().difference(lastLoad).inMinutes;
-    return minutesSinceLastLoad >= 5; // Only load every 5 minutes minimum
+    return minutesSinceLastLoad >= 5;
   }
 
+  List<ContactInfo> getContactInfoList() {
+    final contacts = <ContactInfo>[];
+    final contactSettings = _settingsByCategory['contact'] ?? [];
+
+    debugLog('SettingsProvider',
+        '📞 Building contact list from ${contactSettings.length} contact settings');
+
+    for (final setting in contactSettings) {
+      if (setting.settingValue == null || setting.settingValue!.isEmpty) {
+        debugLog('SettingsProvider',
+            '   ⚠️ Skipping ${setting.settingKey} - empty value');
+        continue;
+      }
+
+      final key = setting.settingKey.toLowerCase();
+      final value = setting.settingValue!;
+      final displayName = setting.displayName;
+
+      ContactType type;
+      IconData icon;
+
+      if (key.contains('phone') || key.contains('tel')) {
+        type = ContactType.phone;
+        icon = Icons.phone;
+        debugLog('SettingsProvider', '   📞 Phone: $displayName = $value');
+      } else if (key.contains('email')) {
+        type = ContactType.email;
+        icon = Icons.email;
+        debugLog('SettingsProvider', '   📧 Email: $displayName = $value');
+      } else if (key.contains('whatsapp') || key.contains('wa')) {
+        type = ContactType.whatsapp;
+        icon = Icons.message;
+        debugLog('SettingsProvider', '   💬 WhatsApp: $displayName = $value');
+      } else if (key.contains('telegram') || key.contains('tg')) {
+        type = ContactType.telegram;
+        icon = Icons.telegram;
+        debugLog('SettingsProvider', '   ✈️ Telegram: $displayName = $value');
+      } else if (key.contains('address') || key.contains('location')) {
+        type = ContactType.address;
+        icon = Icons.location_on;
+        debugLog('SettingsProvider', '   📍 Address: $displayName = $value');
+      } else if (key.contains('hours') || key.contains('time')) {
+        type = ContactType.hours;
+        icon = Icons.access_time;
+        debugLog('SettingsProvider', '   🕒 Hours: $displayName = $value');
+      } else if (key.contains('website') ||
+          key.contains('url') ||
+          key.contains('web')) {
+        type = ContactType.website;
+        icon = Icons.language;
+        debugLog('SettingsProvider', '   🌐 Website: $displayName = $value');
+      } else if (key.contains('facebook') || key.contains('fb')) {
+        type = ContactType.social;
+        icon = Icons.facebook;
+        debugLog('SettingsProvider', '   📘 Facebook: $displayName = $value');
+      } else if (key.contains('twitter') || key.contains('x.com')) {
+        type = ContactType.social;
+        icon = Icons.alternate_email;
+        debugLog('SettingsProvider', '   🐦 Twitter: $displayName = $value');
+      } else if (key.contains('instagram') || key.contains('ig')) {
+        type = ContactType.social;
+        icon = Icons.photo_camera;
+        debugLog('SettingsProvider', '   📷 Instagram: $displayName = $value');
+      } else if (key.contains('linkedin')) {
+        type = ContactType.social;
+        icon = Icons.business;
+        debugLog('SettingsProvider', '   💼 LinkedIn: $displayName = $value');
+      } else if (key.contains('youtube')) {
+        type = ContactType.social;
+        icon = Icons.play_circle;
+        debugLog('SettingsProvider', '   ▶️ YouTube: $displayName = $value');
+      } else {
+        type = ContactType.other;
+        icon = Icons.contact_page;
+        debugLog('SettingsProvider', '   📄 Other: $displayName = $value');
+      }
+
+      contacts.add(ContactInfo(
+        type: type,
+        title: displayName,
+        value: value,
+        icon: icon,
+        settingKey: setting.settingKey,
+      ));
+    }
+
+    contacts.sort((a, b) {
+      const typeOrder = {
+        ContactType.phone: 1,
+        ContactType.email: 2,
+        ContactType.whatsapp: 3,
+        ContactType.telegram: 4,
+        ContactType.address: 5,
+        ContactType.hours: 6,
+        ContactType.website: 7,
+        ContactType.social: 8,
+        ContactType.other: 9,
+      };
+
+      final orderCompare = typeOrder[a.type]!.compareTo(typeOrder[b.type]!);
+      if (orderCompare != 0) return orderCompare;
+      return a.title.compareTo(b.title);
+    });
+
+    debugLog(
+        'SettingsProvider', '📞 Total contact items built: ${contacts.length}');
+    return contacts;
+  }
+
+  String getSupportPhone() {
+    final contacts = getContactInfoList();
+    final phoneContact = contacts.firstWhere(
+      (c) => c.type == ContactType.phone,
+      orElse: () => ContactInfo(
+        type: ContactType.phone,
+        title: 'Phone',
+        value: '+251 911 223 344',
+        icon: Icons.phone,
+        settingKey: 'fallback_phone',
+      ),
+    );
+    return phoneContact.value;
+  }
+
+  String getSupportEmail() {
+    final contacts = getContactInfoList();
+    final emailContact = contacts.firstWhere(
+      (c) => c.type == ContactType.email,
+      orElse: () => ContactInfo(
+        type: ContactType.email,
+        title: 'Email',
+        value: 'support@familyacademy.com',
+        icon: Icons.email,
+        settingKey: 'fallback_email',
+      ),
+    );
+    return emailContact.value;
+  }
+
+  String getOfficeAddress() {
+    final contacts = getContactInfoList();
+    final addressContact = contacts.firstWhere(
+      (c) => c.type == ContactType.address,
+      orElse: () => ContactInfo(
+        type: ContactType.address,
+        title: 'Address',
+        value: 'Addis Ababa, Ethiopia',
+        icon: Icons.location_on,
+        settingKey: 'fallback_address',
+      ),
+    );
+    return addressContact.value;
+  }
+
+  String getOfficeHours() {
+    final contacts = getContactInfoList();
+    final hoursContact = contacts.firstWhere(
+      (c) => c.type == ContactType.hours,
+      orElse: () => ContactInfo(
+        type: ContactType.hours,
+        title: 'Office Hours',
+        value:
+            'Monday - Friday: 9:00 AM - 5:00 PM\nSaturday: 9:00 AM - 1:00 PM',
+        icon: Icons.access_time,
+        settingKey: 'fallback_hours',
+      ),
+    );
+    return hoursContact.value;
+  }
+
+  String getWhatsAppNumber() {
+    final contacts = getContactInfoList();
+    final whatsappContact = contacts.firstWhere(
+      (c) => c.type == ContactType.whatsapp,
+      orElse: () => ContactInfo(
+        type: ContactType.whatsapp,
+        title: 'WhatsApp',
+        value: '',
+        icon: Icons.message,
+        settingKey: '',
+      ),
+    );
+    return whatsappContact.value;
+  }
+
+  String getTelegramUsername() {
+    final contacts = getContactInfoList();
+    final telegramContact = contacts.firstWhere(
+      (c) => c.type == ContactType.telegram,
+      orElse: () => ContactInfo(
+        type: ContactType.telegram,
+        title: 'Telegram',
+        value: '',
+        icon: Icons.telegram,
+        settingKey: '',
+      ),
+    );
+    return telegramContact.value;
+  }
+
+  // UPDATED: getPaymentMethods() to properly return account holder names
   List<PaymentMethod> getPaymentMethods() {
     final methods = <PaymentMethod>[];
 
@@ -69,31 +268,26 @@ class SettingsProvider with ChangeNotifier {
     debugLog(
         'SettingsProvider', 'Total settings loaded: ${_allSettings.length}');
 
-    // If settings are empty, try to load them
     if (_allSettings.isEmpty) {
       debugLog('SettingsProvider',
           '⚠️ No settings loaded yet, attempting to load...');
-      getAllSettings(); // Load async
-      // Return empty for now, UI should retry or show loading
+      getAllSettings();
       return methods;
     }
 
     debugLog(
         'SettingsProvider', 'Available setting keys: ${_settingsMap.keys}');
 
-    // Check if payment_methods_enabled exists
     final enabledValue = getSettingValue('payment_methods_enabled');
     debugLog('SettingsProvider',
         'Payment methods enabled setting value: "$enabledValue"');
 
-    // Default to true if setting doesn't exist
     bool methodsEnabled;
     if (enabledValue == null) {
       debugLog('SettingsProvider',
           '⚠️ payment_methods_enabled not found, defaulting to true');
       methodsEnabled = true;
     } else {
-      // Handle both string "true"/"false" and boolean true/false
       if (enabledValue is bool) {
         methodsEnabled = enabledValue as bool;
       } else {
@@ -111,10 +305,11 @@ class SettingsProvider with ChangeNotifier {
 
     final methodKeys = <String>{};
 
-    // Scan for payment method configurations
+    // Find all payment method keys by looking for entries ending with '_name'
     for (final setting in _allSettings) {
       final key = setting.settingKey;
       if (key.startsWith('payment_method_') && key.endsWith('_name')) {
+        // Extract the method key (e.g., 'telebirr' from 'payment_method_telebirr_name')
         final methodKey = key.substring(
             'payment_method_'.length, key.length - '_name'.length);
         methodKeys.add(methodKey);
@@ -126,14 +321,13 @@ class SettingsProvider with ChangeNotifier {
     debugLog('SettingsProvider',
         'Found ${methodKeys.length} payment method keys: $methodKeys');
 
-    // If no methods found in settings, use defaults
     if (methodKeys.isEmpty) {
       debugLog('SettingsProvider',
           '⚠️ No payment methods found in settings, using defaults');
       methods.addAll(_getDefaultPaymentMethods());
     } else {
-      // Process each payment method
       for (final methodKey in methodKeys) {
+        // Look for name, number, and instructions using the correct pattern
         final nameKey = 'payment_method_${methodKey}_name';
         final numberKey = 'payment_method_${methodKey}_number';
         final instructionsKey = 'payment_method_${methodKey}_instructions';
@@ -145,19 +339,22 @@ class SettingsProvider with ChangeNotifier {
         debugLog('SettingsProvider',
             'Method $methodKey: name="$methodName", number="$methodNumber", instructions="$methodInstructions"');
 
+        // IMPORTANT: The methodName is the account holder name (e.g., "Kalaab Alemu", "John Mwangi", "Abebe Kebede")
+        // The methodNumber is the account number or mobile number
         if (methodName != null &&
             methodName.isNotEmpty &&
             methodNumber != null &&
             methodNumber.isNotEmpty) {
           methods.add(PaymentMethod(
             method: methodKey,
-            name: methodName,
-            accountInfo: methodNumber,
+            name: methodName, // This is the ACCOUNT HOLDER NAME from settings
+            accountInfo: methodNumber, // This is the account number
             instructions:
                 methodInstructions ?? 'Make payment to the provided account',
             iconData: _getPaymentMethodIcon(methodKey, methodName),
           ));
-          debugLog('SettingsProvider', '✅ Added payment method: $methodName');
+          debugLog('SettingsProvider',
+              '✅ Added payment method: $methodKey with account holder: "$methodName"');
         } else {
           debugLog('SettingsProvider',
               '⚠️ Skipping $methodKey: Missing name or number');
@@ -165,13 +362,13 @@ class SettingsProvider with ChangeNotifier {
       }
     }
 
-    // Add legacy payment methods if they exist
+    // Add legacy payment methods as fallback
     _addLegacyPaymentMethods(methods);
 
     debugLog(
         'SettingsProvider', 'Total payment methods found: ${methods.length}');
 
-    // Sort by name for consistent display
+    // Sort methods by name for consistent display
     methods.sort((a, b) => a.name.compareTo(b.name));
 
     return methods;
@@ -181,22 +378,22 @@ class SettingsProvider with ChangeNotifier {
     return [
       PaymentMethod(
         method: 'telebirr',
-        name: 'Telebirr',
-        accountInfo: '+251911223344',
+        name: 'Kalaab Alemu', // Account holder name
+        accountInfo: '+251911111111', // Account number
         instructions: 'Send payment via Telebirr to the number above',
         iconData: Icons.phone_android,
       ),
       PaymentMethod(
         method: 'cbe',
-        name: 'CBE Bank',
-        accountInfo: '100034567890',
+        name: 'Family Academy Business', // Account holder name
+        accountInfo: '100011111111111', // Account number
         instructions: 'Make transfer to CBE account above',
         iconData: Icons.account_balance,
       ),
       PaymentMethod(
         method: 'bank',
-        name: 'Bank Transfer',
-        accountInfo: 'Commercial Bank of Ethiopia\nAccount: 200034567890',
+        name: 'Family Academy PLC', // Account holder name
+        accountInfo: '200000000000', // Account number
         instructions: 'Make transfer to the bank account above',
         iconData: Icons.account_balance_wallet,
       ),
@@ -204,25 +401,28 @@ class SettingsProvider with ChangeNotifier {
   }
 
   void _addLegacyPaymentMethods(List<PaymentMethod> methods) {
-    // Check for old-style payment settings and add them
+    // Check for legacy telebirr settings (without the payment_method_ prefix)
     final oldTelebirrNumber = getSettingValue('payment_telebirr_number');
+    final oldTelebirrName = getSettingValue('payment_telebirr_name');
+
     if (oldTelebirrNumber != null &&
         oldTelebirrNumber.isNotEmpty &&
+        oldTelebirrName != null &&
+        oldTelebirrName.isNotEmpty &&
         !methods.any((m) =>
             m.method == 'telebirr' ||
             m.name.toLowerCase().contains('telebirr'))) {
-      final oldTelebirrName =
-          getSettingValue('payment_telebirr_name') ?? 'Telebirr';
       methods.add(PaymentMethod(
         method: 'telebirr',
-        name: oldTelebirrName,
-        accountInfo: oldTelebirrNumber,
+        name: oldTelebirrName, // Account holder name
+        accountInfo: oldTelebirrNumber, // Account number
         instructions: 'Send payment via Telebirr to the number above',
         iconData: Icons.phone_android,
       ));
       debugLog('SettingsProvider', '✅ Added legacy telebirr payment method');
     }
 
+    // Check for legacy bank settings
     final oldBankName = getSettingValue('payment_bank_name');
     final oldBankNumber = getSettingValue('payment_account_number');
     if (oldBankName != null &&
@@ -233,8 +433,8 @@ class SettingsProvider with ChangeNotifier {
             m.method == 'bank' || m.name.toLowerCase().contains('bank'))) {
       methods.add(PaymentMethod(
         method: 'bank',
-        name: oldBankName,
-        accountInfo: oldBankNumber,
+        name: oldBankName, // Account holder name
+        accountInfo: oldBankNumber, // Account number
         instructions: getSettingValue('payment_instructions') ??
             'Make transfer to the bank account above',
         iconData: Icons.account_balance,
@@ -258,6 +458,15 @@ class SettingsProvider with ChangeNotifier {
     if (method.contains('dashen') || name.contains('dashen')) {
       return Icons.account_balance;
     }
+    if (method.contains('abyssinia') || name.contains('abyssinia')) {
+      return Icons.account_balance;
+    }
+    if (method.contains('nib') || name.contains('nib')) {
+      return Icons.account_balance;
+    }
+    if (method.contains('zemen') || name.contains('zemen')) {
+      return Icons.account_balance;
+    }
     if (method.contains('telebirr') ||
         name.contains('telebirr') ||
         method.contains('birr') ||
@@ -265,6 +474,15 @@ class SettingsProvider with ChangeNotifier {
         method.contains('phone') ||
         name.contains('phone') ||
         method.contains('mobile')) {
+      return Icons.phone_android;
+    }
+    if (method.contains('mpesa') || name.contains('mpesa')) {
+      return Icons.phone_android;
+    }
+    if (method.contains('hellocash') || name.contains('hellocash')) {
+      return Icons.phone_android;
+    }
+    if (method.contains('amole') || name.contains('amole')) {
       return Icons.phone_android;
     }
     if (method.contains('bank') ||
@@ -286,47 +504,49 @@ class SettingsProvider with ChangeNotifier {
         name.contains('money')) {
       return Icons.money;
     }
-    if (method.contains('crypto') ||
-        name.contains('crypto') ||
-        method.contains('bitcoin') ||
-        name.contains('bitcoin') ||
-        method.contains('ethereum')) {
-      return Icons.currency_bitcoin;
-    }
     if (method.contains('paypal') || name.contains('paypal')) {
       return Icons.payments;
+    }
+    if (method.contains('bitcoin') ||
+        name.contains('bitcoin') ||
+        method.contains('crypto') ||
+        name.contains('crypto')) {
+      return Icons.currency_bitcoin;
+    }
+    if (method.contains('western') || name.contains('western')) {
+      return Icons.send;
     }
 
     return Icons.payment;
   }
 
   String getPaymentInstructions() {
-    return getSettingValue(AppConstants.paymentInstructionsKey) ??
+    return getSettingValue('payment_instructions') ??
         'Please follow these steps to complete your payment:\n'
             '1. Select a payment method\n'
             '2. Make the payment using the provided account details\n'
-            '3. Upload proof of payment\n'
-            '4. Wait for admin verification (usually within 24 hours)\n'
-            '5. Your access will be activated once verified';
+            '3. Make sure the account holder name matches your payment\n'
+            '4. Upload proof of payment\n'
+            '5. Wait for admin verification (usually within 24 hours)\n'
+            '6. Your access will be activated once verified';
   }
 
   bool isPaymentMethodConfigured(String methodKey) {
-    final name = getSettingValue(
-        '${AppConstants.paymentMethodPrefix}${methodKey}${AppConstants.paymentMethodNameSuffix}');
-    final number = getSettingValue(
-        '${AppConstants.paymentMethodPrefix}${methodKey}${AppConstants.paymentMethodNumberSuffix}');
-    return name != null && number != null;
+    final name = getSettingValue('payment_method_${methodKey}_name');
+    final number = getSettingValue('payment_method_${methodKey}_number');
+    return name != null &&
+        name.isNotEmpty &&
+        number != null &&
+        number.isNotEmpty;
   }
 
   List<String> getConfiguredPaymentMethods() {
     final methods = <String>[];
     for (final setting in _allSettings) {
       final key = setting.settingKey;
-      if (key.startsWith(AppConstants.paymentMethodPrefix) &&
-          key.endsWith(AppConstants.paymentMethodNameSuffix)) {
+      if (key.startsWith('payment_method_') && key.endsWith('_name')) {
         final methodName = key.substring(
-            AppConstants.paymentMethodPrefix.length,
-            key.length - AppConstants.paymentMethodNameSuffix.length);
+            'payment_method_'.length, key.length - '_name'.length);
         if (isPaymentMethodConfigured(methodName)) {
           methods.add(methodName);
         }
@@ -335,120 +555,14 @@ class SettingsProvider with ChangeNotifier {
     return methods;
   }
 
-  // UPDATED: Contact Information Methods with better logging and fallbacks
-  String getSupportPhone() {
-    final value = getSettingValue(AppConstants.contactSupportPhoneKey);
-    debugLog('SettingsProvider', '📞 Support phone from settings: "$value"');
-    return value ?? '+251 911 223 344';
-  }
-
-  String getSupportEmail() {
-    final value = getSettingValue(AppConstants.contactSupportEmailKey);
-    debugLog('SettingsProvider', '📧 Support email from settings: "$value"');
-    return value ?? 'support@familyacademy.com';
-  }
-
-  String getOfficeAddress() {
-    final value = getSettingValue(AppConstants.contactOfficeAddressKey);
-    debugLog('SettingsProvider', '📍 Office address from settings: "$value"');
-    return value ?? 'Addis Ababa, Ethiopia';
-  }
-
-  String getOfficeHours() {
-    final value = getSettingValue(AppConstants.contactOfficeHoursKey);
-    debugLog('SettingsProvider', '🕒 Office hours from settings: "$value"');
-    return value ?? 'Monday - Friday: 9:00 AM - 5:00 PM';
-  }
-
-  String getWhatsAppNumber() {
-    final value = getSettingValue(AppConstants.contactWhatsAppNumberKey);
-    debugLog('SettingsProvider', '📱 WhatsApp from settings: "$value"');
-    return value ?? '';
-  }
-
-  String getTelegramUsername() {
-    final value = getSettingValue(AppConstants.contactTelegramUsernameKey);
-    debugLog('SettingsProvider', '✈️ Telegram from settings: "$value"');
-    return value ?? '';
-  }
-
-  // UPDATED: getContactInfoList with better logging
-  List<ContactInfo> getContactInfoList() {
-    final contacts = <ContactInfo>[];
-
-    // Phone
-    contacts.add(ContactInfo(
-      type: ContactType.phone,
-      title: 'Phone',
-      value: getSupportPhone(),
-      icon: Icons.phone,
-    ));
-
-    // Email
-    contacts.add(ContactInfo(
-      type: ContactType.email,
-      title: 'Email',
-      value: getSupportEmail(),
-      icon: Icons.email,
-    ));
-
-    // WhatsApp (if you have it)
-    final whatsapp = getWhatsAppNumber();
-    if (whatsapp.isNotEmpty) {
-      contacts.add(ContactInfo(
-        type: ContactType.whatsapp,
-        title: 'WhatsApp',
-        value: whatsapp,
-        icon: Icons.message,
-      ));
-    }
-
-    // Telegram (if you have it)
-    final telegram = getTelegramUsername();
-    if (telegram.isNotEmpty) {
-      contacts.add(ContactInfo(
-        type: ContactType.telegram,
-        title: 'Telegram',
-        value: telegram,
-        icon: Icons.telegram,
-      ));
-    }
-
-    // Address
-    contacts.add(ContactInfo(
-      type: ContactType.address,
-      title: 'Address',
-      value: getOfficeAddress(),
-      icon: Icons.location_on,
-    ));
-
-    // Hours
-    contacts.add(ContactInfo(
-      type: ContactType.hours,
-      title: 'Office Hours',
-      value: getOfficeHours(),
-      icon: Icons.access_time,
-    ));
-
-    debugLog('SettingsProvider',
-        '📞 Contact info list built: ${contacts.length} items');
-    for (final info in contacts) {
-      debugLog('SettingsProvider', '   - ${info.title}: "${info.value}"');
-    }
-
-    return contacts;
-  }
-
   String getSystemVersion() {
-    return getSettingValue(AppConstants.systemVersionKey) ?? '1.0.0';
+    return getSettingValue('system_version') ?? '1.0.0';
   }
 
   String getAdminEmail() {
-    return getSettingValue(AppConstants.adminEmailKey) ??
-        'admin@familyacademy.com';
+    return getSettingValue('admin_email') ?? 'admin@familyacademy.com';
   }
 
-  // UPDATED: getAllSettings with better error handling and logging
   Future<void> getAllSettings() async {
     if (_isLoading) return;
 
@@ -459,7 +573,6 @@ class SettingsProvider with ChangeNotifier {
     try {
       debugLog('SettingsProvider', '🔄 Loading all settings from backend...');
 
-      // First check cache
       final cachedSettings =
           await deviceService.getCacheItem<List<Setting>>('all_settings');
       if (cachedSettings != null && cachedSettings.isNotEmpty) {
@@ -470,18 +583,14 @@ class SettingsProvider with ChangeNotifier {
         debugLog('SettingsProvider',
             '✅ Loaded ${_allSettings.length} settings from cache');
 
-        // Log what we loaded from cache
         final categories = _settingsByCategory.keys.toList();
         debugLog('SettingsProvider', '📊 Categories in cache: $categories');
 
         _notifySafely();
-
-        // Still try to refresh from backend in background
         _refreshSettingsInBackground();
         return;
       }
 
-      // Fetch from backend using the new /settings/all endpoint
       final response = await apiService.getAllSettings();
 
       if (response.success &&
@@ -491,21 +600,23 @@ class SettingsProvider with ChangeNotifier {
         debugLog('SettingsProvider',
             '✅ Successfully loaded ${_allSettings.length} settings from backend');
 
-        // Log categories found
         final categories = _allSettings.map((s) => s.category).toSet().toList();
         debugLog('SettingsProvider', '📊 Categories found: $categories');
 
-        // Specifically check for contact settings
-        final contactSettings =
-            _allSettings.where((s) => s.category == 'contact').toList();
+        final paymentSettings =
+            _allSettings.where((s) => s.category == 'payment').toList();
         debugLog('SettingsProvider',
-            '📞 Contact settings found: ${contactSettings.length}');
+            '💰 Payment settings found: ${paymentSettings.length}');
 
-        // Save to cache
+        // Log a few payment settings as examples
+        for (final setting in paymentSettings.take(5)) {
+          debugLog('SettingsProvider',
+              '   - ${setting.settingKey}: "${setting.settingValue}"');
+        }
+
         await deviceService.saveCacheItem('all_settings', _allSettings,
             ttl: const Duration(minutes: 30));
       } else {
-        // No settings from backend, use defaults
         debugLog('SettingsProvider',
             '⚠️ No settings loaded from backend, using defaults');
         _allSettings = _getDefaultSettings();
@@ -516,8 +627,6 @@ class SettingsProvider with ChangeNotifier {
     } catch (e, stackTrace) {
       _error = e.toString();
       debugLog('SettingsProvider', '❌ getAllSettings error: $e\n$stackTrace');
-
-      // On error, use defaults
       _allSettings = _getDefaultSettings();
       _rebuildMaps();
     } finally {
@@ -546,19 +655,16 @@ class SettingsProvider with ChangeNotifier {
             '✅ Background refresh: Updated ${_allSettings.length} settings');
       }
     } catch (e) {
-      // Ignore background refresh errors
       debugLog('SettingsProvider', '⚠️ Background refresh failed: $e');
     }
   }
 
-  // UPDATED: loadContactSettings with better logic
   Future<void> loadContactSettings({bool? forceRefresh}) async {
     final shouldForce = forceRefresh ?? false;
 
     debugLog('SettingsProvider',
         '📞 Loading contact settings (force: $shouldForce)');
 
-    // Check if we already have contact settings loaded from all settings
     if (!shouldForce &&
         _settingsByCategory.containsKey('contact') &&
         _settingsByCategory['contact']!.isNotEmpty) {
@@ -567,42 +673,34 @@ class SettingsProvider with ChangeNotifier {
       return;
     }
 
-    // Load all settings first (this will try /settings/all, then fallback to categories)
     if (_allSettings.isEmpty || shouldForce) {
       debugLog(
           'SettingsProvider', '📋 Loading all settings to get contact info');
       await getAllSettings();
     }
 
-    // If contact settings still not found, log it
     if (!_settingsByCategory.containsKey('contact') ||
         _settingsByCategory['contact']!.isEmpty) {
       debugLog('SettingsProvider',
           '⚠️ No contact settings found in backend, will use fallback values');
+      _addFallbackContactSettings();
     } else {
       debugLog('SettingsProvider',
           '✅ Contact settings loaded: ${_settingsByCategory['contact']!.length} items');
-      // Log the actual values
+
       for (final setting in _settingsByCategory['contact']!) {
         debugLog('SettingsProvider',
-            '   - ${setting.settingKey}: ${setting.settingValue}');
+            '   - ${setting.settingKey}: "${setting.settingValue}"');
       }
     }
   }
 
-  List<Setting> _getDefaultSettings() {
-    // Combine payment and contact defaults
-    final defaultSettings = <Setting>[];
-
-    // Payment defaults
-    defaultSettings.addAll(_getDefaultPaymentSettings());
-
-    // Contact defaults
-    defaultSettings.addAll([
+  void _addFallbackContactSettings() {
+    final fallbackContacts = [
       Setting(
-        id: 100,
+        id: 1001,
         settingKey: 'contact_support_phone',
-        settingValue: '+251911223355',
+        settingValue: '+251 911 223 344',
         displayName: 'Support Phone',
         category: 'contact',
         dataType: 'string',
@@ -613,7 +711,7 @@ class SettingsProvider with ChangeNotifier {
         updatedAt: DateTime.now(),
       ),
       Setting(
-        id: 101,
+        id: 1002,
         settingKey: 'contact_support_email',
         settingValue: 'support@familyacademy.com',
         displayName: 'Support Email',
@@ -626,7 +724,7 @@ class SettingsProvider with ChangeNotifier {
         updatedAt: DateTime.now(),
       ),
       Setting(
-        id: 102,
+        id: 1003,
         settingKey: 'contact_office_address',
         settingValue: 'Addis Ababa, Ethiopia',
         displayName: 'Office Address',
@@ -639,9 +737,10 @@ class SettingsProvider with ChangeNotifier {
         updatedAt: DateTime.now(),
       ),
       Setting(
-        id: 103,
+        id: 1004,
         settingKey: 'contact_office_hours',
-        settingValue: 'Monday - Friday: 9:00 AM - 5:00 PM',
+        settingValue:
+            'Monday - Friday: 9:00 AM - 5:00 PM\nSaturday: 9:00 AM - 1:00 PM',
         displayName: 'Office Hours',
         category: 'contact',
         dataType: 'string',
@@ -651,196 +750,25 @@ class SettingsProvider with ChangeNotifier {
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       ),
-      Setting(
-        id: 104,
-        settingKey: 'contact_whatsapp_number',
-        settingValue: '+251911223355',
-        displayName: 'WhatsApp Number',
-        category: 'contact',
-        dataType: 'string',
-        isPublic: true,
-        displayOrder: 5,
-        description: 'WhatsApp contact number',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-      Setting(
-        id: 105,
-        settingKey: 'contact_telegram_username',
-        settingValue: '@familyacademy_support',
-        displayName: 'Telegram Username',
-        category: 'contact',
-        dataType: 'string',
-        isPublic: true,
-        displayOrder: 6,
-        description: 'Telegram username for support',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-    ]);
-
-    return defaultSettings;
-  }
-
-  List<Setting> _getDefaultPaymentSettings() {
-    return [
-      Setting(
-        id: 1,
-        settingKey: 'payment_methods_enabled',
-        settingValue: 'true',
-        displayName: 'Payment Methods Enabled',
-        category: 'payment',
-        dataType: 'boolean',
-        isPublic: true,
-        displayOrder: 0,
-        description: 'Enable/disable payment methods',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-      Setting(
-        id: 2,
-        settingKey: 'payment_method_telebirr_name',
-        settingValue: 'Telebirr',
-        displayName: 'Telebirr Name',
-        category: 'payment',
-        dataType: 'string',
-        isPublic: true,
-        displayOrder: 1,
-        description: 'Telebirr payment method display name',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-      Setting(
-        id: 3,
-        settingKey: 'payment_method_telebirr_number',
-        settingValue: '+251911223344',
-        displayName: 'Telebirr Number',
-        category: 'payment',
-        dataType: 'string',
-        isPublic: true,
-        displayOrder: 2,
-        description: 'Telebirr account number',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-      Setting(
-        id: 4,
-        settingKey: 'payment_method_telebirr_instructions',
-        settingValue: 'Send payment via Telebirr to the number above',
-        displayName: 'Telebirr Instructions',
-        category: 'payment',
-        dataType: 'string',
-        isPublic: true,
-        displayOrder: 3,
-        description: 'Telebirr payment instructions',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-      Setting(
-        id: 5,
-        settingKey: 'payment_method_cbe_name',
-        settingValue: 'CBE Bank',
-        displayName: 'CBE Bank Name',
-        category: 'payment',
-        dataType: 'string',
-        isPublic: true,
-        displayOrder: 4,
-        description: 'CBE Bank payment method display name',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-      Setting(
-        id: 6,
-        settingKey: 'payment_method_cbe_number',
-        settingValue: '100034567890',
-        displayName: 'CBE Account Number',
-        category: 'payment',
-        dataType: 'string',
-        isPublic: true,
-        displayOrder: 5,
-        description: 'CBE Bank account number',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-      Setting(
-        id: 7,
-        settingKey: 'payment_method_cbe_instructions',
-        settingValue: 'Make transfer to CBE account above',
-        displayName: 'CBE Instructions',
-        category: 'payment',
-        dataType: 'string',
-        isPublic: true,
-        displayOrder: 6,
-        description: 'CBE Bank payment instructions',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-      Setting(
-        id: 8,
-        settingKey: 'payment_method_bank_name',
-        settingValue: 'Commercial Bank of Ethiopia',
-        displayName: 'Bank Name',
-        category: 'payment',
-        dataType: 'string',
-        isPublic: true,
-        displayOrder: 7,
-        description: 'Bank payment method display name',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-      Setting(
-        id: 9,
-        settingKey: 'payment_method_bank_number',
-        settingValue: '200034567890',
-        displayName: 'Bank Account Number',
-        category: 'payment',
-        dataType: 'string',
-        isPublic: true,
-        displayOrder: 8,
-        description: 'Bank account number',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-      Setting(
-        id: 10,
-        settingKey: 'payment_method_bank_instructions',
-        settingValue: 'Make transfer to the bank account above',
-        displayName: 'Bank Instructions',
-        category: 'payment',
-        dataType: 'string',
-        isPublic: true,
-        displayOrder: 9,
-        description: 'Bank payment instructions',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-      Setting(
-        id: 11,
-        settingKey: 'payment_instructions',
-        settingValue:
-            '1. Send payment to the account/telebirr number above\n2. Take screenshot of confirmation\n3. Upload screenshot in the payment section\n4. Wait for admin verification',
-        displayName: 'Payment Instructions',
-        category: 'payment',
-        dataType: 'string',
-        isPublic: true,
-        displayOrder: 10,
-        description: 'Instructions for making payments',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
     ];
+
+    for (final setting in fallbackContacts) {
+      if (!_settingsMap.containsKey(setting.settingKey)) {
+        _allSettings.add(setting);
+      }
+    }
+
+    _rebuildMaps();
   }
 
   Future<void> loadSettingsByCategory(String category) async {
     if (_isLoading) return;
 
-    // Check if we should load this category
     if (!_shouldLoadCategory(category)) {
       debugLog('SettingsProvider', '⏰ Using cached $category settings');
       return;
     }
 
-    // Check if a load is already in progress
     if (_ongoingLoads.containsKey(category)) {
       debugLog('SettingsProvider', '⏳ $category load already in progress');
       await _ongoingLoads[category]!.future;
@@ -929,6 +857,244 @@ class SettingsProvider with ChangeNotifier {
         '✅ Rebuilt maps: ${_settingsMap.length} settings, ${_settingsByCategory.length} categories');
   }
 
+  List<Setting> _getDefaultSettings() {
+    final defaultSettings = <Setting>[];
+
+    defaultSettings.addAll(_getDefaultPaymentSettings());
+
+    defaultSettings.addAll([
+      Setting(
+        id: 100,
+        settingKey: 'contact_support_phone',
+        settingValue: '+25191111111111',
+        displayName: 'Support Phone',
+        category: 'contact',
+        dataType: 'string',
+        isPublic: true,
+        displayOrder: 1,
+        description: 'Support phone number',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+      Setting(
+        id: 101,
+        settingKey: 'contact_support_email',
+        settingValue: 'support@familyacademy.com',
+        displayName: 'Support Email',
+        category: 'contact',
+        dataType: 'string',
+        isPublic: true,
+        displayOrder: 2,
+        description: 'Support email address',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+      Setting(
+        id: 102,
+        settingKey: 'contact_office_address',
+        settingValue: 'Addis Ababa, Ethiopia',
+        displayName: 'Office Address',
+        category: 'contact',
+        dataType: 'string',
+        isPublic: true,
+        displayOrder: 3,
+        description: 'Office physical address',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+      Setting(
+        id: 103,
+        settingKey: 'contact_office_hours',
+        settingValue: 'Monday - Friday: 9:00 AM - 5:00 PM',
+        displayName: 'Office Hours',
+        category: 'contact',
+        dataType: 'string',
+        isPublic: true,
+        displayOrder: 4,
+        description: 'Office working hours',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+      Setting(
+        id: 104,
+        settingKey: 'contact_whatsapp_number',
+        settingValue: '+2519111111111',
+        displayName: 'WhatsApp Number',
+        category: 'contact',
+        dataType: 'string',
+        isPublic: true,
+        displayOrder: 5,
+        description: 'WhatsApp contact number',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+      Setting(
+        id: 105,
+        settingKey: 'contact_telegram_username',
+        settingValue: '@familyacademy_support',
+        displayName: 'Telegram Username',
+        category: 'contact',
+        dataType: 'string',
+        isPublic: true,
+        displayOrder: 6,
+        description: 'Telegram username for support',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+    ]);
+
+    return defaultSettings;
+  }
+
+  List<Setting> _getDefaultPaymentSettings() {
+    return [
+      Setting(
+        id: 1,
+        settingKey: 'payment_methods_enabled',
+        settingValue: 'true',
+        displayName: 'Payment Methods Enabled',
+        category: 'payment',
+        dataType: 'boolean',
+        isPublic: true,
+        displayOrder: 0,
+        description: 'Enable/disable payment methods',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+      Setting(
+        id: 2,
+        settingKey: 'payment_method_telebirr_name',
+        settingValue: 'Kalaab Alemu',
+        displayName: 'Telebirr Name',
+        category: 'payment',
+        dataType: 'string',
+        isPublic: true,
+        displayOrder: 1,
+        description: 'Telebirr account holder name',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+      Setting(
+        id: 3,
+        settingKey: 'payment_method_telebirr_number',
+        settingValue: '+25191111111111',
+        displayName: 'Telebirr Number',
+        category: 'payment',
+        dataType: 'string',
+        isPublic: true,
+        displayOrder: 2,
+        description: 'Telebirr account number',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+      Setting(
+        id: 4,
+        settingKey: 'payment_method_telebirr_instructions',
+        settingValue: 'Send payment via Telebirr to the number above',
+        displayName: 'Telebirr Instructions',
+        category: 'payment',
+        dataType: 'string',
+        isPublic: true,
+        displayOrder: 3,
+        description: 'Telebirr payment instructions',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+      Setting(
+        id: 5,
+        settingKey: 'payment_method_cbe_name',
+        settingValue: 'Family Academy Business',
+        displayName: 'CBE Bank Name',
+        category: 'payment',
+        dataType: 'string',
+        isPublic: true,
+        displayOrder: 4,
+        description: 'CBE Bank account holder name',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+      Setting(
+        id: 6,
+        settingKey: 'payment_method_cbe_number',
+        settingValue: '1000000000000',
+        displayName: 'CBE Account Number',
+        category: 'payment',
+        dataType: 'string',
+        isPublic: true,
+        displayOrder: 5,
+        description: 'CBE Bank account number',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+      Setting(
+        id: 7,
+        settingKey: 'payment_method_cbe_instructions',
+        settingValue: 'Make transfer to CBE account above',
+        displayName: 'CBE Instructions',
+        category: 'payment',
+        dataType: 'string',
+        isPublic: true,
+        displayOrder: 6,
+        description: 'CBE Bank payment instructions',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+      Setting(
+        id: 8,
+        settingKey: 'payment_method_bank_name',
+        settingValue: 'Family Academy PLC',
+        displayName: 'Bank Name',
+        category: 'payment',
+        dataType: 'string',
+        isPublic: true,
+        displayOrder: 7,
+        description: 'Bank account holder name',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+      Setting(
+        id: 9,
+        settingKey: 'payment_method_bank_number',
+        settingValue: '20002222222',
+        displayName: 'Bank Account Number',
+        category: 'payment',
+        dataType: 'string',
+        isPublic: true,
+        displayOrder: 8,
+        description: 'Bank account number',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+      Setting(
+        id: 10,
+        settingKey: 'payment_method_bank_instructions',
+        settingValue: 'Make transfer to the bank account above',
+        displayName: 'Bank Instructions',
+        category: 'payment',
+        dataType: 'string',
+        isPublic: true,
+        displayOrder: 9,
+        description: 'Bank payment instructions',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+      Setting(
+        id: 11,
+        settingKey: 'payment_instructions',
+        settingValue:
+            '1. Send payment to the account/telebirr number above\n2. Take screenshot of confirmation\n3. Upload screenshot in the payment section\n4. Wait for admin verification',
+        displayName: 'Payment Instructions',
+        category: 'payment',
+        dataType: 'string',
+        isPublic: true,
+        displayOrder: 10,
+        description: 'Instructions for making payments',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+    ];
+  }
+
   Future<void> clearUserData() async {
     debugLog('SettingsProvider', 'Clearing settings data');
 
@@ -973,8 +1139,8 @@ class SettingsProvider with ChangeNotifier {
 
 class PaymentMethod {
   final String method;
-  final String name;
-  final String accountInfo;
+  final String name; // This is the ACCOUNT HOLDER NAME
+  final String accountInfo; // This is the account number/mobile number
   final String instructions;
   final IconData iconData;
 
@@ -1007,12 +1173,14 @@ class ContactInfo {
   final String title;
   final String value;
   final IconData icon;
+  final String settingKey;
 
   ContactInfo({
     required this.type,
     required this.title,
     required this.value,
     required this.icon,
+    this.settingKey = '',
   });
 
   bool get isPhone => type == ContactType.phone;
@@ -1021,6 +1189,9 @@ class ContactInfo {
   bool get isTelegram => type == ContactType.telegram;
   bool get isAddress => type == ContactType.address;
   bool get isHours => type == ContactType.hours;
+  bool get isWebsite => type == ContactType.website;
+  bool get isSocial => type == ContactType.social;
+  bool get isOther => type == ContactType.other;
 }
 
 enum ContactType {
@@ -1030,4 +1201,7 @@ enum ContactType {
   telegram,
   address,
   hours,
+  website,
+  social,
+  other,
 }

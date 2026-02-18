@@ -5,6 +5,7 @@ class Payment {
   final String paymentType;
   final double amount;
   final String paymentMethod;
+  final String? accountHolderName;
   final String status;
   final DateTime createdAt;
   final String categoryName;
@@ -17,6 +18,7 @@ class Payment {
     required this.paymentType,
     required this.amount,
     required this.paymentMethod,
+    this.accountHolderName,
     required this.status,
     required this.createdAt,
     required this.categoryName,
@@ -31,6 +33,7 @@ class Payment {
       paymentType: json['payment_type'],
       amount: double.parse(json['amount'].toString()),
       paymentMethod: json['payment_method'],
+      accountHolderName: json['account_holder_name'],
       status: json['status'],
       createdAt: DateTime.parse(json['created_at']),
       categoryName: json['category_name'],
@@ -48,6 +51,7 @@ class Payment {
       'payment_type': paymentType,
       'amount': amount,
       'payment_method': paymentMethod,
+      'account_holder_name': accountHolderName,
       'status': status,
       'created_at': createdAt.toIso8601String(),
       'category_name': categoryName,

@@ -691,110 +691,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     );
   }
 
-  Widget _buildPremiumBanner(AuthProvider authProvider) {
-    final user = authProvider.currentUser;
-    final isSubscriptionActive = user?.accountStatus == 'active';
-
-    if (isSubscriptionActive) return const SizedBox.shrink();
-
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppThemes.spacingL,
-        vertical: AppThemes.spacingM,
-      ),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            AppColors.telegramBlue.withOpacity(0.08),
-            AppColors.telegramBlue.withOpacity(0.04),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        border: Border(
-          bottom: BorderSide(
-            color: AppColors.telegramBlue.withOpacity(0.1),
-            width: 0.5,
-          ),
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: AppColors.telegramBlue,
-              shape: BoxShape.circle,
-            ),
-            child: const Center(
-              child: Icon(
-                Icons.star,
-                size: 16,
-                color: Colors.white,
-              ),
-            ),
-          ),
-          const SizedBox(width: AppThemes.spacingM),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Unlimited AI Tutor',
-                  style: AppTextStyles.labelMedium.copyWith(
-                    color: AppColors.telegramBlue,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                Text(
-                  'Upgrade to premium for unlimited assistance',
-                  style: AppTextStyles.caption.copyWith(
-                    color: AppColors.getTextSecondary(context),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            height: 32,
-            padding: const EdgeInsets.symmetric(horizontal: AppThemes.spacingM),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: AppColors.blueGradient,
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.telegramBlue.withOpacity(0.3),
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: TextButton(
-              onPressed: () {
-                // Navigate to subscription page
-              },
-              style: TextButton.styleFrom(
-                padding: EdgeInsets.zero,
-              ),
-              child: Text(
-                'Upgrade',
-                style: AppTextStyles.labelSmall.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildNotificationButton() {
     return GestureDetector(
       onTap: () async {
@@ -804,7 +700,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           await notificationProvider.loadNotifications();
           // Navigate to notifications
         } catch (e) {
-          showSnackBar(context, 'Failed to load notifications', isError: true);
+          showSimpleSnackBar(context, 'Failed to load notifications',
+              isError: true);
         }
       },
       child: Container(
@@ -953,10 +850,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                     ],
                   ),
                 ),
-              ),
-              bottom: PreferredSize(
-                preferredSize: const Size.fromHeight(0),
-                child: _buildPremiumBanner(authProvider),
               ),
             ),
           ];

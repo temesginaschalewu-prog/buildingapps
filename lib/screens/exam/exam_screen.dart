@@ -171,7 +171,6 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       if (existingResult != null && _exam.attemptsTaken >= _exam.maxAttempts) {
         _hasReachedMaxAttempts = true;
         _submittedResult = existingResult;
-        _showResults = existingResult.showResultsImmediately;
 
         // Parse answer details if available
         if (existingResult.answerDetails != null) {
@@ -741,13 +740,13 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
         _handleUnauthorizedError();
       } else {
         if (mounted) {
-          showSnackBar(context, e.userFriendlyMessage, isError: true);
+          showSimpleSnackBar(context, e.userFriendlyMessage, isError: true);
         }
       }
     } catch (e) {
       debugLog('ExamScreen', 'Submit error: $e');
       if (mounted) {
-        showSnackBar(context, 'Failed to submit exam. Please try again.',
+        showSimpleSnackBar(context, 'Failed to submit exam. Please try again.',
             isError: true);
       }
     } finally {
@@ -786,56 +785,6 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     }
 
     super.dispose();
-  }
-
-  Widget _buildOfflineBanner() {
-    if (!_isOffline && !_hasCachedProgress) return const SizedBox.shrink();
-
-    return Container(
-      margin: EdgeInsets.all(ScreenSize.responsiveValue(
-        context: context,
-        mobile: AppThemes.spacingL,
-        tablet: AppThemes.spacingXL,
-        desktop: AppThemes.spacingXXL,
-      )),
-      padding: EdgeInsets.all(AppThemes.spacingM),
-      decoration: BoxDecoration(
-        color: _isOffline
-            ? AppColors.telegramYellow.withOpacity(0.1)
-            : AppColors.telegramBlue.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
-        border: Border.all(
-          color: _isOffline
-              ? AppColors.telegramYellow.withOpacity(0.3)
-              : AppColors.telegramBlue.withOpacity(0.3),
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            _isOffline
-                ? Icons.signal_wifi_off_rounded
-                : Icons.cloud_done_rounded,
-            color:
-                _isOffline ? AppColors.telegramYellow : AppColors.telegramBlue,
-            size: 20,
-          ),
-          SizedBox(width: AppThemes.spacingM),
-          Expanded(
-            child: Text(
-              _isOffline
-                  ? 'Offline mode - answers saved locally'
-                  : 'Progress saved - will sync when online',
-              style: AppTextStyles.bodySmall.copyWith(
-                color: _isOffline
-                    ? AppColors.telegramYellow
-                    : AppColors.telegramBlue,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   String _getTimeLimitDescription() {
@@ -2145,7 +2094,6 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       body: Column(
         children: [
           // Offline banner
-          if (_hasCachedProgress || _isOffline) _buildOfflineBanner(),
 
           // Progress bar
           Container(

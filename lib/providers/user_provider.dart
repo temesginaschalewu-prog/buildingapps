@@ -453,6 +453,7 @@ class UserProvider with ChangeNotifier {
     return DateTime.now().difference(cacheTime) > _cacheExpiry;
   }
 
+  // FIXED: updateProfile with proper error handling - THIS IS THE CRITICAL PART
   Future<void> updateProfile({
     String? email,
     String? phone,
@@ -466,12 +467,15 @@ class UserProvider with ChangeNotifier {
 
     try {
       debugLog('UserProvider', '✏️ Updating profile...');
+
+      // Call API - this will throw if there's an error
       await apiService.updateMyProfile(
         email: email,
         phone: phone,
         profileImage: profileImage,
       );
 
+      // Only reach here if API call succeeded
       if (_currentUser != null) {
         final updatedUser = User(
           id: _currentUser!.id,
@@ -507,7 +511,21 @@ class UserProvider with ChangeNotifier {
     } catch (e) {
       _error = e.toString();
       debugLog('UserProvider', '❌ updateProfile error: $e');
-      rethrow;
+
+      // Extract the actual error message from the exception
+      String errorMessage = 'Failed to update profile';
+      if (e.toString().contains('Email already in use')) {
+        errorMessage = 'Email already in use by another user';
+      } else if (e.toString().contains('phone')) {
+        errorMessage = 'Phone number already in use by another user';
+      } else if (e.toString().contains('Invalid email')) {
+        errorMessage = 'Please enter a valid email address';
+      } else if (e.toString().contains('Invalid phone')) {
+        errorMessage = 'Please enter a valid phone number';
+      }
+
+      // Throw a clean error message that the UI can display
+      throw Exception(errorMessage);
     } finally {
       _isLoading = false;
       _notifySafely();

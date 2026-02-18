@@ -2,7 +2,7 @@ name: familyacademyclient
 description: "Family Academy - Educational Platform"
 publish_to: 'none'
 
-version: 1.4.0+1
+version: 1.4.2+1
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -113,12 +113,13 @@ dependencies:
   curved_navigation_bar: ^1.0.6
   flutter_neumorphic: ^3.2.0
   flutter_chat_bubble: ^2.0.2
-  media_kit: ^1.2.6
-  media_kit_video: ^2.0.1
-  media_kit_libs_linux: ^1.2.1
-  media_kit_libs_video: ^1.0.4
-
   
+  # FIXED: MediaKit with Windows support
+  media_kit: ^1.1.10
+  media_kit_video: ^1.2.4
+  media_kit_libs_video: ^1.0.4
+  media_kit_libs_windows_video: ^1.0.5
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -162,6 +163,7 @@ flutter:
     - assets/animations/
     - assets/fonts/
     - assets/lottie/
+
 flutter_launcher_icons:
   android: true
   ios: true

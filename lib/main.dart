@@ -36,24 +36,32 @@ import 'package:provider/provider.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-// MediaKit import for desktop video playback
+// IMPORTANT: Fix MediaKit imports for cross-platform
 import 'package:media_kit/media_kit.dart' as media_kit;
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp();
-  debugPrint("Handling a background message: ${message.messageId}");
+  try {
+    // Only initialize Firebase if on mobile
+    if (Platform.isAndroid || Platform.isIOS) {
+      await Firebase.initializeApp();
+    }
+    debugPrint("Handling a background message: ${message.messageId}");
 
-  final prefs = await SharedPreferences.getInstance();
-  final notificationsEnabled = prefs.getBool('notifications_enabled') ?? true;
+    final prefs = await SharedPreferences.getInstance();
+    final notificationsEnabled = prefs.getBool('notifications_enabled') ?? true;
 
-  if (!notificationsEnabled) {
-    debugPrint("Notifications are disabled, skipping background notification");
-    return;
+    if (!notificationsEnabled) {
+      debugPrint(
+          "Notifications are disabled, skipping background notification");
+      return;
+    }
+
+    final notificationService = NotificationService();
+    await notificationService.handleBackgroundMessage(message);
+  } catch (e) {
+    debugPrint('Background message handler error: $e');
   }
-
-  final notificationService = NotificationService();
-  await notificationService.handleBackgroundMessage(message);
 }
 
 class AppLifecycleObserver extends WidgetsBindingObserver {
@@ -105,28 +113,67 @@ void _syncProviders(BuildContext context) {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize MediaKit for desktop platforms FIRST
-  if (Platform.isLinux || Platform.isMacOS || Platform.isWindows) {
-    try {
-      media_kit.MediaKit.ensureInitialized();
-      debugPrint(
-          '✅ MediaKit initialized for desktop (${Platform.operatingSystem})');
-    } catch (e) {
-      debugPrint('⚠️ MediaKit initialization error: $e');
-    }
+  // CRITICAL FIX: Initialize MediaKit with proper error handling for all platforms
+  try {
+    media_kit.MediaKit.ensureInitialized();
+    debugPrint('Main ✅ MediaKit initialized successfully');
+  } catch (e) {
+    debugPrint('Main ⚠️ MediaKit initialization error (non-critical): $e');
   }
 
-  await dotenv.load(fileName: ".env");
+  // Better .env file loading with multiple fallback paths for Windows
+  try {
+    // Try multiple possible paths for the .env file
+    const possiblePaths = [
+      '.env',
+      'assets/.env',
+      'lib/.env',
+      'data/flutter_assets/.env', // Windows build path
+    ];
 
-  // Enable edge-to-edge on Android/iOS
-  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    bool envLoaded = false;
 
-  // Set status bar and navigation bar colors
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.transparent,
-    systemNavigationBarColor: Colors.transparent,
-    systemNavigationBarDividerColor: Colors.transparent,
-  ));
+    for (final envPath in possiblePaths) {
+      try {
+        await dotenv.load(fileName: envPath);
+        debugPrint('Main ✅ Loaded .env file from: $envPath');
+        envLoaded = true;
+        break;
+      } catch (e) {
+        debugPrint('Main ⚠️ Could not load .env from $envPath: $e');
+      }
+    }
+
+    if (!envLoaded) {
+      // Fallback to environment variables - no testLoad, just continue
+      debugPrint('Main ⚠️ No .env file found, using default configuration');
+      // Set default values in memory by loading from a string
+      // This is a workaround - we'll just proceed without .env
+      // The app will use hardcoded defaults from constants.dart
+    }
+  } catch (e) {
+    debugPrint('Main ⚠️ Error loading .env: $e');
+  }
+
+  // Enable edge-to-edge on Android/iOS only
+  if (Platform.isAndroid || Platform.isIOS) {
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+
+    // Set status bar and navigation bar colors
+    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      systemNavigationBarColor: Colors.transparent,
+      systemNavigationBarDividerColor: Colors.transparent,
+    ));
+  } else {
+    // Windows/Linux - just set minimal UI
+    try {
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
+          overlays: []);
+    } catch (e) {
+      debugPrint('Main ⚠️ System UI mode error: $e');
+    }
+  }
 
   // Initialize Firebase for mobile platforms ONLY
   FirebaseApp? firebaseApp;
@@ -176,19 +223,40 @@ Future<void> main() async {
   } else {
     debugPrint(
         "⚠️ Firebase not initialized for non-mobile platform (${Platform.operatingSystem}) - notifications will be local only");
+    // Still initialize notification service for local notifications on Windows
+    try {
+      final notificationService = NotificationService();
+      await notificationService.init();
+      debugPrint(
+          'Main: NotificationService initialized for local notifications');
+    } catch (e) {
+      debugPrint('Main ⚠️ Local notification init error: $e');
+    }
   }
 
-  // Initialize screen protection
-  await ScreenProtectionService.initialize();
+  // Initialize screen protection (safe for all platforms)
+  try {
+    await ScreenProtectionService.initialize();
+  } catch (e) {
+    debugPrint('Main ⚠️ Screen protection init error: $e');
+  }
 
-  // Initialize services IN ORDER
+  // Initialize services IN ORDER with error handling
   final storageService = StorageService();
-  await storageService.init();
-  debugPrint('Main: StorageService initialized');
+  try {
+    await storageService.init();
+    debugPrint('Main: StorageService initialized');
+  } catch (e) {
+    debugPrint('Main ⚠️ StorageService init error: $e');
+  }
 
   final deviceService = DeviceService();
-  await deviceService.init(); // Wait for DeviceService to initialize
-  debugPrint('Main: DeviceService initialized');
+  try {
+    await deviceService.init();
+    debugPrint('Main: DeviceService initialized');
+  } catch (e) {
+    debugPrint('Main ⚠️ DeviceService init error: $e');
+  }
 
   final apiService = ApiService();
   debugPrint('Main: ApiService created');
@@ -201,10 +269,10 @@ Future<void> main() async {
   runApp(
     MultiProvider(
       providers: [
-        Provider<StorageService>(create: (_) => storageService),
-        Provider<DeviceService>(create: (_) => deviceService),
-        Provider<ApiService>(create: (_) => apiService),
-        Provider<NotificationService>(create: (_) => notificationService),
+        Provider<StorageService>.value(value: storageService),
+        Provider<DeviceService>.value(value: deviceService),
+        Provider<ApiService>.value(value: apiService),
+        Provider<NotificationService>.value(value: notificationService),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(
           create: (context) => AuthProvider(

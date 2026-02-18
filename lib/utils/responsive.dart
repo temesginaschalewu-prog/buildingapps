@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:familyacademyclient/themes/app_themes.dart';
+import 'dart:io' show Platform;
 
 class ScreenSize {
   static double getScreenWidth(BuildContext context) =>
@@ -705,4 +706,41 @@ class SafeAreaResponsive extends StatelessWidget {
       child: child,
     );
   }
+}
+
+class PlatformCheck {
+  static bool get isMobile => Platform.isAndroid || Platform.isIOS;
+  static bool get isDesktop =>
+      Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+  static bool get isWindows => Platform.isWindows;
+  static bool get isLinux => Platform.isLinux;
+  static bool get isMacOS => Platform.isMacOS;
+  static bool get isAndroid => Platform.isAndroid;
+  static bool get isIOS => Platform.isIOS;
+
+  static String get platformName {
+    if (isAndroid) return 'Android';
+    if (isIOS) return 'iOS';
+    if (isWindows) return 'Windows';
+    if (isLinux) return 'Linux';
+    if (isMacOS) return 'macOS';
+    return 'Unknown';
+  }
+
+  static void runOnMobile(Function() callback) {
+    if (isMobile) callback();
+  }
+
+  static void runOnDesktop(Function() callback) {
+    if (isDesktop) callback();
+  }
+
+  static void runOnWindows(Function() callback) {
+    if (isWindows) callback();
+  }
+
+  static bool canUseFirebase() => isMobile;
+  static bool canUseLocalNotifications() => true;
+  static bool canUseBiometrics() => isMobile;
+  static bool canUseTelegramFeatures() => true;
 }

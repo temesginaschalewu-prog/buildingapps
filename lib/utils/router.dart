@@ -32,7 +32,11 @@ class AppRouter {
   bool _isLoginInProgress = false;
   bool _isDeviceChangeInProgress = false;
 
-  // CRITICAL: Store device change data temporarily
+  bool _isNavigatingToHome = false;
+  bool _isNavigatingToSchoolSelection = false;
+  bool _isNavigatingFromDeviceChange = false;
+  String? _pendingDestination;
+
   Map<String, dynamic>? _pendingDeviceChangeData;
 
   AppRouter() {
@@ -44,12 +48,26 @@ class AppRouter {
 
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
-        // CRITICAL FIX: If device change is required and we have data, redirect with data
+        if (_isNavigatingToHome ||
+            _isNavigatingToSchoolSelection ||
+            _isNavigatingFromDeviceChange) {
+          debugLog(
+              'AppRouter', '⏳ Navigation in progress - allowing current route');
+
+          Future.delayed(const Duration(milliseconds: 500), () {
+            _isNavigatingToHome = false;
+            _isNavigatingToSchoolSelection = false;
+            _isNavigatingFromDeviceChange = false;
+            _pendingDestination = null;
+          });
+
+          return null;
+        }
+
         if (authProvider.requiresDeviceChange && !_isDeviceChangeInProgress) {
           debugLog('AppRouter',
               '⚠️ Device change required - checking for pending data');
 
-          // Try to get the last login result from auth provider
           final lastLoginResult = authProvider.lastLoginResult;
 
           if (lastLoginResult != null && lastLoginResult['data'] != null) {
@@ -78,39 +96,18 @@ class AppRouter {
           }
         }
 
-        // If we're on device change screen, always allow access
         if (location.startsWith('/device-change')) {
           debugLog('AppRouter', '✅ Device change route - allowing access');
           return null;
         }
 
-        // Reset device change flag when leaving device change screen
         if (!location.startsWith('/device-change') &&
             _isDeviceChangeInProgress) {
           _isDeviceChangeInProgress = false;
           _pendingDeviceChangeData = null;
         }
 
-        // Special handling for login process
-        if (_isLoginInProgress && location == '/auth/login') {
-          debugLog(
-              'AppRouter', '🔐 Login in progress - staying on login screen');
-          return null;
-        }
-
-        // Reset login flag if we're not on login screen
-        if (!location.startsWith('/auth/login')) {
-          _isLoginInProgress = false;
-        }
-
-        // Special handling for splash - only for initial app start
         if (location == '/splash') {
-          if (_isLoginInProgress) {
-            debugLog('AppRouter',
-                '🚫 Blocking splash during login - staying on login');
-            return '/auth/login';
-          }
-
           if (authProvider.isInitialized) {
             if (authProvider.isAuthenticated) {
               final user = authProvider.currentUser;
@@ -238,22 +235,17 @@ class AppRouter {
             );
           },
         ),
-
-        // CRITICAL FIX: Updated device-change route with data
         GoRoute(
           path: '/device-change',
           name: 'device-change',
           pageBuilder: (context, state) {
-            // First try to get extra from state
             Map<String, dynamic> extra = {};
 
             if (state.extra != null && state.extra is Map<String, dynamic>) {
               extra = state.extra as Map<String, dynamic>;
               debugLog('AppRouter',
                   '📱 Got device-change data from state.extra: $extra');
-            }
-            // If no extra, try from pending data
-            else if (_pendingDeviceChangeData != null) {
+            } else if (_pendingDeviceChangeData != null) {
               extra = _pendingDeviceChangeData!;
               debugLog(
                   'AppRouter', '📱 Using pending device change data: $extra');
@@ -593,8 +585,30 @@ class AppRouter {
     );
   }
 
+  void setNavigatingToHome(bool value) {
+    _isNavigatingToHome = value;
+    debugLog('AppRouter', '🏠 Navigation to home flag: $value');
+  }
+
+  void setNavigatingToSchoolSelection(bool value) {
+    _isNavigatingToSchoolSelection = value;
+    debugLog('AppRouter', '🏫 Navigation to school selection flag: $value');
+  }
+
+  void setNavigatingFromDeviceChange(bool value) {
+    _isNavigatingFromDeviceChange = value;
+    debugLog('AppRouter', '📱 Navigation from device change flag: $value');
+  }
+
+  void setPendingDestination(String? destination) {
+    _pendingDestination = destination;
+    debugLog('AppRouter', '📍 Pending destination set: $destination');
+  }
+
   void markLoginInProgress(bool inProgress) {
     _isLoginInProgress = inProgress;
     debugLog('AppRouter', '🔐 Login in progress: $inProgress');
   }
 }
+
+final appRouter = AppRouter();

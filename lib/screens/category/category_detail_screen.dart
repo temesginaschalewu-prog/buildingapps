@@ -82,6 +82,49 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     });
   }
 
+  // FIXED: Local placeholder widget for category header
+  Widget _buildLocalPlaceholder() {
+    if (_category == null) return const SizedBox.shrink();
+
+    return Container(
+      color: AppColors.telegramBlue.withOpacity(0.1),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: AppColors.telegramBlue,
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: Text(
+                  _category!.initials,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _category!.name,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // 🎯 Telegram-style cache-first loading
   Future<void> _initializeScreen() async {
     // First, try to load from cache
@@ -258,14 +301,6 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
       setState(() {
         _isOffline = true;
       });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Refresh failed, using cached data'),
-          backgroundColor: AppColors.telegramRed,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
     } finally {
       setState(() {
         _isRefreshing = false;
@@ -569,71 +604,6 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     );
   }
 
-  // 🌐 Offline banner
-  Widget _buildOfflineBanner() {
-    if (!_isOffline && !_hasCachedData) return SizedBox.shrink();
-
-    return Container(
-      margin: EdgeInsets.symmetric(
-        horizontal: ScreenSize.responsiveValue(
-          context: context,
-          mobile: AppThemes.spacingL,
-          tablet: AppThemes.spacingXL,
-          desktop: AppThemes.spacingXXL,
-        ),
-        vertical: AppThemes.spacingS,
-      ),
-      padding: EdgeInsets.all(AppThemes.spacingM),
-      decoration: BoxDecoration(
-        color: _isOffline
-            ? AppColors.telegramYellow.withOpacity(0.1)
-            : AppColors.telegramBlue.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
-        border: Border.all(
-          color: _isOffline
-              ? AppColors.telegramYellow.withOpacity(0.3)
-              : AppColors.telegramBlue.withOpacity(0.3),
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            _isOffline
-                ? Icons.signal_wifi_off_rounded
-                : Icons.cloud_done_rounded,
-            color:
-                _isOffline ? AppColors.telegramYellow : AppColors.telegramBlue,
-            size: 20,
-          ),
-          SizedBox(width: AppThemes.spacingM),
-          Expanded(
-            child: Text(
-              _isOffline
-                  ? 'Offline mode - showing cached content'
-                  : 'Using cached data - refreshing in background',
-              style: AppTextStyles.bodySmall.copyWith(
-                color: _isOffline
-                    ? AppColors.telegramYellow
-                    : AppColors.telegramBlue,
-              ),
-            ),
-          ),
-          if (_isOffline)
-            TextButton(
-              onPressed: _manualRefresh,
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.telegramBlue,
-                padding: EdgeInsets.zero,
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: Text('Retry'),
-            ),
-        ],
-      ),
-    );
-  }
-
   // 🎨 Access status banner (Telegram style)
   Widget _buildAccessBanner() {
     if (_category == null) return SizedBox.shrink();
@@ -662,8 +632,6 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
         color: AppColors.statusPending,
         title: 'Payment Pending',
         message: 'Please wait for admin verification (1-3 working days)',
-        actionText: 'View Payments',
-        onAction: () => context.go('/profile'),
       );
     }
 
@@ -782,7 +750,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     );
   }
 
-  // 🏷️ Category header (Telegram channel style)
+  // FIXED: Category header with local placeholder
   Widget _buildHeader() {
     if (_category == null) return SizedBox.shrink();
 
@@ -795,31 +763,26 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
 
     return Stack(
       children: [
-        // Background image
+        // Background image - FIXED: Use local placeholder if no image
         Container(
           height: headerHeight,
           width: double.infinity,
-          child: CachedNetworkImage(
-            imageUrl: _category!.imageUrlOrDefault,
-            fit: BoxFit.cover,
-            placeholder: (context, url) => Shimmer.fromColors(
-              baseColor: Colors.grey[300]!,
-              highlightColor: Colors.grey[100]!,
-              child: Container(
-                color: Colors.white,
-              ),
-            ),
-            errorWidget: (context, url, error) => Container(
-              color: Theme.of(context).colorScheme.surfaceVariant,
-              child: Center(
-                child: Icon(
-                  Icons.category_outlined,
-                  size: 64,
-                  color: AppColors.getTextSecondary(context),
-                ),
-              ),
-            ),
-          ),
+          child:
+              (_category!.imageUrl != null && _category!.imageUrl!.isNotEmpty)
+                  ? CachedNetworkImage(
+                      imageUrl: _category!.imageUrl!,
+                      fit: BoxFit.cover,
+                      placeholder: (context, url) => Shimmer.fromColors(
+                        baseColor: Colors.grey[300]!,
+                        highlightColor: Colors.grey[100]!,
+                        child: Container(
+                          color: Colors.white,
+                        ),
+                      ),
+                      errorWidget: (context, url, error) =>
+                          _buildLocalPlaceholder(),
+                    )
+                  : _buildLocalPlaceholder(),
         ),
 
         // Gradient overlay
@@ -1293,14 +1256,9 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
         child: CustomScrollView(
           physics: const BouncingScrollPhysics(),
           slivers: [
-            // Header with category image
+            // Header with category image - FIXED: Now uses local placeholder
             SliverToBoxAdapter(
               child: _buildHeader(),
-            ),
-
-            // Offline banner
-            SliverToBoxAdapter(
-              child: _buildOfflineBanner(),
             ),
 
             // Access banner

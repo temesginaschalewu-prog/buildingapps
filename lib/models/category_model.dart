@@ -66,11 +66,22 @@ class Category {
     return status;
   }
 
+  // FIXED: Generate placeholder locally instead of using external service
   String get imageUrlOrDefault {
     if (imageUrl != null && imageUrl!.isNotEmpty) {
       return imageUrl!;
     }
-    return 'https://via.placeholder.com/400x400/6366f1/ffffff?text=${Uri.encodeComponent(name.substring(0, 2).toUpperCase())}';
+    // Return empty string - we'll handle this in the widget with a local widget
+    return '';
+  }
+
+  // Helper to get initials for local placeholder
+  String get initials {
+    if (name.isEmpty) return '?';
+    if (name.length >= 2) {
+      return name.substring(0, 2).toUpperCase();
+    }
+    return name[0].toUpperCase();
   }
 
   bool hasUserAccess(bool hasActiveSubscription, bool hasPendingPayment) {

@@ -292,6 +292,33 @@ class PaymentCard extends StatelessWidget {
                     ),
                   ],
                 ),
+                if (payment.accountHolderName != null &&
+                    payment.accountHolderName!.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.person_outline_rounded,
+                        size: ScreenSize.responsiveValue(
+                          context: context,
+                          mobile: 14,
+                          tablet: 16,
+                          desktop: 18,
+                        ),
+                        color: AppColors.getTextSecondary(context),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Account Holder: ${payment.accountHolderName}',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.getTextSecondary(context),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 if (showDetails) ...[
                   if (payment.rejectionReason != null) ...[
                     const SizedBox(height: 16),
@@ -417,6 +444,15 @@ class PaymentCard extends StatelessWidget {
               'Account: ${paymentMethod.accountInfo}',
               style: AppTextStyles.bodySmall.copyWith(
                 color: AppColors.getTextSecondary(context),
+              ),
+            ),
+          if (payment.accountHolderName != null &&
+              payment.accountHolderName!.isNotEmpty)
+            Text(
+              'Account Holder: ${payment.accountHolderName}',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.getTextSecondary(context),
+                fontWeight: FontWeight.w500,
               ),
             ),
           if (paymentMethod.instructions.isNotEmpty) ...[

@@ -1,11 +1,8 @@
 import 'package:familyacademyclient/models/category_model.dart';
-import 'package:familyacademyclient/themes/app_text_styles.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:familyacademyclient/utils/responsive.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_themes.dart';
-import '../../utils/helpers.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
@@ -89,6 +86,33 @@ class CategoryCard extends StatelessWidget {
     }
   }
 
+  // FIXED: Local placeholder widget
+  Widget _buildLocalPlaceholder() {
+    return Container(
+      color: AppColors.telegramBlue.withOpacity(0.1),
+      child: Center(
+        child: Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: AppColors.telegramBlue,
+            shape: BoxShape.circle,
+          ),
+          child: Center(
+            child: Text(
+              category.initials,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final statusColor = _getStatusColor(context);
@@ -97,24 +121,28 @@ class CategoryCard extends StatelessWidget {
         !isRefreshInProgress;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isSmallScreen = screenWidth < 400;
+    final isMediumScreen = screenWidth >= 400 && screenWidth < 600;
+
+    final titleFontSize = isSmallScreen ? 13.0 : (isMediumScreen ? 14.0 : 15.0);
+    final descriptionFontSize =
+        isSmallScreen ? 10.0 : (isMediumScreen ? 11.0 : 12.0);
+    final badgeFontSize = isSmallScreen ? 8.0 : (isMediumScreen ? 9.0 : 10.0);
+    final contentPadding = isSmallScreen ? 6.0 : (isMediumScreen ? 8.0 : 10.0);
+    final borderRadius = isSmallScreen ? 8.0 : 12.0;
+
     return Container(
-      margin: EdgeInsets.all(
-        ScreenSize.responsiveValue(
-          context: context,
-          mobile: 4,
-          tablet: 6,
-          desktop: 8,
-        ),
-      ),
+      margin: const EdgeInsets.all(4),
       child: GestureDetector(
         onTap: isClickable ? onTap : null,
         child: Container(
           decoration: BoxDecoration(
             color: AppColors.getCard(context),
-            borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
+            borderRadius: BorderRadius.circular(borderRadius),
             border: Border.all(
               color: Theme.of(context).dividerTheme.color ??
-                  AppColors.lightDivider,
+                  (isDark ? AppColors.darkDivider : AppColors.lightDivider),
               width: 1.0,
             ),
             boxShadow: [
@@ -128,51 +156,39 @@ class CategoryCard extends StatelessWidget {
           clipBehavior: Clip.antiAlias,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              // Image Container - Fixed Height
-              Container(
-                height: ScreenSize.responsiveValue(
-                  context: context,
-                  mobile: 100,
-                  tablet: 120,
-                  desktop: 140,
-                ),
-                color: isDark ? Colors.black26 : Colors.grey[100],
+              AspectRatio(
+                aspectRatio: 16 / 9,
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    // Background Image
-                    CachedNetworkImage(
-                      imageUrl: category.imageUrlOrDefault,
-                      fit: BoxFit.cover,
-                      placeholder: (context, url) => Container(
-                        color: isDark
-                            ? AppColors.darkSurface
-                            : AppColors.lightSurface,
-                        child: Center(
-                          child: SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: AppColors.telegramBlue,
+                    // Background Image - FIXED: Use local placeholder if no image URL
+                    if (category.imageUrl != null &&
+                        category.imageUrl!.isNotEmpty)
+                      CachedNetworkImage(
+                        imageUrl: category.imageUrl!,
+                        fit: BoxFit.cover,
+                        placeholder: (context, url) => Container(
+                          color: isDark
+                              ? AppColors.darkSurface
+                              : AppColors.lightSurface,
+                          child: Center(
+                            child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: AppColors.telegramBlue,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      errorWidget: (context, url, error) => Container(
-                        color: isDark
-                            ? AppColors.darkSurface
-                            : AppColors.lightSurface,
-                        child: Center(
-                          child: Icon(
-                            Icons.category_outlined,
-                            size: 32,
-                            color: AppColors.getTextSecondary(context),
-                          ),
-                        ),
-                      ),
-                    ),
+                        errorWidget: (context, url, error) =>
+                            _buildLocalPlaceholder(),
+                      )
+                    else
+                      _buildLocalPlaceholder(),
 
                     // Gradient Overlay
                     Container(
@@ -190,15 +206,13 @@ class CategoryCard extends StatelessWidget {
 
                     // Status Badge - TOP LEFT
                     Positioned(
-                      top: AppThemes.spacingM,
-                      left: AppThemes.spacingM,
+                      top: 8,
+                      left: 8,
                       child: Container(
-                        constraints: BoxConstraints(
-                          maxWidth: 120,
-                        ),
+                        constraints: const BoxConstraints(maxWidth: 100),
                         padding: EdgeInsets.symmetric(
-                          horizontal: AppThemes.spacingS,
-                          vertical: AppThemes.spacingXS,
+                          horizontal: contentPadding / 1.5,
+                          vertical: contentPadding / 3,
                         ),
                         decoration: BoxDecoration(
                           color: AppColors.getStatusBackground(
@@ -207,8 +221,7 @@ class CategoryCard extends StatelessWidget {
                                 : category.status,
                             context,
                           ),
-                          borderRadius: BorderRadius.circular(
-                              AppThemes.borderRadiusSmall),
+                          borderRadius: BorderRadius.circular(4),
                           border: Border.all(
                             color: statusColor,
                             width: 1.0,
@@ -219,11 +232,11 @@ class CategoryCard extends StatelessWidget {
                           children: [
                             if (isCheckingSubscription || isRefreshInProgress)
                               SizedBox(
-                                width: 12,
-                                height: 12,
+                                width: badgeFontSize + 2,
+                                height: badgeFontSize + 2,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 1.5,
-                                  valueColor: AlwaysStoppedAnimation(
+                                  valueColor: AlwaysStoppedAnimation<Color>(
                                     statusColor,
                                   ),
                                 ),
@@ -231,15 +244,16 @@ class CategoryCard extends StatelessWidget {
                             else
                               Icon(
                                 _statusIcon,
-                                size: 12,
+                                size: badgeFontSize + 1,
                                 color: statusColor,
                               ),
-                            SizedBox(width: 4),
+                            const SizedBox(width: 2),
                             Flexible(
                               child: Text(
                                 _statusText,
-                                style: AppTextStyles.labelSmall.copyWith(
+                                style: TextStyle(
                                   color: statusColor,
+                                  fontSize: badgeFontSize,
                                   fontWeight: FontWeight.w600,
                                 ),
                                 maxLines: 1,
@@ -256,17 +270,16 @@ class CategoryCard extends StatelessWidget {
                         category.price! > 0 &&
                         !isCheckingSubscription)
                       Positioned(
-                        top: AppThemes.spacingM,
-                        right: AppThemes.spacingM,
+                        top: 8,
+                        right: 8,
                         child: Container(
                           padding: EdgeInsets.symmetric(
-                            horizontal: AppThemes.spacingS,
-                            vertical: AppThemes.spacingXS,
+                            horizontal: contentPadding / 1.5,
+                            vertical: contentPadding / 3,
                           ),
                           decoration: BoxDecoration(
                             color: Colors.white.withOpacity(0.9),
-                            borderRadius: BorderRadius.circular(
-                                AppThemes.borderRadiusSmall),
+                            borderRadius: BorderRadius.circular(4),
                             boxShadow: [
                               BoxShadow(
                                 color: Colors.black.withOpacity(0.1),
@@ -277,8 +290,9 @@ class CategoryCard extends StatelessWidget {
                           ),
                           child: Text(
                             category.priceDisplay,
-                            style: AppTextStyles.labelMedium.copyWith(
+                            style: TextStyle(
                               color: AppColors.telegramBlue,
+                              fontSize: badgeFontSize,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -288,94 +302,78 @@ class CategoryCard extends StatelessWidget {
                 ),
               ),
 
-              // Content Section - More Space for Description
-              Expanded(
-                child: Padding(
-                  padding: EdgeInsets.all(AppThemes.spacingM),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Title - Fixed Height
-                          Text(
-                            category.name,
-                            style: AppTextStyles.titleMedium.copyWith(
-                              color: AppColors.getTextPrimary(context),
-                              fontWeight: FontWeight.w600,
-                              height: 1.2,
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
+              // Content Section
+              Padding(
+                padding: EdgeInsets.all(contentPadding),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      category.name,
+                      style: TextStyle(
+                        fontSize: titleFontSize,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.getTextPrimary(context),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    if (category.description != null &&
+                        category.description!.isNotEmpty)
+                      Text(
+                        category.description!,
+                        style: TextStyle(
+                          fontSize: descriptionFontSize,
+                          height: 1.3,
+                          color: AppColors.getTextSecondary(context),
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    if (category.status == 'active' &&
+                        !category.isFree &&
+                        !isCheckingSubscription)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Container(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: contentPadding / 1.5,
+                            vertical: contentPadding / 3,
                           ),
-
-                          SizedBox(height: AppThemes.spacingXS),
-
-                          // Description - Takes Available Space
-                          if (category.description != null &&
-                              category.description!.isNotEmpty)
-                            Expanded(
-                              child: Container(
-                                constraints: BoxConstraints(
-                                  maxHeight: constraints.maxHeight - 60,
-                                ),
-                                child: SingleChildScrollView(
-                                  physics: const NeverScrollableScrollPhysics(),
-                                  child: Text(
-                                    category.description!,
-                                    style: AppTextStyles.bodySmall.copyWith(
-                                      color:
-                                          AppColors.getTextSecondary(context),
-                                      height: 1.4,
-                                    ),
-                                    maxLines: 4, // Increased from 2 to 4
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
+                          decoration: BoxDecoration(
+                            color: AppColors.telegramBlue.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                category.billingCycle == 'monthly'
+                                    ? Icons.calendar_today_outlined
+                                    : Icons.school_outlined,
+                                size: descriptionFontSize,
+                                color: AppColors.telegramBlue,
                               ),
-                            )
-                          else
-                            Spacer(),
-
-                          // Footer - Billing Cycle
-                          if (category.status == 'active' &&
-                              !category.isFree &&
-                              !isCheckingSubscription)
-                            Container(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: AppThemes.spacingS,
-                                vertical: AppThemes.spacingXS,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.telegramBlue.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(
-                                    AppThemes.borderRadiusSmall),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    category.billingCycle == 'monthly'
-                                        ? Icons.calendar_today_outlined
-                                        : Icons.school_outlined,
-                                    size: 12,
+                              const SizedBox(width: 2),
+                              Flexible(
+                                child: Text(
+                                  category.billingCycle.toUpperCase(),
+                                  style: TextStyle(
                                     color: AppColors.telegramBlue,
+                                    fontSize: descriptionFontSize - 1,
+                                    fontWeight: FontWeight.w600,
                                   ),
-                                  SizedBox(width: 4),
-                                  Text(
-                                    category.billingCycle.toUpperCase(),
-                                    style: AppTextStyles.labelSmall.copyWith(
-                                      color: AppColors.telegramBlue,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                            ),
-                        ],
-                      );
-                    },
-                  ),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ],
@@ -399,19 +397,18 @@ class CategoryCardShimmer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isSmallScreen = screenWidth < 400;
+    final isMediumScreen = screenWidth >= 400 && screenWidth < 600;
+
+    final contentPadding = isSmallScreen ? 6.0 : (isMediumScreen ? 8.0 : 10.0);
+    final borderRadius = isSmallScreen ? 8.0 : 12.0;
 
     return Container(
-      margin: EdgeInsets.all(
-        ScreenSize.responsiveValue(
-          context: context,
-          mobile: 4,
-          tablet: 6,
-          desktop: 8,
-        ),
-      ),
+      margin: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
-        borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
+        borderRadius: BorderRadius.circular(borderRadius),
         border: Border.all(
           color: isDark
               ? AppColors.darkDivider.withOpacity(0.3)
@@ -421,13 +418,10 @@ class CategoryCardShimmer extends StatelessWidget {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Image Shimmer - Fixed Height
-          Container(
-            height: 100,
-            decoration: BoxDecoration(
-              color: isDark ? Colors.black26 : Colors.grey[100],
-            ),
+          AspectRatio(
+            aspectRatio: 16 / 9,
             child: Shimmer.fromColors(
               baseColor: isDark ? Colors.grey[800]! : Colors.grey[300]!,
               highlightColor: isDark ? Colors.grey[700]! : Colors.grey[100]!,
@@ -436,75 +430,54 @@ class CategoryCardShimmer extends StatelessWidget {
               ),
             ),
           ),
-
-          // Content Shimmer
-          Expanded(
-            child: Padding(
-              padding: EdgeInsets.all(AppThemes.spacingM),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Shimmer.fromColors(
-                    baseColor: isDark ? Colors.grey[800]! : Colors.grey[300]!,
-                    highlightColor:
-                        isDark ? Colors.grey[700]! : Colors.grey[100]!,
-                    child: Container(
-                      width: double.infinity,
-                      height: 20,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius:
-                            BorderRadius.circular(AppThemes.borderRadiusSmall),
-                      ),
+          Padding(
+            padding: EdgeInsets.all(contentPadding),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Shimmer.fromColors(
+                  baseColor: isDark ? Colors.grey[800]! : Colors.grey[300]!,
+                  highlightColor:
+                      isDark ? Colors.grey[700]! : Colors.grey[100]!,
+                  child: Container(
+                    width: double.infinity,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(4),
                     ),
                   ),
-                  SizedBox(height: AppThemes.spacingS),
-                  Shimmer.fromColors(
-                    baseColor: isDark ? Colors.grey[800]! : Colors.grey[300]!,
-                    highlightColor:
-                        isDark ? Colors.grey[700]! : Colors.grey[100]!,
-                    child: Container(
-                      width: double.infinity,
-                      height: 14,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius:
-                            BorderRadius.circular(AppThemes.borderRadiusSmall),
-                      ),
+                ),
+                const SizedBox(height: 8),
+                Shimmer.fromColors(
+                  baseColor: isDark ? Colors.grey[800]! : Colors.grey[300]!,
+                  highlightColor:
+                      isDark ? Colors.grey[700]! : Colors.grey[100]!,
+                  child: Container(
+                    width: double.infinity,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(4),
                     ),
                   ),
-                  SizedBox(height: AppThemes.spacingS),
-                  Shimmer.fromColors(
-                    baseColor: isDark ? Colors.grey[800]! : Colors.grey[300]!,
-                    highlightColor:
-                        isDark ? Colors.grey[700]! : Colors.grey[100]!,
-                    child: Container(
-                      width: double.infinity,
-                      height: 14,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius:
-                            BorderRadius.circular(AppThemes.borderRadiusSmall),
-                      ),
+                ),
+                const SizedBox(height: 4),
+                Shimmer.fromColors(
+                  baseColor: isDark ? Colors.grey[800]! : Colors.grey[300]!,
+                  highlightColor:
+                      isDark ? Colors.grey[700]! : Colors.grey[100]!,
+                  child: Container(
+                    width: 60,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(4),
                     ),
                   ),
-                  Spacer(),
-                  Shimmer.fromColors(
-                    baseColor: isDark ? Colors.grey[800]! : Colors.grey[300]!,
-                    highlightColor:
-                        isDark ? Colors.grey[700]! : Colors.grey[100]!,
-                    child: Container(
-                      width: 80,
-                      height: 24,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius:
-                            BorderRadius.circular(AppThemes.borderRadiusSmall),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ],

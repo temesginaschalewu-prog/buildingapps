@@ -16,6 +16,7 @@ import 'package:familyacademyclient/services/device_service.dart';
 import 'package:familyacademyclient/services/notification_service.dart';
 import 'package:familyacademyclient/widgets/auth/auth_form_field.dart';
 import 'package:familyacademyclient/widgets/auth/password_field.dart';
+import 'package:familyacademyclient/utils/router.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -134,14 +135,7 @@ class _LoginScreenState extends State<LoginScreen>
 
         FocusScope.of(context).unfocus();
 
-        int attempts = 0;
-        while (attempts < 20 && _mounted) {
-          if (authProvider.isInitialized && authProvider.isAuthenticated) {
-            break;
-          }
-          await Future.delayed(const Duration(milliseconds: 50));
-          attempts++;
-        }
+        await Future.delayed(const Duration(milliseconds: 100));
 
         if (!_mounted) return;
 
@@ -149,19 +143,23 @@ class _LoginScreenState extends State<LoginScreen>
         if (user != null) {
           debugLog('LoginScreen', '👤 User loaded, navigating...');
 
-          await Future.delayed(const Duration(milliseconds: 100));
-
           if (user.schoolId == null) {
-            debugLog(
-              'LoginScreen',
-              '🏫 No school selected, going to school selection',
-            );
-            if (_mounted && !context.mounted) return;
-            context.go('/school-selection');
+            debugLog('LoginScreen',
+                '🏫 No school selected, going to school selection');
+            appRouter.setNavigatingToSchoolSelection(true);
+            appRouter.setPendingDestination('/school-selection');
+
+            if (_mounted && context.mounted) {
+              context.go('/school-selection');
+            }
           } else {
             debugLog('LoginScreen', '🏠 Going to home screen');
-            if (_mounted && !context.mounted) return;
-            context.go('/');
+            appRouter.setNavigatingToHome(true);
+            appRouter.setPendingDestination('/');
+
+            if (_mounted && context.mounted) {
+              context.go('/');
+            }
           }
         }
       } else if (loginResult['requiresDeviceChange'] == true) {
@@ -170,15 +168,11 @@ class _LoginScreenState extends State<LoginScreen>
 
         _isNavigating = true;
 
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (_mounted) {
-            Future.delayed(const Duration(milliseconds: 100), () {
-              if (_mounted) {
-                _navigateToDeviceChange(username, password, loginResult);
-              }
-            });
-          }
-        });
+        await Future.delayed(const Duration(milliseconds: 100));
+
+        if (_mounted) {
+          _navigateToDeviceChange(username, password, loginResult);
+        }
       } else {
         showSnackBar(
           context,
@@ -189,7 +183,8 @@ class _LoginScreenState extends State<LoginScreen>
       }
     } catch (e) {
       debugLog('LoginScreen', '❌ Login error: $e');
-      showSnackBar(context, 'Login failed. Please try again.', isError: true);
+      showSimpleSnackBar(context, 'Login failed. Please try again.',
+          isError: true);
       _isNavigating = false;
     } finally {
       if (_mounted) {
@@ -305,7 +300,6 @@ class _LoginScreenState extends State<LoginScreen>
     unawaited(_notificationService.sendFcmTokenToBackendIfAuthenticated());
   }
 
-  // 📱 Mobile Layout
   Widget _buildMobileLogin() {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
@@ -324,7 +318,6 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  // 📱 Tablet Layout
   Widget _buildTabletLogin() {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
@@ -359,7 +352,6 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  // 💻 Desktop Layout
   Widget _buildDesktopLogin() {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
@@ -387,7 +379,6 @@ class _LoginScreenState extends State<LoginScreen>
           ),
           child: Row(
             children: [
-              // Left Panel - Welcome
               Expanded(
                 child: Container(
                   padding: EdgeInsets.all(AppThemes.spacingXXXL),
@@ -405,7 +396,6 @@ class _LoginScreenState extends State<LoginScreen>
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // Logo
                       Container(
                         width: 100,
                         height: 100,
@@ -424,10 +414,7 @@ class _LoginScreenState extends State<LoginScreen>
                             duration: 600.ms,
                             curve: Curves.elasticOut,
                           ),
-
                       SizedBox(height: AppThemes.spacingXXL),
-
-                      // Welcome Text
                       Text(
                         'Family Academy',
                         style: AppTextStyles.displaySmall.copyWith(
@@ -436,9 +423,7 @@ class _LoginScreenState extends State<LoginScreen>
                         ),
                         textAlign: TextAlign.center,
                       ),
-
                       SizedBox(height: AppThemes.spacingL),
-
                       Text(
                         'Premium Education Platform',
                         style: AppTextStyles.bodyLarge.copyWith(
@@ -447,10 +432,7 @@ class _LoginScreenState extends State<LoginScreen>
                         ),
                         textAlign: TextAlign.center,
                       ),
-
                       SizedBox(height: AppThemes.spacingXXL),
-
-                      // Features
                       _buildFeatureItem('Access all courses'),
                       SizedBox(height: AppThemes.spacingM),
                       _buildFeatureItem('Track your progress'),
@@ -460,8 +442,6 @@ class _LoginScreenState extends State<LoginScreen>
                   ),
                 ),
               ),
-
-              // Right Panel - Login Form
               Expanded(
                 flex: 2,
                 child: SingleChildScrollView(
@@ -499,7 +479,6 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  // 📝 Login Content
   Widget _buildLoginContent({bool showLogo = true}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -536,8 +515,6 @@ class _LoginScreenState extends State<LoginScreen>
           ),
           SizedBox(height: AppThemes.spacingXL),
         ],
-
-        // Welcome Text
         Text(
           'Welcome Back',
           style: AppTextStyles.headlineLarge.copyWith(
@@ -556,9 +533,7 @@ class _LoginScreenState extends State<LoginScreen>
               duration: AppThemes.animationDurationMedium,
               delay: 100.ms,
             ),
-
         SizedBox(height: AppThemes.spacingS),
-
         Text(
           'Sign in to continue learning',
           style: AppTextStyles.bodyMedium.copyWith(
@@ -576,13 +551,8 @@ class _LoginScreenState extends State<LoginScreen>
               duration: AppThemes.animationDurationMedium,
               delay: 200.ms,
             ),
-
         SizedBox(height: AppThemes.spacingXXXL),
-
-        // Initialization Indicator
         if (_isInitializing) _buildInitializationIndicator(),
-
-        // Login Form
         Form(
           key: _formKey,
           child: Column(
@@ -614,9 +584,7 @@ class _LoginScreenState extends State<LoginScreen>
                     duration: AppThemes.animationDurationMedium,
                     delay: 300.ms,
                   ),
-
               SizedBox(height: AppThemes.spacingXL),
-
               PasswordField(
                 controller: _passwordController,
                 label: 'Password',
@@ -639,10 +607,7 @@ class _LoginScreenState extends State<LoginScreen>
                     duration: AppThemes.animationDurationMedium,
                     delay: 400.ms,
                   ),
-
               SizedBox(height: AppThemes.spacingXL),
-
-              // Login Button
               ElevatedButton(
                 onPressed: (_isLoading || !_servicesReady) ? null : _login,
                 style: ElevatedButton.styleFrom(
@@ -687,10 +652,7 @@ class _LoginScreenState extends State<LoginScreen>
                     duration: 300.ms,
                     delay: 500.ms,
                   ),
-
               SizedBox(height: AppThemes.spacingXXL),
-
-              // Register Link
               Center(
                 child: TextButton(
                   onPressed: () {
@@ -721,8 +683,6 @@ class _LoginScreenState extends State<LoginScreen>
             ],
           ),
         ),
-
-        // Service Status
         if (!_servicesReady && !_isInitializing) ...[
           SizedBox(height: AppThemes.spacingXL),
           Container(
@@ -767,13 +727,11 @@ class _LoginScreenState extends State<LoginScreen>
             ),
           ).animate().fadeIn(duration: AppThemes.animationDurationMedium),
         ],
-
         SizedBox(height: AppThemes.spacingXXL),
       ],
     );
   }
 
-  // ⏳ Initialization Indicator
   Widget _buildInitializationIndicator() {
     return Container(
       margin: EdgeInsets.only(bottom: AppThemes.spacingXL),

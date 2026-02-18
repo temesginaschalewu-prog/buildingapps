@@ -11,12 +11,16 @@ import 'package:familyacademyclient/providers/streak_provider.dart';
 import 'package:familyacademyclient/providers/exam_provider.dart';
 import 'package:familyacademyclient/providers/progress_provider.dart';
 import 'package:familyacademyclient/providers/category_provider.dart';
+import 'package:familyacademyclient/providers/notification_provider.dart';
 import 'package:familyacademyclient/themes/app_themes.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/themes/app_text_styles.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../utils/helpers.dart';
+import '../../widgets/progress/streak_widget.dart';
+import '../../widgets/progress/achievement_badge.dart';
+import '../../widgets/progress/progress_chart.dart';
 
 class ProgressScreen extends StatefulWidget {
   const ProgressScreen({super.key});
@@ -31,8 +35,20 @@ class _ProgressScreenState extends State<ProgressScreen>
   Timer? _refreshTimer;
   StreamSubscription? _progressSubscription;
   StreamSubscription? _statsSubscription;
+  StreamSubscription? _streakSubscription;
   StreamSubscription? _authSubscription;
   int _unreadNotifications = 0;
+
+  // Track which sections are loading
+  final Map<String, bool> _loadingSections = {
+    'stats': true,
+    'overview': true,
+    'exams': true,
+    'categories': true,
+    'achievements': true,
+    'activity': true,
+    'nextSteps': true,
+  };
 
   @override
   bool get wantKeepAlive => true;
@@ -41,10 +57,29 @@ class _ProgressScreenState extends State<ProgressScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _initializeData();
-    _setupStreamListeners();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeData();
+      _setupStreamListeners();
+      _checkSubscriptionAccess();
+    });
+
     _setupAutoRefresh();
-    _checkSubscriptionAccess();
+  }
+
+  Future<void> _loadNotifications() async {
+    try {
+      final notificationProvider =
+          Provider.of<NotificationProvider>(context, listen: false);
+      await notificationProvider.loadNotifications();
+      if (mounted) {
+        setState(() {
+          _unreadNotifications = notificationProvider.unreadCount;
+        });
+      }
+    } catch (e) {
+      debugLog('ProgressScreen', 'Error loading notifications: $e');
+    }
   }
 
   Future<void> _checkSubscriptionAccess() async {
@@ -77,6 +112,7 @@ class _ProgressScreenState extends State<ProgressScreen>
     _refreshTimer?.cancel();
     _progressSubscription?.cancel();
     _statsSubscription?.cancel();
+    _streakSubscription?.cancel();
     _authSubscription?.cancel();
     super.dispose();
   }
@@ -86,17 +122,23 @@ class _ProgressScreenState extends State<ProgressScreen>
       final progressProvider =
           Provider.of<ProgressProvider>(context, listen: false);
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final streakProvider =
+          Provider.of<StreakProvider>(context, listen: false);
 
       _progressSubscription =
           progressProvider.progressUpdates.listen((progress) {
         if (mounted) {
-          setState(() {});
+          setState(() {
+            _updateLoadingStates(progressProvider);
+          });
         }
       });
 
       _statsSubscription = progressProvider.overallStatsUpdates.listen((stats) {
         if (mounted) {
-          setState(() {});
+          setState(() {
+            _updateLoadingStates(progressProvider);
+          });
         }
       });
 
@@ -106,6 +148,16 @@ class _ProgressScreenState extends State<ProgressScreen>
         }
       });
     });
+  }
+
+  void _updateLoadingStates(ProgressProvider progressProvider) {
+    _loadingSections['stats'] = progressProvider.isLoadingOverall;
+    _loadingSections['overview'] = progressProvider.isLoadingOverall;
+    _loadingSections['exams'] = progressProvider.isLoadingOverall;
+    _loadingSections['categories'] = progressProvider.isLoadingOverall;
+    _loadingSections['achievements'] = progressProvider.isLoadingOverall;
+    _loadingSections['activity'] = progressProvider.isLoadingOverall;
+    _loadingSections['nextSteps'] = false; // Next steps are computed locally
   }
 
   void _setupAutoRefresh() {
@@ -127,15 +179,20 @@ class _ProgressScreenState extends State<ProgressScreen>
       final categoryProvider =
           Provider.of<CategoryProvider>(context, listen: false);
 
-      // Load cached data first
       await Future.wait([
         streakProvider.loadStreak(forceRefresh: false),
         examProvider.loadMyExamResults(forceRefresh: false),
         categoryProvider.loadCategories(),
+        progressProvider.loadOverallProgress(forceRefresh: false),
       ]);
 
-      // Try to refresh in background if needed
+      await _loadNotifications();
+
       if (mounted) {
+        setState(() {
+          _updateLoadingStates(progressProvider);
+        });
+
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _refreshData(silent: true);
         });
@@ -155,7 +212,6 @@ class _ProgressScreenState extends State<ProgressScreen>
     }
 
     try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final streakProvider =
           Provider.of<StreakProvider>(context, listen: false);
       final examProvider = Provider.of<ExamProvider>(context, listen: false);
@@ -168,13 +224,22 @@ class _ProgressScreenState extends State<ProgressScreen>
         progressProvider.loadOverallProgress(forceRefresh: true),
       ]);
 
+      await _loadNotifications();
+
+      if (mounted) {
+        setState(() {
+          _updateLoadingStates(progressProvider);
+        });
+      }
+
       if (!silent) {
-        showSnackBar(context, 'Progress refreshed', isError: false);
+        showSimpleSnackBar(context, 'Progress refreshed', isError: false);
       }
     } catch (e) {
       debugLog('ProgressScreen', '❌ Refresh error: $e');
       if (!silent) {
-        showSnackBar(context, 'Failed to refresh progress', isError: true);
+        showSimpleSnackBar(context, 'Failed to refresh progress',
+            isError: true);
       }
     } finally {
       if (mounted && !silent) {
@@ -183,406 +248,455 @@ class _ProgressScreenState extends State<ProgressScreen>
     }
   }
 
-  Widget _buildProgressContent() {
-    return Consumer5<AuthProvider, StreakProvider, ExamProvider,
-        ProgressProvider, CategoryProvider>(
-      builder: (context, authProvider, streakProvider, examProvider,
-          progressProvider, categoryProvider, child) {
-        // Always show cached data first
-        final stats =
-            progressProvider.overallStats['stats'] as Map<String, dynamic>? ??
-                {};
-        final chaptersCompleted = _parseInt(stats['chapters_completed']) ?? 0;
-        final totalChaptersAttempted =
-            _parseInt(stats['total_chapters_attempted']) ?? 0;
-        final totalAccuracy = _parseDouble(stats['accuracy_percentage']) ?? 0.0;
-        final studyTimeHours = _parseDouble(stats['study_time_hours']) ?? 0.0;
-        final streakCount = streakProvider.streak?.currentStreak ??
-            authProvider.currentUser?.streakCount ??
-            0;
-        final examResults = examProvider.myExamResults;
-
-        if (progressProvider.isLoadingOverall && _userProgress.isEmpty) {
-          return _buildLoadingSkeleton();
-        }
-
-        return RefreshIndicator(
-          onRefresh: () => _refreshData(),
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Stats Section
-                Padding(
-                  padding: EdgeInsets.only(
-                    top: 16,
-                    left: ScreenSize.responsiveValue(
-                      context: context,
-                      mobile: 16,
-                      tablet: 24,
-                      desktop: 32,
-                    ),
-                    right: ScreenSize.responsiveValue(
-                      context: context,
-                      mobile: 16,
-                      tablet: 24,
-                      desktop: 32,
-                    ),
-                  ),
-                  child: _buildStatsSection(
-                    streakCount: streakCount,
-                    chaptersCompleted: chaptersCompleted,
-                    totalAccuracy: totalAccuracy,
-                  ),
-                ),
-
-                // Main Content
-                Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: ScreenSize.responsiveValue(
-                      context: context,
-                      mobile: 16,
-                      tablet: 24,
-                      desktop: 32,
-                    ),
-                    vertical: 24,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildOverviewSection(
-                        totalChaptersAttempted: totalChaptersAttempted,
-                        chaptersCompleted: chaptersCompleted,
-                        totalAccuracy: totalAccuracy,
-                        studyTimeHours: studyTimeHours,
-                      ),
-                      const SizedBox(height: 24),
-                      _buildExamPerformanceSection(examResults),
-                      const SizedBox(height: 24),
-                      _buildNextStepsSection(
-                        hasStudied: totalChaptersAttempted > 0,
-                        hasExamResults: examResults.isNotEmpty,
-                        streakCount: streakCount,
-                        chaptersCompleted: chaptersCompleted,
-                        totalAccuracy: totalAccuracy,
-                      ),
-                      const SizedBox(height: 32),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildGradientHeader() {
-    return Container(
-      width: double.infinity,
-      height: ScreenSize.responsiveValue(
-        context: context,
-        mobile: 160,
-        tablet: 180,
-        desktop: 200,
-      ),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            AppColors.telegramBlue,
-            AppColors.telegramBlue.withOpacity(0.8),
-          ],
-        ),
-      ),
-      child: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: EdgeInsets.only(
-            top: 16,
-            left: ScreenSize.responsiveValue(
-              context: context,
-              mobile: 16,
-              tablet: 24,
-              desktop: 32,
-            ),
-            right: ScreenSize.responsiveValue(
-              context: context,
-              mobile: 16,
-              tablet: 24,
-              desktop: 32,
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header with title and actions
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Progress',
-                    style: AppTextStyles.headlineLarge.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  Row(
-                    children: [
-                      _buildIconButton(
-                        icon: Icons.dark_mode_outlined,
-                        color: Colors.white,
-                        onTap: () {
-                          Provider.of<ThemeProvider>(context, listen: false)
-                              .toggleTheme();
-                        },
-                      ),
-                      const SizedBox(width: 8),
-                      _buildNotificationButton(),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Track your learning journey',
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: Colors.white.withOpacity(0.9),
-                ),
-              ),
-              const Spacer(),
-              // User info or progress summary
-              _buildHeaderInfo(),
-              const SizedBox(height: 20),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeaderInfo() {
-    return Consumer<AuthProvider>(
-      builder: (context, authProvider, child) {
-        final user = authProvider.currentUser;
-        final username = user?.username?.split(' ').first ?? 'Student';
-
-        return Row(
-          children: [
-            CircleAvatar(
-              radius: ScreenSize.responsiveValue(
-                context: context,
-                mobile: 24,
-                tablet: 28,
-                desktop: 32,
-              ),
-              backgroundColor: Colors.white.withOpacity(0.2),
-              child: Text(
-                username.substring(0, 1).toUpperCase(),
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: ScreenSize.responsiveFontSize(
-                    context: context,
-                    mobile: 18,
-                    tablet: 20,
-                    desktop: 22,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Welcome back, $username!',
-                    style: AppTextStyles.titleMedium.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  Text(
-                    'Keep up the great work!',
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: Colors.white.withOpacity(0.8),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (_isRefreshing)
-              SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildIconButton({
-    required IconData icon,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: ScreenSize.responsiveValue(
-          context: context,
-          mobile: 40,
-          tablet: 44,
-          desktop: 48,
-        ),
-        height: ScreenSize.responsiveValue(
-          context: context,
-          mobile: 40,
-          tablet: 44,
-          desktop: 48,
-        ),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.1),
-          shape: BoxShape.circle,
-        ),
-        child: Center(
-          child: Icon(
-            icon,
-            size: ScreenSize.responsiveIconSize(
-              context: context,
-              mobile: 20,
-              tablet: 22,
-              desktop: 24,
-            ),
-            color: color,
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildNotificationButton() {
     return GestureDetector(
-      onTap: () {
-        // Navigate to notifications
+      onTap: () async {
+        try {
+          final notificationProvider =
+              Provider.of<NotificationProvider>(context, listen: false);
+          await notificationProvider.loadNotifications();
+        } catch (e) {
+          showSimpleSnackBar(context, 'Failed to load notifications',
+              isError: true);
+        }
       },
       child: Container(
-        width: ScreenSize.responsiveValue(
-          context: context,
-          mobile: 40,
-          tablet: 44,
-          desktop: 48,
-        ),
-        height: ScreenSize.responsiveValue(
-          context: context,
-          mobile: 40,
-          tablet: 44,
-          desktop: 48,
-        ),
+        width: 40,
+        height: 40,
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.1),
+          color: AppColors.getSurface(context),
           shape: BoxShape.circle,
         ),
         child: Center(
           child: _unreadNotifications > 0
               ? badges.Badge(
-                  position: badges.BadgePosition.topEnd(top: -2, end: -2),
+                  position: badges.BadgePosition.topEnd(top: -4, end: -4),
                   badgeContent: Text(
                     _unreadNotifications > 9
                         ? '9+'
                         : _unreadNotifications.toString(),
                     style: AppTextStyles.labelSmall.copyWith(
                       color: Colors.white,
-                      fontSize: 8,
+                      fontSize: 9,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                   badgeStyle: badges.BadgeStyle(
                     badgeColor: AppColors.telegramRed,
-                    padding: const EdgeInsets.all(3),
+                    padding: const EdgeInsets.all(4),
                     borderRadius:
                         BorderRadius.circular(AppThemes.borderRadiusFull),
                   ),
                   child: Icon(
                     Icons.notifications_outlined,
-                    size: ScreenSize.responsiveIconSize(
-                      context: context,
-                      mobile: 20,
-                      tablet: 22,
-                      desktop: 24,
-                    ),
-                    color: Colors.white,
+                    size: 22,
+                    color: AppColors.getTextPrimary(context),
                   ),
                 )
               : Icon(
                   Icons.notifications_outlined,
-                  size: ScreenSize.responsiveIconSize(
-                    context: context,
-                    mobile: 20,
-                    tablet: 22,
-                    desktop: 24,
-                  ),
-                  color: Colors.white,
+                  size: 22,
+                  color: AppColors.getTextPrimary(context),
                 ),
         ),
       ),
     );
   }
 
-  Widget _buildStatsSection({
+  Widget _buildThemeToggleButton() {
+    return Consumer<ThemeProvider>(
+      builder: (context, themeProvider, child) {
+        return GestureDetector(
+          onTap: themeProvider.toggleTheme,
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppColors.getSurface(context),
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Icon(
+                themeProvider.themeMode == ThemeMode.dark
+                    ? Icons.light_mode_outlined
+                    : Icons.dark_mode_outlined,
+                size: 22,
+                color: AppColors.getTextPrimary(context),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // FIXED: Only show shimmer for specific sections that are loading
+  Widget _buildShimmerIfLoading({
+    required bool isLoading,
+    required Widget child,
+    required Widget shimmerChild,
+  }) {
+    if (isLoading) {
+      return shimmerChild;
+    }
+    return child;
+  }
+
+  // FIXED: Stats section with shimmer only when loading
+  Widget _buildStatsSectionWithShimmer({
     required int streakCount,
     required int chaptersCompleted,
     required double totalAccuracy,
+    required bool isLoading,
   }) {
+    return _buildShimmerIfLoading(
+      isLoading: isLoading,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+        decoration: BoxDecoration(
+          color: AppColors.getCard(context),
+          borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 16,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _buildStatCircle(
+              value: streakCount.toString(),
+              label: 'Day Streak',
+              color: AppColors.telegramBlue,
+              icon: Icons.local_fire_department_rounded,
+            ),
+            _buildStatCircle(
+              value: chaptersCompleted.toString(),
+              label: 'Chapters',
+              color: AppColors.telegramGreen,
+              icon: Icons.book_rounded,
+            ),
+            _buildStatCircle(
+              value: '${totalAccuracy.toStringAsFixed(0)}%',
+              label: 'Accuracy',
+              color: AppColors.telegramYellow,
+              icon: Icons.auto_graph_rounded,
+            ),
+          ],
+        ),
+      ),
+      shimmerChild: _buildStatsShimmer(),
+    );
+  }
+
+  Widget _buildStatsShimmer() {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
       decoration: BoxDecoration(
         color: AppColors.getCard(context),
         borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
-          ),
-        ],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: List.generate(3, (index) => _buildStatShimmer()),
+      ),
+    );
+  }
+
+  Widget _buildStatShimmer() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Shimmer.fromColors(
+          baseColor: Colors.grey[300]!,
+          highlightColor: Colors.grey[100]!,
+          child: Container(
+            width: 60,
+            height: 60,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Shimmer.fromColors(
+          baseColor: Colors.grey[300]!,
+          highlightColor: Colors.grey[100]!,
+          child: Container(
+            width: 80,
+            height: 16,
+            color: Colors.white,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // FIXED: Overview section with shimmer only when loading
+  Widget _buildOverviewSectionWithShimmer({
+    required int totalChaptersAttempted,
+    required int chaptersCompleted,
+    required double totalAccuracy,
+    required double studyTimeHours,
+    required bool isLoading,
+  }) {
+    return _buildShimmerIfLoading(
+      isLoading: isLoading,
+      child: _buildOverviewSection(
+        totalChaptersAttempted: totalChaptersAttempted,
+        chaptersCompleted: chaptersCompleted,
+        totalAccuracy: totalAccuracy,
+        studyTimeHours: studyTimeHours,
+      ),
+      shimmerChild: _buildOverviewShimmer(),
+    );
+  }
+
+  Widget _buildOverviewShimmer() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.getCard(context),
+        borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildStatCircle(
-            value: streakCount.toString(),
-            label: 'Day Streak',
-            color: AppColors.telegramBlue,
-            icon: Icons.local_fire_department_rounded,
+          Shimmer.fromColors(
+            baseColor: Colors.grey[300]!,
+            highlightColor: Colors.grey[100]!,
+            child: Container(
+              width: 150,
+              height: 20,
+              color: Colors.white,
+            ),
           ),
-          _buildStatCircle(
-            value: chaptersCompleted.toString(),
-            label: 'Chapters',
-            color: AppColors.telegramGreen,
-            icon: Icons.book_rounded,
-          ),
-          _buildStatCircle(
-            value: '${totalAccuracy.toStringAsFixed(0)}%',
-            label: 'Accuracy',
-            color: AppColors.telegramYellow,
-            icon: Icons.auto_graph_rounded,
+          const SizedBox(height: 16),
+          ...List.generate(
+              2,
+              (index) => Padding(
+                    padding: const EdgeInsets.only(bottom: 20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Shimmer.fromColors(
+                              baseColor: Colors.grey[300]!,
+                              highlightColor: Colors.grey[100]!,
+                              child: Container(
+                                width: 100,
+                                height: 16,
+                                color: Colors.white,
+                              ),
+                            ),
+                            Shimmer.fromColors(
+                              baseColor: Colors.grey[300]!,
+                              highlightColor: Colors.grey[100]!,
+                              child: Container(
+                                width: 50,
+                                height: 16,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Shimmer.fromColors(
+                          baseColor: Colors.grey[300]!,
+                          highlightColor: Colors.grey[100]!,
+                          child: Container(
+                            width: double.infinity,
+                            height: 6,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Shimmer.fromColors(
+                      baseColor: Colors.grey[300]!,
+                      highlightColor: Colors.grey[100]!,
+                      child: Container(
+                        width: 80,
+                        height: 16,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Shimmer.fromColors(
+                      baseColor: Colors.grey[300]!,
+                      highlightColor: Colors.grey[100]!,
+                      child: Container(
+                        width: 60,
+                        height: 14,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Shimmer.fromColors(
+                baseColor: Colors.grey[300]!,
+                highlightColor: Colors.grey[100]!,
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
+  // FIXED: Exam section with shimmer only when loading
+  Widget _buildExamPerformanceSectionWithShimmer({
+    required List examResults,
+    required bool isLoading,
+  }) {
+    return _buildShimmerIfLoading(
+      isLoading: isLoading,
+      child: _buildExamPerformanceSection(examResults),
+      shimmerChild: _buildExamShimmer(),
+    );
+  }
+
+  Widget _buildExamShimmer() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.getCard(context),
+        borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Shimmer.fromColors(
+            baseColor: Colors.grey[300]!,
+            highlightColor: Colors.grey[100]!,
+            child: Container(
+              width: 150,
+              height: 20,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: List.generate(
+                3,
+                (index) => Column(
+                      children: [
+                        Shimmer.fromColors(
+                          baseColor: Colors.grey[300]!,
+                          highlightColor: Colors.grey[100]!,
+                          child: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Shimmer.fromColors(
+                          baseColor: Colors.grey[300]!,
+                          highlightColor: Colors.grey[100]!,
+                          child: Container(
+                            width: 30,
+                            height: 16,
+                            color: Colors.white,
+                          ),
+                        ),
+                        Shimmer.fromColors(
+                          baseColor: Colors.grey[300]!,
+                          highlightColor: Colors.grey[100]!,
+                          child: Container(
+                            width: 40,
+                            height: 12,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    )),
+          ),
+          const SizedBox(height: 20),
+          ...List.generate(
+              2,
+              (index) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Row(
+                      children: [
+                        Shimmer.fromColors(
+                          baseColor: Colors.grey[300]!,
+                          highlightColor: Colors.grey[100]!,
+                          child: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Shimmer.fromColors(
+                                baseColor: Colors.grey[300]!,
+                                highlightColor: Colors.grey[100]!,
+                                child: Container(
+                                  width: double.infinity,
+                                  height: 16,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Shimmer.fromColors(
+                                baseColor: Colors.grey[300]!,
+                                highlightColor: Colors.grey[100]!,
+                                child: Container(
+                                  width: 100,
+                                  height: 14,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  )),
+        ],
+      ),
+    );
+  }
+
+  // Rest of the original methods remain the same...
   Widget _buildStatCircle({
     required String value,
     required String label,
@@ -806,9 +920,31 @@ class _ProgressScreenState extends State<ProgressScreen>
   }
 
   Widget _buildExamPerformanceSection(List examResults) {
+    debugLog('ProgressScreen',
+        'Building exam section with ${examResults.length} results');
+
     final hasExamResults = examResults.isNotEmpty;
-    final averageScore = _calculateAverageScore(examResults);
-    final passedExams = examResults.where((e) => e.passed == true).length;
+
+    int passedCount = 0;
+    double totalScore = 0;
+    int validExams = 0;
+
+    for (var exam in examResults) {
+      try {
+        final passed = exam.passed == true;
+        if (passed) passedCount++;
+
+        final score = _parseDouble(exam.score);
+        if (score != null) {
+          totalScore += score;
+          validExams++;
+        }
+      } catch (e) {
+        debugLog('ProgressScreen', 'Error parsing exam: $e');
+      }
+    }
+
+    final averageScore = validExams > 0 ? (totalScore / validExams) : 0.0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -832,20 +968,47 @@ class _ProgressScreenState extends State<ProgressScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (!hasExamResults) _buildNoExams(),
-                if (hasExamResults) ...[
+                if (!hasExamResults) ...[
+                  Center(
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.quiz_outlined,
+                          size: 48,
+                          color: AppColors.getTextSecondary(context)
+                              .withOpacity(0.3),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'No exams taken yet',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.getTextSecondary(context),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Take your first exam to see results here',
+                          style: AppTextStyles.labelSmall.copyWith(
+                            color: AppColors.getTextSecondary(context)
+                                .withOpacity(0.7),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ] else ...[
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
                       _buildExamStat(
-                        title: 'Total Exams',
+                        title: 'Total',
                         value: '${examResults.length}',
                         color: AppColors.telegramBlue,
                         icon: Icons.assignment_rounded,
                       ),
                       _buildExamStat(
                         title: 'Passed',
-                        value: '$passedExams',
+                        value: '$passedCount',
                         color: AppColors.telegramGreen,
                         icon: Icons.check_circle_rounded,
                       ),
@@ -859,13 +1022,16 @@ class _ProgressScreenState extends State<ProgressScreen>
                   ),
                   const SizedBox(height: 20),
                   ...List.generate(
-                    examResults.length < 3 ? examResults.length : 3,
-                    (index) => Padding(
-                      padding: EdgeInsets.only(
-                        bottom: index < (examResults.length - 1) ? 12 : 0,
-                      ),
-                      child: _buildExamResultCard(examResults[index]),
-                    ),
+                    examResults.length > 3 ? 3 : examResults.length,
+                    (index) {
+                      final exam = examResults[index];
+                      return Padding(
+                        padding: EdgeInsets.only(
+                          bottom: index < (examResults.length - 1) ? 12 : 0,
+                        ),
+                        child: _buildExamResultCard(exam),
+                      );
+                    },
                   ),
                   if (examResults.length > 3)
                     Center(
@@ -885,38 +1051,6 @@ class _ProgressScreenState extends State<ProgressScreen>
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildNoExams() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 24),
-      child: Column(
-        children: [
-          Icon(
-            Icons.quiz_outlined,
-            size: 64,
-            color: AppColors.getTextSecondary(context).withOpacity(0.2),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'No exams taken yet',
-            style: AppTextStyles.titleMedium.copyWith(
-              fontWeight: FontWeight.w600,
-              color: AppColors.getTextPrimary(context),
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Take your first exam to see results here',
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.getTextSecondary(context),
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
     );
   }
 
@@ -1084,6 +1218,286 @@ class _ProgressScreenState extends State<ProgressScreen>
     );
   }
 
+  Widget _buildCategoryProgressSection(List categoryProgress) {
+    if (categoryProgress.isEmpty) {
+      return Container();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Category Progress',
+          style: AppTextStyles.titleLarge.copyWith(
+            color: AppColors.getTextPrimary(context),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: AppColors.getCard(context),
+            borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: List.generate(
+                categoryProgress.length > 5 ? 5 : categoryProgress.length,
+                (index) {
+                  final category = categoryProgress[index];
+                  final totalChapters =
+                      _parseInt(category['total_chapters']) ?? 0;
+                  final completedChapters =
+                      _parseInt(category['completed_chapters']) ?? 0;
+                  final percentage = totalChapters > 0
+                      ? (completedChapters / totalChapters) * 100.0
+                      : 0.0;
+
+                  return Padding(
+                    padding: EdgeInsets.only(
+                      bottom: index < (categoryProgress.length - 1) ? 16 : 0,
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              category['category_name'] ?? 'Unknown',
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.getTextPrimary(context),
+                              ),
+                            ),
+                            Text(
+                              '$completedChapters/$totalChapters',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: AppColors.getTextSecondary(context),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: LinearProgressIndicator(
+                            value: percentage / 100,
+                            backgroundColor: AppColors.getSurface(context),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              _getProgressColor(percentage),
+                            ),
+                            minHeight: 6,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAchievementsSection(List achievements) {
+    if (achievements.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: AppColors.getCard(context),
+          borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Achievements',
+              style: AppTextStyles.titleLarge.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Center(
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.emoji_events_outlined,
+                    size: 64,
+                    color: AppColors.getTextSecondary(context).withOpacity(0.3),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'No achievements yet',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.getTextSecondary(context),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Complete chapters and maintain streaks to unlock achievements!',
+                    style: AppTextStyles.labelSmall.copyWith(
+                      color:
+                          AppColors.getTextSecondary(context).withOpacity(0.7),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.getCard(context),
+        borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Achievements (${achievements.length})',
+            style: AppTextStyles.titleLarge.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 140,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: achievements.length,
+              itemBuilder: (context, index) {
+                final achievement = achievements[index];
+
+                String title = achievement['title'] ?? 'Achievement';
+                String message = achievement['message'] ?? '';
+                String type = achievement['achievement_type'] ?? '';
+                DateTime earnedAt = DateTime.now();
+
+                if (achievement['earned_at'] != null) {
+                  try {
+                    earnedAt =
+                        DateTime.parse(achievement['earned_at']).toLocal();
+                  } catch (e) {}
+                }
+
+                return Container(
+                  width: 140,
+                  margin: const EdgeInsets.only(right: 12),
+                  child: AchievementBadge(
+                    title: title,
+                    description: message,
+                    icon: _getAchievementIcon(type),
+                    color: _getAchievementColor(type),
+                    unlocked: true,
+                    earnedDate: earnedAt,
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecentActivitySection(List recentActivity) {
+    if (recentActivity.isEmpty) {
+      return Container();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Recent Activity',
+          style: AppTextStyles.titleLarge.copyWith(
+            color: AppColors.getTextPrimary(context),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: AppColors.getCard(context),
+            borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
+          ),
+          child: ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: recentActivity.length > 5 ? 5 : recentActivity.length,
+            separatorBuilder: (_, __) =>
+                const Divider(height: 1, indent: 16, endIndent: 16),
+            itemBuilder: (context, index) {
+              final activity = recentActivity[index];
+              final chapterName = activity['chapter_name'] ?? 'Unknown Chapter';
+              final courseName = activity['course_name'] ?? 'Unknown Course';
+              final lastAccessed = activity['last_accessed'] != null
+                  ? DateTime.parse(activity['last_accessed']).toLocal()
+                  : null;
+
+              String timeAgo = 'Recently';
+              if (lastAccessed != null) {
+                final diff = DateTime.now().difference(lastAccessed);
+                if (diff.inDays > 0) {
+                  timeAgo = '${diff.inDays}d ago';
+                } else if (diff.inHours > 0) {
+                  timeAgo = '${diff.inHours}h ago';
+                } else if (diff.inMinutes > 0) {
+                  timeAgo = '${diff.inMinutes}m ago';
+                }
+              }
+
+              return ListTile(
+                leading: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppColors.telegramBlue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.play_circle_outline,
+                    color: AppColors.telegramBlue,
+                  ),
+                ),
+                title: Text(
+                  chapterName,
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                subtitle: Text(
+                  courseName,
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.getTextSecondary(context),
+                  ),
+                ),
+                trailing: Text(
+                  timeAgo,
+                  style: AppTextStyles.labelSmall.copyWith(
+                    color: AppColors.getTextSecondary(context),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildNextStepsSection({
     required bool hasStudied,
     required bool hasExamResults,
@@ -1092,44 +1506,6 @@ class _ProgressScreenState extends State<ProgressScreen>
     required double totalAccuracy,
   }) {
     final nextSteps = <Map<String, dynamic>>[];
-
-    if (!hasStudied) {
-      nextSteps.add({
-        'title': 'Start Your First Lesson',
-        'description': 'Complete a chapter to begin tracking progress',
-        'icon': Icons.play_arrow_rounded,
-        'color': AppColors.telegramBlue,
-      });
-    }
-
-    if (!hasExamResults) {
-      nextSteps.add({
-        'title': 'Take Your First Exam',
-        'description': 'Test your knowledge with practice exams',
-        'icon': Icons.quiz_rounded,
-        'color': AppColors.telegramGreen,
-      });
-    }
-
-    if (streakCount < 7) {
-      nextSteps.add({
-        'title': 'Build a 7-Day Streak',
-        'description': 'Study every day for 7 consecutive days',
-        'icon': Icons.local_fire_department_rounded,
-        'color': AppColors.telegramYellow,
-        'progress': (streakCount / 7).toDouble(),
-      });
-    }
-
-    if (chaptersCompleted < 5) {
-      nextSteps.add({
-        'title': 'Complete 5 Chapters',
-        'description': 'Master your subjects chapter by chapter',
-        'icon': Icons.book_rounded,
-        'color': AppColors.telegramBlue,
-        'progress': (chaptersCompleted / 5).toDouble(),
-      });
-    }
 
     if (totalAccuracy < 80 && hasStudied) {
       nextSteps.add({
@@ -1304,7 +1680,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${(progress * 100).toInt()}% complete',
+                      '${(progress * 100.0).toInt()}% complete',
                       style: AppTextStyles.labelSmall.copyWith(
                         color: AppColors.getTextSecondary(context),
                       ),
@@ -1320,96 +1696,198 @@ class _ProgressScreenState extends State<ProgressScreen>
   }
 
   Widget _buildLoadingSkeleton() {
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Gradient header skeleton
-          Container(
-            width: double.infinity,
-            height: 160,
-            color: AppColors.telegramBlue.withOpacity(0.1),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Shimmer.fromColors(
-                    baseColor: AppColors.getSurface(context),
-                    highlightColor: AppColors.getBackground(context),
-                    child: Container(
-                      height: 28,
-                      width: 120,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
+    return Scaffold(
+      backgroundColor: AppColors.getBackground(context),
+      body: NestedScrollView(
+        headerSliverBuilder: (context, innerBoxIsScrolled) {
+          return [
+            SliverAppBar(
+              backgroundColor: AppColors.getBackground(context),
+              foregroundColor: AppColors.getTextPrimary(context),
+              elevation: 0,
+              surfaceTintColor: Colors.transparent,
+              pinned: true,
+              expandedHeight: ScreenSize.responsiveValue(
+                context: context,
+                mobile: 120.0,
+                tablet: 140.0,
+                desktop: 160.0,
+              ),
+              flexibleSpace: FlexibleSpaceBar(
+                background: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        AppColors.telegramBlue.withOpacity(0.05),
+                        AppColors.getBackground(context),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Shimmer.fromColors(
-                    baseColor: AppColors.getSurface(context),
-                    highlightColor: AppColors.getBackground(context),
-                    child: Container(
-                      height: 16,
-                      width: 180,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
+                  padding: EdgeInsets.only(
+                    left: AppThemes.spacingL,
+                    right: AppThemes.spacingL,
+                    top: MediaQuery.of(context).padding.top + 16,
+                    bottom: AppThemes.spacingM,
                   ),
-                ],
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Shimmer.fromColors(
+                                      baseColor: Colors.grey[300]!,
+                                      highlightColor: Colors.grey[100]!,
+                                      child: Container(
+                                        height: 28,
+                                        width: 120,
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius:
+                                              BorderRadius.circular(6),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Shimmer.fromColors(
+                                      baseColor: Colors.grey[300]!,
+                                      highlightColor: Colors.grey[100]!,
+                                      child: Container(
+                                        height: 16,
+                                        width: 180,
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius:
+                                              BorderRadius.circular(4),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Shimmer.fromColors(
+                                    baseColor: Colors.grey[300]!,
+                                    highlightColor: Colors.grey[100]!,
+                                    child: Container(
+                                      width: 40,
+                                      height: 40,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Shimmer.fromColors(
+                                    baseColor: Colors.grey[300]!,
+                                    highlightColor: Colors.grey[100]!,
+                                    child: Container(
+                                      width: 40,
+                                      height: 40,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          if (constraints.maxHeight > 100) ...[
+                            const Spacer(),
+                            Row(
+                              children: [
+                                Shimmer.fromColors(
+                                  baseColor: Colors.grey[300]!,
+                                  highlightColor: Colors.grey[100]!,
+                                  child: Container(
+                                    width: 36,
+                                    height: 36,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Shimmer.fromColors(
+                                        baseColor: Colors.grey[300]!,
+                                        highlightColor: Colors.grey[100]!,
+                                        child: Container(
+                                          height: 16,
+                                          width: 120,
+                                          decoration: BoxDecoration(
+                                            color: Colors.white,
+                                            borderRadius:
+                                                BorderRadius.circular(4),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Shimmer.fromColors(
+                                        baseColor: Colors.grey[300]!,
+                                        highlightColor: Colors.grey[100]!,
+                                        child: Container(
+                                          height: 12,
+                                          width: 80,
+                                          decoration: BoxDecoration(
+                                            color: Colors.white,
+                                            borderRadius:
+                                                BorderRadius.circular(4),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      );
+                    },
+                  ),
+                ),
               ),
             ),
-          ),
-          Padding(
+          ];
+        },
+        body: SingleChildScrollView(
+          physics: const NeverScrollableScrollPhysics(),
+          child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Shimmer.fromColors(
-                  baseColor: AppColors.getSurface(context),
-                  highlightColor: AppColors.getBackground(context),
-                  child: Container(
-                    height: 120,
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      color: AppColors.getCard(context),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
+                _buildStatsShimmer(),
                 const SizedBox(height: 16),
-                Shimmer.fromColors(
-                  baseColor: AppColors.getSurface(context),
-                  highlightColor: AppColors.getBackground(context),
-                  child: Container(
-                    height: 200,
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      color: AppColors.getCard(context),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
+                _buildOverviewShimmer(),
                 const SizedBox(height: 16),
-                Shimmer.fromColors(
-                  baseColor: AppColors.getSurface(context),
-                  highlightColor: AppColors.getBackground(context),
-                  child: Container(
-                    height: 150,
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      color: AppColors.getCard(context),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
+                _buildExamShimmer(),
               ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -1424,6 +1902,44 @@ class _ProgressScreenState extends State<ProgressScreen>
     if (accuracy >= 80) return AppColors.telegramGreen;
     if (accuracy >= 60) return AppColors.telegramYellow;
     return AppColors.telegramRed;
+  }
+
+  IconData _getAchievementIcon(String type) {
+    if (type.contains('streak_7')) return Icons.local_fire_department;
+    if (type.contains('streak_30')) return Icons.whatshot;
+    if (type.contains('streak_100')) return Icons.emoji_events;
+    if (type.contains('streak_365')) return Icons.military_tech;
+
+    if (type.contains('chapters_5')) return Icons.book;
+    if (type.contains('chapters_10')) return Icons.library_books;
+    if (type.contains('chapters_25')) return Icons.menu_book;
+    if (type.contains('chapters_50')) return Icons.school;
+
+    if (type.contains('questions_50')) return Icons.quiz;
+    if (type.contains('questions_100')) return Icons.assignment_turned_in;
+    if (type.contains('questions_500')) return Icons.stars;
+
+    if (type.contains('hours_10')) return Icons.timer;
+    if (type.contains('hours_50')) return Icons.schedule;
+    if (type.contains('hours_100')) return Icons.access_time_filled;
+
+    return Icons.emoji_events;
+  }
+
+  Color _getAchievementColor(String type) {
+    if (type.contains('365') || type.contains('500'))
+      return const Color(0xFFFFD700);
+    if (type.contains('100') || type.contains('50'))
+      return const Color(0xFFC0C0C0);
+    if (type.contains('50') || type.contains('25'))
+      return const Color(0xFFCD7F32);
+
+    if (type.contains('streak')) return Colors.orange;
+    if (type.contains('chapter')) return Colors.blue;
+    if (type.contains('question')) return Colors.green;
+    if (type.contains('hour')) return Colors.purple;
+
+    return AppColors.telegramBlue;
   }
 
   int? _parseInt(dynamic value) {
@@ -1442,27 +1958,6 @@ class _ProgressScreenState extends State<ProgressScreen>
     return null;
   }
 
-  double _calculateAverageScore(List exams) {
-    if (exams.isEmpty) return 0.0;
-
-    double totalScore = 0;
-    int validExams = 0;
-
-    for (var exam in exams) {
-      try {
-        final score = _parseDouble(exam.score);
-        if (score != null) {
-          totalScore += score;
-          validExams++;
-        }
-      } catch (e) {
-        debugLog('ProgressScreen', 'Error parsing exam score: $e');
-      }
-    }
-
-    return validExams > 0 ? (totalScore / validExams) : 0.0;
-  }
-
   List<UserProgress> get _userProgress {
     final progressProvider =
         Provider.of<ProgressProvider>(context, listen: false);
@@ -1479,110 +1974,291 @@ class _ProgressScreenState extends State<ProgressScreen>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    return Scaffold(
-      backgroundColor: AppColors.getBackground(context),
-      body: NestedScrollView(
-        headerSliverBuilder: (context, innerBoxIsScrolled) {
-          return [
-            SliverAppBar(
-              backgroundColor: AppColors.getBackground(context),
-              foregroundColor: AppColors.getTextPrimary(context),
-              elevation: 0,
-              surfaceTintColor: Colors.transparent,
-              pinned: true,
-              floating: true,
-              snap: true,
-              expandedHeight: 100.0,
-              flexibleSpace: FlexibleSpaceBar(
-                background: Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        AppColors.telegramBlue.withOpacity(0.05),
-                        AppColors.getBackground(context),
-                      ],
-                    ),
+    return Consumer5<AuthProvider, StreakProvider, ExamProvider,
+        ProgressProvider, CategoryProvider>(
+      builder: (context, authProvider, streakProvider, examProvider,
+          progressProvider, categoryProvider, child) {
+        debugLog('ProgressScreen',
+            'Building with ${examProvider.myExamResults.length} exam results');
+        debugLog('ProgressScreen',
+            'Progress stats: ${progressProvider.overallStats}');
+
+        final stats =
+            progressProvider.overallStats['stats'] as Map<String, dynamic>? ??
+                {};
+        final chaptersCompleted = _parseInt(stats['chapters_completed']) ?? 0;
+        final totalChaptersAttempted =
+            _parseInt(stats['total_chapters_attempted']) ?? 0;
+        final totalAccuracy = _parseDouble(stats['accuracy_percentage']) ?? 0.0;
+        final studyTimeHours = _parseDouble(stats['study_time_hours']) ?? 0.0;
+        final streakCount = streakProvider.streak?.currentStreak ??
+            authProvider.currentUser?.streakCount ??
+            0;
+        final examResults = examProvider.myExamResults;
+        final achievements = progressProvider.achievements;
+        final recentActivity = progressProvider.recentActivity;
+        final categoryProgress =
+            progressProvider.overallStats['category_progress'] as List? ?? [];
+
+        // Only show full screen skeleton on first ever load
+        if (progressProvider.isLoadingOverall &&
+            achievements.isEmpty &&
+            !progressProvider.hasLoadedOverall) {
+          return _buildLoadingSkeleton();
+        }
+
+        return Scaffold(
+          backgroundColor: AppColors.getBackground(context),
+          body: NestedScrollView(
+            headerSliverBuilder: (context, innerBoxIsScrolled) {
+              return [
+                SliverAppBar(
+                  backgroundColor: AppColors.getBackground(context),
+                  foregroundColor: AppColors.getTextPrimary(context),
+                  elevation: 0,
+                  surfaceTintColor: Colors.transparent,
+                  pinned: true,
+                  floating: true,
+                  snap: true,
+                  expandedHeight: ScreenSize.responsiveValue(
+                    context: context,
+                    mobile: 120.0,
+                    tablet: 140.0,
+                    desktop: 160.0,
                   ),
-                  padding: EdgeInsets.only(
-                    left: AppThemes.spacingL,
-                    right: AppThemes.spacingL,
-                    top: MediaQuery.of(context).padding.top + 16,
-                    bottom: AppThemes.spacingL,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Column(
+                  flexibleSpace: FlexibleSpaceBar(
+                    background: Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            AppColors.telegramBlue.withOpacity(0.05),
+                            AppColors.getBackground(context),
+                          ],
+                        ),
+                      ),
+                      padding: EdgeInsets.only(
+                        left: AppThemes.spacingL,
+                        right: AppThemes.spacingL,
+                        top: MediaQuery.of(context).padding.top + 16,
+                        bottom: AppThemes.spacingM,
+                      ),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          return Column(
+                            mainAxisSize: MainAxisSize.min,
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                'Progress',
-                                style: AppTextStyles.headlineSmall.copyWith(
-                                  color: AppColors.getTextPrimary(context),
-                                  fontWeight: FontWeight.w700,
-                                ),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          alignment: Alignment.centerLeft,
+                                          child: Text(
+                                            'Progress',
+                                            style: AppTextStyles.headlineSmall
+                                                .copyWith(
+                                              color: AppColors.getTextPrimary(
+                                                  context),
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          alignment: Alignment.centerLeft,
+                                          child: Text(
+                                            'Track your learning journey',
+                                            style: AppTextStyles.bodySmall
+                                                .copyWith(
+                                              color: AppColors.getTextSecondary(
+                                                  context),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (_isRefreshing)
+                                        Padding(
+                                          padding:
+                                              const EdgeInsets.only(right: 8.0),
+                                          child: SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              valueColor:
+                                                  AlwaysStoppedAnimation(
+                                                AppColors.telegramBlue,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      _buildThemeToggleButton(),
+                                      const SizedBox(width: 8),
+                                      _buildNotificationButton(),
+                                    ],
+                                  ),
+                                ],
                               ),
-                              const SizedBox(height: AppThemes.spacingXS),
-                              Text(
-                                'Track your learning journey',
-                                style: AppTextStyles.bodySmall.copyWith(
-                                  color: AppColors.getTextSecondary(context),
-                                ),
-                              ),
+                              if (constraints.maxHeight > 100) ...[
+                                const Spacer(),
+                                _buildHeaderInfo(authProvider),
+                              ],
                             ],
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                )
+              ];
+            },
+            body: RefreshIndicator(
+              onRefresh: () => _refreshData(),
+              color: AppColors.telegramBlue,
+              backgroundColor: AppColors.getSurface(context),
+              child: CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.all(
+                        ScreenSize.responsiveValue(
+                          context: context,
+                          mobile: 16,
+                          tablet: 24,
+                          desktop: 32,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Stats section with conditional shimmer
+                          _buildStatsSectionWithShimmer(
+                            streakCount: streakCount,
+                            chaptersCompleted: chaptersCompleted,
+                            totalAccuracy: totalAccuracy,
+                            isLoading: progressProvider.isLoadingOverall,
                           ),
-                          Row(
-                            children: [
-                              _buildThemeToggleButton(),
-                              const SizedBox(width: AppThemes.spacingS),
-                              _buildNotificationButton(),
-                            ],
+                          const SizedBox(height: 24),
+
+                          // Overview section with conditional shimmer
+                          _buildOverviewSectionWithShimmer(
+                            totalChaptersAttempted: totalChaptersAttempted,
+                            chaptersCompleted: chaptersCompleted,
+                            totalAccuracy: totalAccuracy,
+                            studyTimeHours: studyTimeHours,
+                            isLoading: progressProvider.isLoadingOverall,
                           ),
+                          const SizedBox(height: 24),
+
+                          // Exam section with conditional shimmer
+                          _buildExamPerformanceSectionWithShimmer(
+                            examResults: examResults,
+                            isLoading: progressProvider.isLoadingOverall,
+                          ),
+
+                          // Static sections (no shimmer needed)
+                          const SizedBox(height: 24),
+                          _buildCategoryProgressSection(categoryProgress),
+                          const SizedBox(height: 24),
+                          _buildAchievementsSection(achievements),
+                          const SizedBox(height: 24),
+                          _buildRecentActivitySection(recentActivity),
+                          const SizedBox(height: 24),
+                          _buildNextStepsSection(
+                            hasStudied: totalChaptersAttempted > 0,
+                            hasExamResults: examResults.isNotEmpty,
+                            streakCount: streakCount,
+                            chaptersCompleted: chaptersCompleted,
+                            totalAccuracy: totalAccuracy,
+                          ),
+                          const SizedBox(height: 32),
                         ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
-              ),
-            ),
-          ];
-        },
-        body: _buildProgressContent(),
-      ),
-    );
-  }
-
-  Widget _buildThemeToggleButton() {
-    return Consumer<ThemeProvider>(
-      builder: (context, themeProvider, child) {
-        return GestureDetector(
-          onTap: () {
-            themeProvider.toggleTheme();
-          },
-          child: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: AppColors.getSurface(context),
-              shape: BoxShape.circle,
-            ),
-            child: Center(
-              child: Icon(
-                themeProvider.themeMode == ThemeMode.dark
-                    ? Icons.light_mode_outlined
-                    : Icons.dark_mode_outlined,
-                size: 22,
-                color: AppColors.getTextPrimary(context),
+                ],
               ),
             ),
           ),
         );
       },
+    );
+  }
+
+  Widget _buildHeaderInfo(AuthProvider authProvider) {
+    final user = authProvider.currentUser;
+    final username = user?.username?.split(' ').first ?? 'Student';
+
+    return Row(
+      children: [
+        Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: AppColors.purpleGradient,
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            shape: BoxShape.circle,
+          ),
+          child: Center(
+            child: Text(
+              username.substring(0, 1).toUpperCase(),
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Welcome back, $username!',
+                style: AppTextStyles.titleSmall.copyWith(
+                  color: AppColors.getTextPrimary(context),
+                  fontWeight: FontWeight.w600,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              Text(
+                'Keep up the great work!',
+                style: AppTextStyles.labelSmall.copyWith(
+                  color: AppColors.getTextSecondary(context),
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

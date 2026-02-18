@@ -76,12 +76,14 @@ class _TvPairingScreenState extends State<TvPairingScreen>
     final code = _codeController.text.trim();
 
     if (code.isEmpty) {
-      showSnackBar(context, 'Please enter the pairing code', isError: true);
+      showSimpleSnackBar(context, 'Please enter the pairing code',
+          isError: true);
       return;
     }
 
     if (code.length != 6) {
-      showSnackBar(context, 'Please enter a valid 6-digit code', isError: true);
+      showSimpleSnackBar(context, 'Please enter a valid 6-digit code',
+          isError: true);
       return;
     }
 
@@ -106,7 +108,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
       _codeController.clear();
       setState(() {});
     } catch (e) {
-      showSnackBar(context, 'Pairing failed: ${formatErrorMessage(e)}',
+      showSimpleSnackBar(context, 'Pairing failed: ${formatErrorMessage(e)}',
           isError: true);
     } finally {
       setState(() => _isVerifying = false);
@@ -139,7 +141,8 @@ class _TvPairingScreenState extends State<TvPairingScreen>
 
           setState(() {});
         } catch (e) {
-          showSnackBar(context, 'Unpairing failed: ${formatErrorMessage(e)}',
+          showSimpleSnackBar(
+              context, 'Unpairing failed: ${formatErrorMessage(e)}',
               isError: true);
         }
       },
