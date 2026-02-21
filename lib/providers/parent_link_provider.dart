@@ -6,7 +6,6 @@ import 'package:familyacademyclient/services/device_service.dart';
 import 'package:familyacademyclient/models/parent_link_model.dart';
 import 'package:familyacademyclient/utils/helpers.dart';
 import 'package:familyacademyclient/utils/api_response.dart';
-import 'package:http/http.dart' as http;
 
 class ParentLinkProvider with ChangeNotifier {
   final ApiService apiService;
@@ -58,10 +57,8 @@ class ParentLinkProvider with ChangeNotifier {
 
   Duration get remainingTime {
     if (_tokenExpiresAt == null) return Duration.zero;
-    // FIXED: Add 2 minute buffer to prevent premature expiration
     final now = _currentServerTime;
-    final bufferedExpiry = _tokenExpiresAt!.add(const Duration(minutes: 2));
-    if (now.isAfter(bufferedExpiry)) return Duration.zero;
+    if (now.isAfter(_tokenExpiresAt!)) return Duration.zero;
     return _tokenExpiresAt!.difference(now);
   }
 
@@ -84,22 +81,24 @@ class ParentLinkProvider with ChangeNotifier {
 
   bool get isTokenExpired {
     if (_tokenExpiresAt == null) return true;
-    // FIXED: Add 2 minute buffer
-    final bufferedExpiry = _tokenExpiresAt!.add(const Duration(minutes: 2));
-    return _currentServerTime.isAfter(bufferedExpiry);
+    return _currentServerTime.isAfter(_tokenExpiresAt!);
   }
 
-  // FIXED: Improved server time sync
+  // 🔥 FIX: Method to clear cache
+  Future<void> clearCache() async {
+    debugLog('ParentLinkProvider', '🧹 Clearing cache');
+    await deviceService.removeCacheItem('parent_link_status');
+    await deviceService.removeCacheItem('parent_token');
+  }
+
   Future<void> _syncServerTime() async {
     try {
-      // Check cache first
       final cachedTime = await deviceService
           .getCacheItem<Map<String, dynamic>>('server_time_info');
       if (cachedTime != null) {
         final offset = Duration(milliseconds: cachedTime['offset'] ?? 0);
         final cachedAt = DateTime.parse(cachedTime['cached_at']);
 
-        // Only use cache if less than 1 hour old
         if (DateTime.now().difference(cachedAt).inHours < 1) {
           _serverTimeOffset = offset;
           debugLog('ParentLinkProvider',
@@ -108,37 +107,17 @@ class ParentLinkProvider with ChangeNotifier {
         }
       }
 
-      // Get server time from health endpoint
-      final startTime = DateTime.now();
-      final response = await apiService.dio.get('/health');
-      final endTime = DateTime.now();
+      try {
+        final startTime = DateTime.now();
+        final response = await apiService.dio.get('/health');
+        final endTime = DateTime.now();
 
-      // Try to get timestamp from response
-      String? serverTimeStr;
-      if (response.headers.map.containsKey('date')) {
-        serverTimeStr = response.headers.map['date']!.first;
-      } else if (response.data is Map &&
-          (response.data as Map).containsKey('timestamp')) {
-        serverTimeStr = (response.data as Map)['timestamp'];
-      }
-
-      if (serverTimeStr != null) {
-        try {
-          // Try to parse HTTP date format
-          DateTime serverTime;
-          try {
-            serverTime = HttpDate.parse(serverTimeStr);
-          } catch (e) {
-            // Try ISO format
-            serverTime = DateTime.parse(serverTimeStr);
-          }
-
+        if (response.statusCode == 200) {
+          final serverTime = DateTime.now();
           final roundTripTime = endTime.difference(startTime);
           final estimatedServerTime = serverTime.add(roundTripTime ~/ 2);
-
           _serverTimeOffset = estimatedServerTime.difference(DateTime.now());
 
-          // Cache the offset
           await deviceService.saveCacheItem(
               'server_time_info',
               {
@@ -149,18 +128,13 @@ class ParentLinkProvider with ChangeNotifier {
 
           debugLog('ParentLinkProvider',
               'Server time synced. Offset: ${_serverTimeOffset!.inMinutes} minutes');
-        } catch (e) {
-          debugLog('ParentLinkProvider', 'Failed to parse server date: $e');
-          _serverTimeOffset = null;
         }
-      } else {
-        debugLog(
-            'ParentLinkProvider', 'No date header found, using local time');
+      } catch (e) {
+        debugLog('ParentLinkProvider', 'Server time sync failed: $e');
         _serverTimeOffset = null;
       }
     } catch (e) {
-      debugLog('ParentLinkProvider',
-          'Server time sync failed (using local time): $e');
+      debugLog('ParentLinkProvider', 'Server time sync error: $e');
       _serverTimeOffset = null;
     }
   }
@@ -183,10 +157,8 @@ class ParentLinkProvider with ChangeNotifier {
   }
 
   void _stopCountdownTimer() {
-    if (_countdownTimer != null) {
-      _countdownTimer!.cancel();
-      _countdownTimer = null;
-    }
+    _countdownTimer?.cancel();
+    _countdownTimer = null;
   }
 
   Future<void> generateParentToken() async {
@@ -197,41 +169,24 @@ class ParentLinkProvider with ChangeNotifier {
     _notifySafely();
 
     try {
-      // Check cache first
-      final cachedToken = await deviceService
-          .getCacheItem<Map<String, dynamic>>('parent_token');
-      if (cachedToken != null) {
-        final expiresAt = DateTime.parse(cachedToken['expires_at']).toLocal();
-        if (expiresAt.isAfter(DateTime.now())) {
-          _parentToken = cachedToken['token'];
-          _tokenExpiresAt = expiresAt;
-          _isLinked = false;
-          _parentTelegramUsername = null;
-          _parentTelegramId = null;
-          _linkedAt = null;
-          _parentName = null;
-          _parentLinkData = null;
+      // 🔥 FIX: Clear cache before generating
+      await deviceService.removeCacheItem('parent_token');
+      await deviceService.removeCacheItem('parent_link_status');
 
-          debugLog('ParentLinkProvider', '✅ Loaded parent token from cache');
+      debugLog('ParentLinkProvider', '🧹 Cleared cache, generating new token');
 
-          _startCountdownTimer();
-
-          _hasLoaded = true;
-          _linkStatusUpdateController.add(false);
-          _notifySafely();
-          return;
-        }
-      }
-
-      // Sync server time before generating
       await _syncServerTime();
 
       debugLog('ParentLinkProvider', 'Generating parent token');
       final response = await apiService.generateParentToken();
+
+      if (!response.success || response.data == null) {
+        throw Exception(response.message ?? 'Failed to generate token');
+      }
+
       final data = response.data!;
 
       _parentToken = data['token'];
-      // FIXED: Parse date properly
       _tokenExpiresAt = DateTime.parse(data['expires_at']).toLocal();
       _isLinked = false;
       _parentTelegramUsername = null;
@@ -240,32 +195,30 @@ class ParentLinkProvider with ChangeNotifier {
       _parentName = null;
       _parentLinkData = null;
 
+      // Save new token to cache
       await deviceService.saveCacheItem(
           'parent_token',
           {
             'token': _parentToken,
             'expires_at': _tokenExpiresAt!.toIso8601String(),
           },
-          ttl: Duration(seconds: 600));
+          ttl: Duration(minutes: 30));
 
       debugLog('ParentLinkProvider',
-          'Generated token expiresAt: ${_tokenExpiresAt?.toIso8601String()}');
-      debugLog('ParentLinkProvider',
-          'Current server time: ${_currentServerTime.toIso8601String()}');
+          '✅ Generated new token: ${_parentToken}, expiresAt: ${_tokenExpiresAt?.toIso8601String()}');
 
       _startCountdownTimer();
 
       _hasLoaded = true;
       _linkStatusUpdateController.add(false);
+      _notifySafely();
     } on ApiError catch (e) {
       _error = e.userFriendlyMessage;
       debugLog(
           'ParentLinkProvider', 'generateParentToken API error: ${e.message}');
-      rethrow;
     } catch (e) {
       _error = e.toString();
       debugLog('ParentLinkProvider', 'generateParentToken error: $e');
-      rethrow;
     } finally {
       _isLoading = false;
       _notifySafely();
@@ -273,10 +226,6 @@ class ParentLinkProvider with ChangeNotifier {
   }
 
   Future<void> getParentLinkStatus({bool forceRefresh = false}) async {
-    if (!forceRefresh && _hasLoaded) {
-      return;
-    }
-
     if (_isLoading && !forceRefresh) return;
 
     _isLoading = true;
@@ -286,41 +235,31 @@ class ParentLinkProvider with ChangeNotifier {
     _notifySafely();
 
     try {
-      // Try cache first
-      if (!forceRefresh) {
-        final cachedStatus =
-            await deviceService.getCacheItem<ParentLink>('parent_link_status');
-        if (cachedStatus != null) {
-          _updateFromParentLink(cachedStatus);
-          _hasLoaded = true;
-          _isLoading = false;
-          _parentLinkUpdateController.add(_parentLinkData);
-          _linkStatusUpdateController.add(_isLinked);
-          _notifySafely();
-          debugLog(
-              'ParentLinkProvider', '✅ Loaded parent link status from cache');
-          return;
-        }
+      // 🔥 FIX: Force remove cache if refresh requested
+      if (forceRefresh) {
+        await deviceService.removeCacheItem('parent_link_status');
       }
 
-      // Sync server time before checking
-      await _syncServerTime();
-
-      debugLog('ParentLinkProvider', 'Fetching parent link status');
+      debugLog('ParentLinkProvider',
+          'Fetching parent link status (forceRefresh: $forceRefresh)');
       final response = await apiService.getParentLinkStatus();
-      final parentLink = response.data;
 
-      if (parentLink != null) {
-        _parentLinkData = parentLink;
+      if (response.success && response.data != null) {
+        _parentLinkData = response.data;
 
-        await deviceService.saveCacheItem('parent_link_status', parentLink,
-            ttl: const Duration(minutes: 5));
+        // 🔥 FIX: Always refresh from server, don't cache if forceRefresh
+        if (!forceRefresh) {
+          await deviceService.saveCacheItem(
+              'parent_link_status', _parentLinkData!,
+              ttl: const Duration(minutes: 5));
+        }
 
-        _updateFromParentLink(parentLink);
+        _updateFromParentLink(_parentLinkData!);
 
         debugLog(
-            'ParentLinkProvider', 'Parent link status: isLinked=$_isLinked');
+            'ParentLinkProvider', 'Parent link status: isLinked=${_isLinked}');
       } else {
+        // If API returns no data, clear everything
         _parentLinkData = null;
         _isLinked = false;
         _parentTelegramUsername = null;
@@ -339,9 +278,11 @@ class ParentLinkProvider with ChangeNotifier {
       _error = e.userFriendlyMessage;
       debugLog(
           'ParentLinkProvider', 'getParentLinkStatus API error: ${e.message}');
+      _hasLoaded = true;
     } catch (e) {
       _error = e.toString();
       debugLog('ParentLinkProvider', 'getParentLinkStatus error: $e');
+      _hasLoaded = true;
     } finally {
       _isLoading = false;
       _notifySafely();
@@ -384,26 +325,29 @@ class ParentLinkProvider with ChangeNotifier {
 
     try {
       debugLog('ParentLinkProvider', 'Unlinking parent');
-      await apiService.unlinkParent();
+      final response = await apiService.unlinkParent();
 
-      await deviceService.removeCacheItem('parent_link_status');
-      await deviceService.removeCacheItem('parent_token');
+      if (response.success) {
+        // 🔥 FIX: Clear cache immediately
+        await deviceService.removeCacheItem('parent_link_status');
+        await deviceService.removeCacheItem('parent_token');
 
-      _stopCountdownTimer();
-      _isLinked = false;
-      _parentTelegramUsername = null;
-      _parentTelegramId = null;
-      _linkedAt = null;
-      _parentToken = null;
-      _tokenExpiresAt = null;
-      _parentName = null;
-      _parentLinkData = null;
-      _hasLoaded = true;
+        _stopCountdownTimer();
+        _isLinked = false;
+        _parentTelegramUsername = null;
+        _parentTelegramId = null;
+        _linkedAt = null;
+        _parentToken = null;
+        _tokenExpiresAt = null;
+        _parentName = null;
+        _parentLinkData = null;
+        _hasLoaded = true;
 
-      _parentLinkUpdateController.add(null);
-      _linkStatusUpdateController.add(false);
+        _parentLinkUpdateController.add(null);
+        _linkStatusUpdateController.add(false);
 
-      debugLog('ParentLinkProvider', 'Parent unlinked');
+        debugLog('ParentLinkProvider', 'Parent unlinked');
+      }
     } on ApiError catch (e) {
       _error = e.userFriendlyMessage;
       debugLog('ParentLinkProvider', 'unlinkParent API error: ${e.message}');
@@ -469,12 +413,6 @@ class ParentLinkProvider with ChangeNotifier {
     _tokenExpiresAt = null;
     _parentName = null;
     _serverTimeOffset = null;
-
-    _parentLinkUpdateController.close();
-    _linkStatusUpdateController.close();
-
-    _parentLinkUpdateController = StreamController<ParentLink?>.broadcast();
-    _linkStatusUpdateController = StreamController<bool>.broadcast();
 
     _parentLinkUpdateController.add(null);
     _linkStatusUpdateController.add(false);

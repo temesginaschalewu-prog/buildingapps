@@ -1291,7 +1291,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const Divider(),
           _buildMenuCard(
             icon: Icons.feedback_outlined,
-            title: 'Feedback & Support',
+            title: 'Feedback',
             onTap: _openTelegramGroup,
           ),
           const Divider(),

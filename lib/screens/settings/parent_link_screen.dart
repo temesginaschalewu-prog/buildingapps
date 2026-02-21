@@ -7,8 +7,11 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
+import 'package:pull_to_refresh/pull_to_refresh.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../providers/parent_link_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/settings_provider.dart';
 import '../../themes/app_themes.dart';
 import '../../widgets/common/loading_indicator.dart';
 import '../../utils/helpers.dart';
@@ -21,10 +24,11 @@ class ParentLinkScreen extends StatefulWidget {
 }
 
 class _ParentLinkScreenState extends State<ParentLinkScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   late Timer _refreshTimer;
   bool _isRefreshing = false;
   bool _isInitialized = false;
+  final RefreshController _refreshController = RefreshController();
 
   late AnimationController _pulseAnimationController;
 
@@ -36,14 +40,25 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
       duration: 1.seconds,
     )..repeat(reverse: true);
 
+    WidgetsBinding.instance.addObserver(this);
     _initializeData();
     _setupTimers();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // 🔥 FIX: Refresh when app returns to foreground
+      _refreshData(showLoading: false);
+    }
   }
 
   @override
   void dispose() {
     _refreshTimer.cancel();
     _pulseAnimationController.dispose();
+    _refreshController.dispose();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
@@ -60,7 +75,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
         Provider.of<ParentLinkProvider>(context, listen: false);
 
     try {
-      await parentLinkProvider.getParentLinkStatus(forceRefresh: false);
+      await parentLinkProvider.getParentLinkStatus(forceRefresh: true);
     } finally {
       if (mounted) {
         setState(() => _isInitialized = true);
@@ -84,8 +99,41 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
     }
   }
 
-  Future<void> _refreshData() async {
-    await _refreshDataInBackground();
+  Future<void> _refreshData({bool showLoading = true}) async {
+    if (_isRefreshing) return;
+
+    if (showLoading) {
+      setState(() => _isRefreshing = true);
+    }
+
+    try {
+      final parentLinkProvider =
+          Provider.of<ParentLinkProvider>(context, listen: false);
+
+      // 🔥 FIX: Force clear cache before refresh
+      await parentLinkProvider.clearCache();
+      await parentLinkProvider.getParentLinkStatus(forceRefresh: true);
+
+      _refreshController.refreshCompleted();
+
+      if (showLoading && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Status updated'),
+            backgroundColor: AppColors.telegramGreen,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 1),
+          ),
+        );
+      }
+    } catch (e) {
+      debugLog('ParentLinkScreen', 'Refresh error: $e');
+      _refreshController.refreshFailed();
+    } finally {
+      if (mounted) {
+        setState(() => _isRefreshing = false);
+      }
+    }
   }
 
   Future<void> _generateToken() async {
@@ -120,13 +168,22 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
             Provider.of<ParentLinkProvider>(context, listen: false);
         try {
           await parentLinkProvider.unlinkParent();
-          showSimpleSnackBar(context, 'Parent unlinked successfully');
+
+          // 🔥 FIX: Force refresh after unlink
+          await Future.delayed(const Duration(milliseconds: 500));
+          await parentLinkProvider.getParentLinkStatus(forceRefresh: true);
+
+          if (mounted) {
+            showSimpleSnackBar(context, 'Parent unlinked successfully');
+          }
         } catch (e) {
-          showSnackBar(
-            context,
-            'Failed to unlink: ${formatErrorMessage(e)}',
-            isError: true,
-          );
+          if (mounted) {
+            showSnackBar(
+              context,
+              'Failed to unlink: ${formatErrorMessage(e)}',
+              isError: true,
+            );
+          }
         }
       },
     );
@@ -827,6 +884,9 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
 
   // ℹ️ Info section
   Widget _buildInfoSection() {
+    final settingsProvider = Provider.of<SettingsProvider>(context);
+    final telegramBotUrl = settingsProvider.getTelegramBotUrl();
+
     return Container(
       padding: EdgeInsets.all(ScreenSize.responsiveValue(
         context: context,
@@ -888,6 +948,8 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
             text: 'Weekly progress summary',
           ),
           SizedBox(height: AppThemes.spacingL),
+
+          // 🔥 FIX: Show Telegram bot link from settings
           Container(
             padding: EdgeInsets.all(AppThemes.spacingL),
             decoration: BoxDecoration(
@@ -897,20 +959,64 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                 color: AppColors.telegramBlue.withOpacity(0.2),
               ),
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  Icons.security_rounded,
-                  size: 20,
-                  color: AppColors.telegramBlue,
-                ),
-                SizedBox(width: AppThemes.spacingM),
-                Expanded(
-                  child: Text(
-                    'Parents receive updates via Telegram. They cannot modify your account.',
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.getTextSecondary(context),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.telegram,
+                      size: 20,
+                      color: AppColors.telegramBlue,
                     ),
+                    SizedBox(width: AppThemes.spacingM),
+                    Expanded(
+                      child: Text(
+                        'Parent Telegram Bot',
+                        style: AppTextStyles.titleSmall.copyWith(
+                          color: AppColors.getTextPrimary(context),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: AppThemes.spacingS),
+                GestureDetector(
+                  onTap: () => _openTelegramBot(telegramBotUrl),
+                  child: Container(
+                    padding: EdgeInsets.all(AppThemes.spacingM),
+                    decoration: BoxDecoration(
+                      color: AppColors.telegramBlue.withOpacity(0.1),
+                      borderRadius:
+                          BorderRadius.circular(AppThemes.borderRadiusMedium),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            telegramBotUrl!,
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.telegramBlue,
+                              decoration: TextDecoration.underline,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Icon(
+                          Icons.open_in_new,
+                          size: 16,
+                          color: AppColors.telegramBlue,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                SizedBox(height: AppThemes.spacingS),
+                Text(
+                  'Parents receive updates via Telegram. They cannot modify your account.',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.getTextSecondary(context),
                   ),
                 ),
               ],
@@ -929,6 +1035,15 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
           end: 0,
           duration: AppThemes.animationDurationMedium,
         );
+  }
+
+  Future<void> _openTelegramBot(String url) async {
+    final Uri uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      showSimpleSnackBar(context, 'Cannot open Telegram', isError: true);
+    }
   }
 
   Widget _buildInfoItem({required IconData icon, required String text}) {
@@ -1050,57 +1165,73 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                     Icons.refresh_rounded,
                     color: AppColors.getTextSecondary(context),
                   ),
-            onPressed: _isRefreshing ? null : _refreshData,
+            onPressed: _isRefreshing ? null : () => _refreshData(),
             tooltip: 'Refresh',
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: EdgeInsets.all(
-          ScreenSize.responsiveValue(
-            context: context,
-            mobile: AppThemes.spacingL,
-            tablet: AppThemes.spacingXL,
-            desktop: AppThemes.spacingXXL,
+      body: SmartRefresher(
+        controller: _refreshController,
+        onRefresh: () => _refreshData(),
+        enablePullDown: true,
+        header: WaterDropHeader(
+          waterDropColor: AppColors.telegramBlue,
+          refresh: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation(AppColors.telegramBlue),
+            ),
           ),
         ),
-        child: Center(
-          child: Container(
-            constraints: BoxConstraints(
-              maxWidth: ScreenSize.responsiveValue(
-                context: context,
-                mobile: double.infinity,
-                tablet: 600,
-                desktop: 800,
-              ),
+        child: SingleChildScrollView(
+          padding: EdgeInsets.all(
+            ScreenSize.responsiveValue(
+              context: context,
+              mobile: AppThemes.spacingL,
+              tablet: AppThemes.spacingXL,
+              desktop: AppThemes.spacingXXL,
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                if (!_isInitialized)
-                  Container(
-                    padding: EdgeInsets.all(AppThemes.spacingXXL),
-                    child: LoadingIndicator(
-                      message: 'Loading...',
-                      type: LoadingType.circular,
-                      color: AppColors.telegramBlue,
-                    ),
-                  )
-                else if (parentLinkProvider.isLinked)
-                  _buildLinkedState(parentLinkProvider)
-                else if (parentLinkProvider.parentToken != null &&
-                    !parentLinkProvider.isTokenExpired)
-                  _buildTokenState(parentLinkProvider)
-                else
-                  _buildNotLinkedState(),
-                SizedBox(height: AppThemes.spacingXL),
-                _buildInfoSection(),
-                if (authProvider.currentUser != null) ...[
-                  SizedBox(height: AppThemes.spacingL),
-                  _buildUserInfo(authProvider),
+          ),
+          child: Center(
+            child: Container(
+              constraints: BoxConstraints(
+                maxWidth: ScreenSize.responsiveValue(
+                  context: context,
+                  mobile: double.infinity,
+                  tablet: 600,
+                  desktop: 800,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  if (!_isInitialized)
+                    Container(
+                      padding: EdgeInsets.all(AppThemes.spacingXXL),
+                      child: LoadingIndicator(
+                        message: 'Loading...',
+                        type: LoadingType.circular,
+                        color: AppColors.telegramBlue,
+                      ),
+                    )
+                  else if (parentLinkProvider.isLinked)
+                    _buildLinkedState(parentLinkProvider)
+                  else if (parentLinkProvider.parentToken != null &&
+                      !parentLinkProvider.isTokenExpired)
+                    _buildTokenState(parentLinkProvider)
+                  else
+                    _buildNotLinkedState(),
+                  SizedBox(height: AppThemes.spacingXL),
+                  _buildInfoSection(),
+                  if (authProvider.currentUser != null) ...[
+                    SizedBox(height: AppThemes.spacingL),
+                    _buildUserInfo(authProvider),
+                  ],
+                  SizedBox(height: AppThemes.spacingXXL),
                 ],
-                SizedBox(height: AppThemes.spacingXXL),
-              ],
+              ),
             ),
           ),
         ),
@@ -1140,58 +1271,74 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                     Icons.refresh_rounded,
                     color: AppColors.getTextSecondary(context),
                   ),
-            onPressed: _isRefreshing ? null : _refreshData,
+            onPressed: _isRefreshing ? null : () => _refreshData(),
             tooltip: 'Refresh',
           ),
         ],
       ),
-      body: Center(
+      body: SmartRefresher(
+        controller: _refreshController,
+        onRefresh: () => _refreshData(),
+        enablePullDown: true,
+        header: WaterDropHeader(
+          waterDropColor: AppColors.telegramBlue,
+          refresh: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation(AppColors.telegramBlue),
+            ),
+          ),
+        ),
         child: SingleChildScrollView(
           padding: EdgeInsets.all(AppThemes.spacingXXL),
-          child: Container(
-            constraints: BoxConstraints(
-              maxWidth: 1000,
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Left column - Main content
-                Expanded(
-                  flex: 2,
-                  child: Column(
-                    children: [
-                      if (!_isInitialized)
-                        Container(
-                          padding: EdgeInsets.all(AppThemes.spacingXXL),
-                          child: LoadingIndicator(
-                            message: 'Loading...',
-                            type: LoadingType.circular,
-                            color: AppColors.telegramBlue,
-                          ),
-                        )
-                      else if (parentLinkProvider.isLinked)
-                        _buildLinkedState(parentLinkProvider)
-                      else if (parentLinkProvider.parentToken != null &&
-                          !parentLinkProvider.isTokenExpired)
-                        _buildTokenState(parentLinkProvider)
-                      else
-                        _buildNotLinkedState(),
-                      if (authProvider.currentUser != null) ...[
-                        SizedBox(height: AppThemes.spacingXL),
-                        _buildUserInfo(authProvider),
+          child: Center(
+            child: Container(
+              constraints: BoxConstraints(
+                maxWidth: 1000,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Left column - Main content
+                  Expanded(
+                    flex: 2,
+                    child: Column(
+                      children: [
+                        if (!_isInitialized)
+                          Container(
+                            padding: EdgeInsets.all(AppThemes.spacingXXL),
+                            child: LoadingIndicator(
+                              message: 'Loading...',
+                              type: LoadingType.circular,
+                              color: AppColors.telegramBlue,
+                            ),
+                          )
+                        else if (parentLinkProvider.isLinked)
+                          _buildLinkedState(parentLinkProvider)
+                        else if (parentLinkProvider.parentToken != null &&
+                            !parentLinkProvider.isTokenExpired)
+                          _buildTokenState(parentLinkProvider)
+                        else
+                          _buildNotLinkedState(),
+                        if (authProvider.currentUser != null) ...[
+                          SizedBox(height: AppThemes.spacingXL),
+                          _buildUserInfo(authProvider),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
 
-                SizedBox(width: AppThemes.spacingXXL),
+                  SizedBox(width: AppThemes.spacingXXL),
 
-                // Right column - Info
-                Expanded(
-                  flex: 1,
-                  child: _buildInfoSection(),
-                ),
-              ],
+                  // Right column - Info
+                  Expanded(
+                    flex: 1,
+                    child: _buildInfoSection(),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

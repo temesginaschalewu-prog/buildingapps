@@ -162,24 +162,44 @@ class _SupportScreenState extends State<SupportScreen>
     }
   }
 
+  // 🔥 FIX: Improved contact handling - shows ALL contacts
   Future<void> _handleContactTap(
       ContactType type, String value, BuildContext context) async {
     final Uri uri;
 
+    debugLog('SupportScreen', 'Tapping contact: type=$type, value=$value');
+
     switch (type) {
       case ContactType.phone:
-        uri = Uri.parse('tel:$value');
+        // Clean phone number
+        final cleanNumber = value.replaceAll(RegExp(r'[^0-9+]'), '');
+        uri = Uri.parse('tel:$cleanNumber');
         break;
       case ContactType.email:
         uri = Uri.parse('mailto:$value');
         break;
       case ContactType.whatsapp:
+        // Extract number for WhatsApp
         final cleanNumber = value.replaceAll(RegExp(r'[^0-9+]'), '');
-        uri = Uri.parse('https://wa.me/$cleanNumber');
+        if (cleanNumber.isNotEmpty) {
+          uri = Uri.parse('https://wa.me/$cleanNumber');
+        } else if (value.contains('wa.me')) {
+          uri = Uri.parse(value);
+        } else {
+          uri = Uri.parse('https://wa.me/${value.replaceAll('+', '')}');
+        }
         break;
       case ContactType.telegram:
-        final username = value.replaceAll('@', '');
-        uri = Uri.parse('https://t.me/$username');
+        // Handle various Telegram formats
+        if (value.contains('t.me')) {
+          uri = Uri.parse(value);
+        } else {
+          final username = value
+              .replaceAll('@', '')
+              .replaceAll('https://', '')
+              .replaceAll('http://', '');
+          uri = Uri.parse('https://t.me/$username');
+        }
         break;
       case ContactType.website:
         final url = value.startsWith('http') ? value : 'https://$value';
@@ -194,10 +214,12 @@ class _SupportScreenState extends State<SupportScreen>
         uri = Uri.parse('https://maps.google.com/?q=$encodedAddress');
         break;
       case ContactType.hours:
-        return;
+        return; // Hours are informational only
       case ContactType.other:
-        if (value.startsWith('http')) {
-          uri = Uri.parse(value);
+        // Try to detect if it's a URL
+        if (value.startsWith('http') || value.contains('.')) {
+          final url = value.startsWith('http') ? value : 'https://$value';
+          uri = Uri.parse(url);
         } else {
           _showCopyDialog(context, value);
           return;
@@ -205,14 +227,19 @@ class _SupportScreenState extends State<SupportScreen>
         break;
     }
 
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      if (type == ContactType.other) {
-        _showCopyDialog(context, value);
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
       } else {
-        showSimpleSnackBar(context, 'Cannot open $value', isError: true);
+        if (type == ContactType.other || type == ContactType.website) {
+          _showCopyDialog(context, value);
+        } else {
+          showSimpleSnackBar(context, 'Cannot open $value', isError: true);
+        }
       }
+    } catch (e) {
+      debugLog('SupportScreen', 'Error launching URL: $e');
+      _showCopyDialog(context, value);
     }
   }
 
@@ -242,6 +269,7 @@ class _SupportScreenState extends State<SupportScreen>
     );
   }
 
+  // 🔥 FIX: Improved contact card - shows ALL contacts regardless of type
   Widget _buildContactCard(
     BuildContext context,
     String title,
@@ -415,19 +443,20 @@ class _SupportScreenState extends State<SupportScreen>
           SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.all(AppThemes.spacingL),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildSectionHeader('Quick Actions'),
-                  _buildQuickActionGrid(context),
-                  SizedBox(height: AppThemes.spacingXXL),
-                  _buildSectionHeader('Support Hours'),
-                  _buildSupportHoursCard(context),
-                  SizedBox(height: AppThemes.spacingXXL),
-                  _buildSectionHeader('Response Time'),
-                  _buildResponseTimeCard(context),
-                  SizedBox(height: AppThemes.spacingXXXL),
-                ],
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    _buildSectionHeader('Quick Actions'),
+                    _buildQuickActionGrid(context),
+                    SizedBox(height: AppThemes.spacingXXL),
+                    _buildSectionHeader('Support Hours'),
+                    _buildSupportHoursCard(context),
+                    SizedBox(height: AppThemes.spacingXXL),
+                    _buildSectionHeader('Response Time'),
+                    _buildResponseTimeCard(context),
+                    SizedBox(height: AppThemes.spacingXXXL),
+                  ],
+                ),
               ),
             ),
           ),
@@ -445,24 +474,6 @@ class _SupportScreenState extends State<SupportScreen>
       mainAxisSpacing: AppThemes.spacingL,
       childAspectRatio: 1.2,
       children: [
-        _buildQuickActionCard(
-          context,
-          'Report Issue',
-          'Report a problem with the app',
-          Icons.report_problem_rounded,
-          () => _showComingSoon(context, 'Report Issue'),
-          AppColors.telegramRed,
-          index: 0,
-        ),
-        _buildQuickActionCard(
-          context,
-          'Request Feature',
-          'Suggest a new feature',
-          Icons.lightbulb_rounded,
-          () => _showComingSoon(context, 'Request Feature'),
-          AppColors.telegramBlue,
-          index: 1,
-        ),
         _buildQuickActionCard(
           context,
           'Chat with Us',
@@ -629,49 +640,51 @@ class _SupportScreenState extends State<SupportScreen>
               width: 0.5,
             ),
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
-                  borderRadius:
-                      BorderRadius.circular(AppThemes.borderRadiusMedium),
-                  border: Border.all(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.1),
+                    borderRadius:
+                        BorderRadius.circular(AppThemes.borderRadiusMedium),
+                    border: Border.all(
+                      color: color,
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Icon(
+                    icon,
+                    size: 20,
                     color: color,
-                    width: 1.5,
                   ),
                 ),
-                child: Icon(
-                  icon,
-                  size: 20,
-                  color: color,
+                SizedBox(height: AppThemes.spacingM),
+                Text(
+                  title,
+                  style: AppTextStyles.titleSmall.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.getTextPrimary(context),
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
-              SizedBox(height: AppThemes.spacingM),
-              Text(
-                title,
-                style: AppTextStyles.titleSmall.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.getTextPrimary(context),
+                SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.getTextSecondary(context),
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              SizedBox(height: 2),
-              Text(
-                subtitle,
-                style: AppTextStyles.caption.copyWith(
-                  color: AppColors.getTextSecondary(context),
-                ),
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -700,54 +713,56 @@ class _SupportScreenState extends State<SupportScreen>
           width: 0.5,
         ),
       ),
-      child: Column(
-        children: [
-          AnimatedBuilder(
-            animation: _pulseAnimationController,
-            builder: (context, child) {
-              return Transform.scale(
-                scale: 1 + _pulseAnimationController.value * 0.05,
-                child: badges.Badge(
-                  badgeContent: Text(
-                    '24H',
-                    style: AppTextStyles.caption.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
+      child: SingleChildScrollView(
+        child: Column(
+          children: [
+            AnimatedBuilder(
+              animation: _pulseAnimationController,
+              builder: (context, child) {
+                return Transform.scale(
+                  scale: 1 + _pulseAnimationController.value * 0.05,
+                  child: badges.Badge(
+                    badgeContent: Text(
+                      '24H',
+                      style: AppTextStyles.caption.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    badgeStyle: badges.BadgeStyle(
+                      badgeColor: AppColors.telegramGreen,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: AppThemes.spacingM,
+                        vertical: AppThemes.spacingXS,
+                      ),
+                    ),
+                    child: Icon(
+                      Icons.timer_rounded,
+                      size: 36,
+                      color: AppColors.telegramGreen,
                     ),
                   ),
-                  badgeStyle: badges.BadgeStyle(
-                    badgeColor: AppColors.telegramGreen,
-                    padding: EdgeInsets.symmetric(
-                      horizontal: AppThemes.spacingM,
-                      vertical: AppThemes.spacingXS,
-                    ),
-                  ),
-                  child: Icon(
-                    Icons.timer_rounded,
-                    size: 36,
-                    color: AppColors.telegramGreen,
-                  ),
-                ),
-              );
-            },
-          ),
-          SizedBox(height: AppThemes.spacingL),
-          Text(
-            'Quick Response',
-            style: AppTextStyles.titleMedium.copyWith(
-              fontWeight: FontWeight.w600,
-              color: AppColors.getTextPrimary(context),
+                );
+              },
             ),
-          ),
-          SizedBox(height: AppThemes.spacingS),
-          Text(
-            'We typically respond within 24 hours during business days',
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.getTextSecondary(context),
+            SizedBox(height: AppThemes.spacingL),
+            Text(
+              'Quick Response',
+              style: AppTextStyles.titleMedium.copyWith(
+                fontWeight: FontWeight.w600,
+                color: AppColors.getTextPrimary(context),
+              ),
             ),
-            textAlign: TextAlign.center,
-          ),
-        ],
+            SizedBox(height: AppThemes.spacingS),
+            Text(
+              'We typically respond within 24 hours during business days',
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.getTextSecondary(context),
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
       ),
     ).animate().fadeIn(duration: AppThemes.animationDurationMedium);
   }
@@ -766,35 +781,37 @@ class _SupportScreenState extends State<SupportScreen>
           width: 0.5,
         ),
       ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.access_time_rounded,
-                color: AppColors.telegramBlue,
-                size: 20,
-              ),
-              SizedBox(width: AppThemes.spacingS),
-              Text(
-                'Support Hours',
-                style: AppTextStyles.titleSmall.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.getTextPrimary(context),
+      child: SingleChildScrollView(
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.access_time_rounded,
+                  color: AppColors.telegramBlue,
+                  size: 20,
                 ),
-              ),
-            ],
-          ),
-          SizedBox(height: AppThemes.spacingL),
-          Text(
-            hours,
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.getTextSecondary(context),
+                SizedBox(width: AppThemes.spacingS),
+                Text(
+                  'Support Hours',
+                  style: AppTextStyles.titleSmall.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.getTextPrimary(context),
+                  ),
+                ),
+              ],
             ),
-            textAlign: TextAlign.center,
-          ),
-        ],
+            SizedBox(height: AppThemes.spacingL),
+            Text(
+              hours,
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.getTextSecondary(context),
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
       ),
     ).animate().fadeIn(duration: AppThemes.animationDurationMedium);
   }
@@ -832,6 +849,9 @@ class _SupportScreenState extends State<SupportScreen>
       case ContactType.website:
         return AppColors.telegramBlue;
       case ContactType.social:
+        return AppColors.telegramBlue;
+      case ContactType.other:
+        return AppColors.telegramBlue;
       default:
         return AppColors.telegramBlue;
     }
@@ -854,14 +874,21 @@ class _SupportScreenState extends State<SupportScreen>
       case ContactType.website:
         return AppColors.telegramBlue.withOpacity(0.1);
       case ContactType.social:
+        return AppColors.telegramBlue.withOpacity(0.1);
+      case ContactType.other:
+        return AppColors.telegramBlue.withOpacity(0.1);
       default:
         return AppColors.telegramBlue.withOpacity(0.1);
     }
   }
 
+  // 🔥 FIX: Shows ALL contact settings from database
   Widget _buildContactTab(BuildContext context) {
     final settingsProvider = Provider.of<SettingsProvider>(context);
     final contactInfo = settingsProvider.getContactInfoList();
+
+    debugLog('SupportScreen',
+        'Building contact tab with ${contactInfo.length} items');
 
     return SmartRefresher(
       controller: _refreshControllers[0],
@@ -889,17 +916,49 @@ class _SupportScreenState extends State<SupportScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildSectionHeader('Contact Information'),
-                  ...contactInfo
-                      .asMap()
-                      .entries
-                      .map((entry) => _buildContactCard(
-                            context,
-                            entry.value.title,
-                            entry.value.value,
-                            entry.value.icon,
-                            entry.value.type,
-                            index: entry.key,
-                          )),
+
+                  // 🔥 FIX: Show message if no contacts
+                  if (contactInfo.isEmpty)
+                    Container(
+                      padding: EdgeInsets.all(AppThemes.spacingXXL),
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.contact_support_rounded,
+                            size: 48,
+                            color: AppColors.getTextSecondary(context),
+                          ),
+                          SizedBox(height: AppThemes.spacingL),
+                          Text(
+                            'No contact information available',
+                            style: AppTextStyles.bodyLarge.copyWith(
+                              color: AppColors.getTextSecondary(context),
+                            ),
+                          ),
+                          SizedBox(height: AppThemes.spacingM),
+                          Text(
+                            'Contact methods will appear here when configured by admin',
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.getTextSecondary(context),
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    ...contactInfo
+                        .asMap()
+                        .entries
+                        .map((entry) => _buildContactCard(
+                              context,
+                              entry.value.title,
+                              entry.value.value,
+                              entry.value.icon,
+                              entry.value.type,
+                              index: entry.key,
+                            )),
+
                   SizedBox(height: AppThemes.spacingXXL),
                   _buildSectionHeader('Response Time'),
                   _buildResponseTimeCard(context),
@@ -1209,17 +1268,38 @@ class _SupportScreenState extends State<SupportScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         _buildSectionHeader('Contact Information'),
-                        ...contactInfo
-                            .asMap()
-                            .entries
-                            .map((entry) => _buildContactCard(
-                                  context,
-                                  entry.value.title,
-                                  entry.value.value,
-                                  entry.value.icon,
-                                  entry.value.type,
-                                  index: entry.key,
-                                )),
+                        if (contactInfo.isEmpty)
+                          Container(
+                            padding: EdgeInsets.all(AppThemes.spacingXXL),
+                            child: Column(
+                              children: [
+                                Icon(
+                                  Icons.contact_support_rounded,
+                                  size: 48,
+                                  color: AppColors.getTextSecondary(context),
+                                ),
+                                SizedBox(height: AppThemes.spacingL),
+                                Text(
+                                  'No contact information available',
+                                  style: AppTextStyles.bodyLarge.copyWith(
+                                    color: AppColors.getTextSecondary(context),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        else
+                          ...contactInfo
+                              .asMap()
+                              .entries
+                              .map((entry) => _buildContactCard(
+                                    context,
+                                    entry.value.title,
+                                    entry.value.value,
+                                    entry.value.icon,
+                                    entry.value.type,
+                                    index: entry.key,
+                                  )),
                         SizedBox(height: AppThemes.spacingXXL),
                         _buildSectionHeader('Response Time'),
                         _buildResponseTimeCard(context),
@@ -1242,48 +1322,51 @@ class _SupportScreenState extends State<SupportScreen>
                 ],
               ),
               SizedBox(height: AppThemes.spacingXXL),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildSectionHeader('Frequently Asked Questions'),
-                  ...const [
-                    {
-                      'question': 'How do I reset my password?',
-                      'answer':
-                          'Please contact support using the phone or email provided. We will verify your identity and reset your password for you.',
-                    },
-                    {
-                      'question': 'Why is my payment not verified?',
-                      'answer':
-                          'Payments are manually verified by our admin team. This usually takes 24-48 hours. Ensure your payment proof includes transaction ID and is clearly visible.',
-                    },
-                    {
-                      'question': 'Can I change my device?',
-                      'answer':
-                          'Yes, you can change your device but it requires a device change payment. Go to Profile → Device Settings to initiate the process.',
-                    },
-                    {
-                      'question': 'How do I access paid content?',
-                      'answer':
-                          'First, make a payment for the category you want to access. Once your payment is verified, all content in that category will be unlocked.',
-                    },
-                    {
-                      'question': 'What happens when my subscription expires?',
-                      'answer':
-                          'You will lose access to paid content in that category. You can renew your subscription before it expires to maintain continuous access.',
-                    },
-                    {
-                      'question': 'How do I link my parent account?',
-                      'answer':
-                          'Go to Profile → Parent Link to generate a unique code. Share this code with your parent through Telegram to complete the linking process.',
-                    },
-                  ].asMap().entries.map((entry) => _buildFAQItem(
-                        context,
-                        entry.value['question']!,
-                        entry.value['answer']!,
-                        index: entry.key,
-                      )),
-                ],
+              SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildSectionHeader('Frequently Asked Questions'),
+                    ...const [
+                      {
+                        'question': 'How do I reset my password?',
+                        'answer':
+                            'Please contact support using the phone or email provided. We will verify your identity and reset your password for you.',
+                      },
+                      {
+                        'question': 'Why is my payment not verified?',
+                        'answer':
+                            'Payments are manually verified by our admin team. This usually takes 24-48 hours. Ensure your payment proof includes transaction ID and is clearly visible.',
+                      },
+                      {
+                        'question': 'Can I change my device?',
+                        'answer':
+                            'Yes, you can change your device but it requires a device change payment. Go to Profile → Device Settings to initiate the process.',
+                      },
+                      {
+                        'question': 'How do I access paid content?',
+                        'answer':
+                            'First, make a payment for the category you want to access. Once your payment is verified, all content in that category will be unlocked.',
+                      },
+                      {
+                        'question':
+                            'What happens when my subscription expires?',
+                        'answer':
+                            'You will lose access to paid content in that category. You can renew your subscription before it expires to maintain continuous access.',
+                      },
+                      {
+                        'question': 'How do I link my parent account?',
+                        'answer':
+                            'Go to Profile → Parent Link to generate a unique code. Share this code with your parent through Telegram to complete the linking process.',
+                      },
+                    ].asMap().entries.map((entry) => _buildFAQItem(
+                          context,
+                          entry.value['question']!,
+                          entry.value['answer']!,
+                          index: entry.key,
+                        )),
+                  ],
+                ),
               ),
               SizedBox(height: AppThemes.spacingXXXL),
             ],
