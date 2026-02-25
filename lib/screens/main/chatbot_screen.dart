@@ -1,20 +1,20 @@
 import 'dart:async';
-import 'package:familyacademyclient/models/chatbot_model.dart';
-import 'package:familyacademyclient/providers/subscription_provider.dart';
-import 'package:familyacademyclient/themes/app_colors.dart';
-import 'package:familyacademyclient/themes/app_text_styles.dart';
-import 'package:familyacademyclient/utils/helpers.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:familyacademyclient/utils/responsive.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:badges/badges.dart' as badges;
-import 'package:familyacademyclient/themes/app_themes.dart';
+
+import '../../models/chatbot_model.dart';
 import '../../providers/chatbot_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/theme_provider.dart';
+import '../../themes/app_colors.dart';
+import '../../themes/app_text_styles.dart';
+import '../../themes/app_themes.dart';
+import '../../utils/helpers.dart';
+import '../../utils/responsive.dart';
 import '../../widgets/common/loading_indicator.dart';
 import '../../widgets/common/empty_state.dart';
 import '../../widgets/common/error_widget.dart' as custom_error;
@@ -38,6 +38,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   bool _isSending = false;
   int _unreadNotifications = 0;
   bool _showConversationList = false;
+  String _greeting = '';
+  String _timeBasedEmoji = '';
   late AnimationController _slideController;
   late Animation<Offset> _slideAnimation;
 
@@ -59,17 +61,40 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     ));
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _setGreeting();
       _initializeChat();
       _loadNotifications();
       _setupScreenSize();
     });
   }
 
-  void _setupScreenSize() {
-    if (ScreenSize.isDesktop(context) || ScreenSize.isTablet(context)) {
-      setState(() => _showConversationList = true);
-      _slideController.forward();
+  void _setGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) {
+      _greeting = 'Good Morning';
+      _timeBasedEmoji = '🌅';
+    } else if (hour < 17) {
+      _greeting = 'Good Afternoon';
+      _timeBasedEmoji = '☀️';
+    } else {
+      _greeting = 'Good Evening';
+      _timeBasedEmoji = '🌙';
     }
+  }
+
+  void _setupScreenSize() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (ScreenSize.isTablet(context) || ScreenSize.isDesktop(context)) {
+        setState(() {
+          _showConversationList = true;
+        });
+        _slideController.forward();
+      } else {
+        setState(() {
+          _showConversationList = false;
+        });
+      }
+    });
   }
 
   Future<void> _initializeChat() async {
@@ -101,6 +126,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      _setGreeting();
       _loadNotifications();
     }
   }
@@ -120,7 +146,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
-          duration: AppThemes.animationDurationMedium,
+          duration: const Duration(milliseconds: 300),
           curve: Curves.easeOut,
         );
       }
@@ -153,7 +179,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     if (result['success'] == true) {
       _scrollToBottom();
 
-      // If this is a new conversation, update the route
       if (result['conversationId'] != null &&
           widget.conversationId == null &&
           chatbotProvider.currentConversation == null) {
@@ -250,6 +275,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         _showConversationList = !_showConversationList;
         if (_showConversationList) {
           _slideController.forward();
+          Future.delayed(const Duration(milliseconds: 100), () {
+            setState(() {});
+          });
         } else {
           _slideController.reverse();
         }
@@ -264,137 +292,102 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
     return Padding(
       padding: EdgeInsets.only(
-        bottom: AppThemes.spacingL,
+        bottom: AppThemes.spacingM,
         left: isUser ? AppThemes.spacingXXL : AppThemes.spacingM,
         right: isUser ? AppThemes.spacingM : AppThemes.spacingXXL,
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment:
             isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
         children: [
           if (!isUser)
-            Container(
-              width: 36,
-              height: 36,
-              margin: const EdgeInsets.only(right: AppThemes.spacingM),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: AppColors.blueGradient,
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
+            Padding(
+              padding: const EdgeInsets.only(right: AppThemes.spacingS),
+              child: Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: AppColors.blueGradient,
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
-                ],
-              ),
-              child: const Center(
-                child: Icon(
-                  Icons.smart_toy,
-                  size: 18,
-                  color: Colors.white,
+                  shape: BoxShape.circle,
+                ),
+                child: const Center(
+                  child: Icon(
+                    Icons.smart_toy,
+                    size: 16,
+                    color: Colors.white,
+                  ),
                 ),
               ),
             ),
           Flexible(
-            child: Column(
-              crossAxisAlignment:
-                  isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-              children: [
-                Container(
-                  constraints: BoxConstraints(
-                    maxWidth: ScreenSize.responsiveValue(
-                      context: context,
-                      mobile: MediaQuery.of(context).size.width * 0.75,
-                      tablet: MediaQuery.of(context).size.width * 0.6,
-                      desktop: 500,
-                    ),
-                  ),
-                  padding: const EdgeInsets.all(AppThemes.spacingM),
-                  decoration: BoxDecoration(
-                    color: isUser
-                        ? AppColors.telegramBlue
-                        : AppColors.getCard(context),
-                    borderRadius: BorderRadius.only(
-                      topLeft:
-                          const Radius.circular(AppThemes.borderRadiusLarge),
-                      topRight:
-                          const Radius.circular(AppThemes.borderRadiusLarge),
-                      bottomLeft: isUser
-                          ? const Radius.circular(AppThemes.borderRadiusLarge)
-                          : const Radius.circular(AppThemes.borderRadiusSmall),
-                      bottomRight: isUser
-                          ? const Radius.circular(AppThemes.borderRadiusSmall)
-                          : const Radius.circular(AppThemes.borderRadiusLarge),
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        message.content,
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          color: isUser
-                              ? Colors.white
-                              : AppColors.getTextPrimary(context),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Align(
-                        alignment: Alignment.bottomRight,
-                        child: Text(
-                          timeStr,
-                          style: AppTextStyles.labelSmall.copyWith(
-                            color: isUser
-                                ? Colors.white.withOpacity(0.7)
-                                : AppColors.getTextSecondary(context),
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (isUser)
-            Container(
-              width: 36,
-              height: 36,
-              margin: const EdgeInsets.only(left: AppThemes.spacingM),
+            child: Container(
+              padding: const EdgeInsets.all(AppThemes.spacingM),
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: AppColors.purpleGradient,
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                shape: BoxShape.circle,
+                color: isUser
+                    ? AppColors.telegramBlue
+                    : AppColors.getCard(context),
+                borderRadius:
+                    BorderRadius.circular(AppThemes.borderRadiusLarge),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
+                    color: Colors.black.withOpacity(0.05),
                     blurRadius: 4,
                     offset: const Offset(0, 2),
                   ),
                 ],
               ),
-              child: const Center(
-                child: Icon(
-                  Icons.person,
-                  size: 18,
-                  color: Colors.white,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    message.content.replaceAll('*', ''), // Remove asterisks
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: isUser
+                          ? Colors.white
+                          : AppColors.getTextPrimary(context),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.bottomRight,
+                    child: Text(
+                      timeStr,
+                      style: AppTextStyles.labelSmall.copyWith(
+                        color: isUser
+                            ? Colors.white.withOpacity(0.7)
+                            : AppColors.getTextSecondary(context),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (isUser)
+            Padding(
+              padding: const EdgeInsets.only(left: AppThemes.spacingS),
+              child: Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: AppColors.purpleGradient,
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  shape: BoxShape.circle,
+                ),
+                child: const Center(
+                  child: Icon(
+                    Icons.person,
+                    size: 16,
+                    color: Colors.white,
+                  ),
                 ),
               ),
             ),
@@ -414,21 +407,43 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
         return Column(
           children: [
-            Padding(
-              padding: const EdgeInsets.all(AppThemes.spacingL),
+            Container(
+              padding: EdgeInsets.only(
+                top: MediaQuery.of(context).padding.top + AppThemes.spacingL,
+                left: AppThemes.spacingL,
+                right: AppThemes.spacingL,
+                bottom: AppThemes.spacingL,
+              ),
+              decoration: BoxDecoration(
+                color: AppColors.getSurface(context),
+                border: Border(
+                  bottom: BorderSide(
+                    color: AppColors.getCard(context),
+                    width: 0.5,
+                  ),
+                ),
+              ),
               child: Row(
                 children: [
-                  Expanded(
-                    child: Text(
-                      'Conversations',
-                      style: AppTextStyles.titleSmall,
+                  Text(
+                    'Conversations',
+                    style: AppTextStyles.titleSmall.copyWith(
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
+                  const Spacer(),
                   IconButton(
                     icon: const Icon(Icons.add_comment_outlined),
                     onPressed: _showNewChatDialog,
                     tooltip: 'New Chat',
                   ),
+                  if (ScreenSize.isDesktop(context) ||
+                      ScreenSize.isTablet(context))
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: _showConversationsDrawer,
+                      tooltip: 'Close',
+                    ),
                 ],
               ),
             ),
@@ -446,83 +461,90 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                         final isSelected =
                             provider.currentConversation?.id == conv.id;
 
-                        return ListTile(
-                          leading: CircleAvatar(
-                            radius: 20,
-                            backgroundColor: isSelected
-                                ? AppColors.telegramBlue
-                                : AppColors.getSurface(context),
-                            child: Icon(
-                              Icons.chat_outlined,
-                              color: isSelected
-                                  ? Colors.white
-                                  : AppColors.getTextPrimary(context),
-                              size: 20,
-                            ),
-                          ),
-                          title: Text(
-                            conv.title,
-                            style: AppTextStyles.bodyMedium.copyWith(
-                              fontWeight: isSelected
-                                  ? FontWeight.w600
-                                  : FontWeight.normal,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          subtitle: conv.lastMessage != null
-                              ? Text(
-                                  conv.lastMessage!,
-                                  style: AppTextStyles.labelSmall.copyWith(
-                                    color: AppColors.getTextSecondary(context),
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                )
-                              : Text(
-                                  '${conv.messageCount} messages',
-                                  style: AppTextStyles.labelSmall.copyWith(
-                                    color: AppColors.getTextSecondary(context),
-                                  ),
-                                ),
-                          selected: isSelected,
-                          onTap: () {
-                            if (conv.id != provider.currentConversation?.id) {
-                              provider.loadMessages(conv.id);
-                              GoRouter.of(context)
-                                  .go('/chatbot?conv=${conv.id}');
-                            }
-                            if (ScreenSize.isMobile(context)) {
-                              Navigator.pop(context);
-                            }
-                          },
-                          trailing: PopupMenuButton(
-                            icon: Icon(
-                              Icons.more_vert,
-                              color: AppColors.getTextPrimary(context),
-                            ),
-                            itemBuilder: (context) => [
-                              PopupMenuItem(
-                                value: 'rename',
-                                child: const Text('Rename'),
+                        return Container(
+                          color: isSelected
+                              ? AppColors.telegramBlue.withOpacity(0.1)
+                              : null,
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              radius: 20,
+                              backgroundColor: isSelected
+                                  ? AppColors.telegramBlue
+                                  : AppColors.getSurface(context),
+                              child: Icon(
+                                Icons.chat_outlined,
+                                color: isSelected
+                                    ? Colors.white
+                                    : AppColors.getTextPrimary(context),
+                                size: 20,
                               ),
-                              PopupMenuItem(
-                                value: 'delete',
-                                child: Text(
-                                  'Delete',
-                                  style: TextStyle(
-                                    color: AppColors.telegramRed,
-                                  ),
-                                ),
+                            ),
+                            title: Text(
+                              conv.title,
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                fontWeight: isSelected
+                                    ? FontWeight.w600
+                                    : FontWeight.normal,
                               ),
-                            ],
-                            onSelected: (value) async {
-                              if (value == 'rename') {
-                                _showRenameDialog(context, conv);
-                              } else if (value == 'delete') {
-                                _showDeleteDialog(context, conv);
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: conv.lastMessage != null
+                                ? Text(
+                                    conv.lastMessage!.replaceAll('*', ''),
+                                    style: AppTextStyles.labelSmall.copyWith(
+                                      color:
+                                          AppColors.getTextSecondary(context),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  )
+                                : Text(
+                                    '${conv.messageCount} messages',
+                                    style: AppTextStyles.labelSmall.copyWith(
+                                      color:
+                                          AppColors.getTextSecondary(context),
+                                    ),
+                                  ),
+                            selected: isSelected,
+                            onTap: () {
+                              if (conv.id != provider.currentConversation?.id) {
+                                provider.loadMessages(conv.id);
+                                GoRouter.of(context)
+                                    .go('/chatbot?conv=${conv.id}');
+                              }
+                              if (ScreenSize.isMobile(context)) {
+                                Navigator.pop(context);
                               }
                             },
+                            trailing: PopupMenuButton(
+                              icon: Icon(
+                                Icons.more_vert,
+                                color: AppColors.getTextPrimary(context),
+                              ),
+                              itemBuilder: (context) => [
+                                PopupMenuItem(
+                                  value: 'rename',
+                                  child: const Text('Rename'),
+                                ),
+                                PopupMenuItem(
+                                  value: 'delete',
+                                  child: Text(
+                                    'Delete',
+                                    style: TextStyle(
+                                      color: AppColors.telegramRed,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                              onSelected: (value) async {
+                                if (value == 'rename') {
+                                  _showRenameDialog(context, conv);
+                                } else if (value == 'delete') {
+                                  _showDeleteDialog(context, conv);
+                                }
+                              },
+                            ),
                           ),
                         );
                       },
@@ -612,28 +634,25 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   Widget _buildQuickQuestions() {
     final quickQuestions = [
-      'Explain algebra equations',
-      'How does photosynthesis work?',
-      'Tips for exam preparation',
-      'Ethiopian history timeline',
-      'Help with English grammar',
+      'Help with math',
+      'Tell me about Ethiopia',
+      'Study tips',
+      'Teach me Amharic',
     ];
 
     return Container(
-      padding: const EdgeInsets.only(bottom: AppThemes.spacingM),
+      padding: const EdgeInsets.symmetric(horizontal: AppThemes.spacingL),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.only(bottom: AppThemes.spacingS),
-            child: Text(
-              'Quick Questions:',
-              style: AppTextStyles.labelMedium.copyWith(
-                color: AppColors.getTextSecondary(context),
-                fontWeight: FontWeight.w600,
-              ),
+          Text(
+            'Quick Questions:',
+            style: AppTextStyles.labelMedium.copyWith(
+              color: AppColors.getTextSecondary(context),
+              fontWeight: FontWeight.w600,
             ),
           ),
+          const SizedBox(height: AppThemes.spacingS),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -720,6 +739,93 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     );
   }
 
+  Widget _buildNotificationButton() {
+    return GestureDetector(
+      onTap: () => GoRouter.of(context).push('/notifications'),
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: AppColors.getSurface(context),
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Center(
+          child: _unreadNotifications > 0
+              ? badges.Badge(
+                  position: badges.BadgePosition.topEnd(top: -4, end: -4),
+                  badgeContent: Text(
+                    _unreadNotifications > 9
+                        ? '9+'
+                        : _unreadNotifications.toString(),
+                    style: AppTextStyles.labelSmall.copyWith(
+                      color: Colors.white,
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  badgeStyle: badges.BadgeStyle(
+                    badgeColor: AppColors.telegramRed,
+                    padding: const EdgeInsets.all(4),
+                    borderRadius:
+                        BorderRadius.circular(AppThemes.borderRadiusFull),
+                  ),
+                  child: Icon(
+                    Icons.notifications_outlined,
+                    size: 22,
+                    color: AppColors.getTextPrimary(context),
+                  ),
+                )
+              : Icon(
+                  Icons.notifications_outlined,
+                  size: 22,
+                  color: AppColors.getTextPrimary(context),
+                ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildThemeToggleButton() {
+    return Consumer<ThemeProvider>(
+      builder: (context, themeProvider, child) {
+        return GestureDetector(
+          onTap: themeProvider.toggleTheme,
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppColors.getSurface(context),
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Center(
+              child: Icon(
+                themeProvider.themeMode == ThemeMode.dark
+                    ? Icons.light_mode_outlined
+                    : Icons.dark_mode_outlined,
+                size: 22,
+                color: AppColors.getTextPrimary(context),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildInputArea(ChatbotProvider provider) {
     final hasMessagesLeft = provider.hasMessagesLeft;
     final isEnabled = hasMessagesLeft && !_isSending;
@@ -737,6 +843,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           _buildQuickQuestions(),
           const SizedBox(height: AppThemes.spacingL),
@@ -832,7 +939,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           );
         }
 
-        if (provider.error != null) {
+        if (provider.error != null && provider.messages.isEmpty) {
           return Center(
             child: custom_error.ErrorWidget(
               title: 'Error',
@@ -845,9 +952,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         if (provider.messages.isEmpty) {
           return EmptyState(
             icon: Icons.smart_toy,
-            title: 'Start Learning Conversation',
+            title: 'AI Learning Assistant',
             message:
-                'Ask questions about any subject or request study help. You have ${provider.remainingMessages}/${provider.dailyLimit} messages left today.',
+                'Ask me about mathematics, sciences, Amharic, Ethiopian history, or get study tips. You have ${provider.remainingMessages}/${provider.dailyLimit} messages left today.',
             centerContent: true,
           );
         }
@@ -856,6 +963,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           controller: _scrollController,
           padding: const EdgeInsets.all(AppThemes.spacingL),
           itemCount: provider.messages.length,
+          reverse: false,
           itemBuilder: (context, index) {
             return _buildMessageBubble(provider.messages[index]);
           },
@@ -866,6 +974,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   @override
   Widget build(BuildContext context) {
+    final authProvider = Provider.of<AuthProvider>(context);
+    final username = authProvider.currentUser?.username ?? 'Student';
+
     return Consumer<ChatbotProvider>(
       builder: (context, provider, child) {
         return Scaffold(
@@ -877,163 +988,162 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                   child: _buildConversationList(),
                 )
               : null,
-          body: Row(
+          body: Column(
             children: [
-              if (ScreenSize.isDesktop(context) && _showConversationList)
-                AnimatedContainer(
-                  duration: AppThemes.animationDurationMedium,
-                  width: 320,
-                  decoration: BoxDecoration(
-                    color: AppColors.getSurface(context),
-                    border: Border(
-                      right: BorderSide(
-                        color: AppColors.getCard(context),
-                        width: 1,
-                      ),
+              // Header matching home screen exactly
+              Container(
+                padding: EdgeInsets.only(
+                  top: MediaQuery.of(context).padding.top,
+                  left: AppThemes.spacingL,
+                  right: AppThemes.spacingL,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.getBackground(context),
+                  border: Border(
+                    bottom: BorderSide(
+                      color: AppColors.getCard(context),
+                      width: 0.5,
                     ),
-                  ),
-                  child: SlideTransition(
-                    position: _slideAnimation,
-                    child: _buildConversationList(),
                   ),
                 ),
-              Expanded(
-                child: Column(
-                  children: [
-                    Container(
-                      padding: EdgeInsets.only(
-                        top: MediaQuery.of(context).padding.top,
-                        left: AppThemes.spacingL,
-                        right: AppThemes.spacingL,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.getBackground(context),
-                        border: Border(
-                          bottom: BorderSide(
-                            color: AppColors.getCard(context),
-                            width: 0.5,
-                          ),
-                        ),
-                      ),
-                      child: SafeArea(
-                        bottom: false,
-                        child: Row(
-                          children: [
-                            if (ScreenSize.isMobile(context) ||
-                                !_showConversationList)
-                              IconButton(
-                                icon: const Icon(Icons.menu),
-                                onPressed: _showConversationsDrawer,
-                                tooltip: 'Conversations',
-                              ),
-                            if (ScreenSize.isDesktop(context) &&
-                                !_showConversationList)
-                              IconButton(
-                                icon: const Icon(Icons.chevron_right),
-                                onPressed: _showConversationsDrawer,
-                                tooltip: 'Show conversations',
-                              ),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    provider.currentConversation?.title ??
-                                        'AI Tutor',
-                                    style: AppTextStyles.titleMedium.copyWith(
-                                      fontWeight: FontWeight.w600,
+                child: SafeArea(
+                  bottom: false,
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          if (ScreenSize.isMobile(context))
+                            IconButton(
+                              icon: const Icon(Icons.menu),
+                              onPressed: _showConversationsDrawer,
+                              tooltip: 'Conversations',
+                            ),
+                          Expanded(
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 48,
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(
+                                      colors: AppColors.blueGradient,
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
                                     ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
+                                    shape: BoxShape.circle,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.2),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
                                   ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'Your personal learning assistant',
-                                    style: AppTextStyles.labelSmall.copyWith(
-                                      color:
-                                          AppColors.getTextSecondary(context),
+                                  child: const Center(
+                                    child: Icon(
+                                      Icons.smart_toy,
+                                      size: 24,
+                                      color: Colors.white,
                                     ),
                                   ),
-                                ],
-                              ),
-                            ),
-                            _buildMessageCounter(provider),
-                            const SizedBox(width: AppThemes.spacingM),
-                            Consumer<ThemeProvider>(
-                              builder: (context, themeProvider, child) {
-                                return IconButton(
-                                  icon: Icon(
-                                    themeProvider.themeMode == ThemeMode.dark
-                                        ? Icons.light_mode_outlined
-                                        : Icons.dark_mode_outlined,
-                                  ),
-                                  onPressed: themeProvider.toggleTheme,
-                                  tooltip: 'Toggle theme',
-                                );
-                              },
-                            ),
-                            const SizedBox(width: AppThemes.spacingS),
-                            GestureDetector(
-                              onTap: () =>
-                                  GoRouter.of(context).push('/notifications'),
-                              child: Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: AppColors.getSurface(context),
-                                  shape: BoxShape.circle,
                                 ),
-                                child: Center(
-                                  child: _unreadNotifications > 0
-                                      ? badges.Badge(
-                                          position: badges.BadgePosition.topEnd(
-                                              top: -4, end: -4),
-                                          badgeContent: Text(
-                                            _unreadNotifications > 9
-                                                ? '9+'
-                                                : _unreadNotifications
-                                                    .toString(),
-                                            style: AppTextStyles.labelSmall
-                                                .copyWith(
-                                              color: Colors.white,
-                                              fontSize: 9,
-                                              fontWeight: FontWeight.bold,
-                                            ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        alignment: Alignment.centerLeft,
+                                        child: RichText(
+                                          text: TextSpan(
+                                            children: [
+                                              TextSpan(
+                                                text: '$_greeting ',
+                                                style: AppTextStyles.titleMedium
+                                                    .copyWith(
+                                                  color:
+                                                      AppColors.getTextPrimary(
+                                                          context),
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                              TextSpan(
+                                                text: _timeBasedEmoji,
+                                                style: const TextStyle(
+                                                    fontSize: 20),
+                                              ),
+                                            ],
                                           ),
-                                          badgeStyle: badges.BadgeStyle(
-                                            badgeColor: AppColors.telegramRed,
-                                            padding: const EdgeInsets.all(4),
-                                            borderRadius: BorderRadius.circular(
-                                              AppThemes.borderRadiusFull,
-                                            ),
-                                          ),
-                                          child: Icon(
-                                            Icons.notifications_outlined,
-                                            size: 22,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        alignment: Alignment.centerLeft,
+                                        child: Text(
+                                          provider.currentConversation?.title ??
+                                              'AI Tutor',
+                                          style:
+                                              AppTextStyles.titleLarge.copyWith(
                                             color: AppColors.getTextPrimary(
                                                 context),
+                                            fontWeight: FontWeight.w700,
                                           ),
-                                        )
-                                      : Icon(
-                                          Icons.notifications_outlined,
-                                          size: 22,
-                                          color:
-                                              AppColors.getTextPrimary(context),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
                                         ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
+                              ],
                             ),
-                          ],
+                          ),
+                          _buildMessageCounter(provider),
+                          const SizedBox(width: AppThemes.spacingM),
+                          _buildThemeToggleButton(),
+                          const SizedBox(width: AppThemes.spacingS),
+                          _buildNotificationButton(),
+                        ],
+                      ),
+                      const SizedBox(height: AppThemes.spacingS),
+                    ],
+                  ),
+                ),
+              ),
+              // Chat area
+              Expanded(
+                child: Row(
+                  children: [
+                    if ((ScreenSize.isDesktop(context) ||
+                            ScreenSize.isTablet(context)) &&
+                        _showConversationList)
+                      AnimatedContainer(
+                        duration: AppThemes.animationDurationMedium,
+                        width: ScreenSize.isTablet(context) ? 280 : 320,
+                        decoration: BoxDecoration(
+                          color: AppColors.getSurface(context),
+                          border: Border(
+                            right: BorderSide(
+                              color: AppColors.getCard(context),
+                              width: 1,
+                            ),
+                          ),
+                        ),
+                        child: SlideTransition(
+                          position: _slideAnimation,
+                          child: _buildConversationList(),
                         ),
                       ),
-                    ),
                     Expanded(
                       child: _buildChatArea(),
                     ),
-                    _buildInputArea(provider),
                   ],
                 ),
               ),
+              _buildInputArea(provider),
             ],
           ),
         );
