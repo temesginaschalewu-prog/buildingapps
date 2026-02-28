@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/themes/app_text_styles.dart';
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
 import 'package:pull_to_refresh/pull_to_refresh.dart';
+import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../providers/parent_link_provider.dart';
 import '../../providers/auth_provider.dart';
@@ -35,10 +37,9 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
   @override
   void initState() {
     super.initState();
-    _pulseAnimationController = AnimationController(
-      vsync: this,
-      duration: 1.seconds,
-    )..repeat(reverse: true);
+    _pulseAnimationController =
+        AnimationController(vsync: this, duration: 1.seconds)
+          ..repeat(reverse: true);
 
     WidgetsBinding.instance.addObserver(this);
     _initializeData();
@@ -47,10 +48,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      // 🔥 FIX: Refresh when app returns to foreground
-      _refreshData(showLoading: false);
-    }
+    if (state == AppLifecycleState.resumed) _refreshData(showLoading: false);
   }
 
   @override
@@ -64,9 +62,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
 
   void _setupTimers() {
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
-      if (mounted) {
-        _refreshDataInBackground();
-      }
+      if (mounted) _refreshDataInBackground();
     });
   }
 
@@ -77,15 +73,12 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
     try {
       await parentLinkProvider.getParentLinkStatus(forceRefresh: true);
     } finally {
-      if (mounted) {
-        setState(() => _isInitialized = true);
-      }
+      if (mounted) setState(() => _isInitialized = true);
     }
   }
 
   Future<void> _refreshDataInBackground() async {
     if (_isRefreshing) return;
-
     setState(() => _isRefreshing = true);
 
     try {
@@ -93,46 +86,28 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
           Provider.of<ParentLinkProvider>(context, listen: false);
       await parentLinkProvider.getParentLinkStatus(forceRefresh: true);
     } finally {
-      if (mounted) {
-        setState(() => _isRefreshing = false);
-      }
+      if (mounted) setState(() => _isRefreshing = false);
     }
   }
 
   Future<void> _refreshData({bool showLoading = true}) async {
     if (_isRefreshing) return;
 
-    if (showLoading) {
-      setState(() => _isRefreshing = true);
-    }
+    if (showLoading) setState(() => _isRefreshing = true);
 
     try {
       final parentLinkProvider =
           Provider.of<ParentLinkProvider>(context, listen: false);
-
-      // 🔥 FIX: Force clear cache before refresh
       await parentLinkProvider.clearCache();
       await parentLinkProvider.getParentLinkStatus(forceRefresh: true);
 
       _refreshController.refreshCompleted();
 
-      if (showLoading && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Status updated'),
-            backgroundColor: AppColors.telegramGreen,
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 1),
-          ),
-        );
-      }
+      if (showLoading && mounted) showTopSnackBar(context, 'Status updated');
     } catch (e) {
-      debugLog('ParentLinkScreen', 'Refresh error: $e');
       _refreshController.refreshFailed();
     } finally {
-      if (mounted) {
-        setState(() => _isRefreshing = false);
-      }
+      if (mounted) setState(() => _isRefreshing = false);
     }
   }
 
@@ -146,15 +121,12 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
       final token = parentLinkProvider.parentToken;
       final expiresAt = parentLinkProvider.tokenExpiresAt;
 
-      if (token != null && expiresAt != null) {
+      if (token != null && expiresAt != null)
         _showTokenDialog(token, expiresAt);
-      }
     } catch (e) {
-      showSnackBar(
-        context,
-        'Failed to generate token: ${formatErrorMessage(e)}',
-        isError: true,
-      );
+      showTopSnackBar(
+          context, 'Failed to generate token: ${formatErrorMessage(e)}',
+          isError: true);
     }
   }
 
@@ -168,24 +140,113 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
             Provider.of<ParentLinkProvider>(context, listen: false);
         try {
           await parentLinkProvider.unlinkParent();
-
-          // 🔥 FIX: Force refresh after unlink
           await Future.delayed(const Duration(milliseconds: 500));
           await parentLinkProvider.getParentLinkStatus(forceRefresh: true);
 
-          if (mounted) {
-            showSimpleSnackBar(context, 'Parent unlinked successfully');
-          }
+          if (mounted) showTopSnackBar(context, 'Parent unlinked successfully');
         } catch (e) {
-          if (mounted) {
-            showSnackBar(
-              context,
-              'Failed to unlink: ${formatErrorMessage(e)}',
-              isError: true,
-            );
-          }
+          if (mounted)
+            showTopSnackBar(
+                context, 'Failed to unlink: ${formatErrorMessage(e)}',
+                isError: true);
         }
       },
+    );
+  }
+
+  Widget _buildGlassContainer({required Widget child}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.getCard(context).withOpacity(0.4),
+                AppColors.getCard(context).withOpacity(0.2),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: AppColors.telegramBlue.withOpacity(0.2),
+              width: 1,
+            ),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSkeletonLoader() {
+    return Scaffold(
+      backgroundColor: AppColors.getBackground(context),
+      appBar: AppBar(
+        title: Shimmer.fromColors(
+          baseColor: Colors.grey[300]!.withOpacity(0.3),
+          highlightColor: Colors.grey[100]!.withOpacity(0.6),
+          child: Container(
+            width: 150,
+            height: 24,
+            color: Colors.white,
+          ),
+        ),
+        backgroundColor: AppColors.getBackground(context),
+        elevation: 0,
+      ),
+      body: Center(
+        child: _buildGlassContainer(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Shimmer.fromColors(
+                  baseColor: Colors.grey[300]!.withOpacity(0.3),
+                  highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                  child: Container(
+                    width: 80,
+                    height: 80,
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Shimmer.fromColors(
+                  baseColor: Colors.grey[300]!.withOpacity(0.3),
+                  highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                  child: Container(
+                    width: 200,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Shimmer.fromColors(
+                  baseColor: Colors.grey[300]!.withOpacity(0.3),
+                  highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                  child: Container(
+                    width: 300,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -194,218 +255,206 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
       context: context,
       barrierDismissible: false,
       builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
-        ),
-        backgroundColor: AppColors.getCard(context),
-        child: Padding(
-          padding: EdgeInsets.all(AppThemes.spacingXL),
-          child: Container(
-            constraints: BoxConstraints(
-              maxWidth: ScreenSize.isMobile(context) ? 400 : 500,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: EdgeInsets.all(AppThemes.spacingM),
-                      decoration: BoxDecoration(
-                        color: AppColors.telegramBlue.withOpacity(0.1),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        Icons.link_rounded,
-                        color: AppColors.telegramBlue,
-                        size: 24,
-                      ),
-                    ),
-                    SizedBox(width: AppThemes.spacingM),
-                    Text(
-                      'Link Token',
-                      style: AppTextStyles.titleMedium.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.getTextPrimary(context),
-                      ),
-                    ),
-                  ],
-                ),
-
-                SizedBox(height: AppThemes.spacingL),
-
-                Text(
-                  'Share this token with parent:',
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.getTextSecondary(context),
-                  ),
-                ),
-
-                SizedBox(height: AppThemes.spacingM),
-
-                // Token display
-                Container(
-                  padding: EdgeInsets.all(AppThemes.spacingL),
-                  decoration: BoxDecoration(
-                    color: AppColors.getSurface(context),
-                    borderRadius:
-                        BorderRadius.circular(AppThemes.borderRadiusMedium),
-                    border: Border.all(
-                      color: AppColors.telegramBlue.withOpacity(0.3),
-                    ),
-                  ),
-                  child: Column(
+        backgroundColor: Colors.transparent,
+        child: _buildGlassContainer(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Container(
+              constraints: BoxConstraints(
+                  maxWidth: ScreenSize.isMobile(context) ? 400 : 500),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     children: [
-                      SelectableText(
-                        token,
-                        style: TextStyle(
-                          fontSize: ScreenSize.responsiveFontSize(
-                            context: context,
-                            mobile: 20,
-                            tablet: 22,
-                            desktop: 24,
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              AppColors.telegramBlue.withOpacity(0.2),
+                              AppColors.telegramPurple.withOpacity(0.1),
+                            ],
                           ),
-                          fontWeight: FontWeight.w700,
-                          fontFamily: 'monospace',
-                          letterSpacing: 2,
-                          color: AppColors.telegramBlue,
+                          shape: BoxShape.circle,
                         ),
-                        textAlign: TextAlign.center,
+                        child: Icon(Icons.link_rounded,
+                            color: AppColors.telegramBlue, size: 24),
                       ),
-
-                      SizedBox(height: AppThemes.spacingM),
-
-                      // Expiry timer
-                      Consumer<ParentLinkProvider>(
-                        builder: (context, provider, child) {
-                          final remainingTime = provider.remainingTime;
-                          final isExpiringSoon = remainingTime.inMinutes < 5;
-
-                          return Container(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: AppThemes.spacingM,
-                              vertical: AppThemes.spacingXS,
+                      const SizedBox(width: 16),
+                      Text('Link Token',
+                          style: AppTextStyles.titleMedium.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.getTextPrimary(context))),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Text('Share this token with parent:',
+                      style: AppTextStyles.bodyMedium.copyWith(
+                          color: AppColors.getTextSecondary(context))),
+                  const SizedBox(height: 16),
+                  _buildGlassContainer(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        children: [
+                          SelectableText(
+                            token,
+                            style: TextStyle(
+                              fontSize: ScreenSize.responsiveFontSize(
+                                  context: context,
+                                  mobile: 20,
+                                  tablet: 22,
+                                  desktop: 24),
+                              fontWeight: FontWeight.w700,
+                              fontFamily: 'monospace',
+                              letterSpacing: 2,
+                              color: AppColors.telegramBlue,
                             ),
-                            decoration: BoxDecoration(
-                              color: isExpiringSoon
-                                  ? AppColors.telegramRed.withOpacity(0.1)
-                                  : AppColors.telegramGreen.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(
-                                  AppThemes.borderRadiusFull),
-                              border: Border.all(
-                                color: isExpiringSoon
-                                    ? AppColors.telegramRed
-                                    : AppColors.telegramGreen,
-                                width: 1,
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 16),
+                          Consumer<ParentLinkProvider>(
+                            builder: (context, provider, child) {
+                              final remainingTime = provider.remainingTime;
+                              final isExpiringSoon =
+                                  remainingTime.inMinutes < 5;
+
+                              return Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 4),
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: isExpiringSoon
+                                        ? [
+                                            AppColors.telegramRed
+                                                .withOpacity(0.2),
+                                            AppColors.telegramRed
+                                                .withOpacity(0.1),
+                                          ]
+                                        : [
+                                            AppColors.telegramGreen
+                                                .withOpacity(0.2),
+                                            AppColors.telegramGreen
+                                                .withOpacity(0.1),
+                                          ],
+                                  ),
+                                  borderRadius: BorderRadius.circular(
+                                      AppThemes.borderRadiusFull),
+                                  border: Border.all(
+                                      color: isExpiringSoon
+                                          ? AppColors.telegramRed
+                                          : AppColors.telegramGreen,
+                                      width: 1),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.timer_rounded,
+                                        size: 16,
+                                        color: isExpiringSoon
+                                            ? AppColors.telegramRed
+                                            : AppColors.telegramGreen),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                        'Expires in: ${provider.remainingTimeFormatted}',
+                                        style: AppTextStyles.labelSmall
+                                            .copyWith(
+                                                color: isExpiringSoon
+                                                    ? AppColors.telegramRed
+                                                    : AppColors.telegramGreen,
+                                                fontWeight: FontWeight.w600)),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text('Instructions:',
+                      style: AppTextStyles.titleSmall.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.getTextPrimary(context))),
+                  const SizedBox(height: 12),
+                  _buildInstruction(
+                      '1. Send this token to your parent via Telegram',
+                      Icons.send_rounded),
+                  _buildInstruction(
+                      '2. Parent uses /link command in Telegram with the token',
+                      Icons.telegram),
+                  _buildInstruction(
+                      '3. Connection will be established automatically',
+                      Icons.link_rounded),
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextButton(
+                          onPressed: () => GoRouter.of(context).pop(),
+                          style: TextButton.styleFrom(
+                            foregroundColor:
+                                AppColors.getTextSecondary(context),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(
+                                    AppThemes.borderRadiusMedium)),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          child:
+                              Text('Close', style: AppTextStyles.buttonMedium),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF2AABEE), Color(0xFF5856D6)],
+                            ),
+                            borderRadius: BorderRadius.circular(
+                                AppThemes.borderRadiusMedium),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.telegramBlue.withOpacity(0.3),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
                               ),
+                            ],
+                          ),
+                          child: ElevatedButton(
+                            onPressed: () async {
+                              await Clipboard.setData(
+                                  ClipboardData(text: token));
+                              showTopSnackBar(context, 'Copied to clipboard');
+                              GoRouter.of(context).pop();
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.transparent,
+                              foregroundColor: Colors.white,
+                              shadowColor: Colors.transparent,
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(
+                                      AppThemes.borderRadiusMedium)),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
                             ),
                             child: Row(
-                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(
-                                  Icons.timer_rounded,
-                                  size: 16,
-                                  color: isExpiringSoon
-                                      ? AppColors.telegramRed
-                                      : AppColors.telegramGreen,
-                                ),
-                                SizedBox(width: 4),
-                                Text(
-                                  'Expires in: ${provider.remainingTimeFormatted}',
-                                  style: AppTextStyles.labelSmall.copyWith(
-                                    color: isExpiringSoon
-                                        ? AppColors.telegramRed
-                                        : AppColors.telegramGreen,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
+                                Icon(Icons.copy_rounded, size: 18),
+                                const SizedBox(width: 4),
+                                Text('Copy', style: AppTextStyles.buttonMedium),
                               ],
                             ),
-                          );
-                        },
+                          ),
+                        ),
                       ),
                     ],
                   ),
-                ),
-
-                SizedBox(height: AppThemes.spacingL),
-
-                // Instructions
-                Text(
-                  'Instructions:',
-                  style: AppTextStyles.titleSmall.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.getTextPrimary(context),
-                  ),
-                ),
-
-                SizedBox(height: AppThemes.spacingM),
-
-                _buildInstruction(
-                  '1. Send this token to your parent via Telegram',
-                  Icons.send_rounded,
-                ),
-                _buildInstruction(
-                  '2. Parent uses /link command in Telegram with the token',
-                  Icons.telegram,
-                ),
-                _buildInstruction(
-                  '3. Connection will be established automatically',
-                  Icons.link_rounded,
-                ),
-
-                SizedBox(height: AppThemes.spacingXL),
-
-                // Action buttons
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextButton(
-                        onPressed: () => GoRouter.of(context).pop(),
-                        style: TextButton.styleFrom(
-                          foregroundColor: AppColors.getTextSecondary(context),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(
-                                AppThemes.borderRadiusMedium),
-                          ),
-                          padding: EdgeInsets.symmetric(
-                              vertical: AppThemes.spacingM),
-                        ),
-                        child: Text('Close', style: AppTextStyles.buttonMedium),
-                      ),
-                    ),
-                    SizedBox(width: AppThemes.spacingM),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () async {
-                          await Clipboard.setData(ClipboardData(text: token));
-                          showSimpleSnackBar(context, 'Copied to clipboard');
-                          GoRouter.of(context).pop();
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.telegramBlue,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(
-                                AppThemes.borderRadiusMedium),
-                          ),
-                          padding: EdgeInsets.symmetric(
-                              vertical: AppThemes.spacingM),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.copy_rounded, size: 18),
-                            SizedBox(width: 4),
-                            Text('Copy', style: AppTextStyles.buttonMedium),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -415,626 +464,494 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
 
   Widget _buildInstruction(String text, IconData icon) {
     return Padding(
-      padding: EdgeInsets.only(bottom: AppThemes.spacingM),
+      padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 24,
-            height: 24,
-            decoration: BoxDecoration(
-              color: AppColors.telegramBlue.withOpacity(0.1),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              icon,
-              size: 12,
-              color: AppColors.telegramBlue,
-            ),
-          ),
-          SizedBox(width: AppThemes.spacingM),
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      AppColors.telegramBlue.withOpacity(0.2),
+                      AppColors.telegramPurple.withOpacity(0.1),
+                    ],
+                  ),
+                  shape: BoxShape.circle),
+              child: Icon(icon, size: 12, color: AppColors.telegramBlue)),
+          const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              text,
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.getTextPrimary(context),
-              ),
-            ),
-          ),
+              child: Text(text,
+                  style: AppTextStyles.bodyMedium
+                      .copyWith(color: AppColors.getTextPrimary(context)))),
         ],
       ),
     );
   }
 
-  // 🎯 State 1: Linked
   Widget _buildLinkedState(ParentLinkProvider provider) {
-    return Container(
-      padding: EdgeInsets.all(ScreenSize.responsiveValue(
-        context: context,
-        mobile: AppThemes.spacingXL,
-        tablet: AppThemes.spacingXXL,
-        desktop: AppThemes.spacingXXXL,
-      )),
-      decoration: BoxDecoration(
-        color: AppColors.getCard(context),
-        borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
-        border: Border.all(
-          color: Theme.of(context).dividerColor,
-          width: 0.5,
-        ),
-      ),
-      child: Column(
-        children: [
-          // Success icon with pulse
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              AnimatedBuilder(
-                animation: _pulseAnimationController,
-                builder: (context, child) {
-                  return Container(
-                    width: 80 * (1 + _pulseAnimationController.value * 0.1),
-                    height: 80 * (1 + _pulseAnimationController.value * 0.1),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: RadialGradient(
-                        colors: [
+    return _buildGlassContainer(
+      child: Padding(
+        padding: EdgeInsets.all(ScreenSize.responsiveValue(
+            context: context, mobile: 24, tablet: 32, desktop: 40)),
+        child: Column(
+          children: [
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                AnimatedBuilder(
+                  animation: _pulseAnimationController,
+                  builder: (context, child) {
+                    return Container(
+                      width: 80 * (1 + _pulseAnimationController.value * 0.1),
+                      height: 80 * (1 + _pulseAnimationController.value * 0.1),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(colors: [
                           AppColors.telegramGreen.withOpacity(0.3),
                           AppColors.telegramGreen.withOpacity(0.1),
-                          Colors.transparent,
-                        ],
+                          Colors.transparent
+                        ]),
                       ),
+                    );
+                  },
+                ),
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF34C759), Color(0xFF2CAE4A)],
                     ),
-                  );
-                },
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                          color: AppColors.telegramGreen.withOpacity(0.3),
+                          blurRadius: 20,
+                          spreadRadius: 2),
+                    ],
+                  ),
+                  child: const Icon(Icons.check_rounded,
+                      size: 32, color: Colors.white),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text('Parent Connected',
+                style: AppTextStyles.headlineSmall.copyWith(
+                    color: AppColors.getTextPrimary(context),
+                    fontWeight: FontWeight.w600)),
+            const SizedBox(height: 12),
+            if (provider.parentTelegramUsername != null)
+              _buildGlassContainer(
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.telegram,
+                          size: 20, color: AppColors.telegramBlue),
+                      const SizedBox(width: 8),
+                      Text('@${provider.parentTelegramUsername}',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.getTextPrimary(context),
+                              fontWeight: FontWeight.w500)),
+                    ],
+                  ),
+                ),
               ),
-              Container(
-                width: 64,
-                height: 64,
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: Container(
                 decoration: BoxDecoration(
-                  color: AppColors.telegramGreen.withOpacity(0.1),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: AppColors.telegramGreen,
-                    width: 2,
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFFF3B30), Color(0xFFE6204A)],
                   ),
-                ),
-                child: Icon(
-                  Icons.check_rounded,
-                  size: 32,
-                  color: AppColors.telegramGreen,
-                ),
-              ),
-            ],
-          ),
-
-          SizedBox(height: AppThemes.spacingL),
-
-          Text(
-            'Parent Connected',
-            style: AppTextStyles.headlineSmall.copyWith(
-              color: AppColors.getTextPrimary(context),
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-
-          SizedBox(height: AppThemes.spacingM),
-
-          // Parent Telegram info
-          if (provider.parentTelegramUsername != null)
-            Container(
-              padding: EdgeInsets.symmetric(
-                horizontal: AppThemes.spacingL,
-                vertical: AppThemes.spacingM,
-              ),
-              decoration: BoxDecoration(
-                color: AppColors.getSurface(context),
-                borderRadius:
-                    BorderRadius.circular(AppThemes.borderRadiusMedium),
-                border: Border.all(
-                  color: Theme.of(context).dividerColor,
-                  width: 0.5,
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.telegram,
-                    size: 20,
-                    color: AppColors.telegramBlue,
-                  ),
-                  SizedBox(width: AppThemes.spacingS),
-                  Text(
-                    '@${provider.parentTelegramUsername}',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: AppColors.getTextPrimary(context),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-          SizedBox(height: AppThemes.spacingXL),
-
-          // Disconnect button
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _unlinkParent,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.telegramRed,
-                foregroundColor: Colors.white,
-                padding: EdgeInsets.symmetric(vertical: AppThemes.spacingL),
-                shape: RoundedRectangleBorder(
                   borderRadius:
                       BorderRadius.circular(AppThemes.borderRadiusMedium),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.telegramRed.withOpacity(0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: ElevatedButton(
+                  onPressed: _unlinkParent,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.transparent,
+                    foregroundColor: Colors.white,
+                    shadowColor: Colors.transparent,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(
+                            AppThemes.borderRadiusMedium)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.link_off_rounded, size: 20),
+                      const SizedBox(width: 8),
+                      Text('Disconnect Parent',
+                          style: AppTextStyles.buttonMedium),
+                    ],
+                  ),
                 ),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.link_off_rounded, size: 20),
-                  SizedBox(width: AppThemes.spacingS),
-                  Text('Disconnect Parent', style: AppTextStyles.buttonMedium),
-                ],
-              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    )
-        .animate()
-        .fadeIn(
-          duration: AppThemes.animationDurationMedium,
-        )
-        .slideY(
-          begin: 0.1,
-          end: 0,
-          duration: AppThemes.animationDurationMedium,
-        );
+    ).animate().fadeIn(duration: AppThemes.animationDurationMedium).slideY(
+        begin: 0.1, end: 0, duration: AppThemes.animationDurationMedium);
   }
 
-  // 🎯 State 2: Token Active
   Widget _buildTokenState(ParentLinkProvider provider) {
     final remainingTime = provider.remainingTime;
     final isExpiringSoon = remainingTime.inMinutes < 5;
     final statusColor =
         isExpiringSoon ? AppColors.telegramRed : AppColors.telegramBlue;
 
-    return Container(
-      padding: EdgeInsets.all(ScreenSize.responsiveValue(
-        context: context,
-        mobile: AppThemes.spacingXL,
-        tablet: AppThemes.spacingXXL,
-        desktop: AppThemes.spacingXXXL,
-      )),
-      decoration: BoxDecoration(
-        color: AppColors.getCard(context),
-        borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
-        border: Border.all(
-          color: Theme.of(context).dividerColor,
-          width: 0.5,
-        ),
-      ),
-      child: Column(
-        children: [
-          // Timer icon with pulse
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              AnimatedBuilder(
-                animation: _pulseAnimationController,
-                builder: (context, child) {
-                  return Container(
-                    width: 80 * (1 + _pulseAnimationController.value * 0.1),
-                    height: 80 * (1 + _pulseAnimationController.value * 0.1),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: RadialGradient(
-                        colors: [
+    return _buildGlassContainer(
+      child: Padding(
+        padding: EdgeInsets.all(ScreenSize.responsiveValue(
+            context: context, mobile: 24, tablet: 32, desktop: 40)),
+        child: Column(
+          children: [
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                AnimatedBuilder(
+                  animation: _pulseAnimationController,
+                  builder: (context, child) {
+                    return Container(
+                      width: 80 * (1 + _pulseAnimationController.value * 0.1),
+                      height: 80 * (1 + _pulseAnimationController.value * 0.1),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(colors: [
                           statusColor.withOpacity(0.3),
                           statusColor.withOpacity(0.1),
-                          Colors.transparent,
-                        ],
+                          Colors.transparent
+                        ]),
                       ),
+                    );
+                  },
+                ),
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: isExpiringSoon
+                          ? [AppColors.telegramRed, AppColors.telegramOrange]
+                          : [AppColors.telegramBlue, AppColors.telegramPurple],
                     ),
-                  );
-                },
-              ),
-              Container(
-                width: 64,
-                height: 64,
-                decoration: BoxDecoration(
-                  color: statusColor.withOpacity(0.1),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: statusColor,
-                    width: 2,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                          color: statusColor.withOpacity(0.3),
+                          blurRadius: 20,
+                          spreadRadius: 2),
+                    ],
                   ),
-                ),
-                child: Icon(
-                  Icons.timer_rounded,
-                  size: 32,
-                  color: statusColor,
-                ),
-              ),
-            ],
-          ),
-
-          SizedBox(height: AppThemes.spacingL),
-
-          Text(
-            'Token Active',
-            style: AppTextStyles.headlineSmall.copyWith(
-              color: AppColors.getTextPrimary(context),
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-
-          SizedBox(height: AppThemes.spacingM),
-
-          // Timer display
-          Container(
-            padding: EdgeInsets.symmetric(
-              horizontal: AppThemes.spacingL,
-              vertical: AppThemes.spacingM,
-            ),
-            decoration: BoxDecoration(
-              color: statusColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
-              border: Border.all(
-                color: statusColor,
-                width: 1,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.timer_rounded,
-                  size: 20,
-                  color: statusColor,
-                ),
-                SizedBox(width: AppThemes.spacingS),
-                Text(
-                  provider.remainingTimeFormatted,
-                  style: AppTextStyles.titleMedium.copyWith(
-                    color: statusColor,
-                    fontWeight: FontWeight.w700,
-                  ),
+                  child:
+                      Icon(Icons.timer_rounded, size: 32, color: Colors.white),
                 ),
               ],
             ),
-          ),
-
-          SizedBox(height: AppThemes.spacingXL),
-
-          // Show token button
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () {
-                if (provider.parentToken != null &&
-                    provider.tokenExpiresAt != null) {
-                  _showTokenDialog(
-                    provider.parentToken!,
-                    provider.tokenExpiresAt!,
-                  );
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.telegramBlue,
-                foregroundColor: Colors.white,
-                padding: EdgeInsets.symmetric(vertical: AppThemes.spacingL),
-                shape: RoundedRectangleBorder(
+            const SizedBox(height: 16),
+            Text('Token Active',
+                style: AppTextStyles.headlineSmall.copyWith(
+                    color: AppColors.getTextPrimary(context),
+                    fontWeight: FontWeight.w600)),
+            const SizedBox(height: 12),
+            _buildGlassContainer(
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.timer_rounded, size: 20, color: statusColor),
+                    const SizedBox(width: 8),
+                    Text(provider.remainingTimeFormatted,
+                        style: AppTextStyles.titleMedium.copyWith(
+                            color: statusColor, fontWeight: FontWeight.w700)),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF2AABEE), Color(0xFF5856D6)],
+                  ),
                   borderRadius:
                       BorderRadius.circular(AppThemes.borderRadiusMedium),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.telegramBlue.withOpacity(0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
+                child: ElevatedButton(
+                  onPressed: () {
+                    if (provider.parentToken != null &&
+                        provider.tokenExpiresAt != null) {
+                      _showTokenDialog(
+                          provider.parentToken!, provider.tokenExpiresAt!);
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.transparent,
+                    foregroundColor: Colors.white,
+                    shadowColor: Colors.transparent,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(
+                            AppThemes.borderRadiusMedium)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.visibility_rounded, size: 20),
+                      const SizedBox(width: 8),
+                      Text('Show Token', style: AppTextStyles.buttonMedium),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: _generateToken,
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.telegramBlue,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius:
+                        BorderRadius.circular(AppThemes.borderRadiusMedium)),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.visibility_rounded, size: 20),
-                  SizedBox(width: AppThemes.spacingS),
-                  Text('Show Token', style: AppTextStyles.buttonMedium),
+                  Icon(Icons.refresh_rounded, size: 18),
+                  const SizedBox(width: 4),
+                  Text('Generate New Token', style: AppTextStyles.buttonMedium),
                 ],
               ),
             ),
-          ),
-
-          SizedBox(height: AppThemes.spacingM),
-
-          // Generate new token button
-          TextButton(
-            onPressed: _generateToken,
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.telegramBlue,
-              padding: EdgeInsets.symmetric(
-                horizontal: AppThemes.spacingXL,
-                vertical: AppThemes.spacingM,
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius:
-                    BorderRadius.circular(AppThemes.borderRadiusMedium),
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.refresh_rounded, size: 18),
-                SizedBox(width: AppThemes.spacingXS),
-                Text('Generate New Token', style: AppTextStyles.buttonMedium),
-              ],
-            ),
-          ),
-        ],
-      ),
-    )
-        .animate()
-        .fadeIn(
-          duration: AppThemes.animationDurationMedium,
-        )
-        .slideY(
-          begin: 0.1,
-          end: 0,
-          duration: AppThemes.animationDurationMedium,
-        );
-  }
-
-  // 🎯 State 3: Not Linked
-  Widget _buildNotLinkedState() {
-    return Container(
-      padding: EdgeInsets.all(ScreenSize.responsiveValue(
-        context: context,
-        mobile: AppThemes.spacingXL,
-        tablet: AppThemes.spacingXXL,
-        desktop: AppThemes.spacingXXXL,
-      )),
-      decoration: BoxDecoration(
-        color: AppColors.getCard(context),
-        borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
-        border: Border.all(
-          color: Theme.of(context).dividerColor,
-          width: 0.5,
+          ],
         ),
       ),
-      child: Column(
-        children: [
-          // Add person icon
-          Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              color: AppColors.getSurface(context),
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: AppColors.getTextSecondary(context).withOpacity(0.3),
-                width: 2,
-              ),
-            ),
-            child: Icon(
-              Icons.person_add_alt_1_rounded,
-              size: 32,
-              color: AppColors.getTextSecondary(context),
-            ),
-          ),
-
-          SizedBox(height: AppThemes.spacingL),
-
-          Text(
-            'Connect Parent',
-            style: AppTextStyles.headlineSmall.copyWith(
-              color: AppColors.getTextPrimary(context),
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-
-          SizedBox(height: AppThemes.spacingM),
-
-          Text(
-            'Generate a token to link your parent\'s Telegram account and share your progress.',
-            textAlign: TextAlign.center,
-            style: AppTextStyles.bodyLarge.copyWith(
-              color: AppColors.getTextSecondary(context),
-              height: 1.5,
-            ),
-          ),
-
-          SizedBox(height: AppThemes.spacingXL),
-
-          // Generate token button
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _generateToken,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.telegramBlue,
-                foregroundColor: Colors.white,
-                padding: EdgeInsets.symmetric(vertical: AppThemes.spacingL),
-                shape: RoundedRectangleBorder(
-                  borderRadius:
-                      BorderRadius.circular(AppThemes.borderRadiusMedium),
-                ),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.add_link_rounded, size: 20),
-                  SizedBox(width: AppThemes.spacingS),
-                  Text('Generate Token', style: AppTextStyles.buttonMedium),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    )
-        .animate()
-        .fadeIn(
-          duration: AppThemes.animationDurationMedium,
-        )
-        .slideY(
-          begin: 0.1,
-          end: 0,
-          duration: AppThemes.animationDurationMedium,
-        );
+    ).animate().fadeIn(duration: AppThemes.animationDurationMedium).slideY(
+        begin: 0.1, end: 0, duration: AppThemes.animationDurationMedium);
   }
 
-  // ℹ️ Info section
+  Widget _buildNotLinkedState() {
+    return _buildGlassContainer(
+      child: Padding(
+        padding: EdgeInsets.all(ScreenSize.responsiveValue(
+            context: context, mobile: 24, tablet: 32, desktop: 40)),
+        child: Column(
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    AppColors.telegramBlue.withOpacity(0.2),
+                    AppColors.telegramPurple.withOpacity(0.1),
+                  ],
+                ),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.person_add_alt_1_rounded,
+                  size: 32, color: AppColors.telegramBlue),
+            ),
+            const SizedBox(height: 16),
+            Text('Connect Parent',
+                style: AppTextStyles.headlineSmall.copyWith(
+                    color: AppColors.getTextPrimary(context),
+                    fontWeight: FontWeight.w600)),
+            const SizedBox(height: 12),
+            Text(
+              'Generate a token to link your parent\'s Telegram account and share your progress.',
+              textAlign: TextAlign.center,
+              style: AppTextStyles.bodyLarge.copyWith(
+                  color: AppColors.getTextSecondary(context), height: 1.5),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF2AABEE), Color(0xFF5856D6)],
+                  ),
+                  borderRadius:
+                      BorderRadius.circular(AppThemes.borderRadiusMedium),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.telegramBlue.withOpacity(0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: ElevatedButton(
+                  onPressed: _generateToken,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.transparent,
+                    foregroundColor: Colors.white,
+                    shadowColor: Colors.transparent,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(
+                            AppThemes.borderRadiusMedium)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.add_link_rounded, size: 20),
+                      const SizedBox(width: 8),
+                      Text('Generate Token', style: AppTextStyles.buttonMedium),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ).animate().fadeIn(duration: AppThemes.animationDurationMedium).slideY(
+        begin: 0.1, end: 0, duration: AppThemes.animationDurationMedium);
+  }
+
   Widget _buildInfoSection() {
     final settingsProvider = Provider.of<SettingsProvider>(context);
     final telegramBotUrl = settingsProvider.getTelegramBotUrl();
 
-    return Container(
-      padding: EdgeInsets.all(ScreenSize.responsiveValue(
-        context: context,
-        mobile: AppThemes.spacingL,
-        tablet: AppThemes.spacingXL,
-        desktop: AppThemes.spacingXXL,
-      )),
-      decoration: BoxDecoration(
-        color: AppColors.getCard(context),
-        borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
-        border: Border.all(
-          color: Theme.of(context).dividerColor,
-          width: 0.5,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: AppColors.telegramBlue.withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.info_rounded,
-                  color: AppColors.telegramBlue,
-                  size: 20,
-                ),
-              ),
-              SizedBox(width: AppThemes.spacingM),
-              Text(
-                'What parents can see',
-                style: AppTextStyles.titleMedium.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.getTextPrimary(context),
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: AppThemes.spacingL),
-          _buildInfoItem(
-            icon: Icons.trending_up_rounded,
-            text: 'Study progress and completion',
-          ),
-          _buildInfoItem(
-            icon: Icons.quiz_rounded,
-            text: 'Exam scores and results',
-          ),
-          _buildInfoItem(
-            icon: Icons.subscriptions_rounded,
-            text: 'Subscription status',
-          ),
-          _buildInfoItem(
-            icon: Icons.calendar_month_rounded,
-            text: 'Weekly progress summary',
-          ),
-          SizedBox(height: AppThemes.spacingL),
-
-          // 🔥 FIX: Show Telegram bot link from settings
-          Container(
-            padding: EdgeInsets.all(AppThemes.spacingL),
-            decoration: BoxDecoration(
-              color: AppColors.telegramBlue.withOpacity(0.05),
-              borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
-              border: Border.all(
-                color: AppColors.telegramBlue.withOpacity(0.2),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return _buildGlassContainer(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                Row(
+                Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            AppColors.telegramBlue.withOpacity(0.2),
+                            AppColors.telegramPurple.withOpacity(0.1),
+                          ],
+                        ),
+                        shape: BoxShape.circle),
+                    child: Icon(Icons.info_rounded,
+                        color: AppColors.telegramBlue, size: 20)),
+                const SizedBox(width: 12),
+                Text('What parents can see',
+                    style: AppTextStyles.titleMedium.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.getTextPrimary(context))),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _buildInfoItem(
+                icon: Icons.trending_up_rounded,
+                text: 'Study progress and completion'),
+            _buildInfoItem(
+                icon: Icons.quiz_rounded, text: 'Exam scores and results'),
+            _buildInfoItem(
+                icon: Icons.subscriptions_rounded, text: 'Subscription status'),
+            _buildInfoItem(
+                icon: Icons.calendar_month_rounded,
+                text: 'Weekly progress summary'),
+            const SizedBox(height: 16),
+            _buildGlassContainer(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      Icons.telegram,
-                      size: 20,
-                      color: AppColors.telegramBlue,
+                    Row(
+                      children: [
+                        Icon(Icons.telegram,
+                            size: 20, color: AppColors.telegramBlue),
+                        const SizedBox(width: 12),
+                        Expanded(
+                            child: Text('Parent Telegram Bot',
+                                style: AppTextStyles.titleSmall.copyWith(
+                                    color: AppColors.getTextPrimary(context),
+                                    fontWeight: FontWeight.w600))),
+                      ],
                     ),
-                    SizedBox(width: AppThemes.spacingM),
-                    Expanded(
-                      child: Text(
-                        'Parent Telegram Bot',
-                        style: AppTextStyles.titleSmall.copyWith(
-                          color: AppColors.getTextPrimary(context),
-                          fontWeight: FontWeight.w600,
+                    const SizedBox(height: 8),
+                    GestureDetector(
+                      onTap: () => _openTelegramBot(telegramBotUrl),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              AppColors.telegramBlue.withOpacity(0.2),
+                              AppColors.telegramPurple.withOpacity(0.1),
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(
+                              AppThemes.borderRadiusMedium),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                telegramBotUrl!,
+                                style: AppTextStyles.bodySmall.copyWith(
+                                    color: AppColors.telegramBlue,
+                                    decoration: TextDecoration.underline),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            Icon(Icons.open_in_new,
+                                size: 16, color: AppColors.telegramBlue),
+                          ],
                         ),
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Parents receive updates via Telegram. They cannot modify your account.',
+                      style: AppTextStyles.bodySmall
+                          .copyWith(color: AppColors.getTextSecondary(context)),
+                    ),
                   ],
                 ),
-                SizedBox(height: AppThemes.spacingS),
-                GestureDetector(
-                  onTap: () => _openTelegramBot(telegramBotUrl),
-                  child: Container(
-                    padding: EdgeInsets.all(AppThemes.spacingM),
-                    decoration: BoxDecoration(
-                      color: AppColors.telegramBlue.withOpacity(0.1),
-                      borderRadius:
-                          BorderRadius.circular(AppThemes.borderRadiusMedium),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            telegramBotUrl!,
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.telegramBlue,
-                              decoration: TextDecoration.underline,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        Icon(
-                          Icons.open_in_new,
-                          size: 16,
-                          color: AppColors.telegramBlue,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                SizedBox(height: AppThemes.spacingS),
-                Text(
-                  'Parents receive updates via Telegram. They cannot modify your account.',
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.getTextSecondary(context),
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     )
         .animate()
-        .fadeIn(
-          duration: AppThemes.animationDurationMedium,
-          delay: 100.ms,
-        )
+        .fadeIn(duration: AppThemes.animationDurationMedium, delay: 100.ms)
         .slideY(
-          begin: 0.1,
-          end: 0,
-          duration: AppThemes.animationDurationMedium,
-        );
+            begin: 0.1, end: 0, duration: AppThemes.animationDurationMedium);
   }
 
   Future<void> _openTelegramBot(String url) async {
@@ -1042,98 +959,93 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
-      showSimpleSnackBar(context, 'Cannot open Telegram', isError: true);
+      showTopSnackBar(context, 'Cannot open Telegram', isError: true);
     }
   }
 
   Widget _buildInfoItem({required IconData icon, required String text}) {
     return Padding(
-      padding: EdgeInsets.only(bottom: AppThemes.spacingM),
+      padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         children: [
           Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: AppColors.telegramGreen.withOpacity(0.1),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              icon,
-              size: 16,
-              color: AppColors.telegramGreen,
-            ),
-          ),
-          SizedBox(width: AppThemes.spacingM),
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      AppColors.telegramGreen.withOpacity(0.2),
+                      AppColors.telegramGreen.withOpacity(0.1),
+                    ],
+                  ),
+                  shape: BoxShape.circle),
+              child: Icon(icon, size: 16, color: AppColors.telegramGreen)),
+          const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              text,
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.getTextPrimary(context),
-              ),
-            ),
-          ),
+              child: Text(text,
+                  style: AppTextStyles.bodyMedium
+                      .copyWith(color: AppColors.getTextPrimary(context)))),
         ],
       ),
     );
   }
 
-  // 👤 User info card
   Widget _buildUserInfo(AuthProvider authProvider) {
-    return Container(
-      padding: EdgeInsets.all(AppThemes.spacingL),
-      decoration: BoxDecoration(
-        color: AppColors.getCard(context),
-        borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
-        border: Border.all(
-          color: Theme.of(context).dividerColor,
-          width: 0.5,
-        ),
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            backgroundColor: AppColors.telegramBlue,
-            radius: 24,
-            child: Text(
-              authProvider.currentUser!.username.substring(0, 1).toUpperCase(),
-              style: AppTextStyles.titleMedium.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
+    return _buildGlassContainer(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF2AABEE), Color(0xFF5856D6)],
+                ),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.telegramBlue.withOpacity(0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Center(
+                child: Text(
+                  authProvider.currentUser!.username
+                      .substring(0, 1)
+                      .toUpperCase(),
+                  style: AppTextStyles.titleMedium.copyWith(
+                      color: Colors.white, fontWeight: FontWeight.w600),
+                ),
               ),
             ),
-          ),
-          SizedBox(width: AppThemes.spacingL),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  authProvider.currentUser!.username,
-                  style: AppTextStyles.titleSmall.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.getTextPrimary(context),
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  'Student ID: ${authProvider.currentUser!.id}',
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.getTextSecondary(context),
-                  ),
-                ),
-              ],
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(authProvider.currentUser!.username,
+                      style: AppTextStyles.titleSmall.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.getTextPrimary(context))),
+                  const SizedBox(height: 4),
+                  Text('Student ID: ${authProvider.currentUser!.id}',
+                      style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.getTextSecondary(context))),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ).animate().fadeIn(
-          duration: AppThemes.animationDurationMedium,
-          delay: 200.ms,
-        );
+    )
+        .animate()
+        .fadeIn(duration: AppThemes.animationDurationMedium, delay: 200.ms);
   }
 
-  // 📱 Mobile layout
   Widget _buildMobileLayout(BuildContext context) {
     final parentLinkProvider = Provider.of<ParentLinkProvider>(context);
     final authProvider = Provider.of<AuthProvider>(context);
@@ -1141,12 +1053,9 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: AppBar(
-        title: Text(
-          'Parent Link',
-          style: AppTextStyles.appBarTitle.copyWith(
-            color: AppColors.getTextPrimary(context),
-          ),
-        ),
+        title: Text('Parent Link',
+            style: AppTextStyles.appBarTitle
+                .copyWith(color: AppColors.getTextPrimary(context))),
         backgroundColor: AppColors.getBackground(context),
         elevation: 0,
         surfaceTintColor: Colors.transparent,
@@ -1157,14 +1066,9 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                     width: 20,
                     height: 20,
                     child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: AppColors.telegramBlue,
-                    ),
-                  )
-                : Icon(
-                    Icons.refresh_rounded,
-                    color: AppColors.getTextSecondary(context),
-                  ),
+                        strokeWidth: 2, color: AppColors.telegramBlue))
+                : Icon(Icons.refresh_rounded,
+                    color: AppColors.getTextSecondary(context)),
             onPressed: _isRefreshing ? null : () => _refreshData(),
             tooltip: 'Refresh',
           ),
@@ -1177,45 +1081,28 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
         header: WaterDropHeader(
           waterDropColor: AppColors.telegramBlue,
           refresh: SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation(AppColors.telegramBlue),
-            ),
-          ),
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation(AppColors.telegramBlue))),
         ),
         child: SingleChildScrollView(
-          padding: EdgeInsets.all(
-            ScreenSize.responsiveValue(
-              context: context,
-              mobile: AppThemes.spacingL,
-              tablet: AppThemes.spacingXL,
-              desktop: AppThemes.spacingXXL,
-            ),
-          ),
+          padding: EdgeInsets.all(ScreenSize.responsiveValue(
+              context: context, mobile: 16, tablet: 20, desktop: 24)),
           child: Center(
             child: Container(
               constraints: BoxConstraints(
-                maxWidth: ScreenSize.responsiveValue(
-                  context: context,
-                  mobile: double.infinity,
-                  tablet: 600,
-                  desktop: 800,
-                ),
-              ),
+                  maxWidth: ScreenSize.responsiveValue(
+                      context: context,
+                      mobile: double.infinity,
+                      tablet: 600,
+                      desktop: 800)),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   if (!_isInitialized)
-                    Container(
-                      padding: EdgeInsets.all(AppThemes.spacingXXL),
-                      child: LoadingIndicator(
-                        message: 'Loading...',
-                        type: LoadingType.circular,
-                        color: AppColors.telegramBlue,
-                      ),
-                    )
+                    _buildSkeletonLoader()
                   else if (parentLinkProvider.isLinked)
                     _buildLinkedState(parentLinkProvider)
                   else if (parentLinkProvider.parentToken != null &&
@@ -1223,13 +1110,13 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                     _buildTokenState(parentLinkProvider)
                   else
                     _buildNotLinkedState(),
-                  SizedBox(height: AppThemes.spacingXL),
+                  const SizedBox(height: 24),
                   _buildInfoSection(),
                   if (authProvider.currentUser != null) ...[
-                    SizedBox(height: AppThemes.spacingL),
+                    const SizedBox(height: 16),
                     _buildUserInfo(authProvider),
                   ],
-                  SizedBox(height: AppThemes.spacingXXL),
+                  const SizedBox(height: 32),
                 ],
               ),
             ),
@@ -1239,7 +1126,6 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
     );
   }
 
-  // 💻 Desktop/Tablet layout
   Widget _buildDesktopLayout(BuildContext context) {
     final parentLinkProvider = Provider.of<ParentLinkProvider>(context);
     final authProvider = Provider.of<AuthProvider>(context);
@@ -1247,12 +1133,9 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: AppBar(
-        title: Text(
-          'Parent Link',
-          style: AppTextStyles.appBarTitle.copyWith(
-            color: AppColors.getTextPrimary(context),
-          ),
-        ),
+        title: Text('Parent Link',
+            style: AppTextStyles.appBarTitle
+                .copyWith(color: AppColors.getTextPrimary(context))),
         backgroundColor: AppColors.getBackground(context),
         elevation: 0,
         surfaceTintColor: Colors.transparent,
@@ -1263,14 +1146,9 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                     width: 24,
                     height: 24,
                     child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: AppColors.telegramBlue,
-                    ),
-                  )
-                : Icon(
-                    Icons.refresh_rounded,
-                    color: AppColors.getTextSecondary(context),
-                  ),
+                        strokeWidth: 2, color: AppColors.telegramBlue))
+                : Icon(Icons.refresh_rounded,
+                    color: AppColors.getTextSecondary(context)),
             onPressed: _isRefreshing ? null : () => _refreshData(),
             tooltip: 'Refresh',
           ),
@@ -1283,38 +1161,26 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
         header: WaterDropHeader(
           waterDropColor: AppColors.telegramBlue,
           refresh: SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation(AppColors.telegramBlue),
-            ),
-          ),
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation(AppColors.telegramBlue))),
         ),
         child: SingleChildScrollView(
-          padding: EdgeInsets.all(AppThemes.spacingXXL),
+          padding: const EdgeInsets.all(32),
           child: Center(
             child: Container(
-              constraints: BoxConstraints(
-                maxWidth: 1000,
-              ),
+              constraints: const BoxConstraints(maxWidth: 1000),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Left column - Main content
                   Expanded(
                     flex: 2,
                     child: Column(
                       children: [
                         if (!_isInitialized)
-                          Container(
-                            padding: EdgeInsets.all(AppThemes.spacingXXL),
-                            child: LoadingIndicator(
-                              message: 'Loading...',
-                              type: LoadingType.circular,
-                              color: AppColors.telegramBlue,
-                            ),
-                          )
+                          _buildSkeletonLoader()
                         else if (parentLinkProvider.isLinked)
                           _buildLinkedState(parentLinkProvider)
                         else if (parentLinkProvider.parentToken != null &&
@@ -1323,20 +1189,14 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                         else
                           _buildNotLinkedState(),
                         if (authProvider.currentUser != null) ...[
-                          SizedBox(height: AppThemes.spacingXL),
+                          const SizedBox(height: 24),
                           _buildUserInfo(authProvider),
                         ],
                       ],
                     ),
                   ),
-
-                  SizedBox(width: AppThemes.spacingXXL),
-
-                  // Right column - Info
-                  Expanded(
-                    flex: 1,
-                    child: _buildInfoSection(),
-                  ),
+                  const SizedBox(width: 32),
+                  Expanded(flex: 1, child: _buildInfoSection()),
                 ],
               ),
             ),
@@ -1348,6 +1208,8 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
 
   @override
   Widget build(BuildContext context) {
+    if (!_isInitialized) return _buildSkeletonLoader();
+
     return ResponsiveLayout(
       mobile: _buildMobileLayout(context),
       tablet: _buildDesktopLayout(context),

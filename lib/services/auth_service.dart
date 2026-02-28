@@ -7,166 +7,151 @@ class AuthService {
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
   late SharedPreferences _prefs;
   bool _initialized = false;
+  String? _currentUserId;
 
   Future<void> init() async {
     if (_initialized) return;
 
-    debugLog('AuthService', '🔄 Initializing auth service');
     _prefs = await SharedPreferences.getInstance();
+    _currentUserId = _prefs.getString('current_user_id');
     _initialized = true;
-    debugLog('AuthService', '✅ Auth service initialized');
   }
 
   Future<void> ensureInitialized() async {
     if (!_initialized) await init();
   }
 
-  // 🔑 Authentication State
+  Future<void> _getCurrentUserId() async {
+    _currentUserId = _prefs.getString('current_user_id');
+  }
+
+  String _getUserSpecificKey(String key) {
+    if (_currentUserId == null) return key;
+    return '${key}_$_currentUserId';
+  }
+
   Future<bool> isAuthenticated() async {
     await ensureInitialized();
-
     final token = await _secureStorage.read(key: AppConstants.tokenKey);
-    final userData = _prefs.getString('offline_${AppConstants.userDataKey}');
-
-    debugLog('AuthService',
-        'isAuthenticated check: token=${token != null}, userData=${userData != null}');
-
+    final userData =
+        _prefs.getString(_getUserSpecificKey(AppConstants.userDataKey));
     return token != null && userData != null;
   }
 
   Future<String?> getToken() async {
     await ensureInitialized();
-    final token = await _secureStorage.read(key: AppConstants.tokenKey);
-    debugLog('AuthService', 'getToken: ${token != null}');
-    return token;
+    return await _secureStorage.read(key: AppConstants.tokenKey);
   }
 
-  // 💾 Auth Data Management
   Future<void> saveAuthData(
-    String token,
-    String refreshToken,
-    String userData,
-  ) async {
+      String token, String refreshToken, String userData) async {
     await ensureInitialized();
-
-    debugLog('AuthService', '💾 Saving auth data');
-
     await _secureStorage.write(key: AppConstants.tokenKey, value: token);
     await _secureStorage.write(
         key: AppConstants.refreshTokenKey, value: refreshToken);
-
-    // Save user data with offline-first approach
-    await _prefs.setString('offline_${AppConstants.userDataKey}', userData);
-
-    // Mark as synced
+    await _prefs.setString(
+        _getUserSpecificKey(AppConstants.userDataKey), userData);
     await _prefs.setBool('auth_synced', true);
     await _prefs.setString('auth_last_sync', DateTime.now().toIso8601String());
-
-    debugLog('AuthService', '✅ Auth data saved');
   }
 
   Future<void> clearAuthData() async {
     await ensureInitialized();
-    debugLog('AuthService', '🧹 Clearing auth data');
-
     await _secureStorage.delete(key: AppConstants.tokenKey);
     await _secureStorage.delete(key: AppConstants.refreshTokenKey);
-
-    // Clear user data
-    await _prefs.remove('offline_${AppConstants.userDataKey}');
+    await _prefs.remove(_getUserSpecificKey(AppConstants.userDataKey));
     await _prefs.remove('auth_synced');
     await _prefs.remove('auth_last_sync');
-
-    debugLog('AuthService', '✅ Auth data cleared');
   }
 
-  // 📝 Registration State
   Future<bool> hasCompletedRegistration() async {
     await ensureInitialized();
-    return _prefs.getBool('registration_complete') ?? false;
+    return _prefs.getBool(_getUserSpecificKey('registration_complete')) ??
+        false;
   }
 
   Future<void> markRegistrationComplete() async {
     await ensureInitialized();
-    await _prefs.setBool('registration_complete', true);
-    debugLog('AuthService', '✅ Registration marked as complete');
+    await _prefs.setBool(_getUserSpecificKey('registration_complete'), true);
   }
 
   Future<void> clearRegistrationComplete() async {
     await ensureInitialized();
-    await _prefs.remove('registration_complete');
-    debugLog('AuthService', '🧹 Registration complete cleared');
+    await _prefs.remove(_getUserSpecificKey('registration_complete'));
   }
 
-  // 🏫 School Selection
   Future<bool> hasSelectedSchool() async {
     await ensureInitialized();
-    return _prefs.getInt('selected_school_id') != null;
+    return _prefs.getInt(_getUserSpecificKey('selected_school_id')) != null;
   }
 
   Future<void> saveSelectedSchool(int schoolId) async {
     await ensureInitialized();
-    await _prefs.setInt('selected_school_id', schoolId);
-    debugLog('AuthService', '🏫 School saved: $schoolId');
+    await _prefs.setInt(_getUserSpecificKey('selected_school_id'), schoolId);
   }
 
   Future<int?> getSelectedSchool() async {
     await ensureInitialized();
-    return _prefs.getInt('selected_school_id');
+    return _prefs.getInt(_getUserSpecificKey('selected_school_id'));
   }
 
   Future<void> clearSelectedSchool() async {
     await ensureInitialized();
-    await _prefs.remove('selected_school_id');
-    debugLog('AuthService', '🧹 Selected school cleared');
+    await _prefs.remove(_getUserSpecificKey('selected_school_id'));
   }
 
-  // 📱 FCM Token Management
   Future<void> saveFcmToken(String fcmToken) async {
     await ensureInitialized();
-    await _prefs.setString('fcm_token', fcmToken);
-    debugLog('AuthService', '📱 FCM token saved');
+    await _prefs.setString(_getUserSpecificKey('fcm_token'), fcmToken);
   }
 
   Future<String?> getFcmToken() async {
     await ensureInitialized();
-    return _prefs.getString('fcm_token');
+    return _prefs.getString(_getUserSpecificKey('fcm_token'));
   }
 
-  // 🔔 Notification Preferences
   Future<void> saveNotificationPreferences(bool enabled) async {
     await ensureInitialized();
-    await _prefs.setBool('notifications_enabled', enabled);
-    debugLog('AuthService', '🔔 Notification preferences saved: $enabled');
+    await _prefs.setBool(_getUserSpecificKey('notifications_enabled'), enabled);
   }
 
   Future<bool> getNotificationPreferences() async {
     await ensureInitialized();
-    return _prefs.getBool('notifications_enabled') ?? true;
+    return _prefs.getBool(_getUserSpecificKey('notifications_enabled')) ?? true;
   }
 
-  // ⏰ Session Management
   Future<void> saveSessionTimestamp() async {
     await ensureInitialized();
-    await _prefs.setString(
-        'session_timestamp', DateTime.now().toIso8601String());
-    debugLog('AuthService', '⏰ Session timestamp saved');
+    await _prefs.setString(_getUserSpecificKey('session_timestamp'),
+        DateTime.now().toIso8601String());
   }
 
   Future<DateTime?> getSessionTimestamp() async {
     await ensureInitialized();
-    final timestampStr = _prefs.getString('session_timestamp');
+    final timestampStr =
+        _prefs.getString(_getUserSpecificKey('session_timestamp'));
     if (timestampStr != null) {
       try {
         return DateTime.parse(timestampStr);
-      } catch (e) {
-        debugLog('AuthService', 'Error parsing session timestamp: $e');
-      }
+      } catch (e) {}
     }
     return null;
   }
 
-  // 🔄 Sync Status
+  Future<bool> isSessionValid(Duration sessionDuration) async {
+    await ensureInitialized();
+    final sessionStartStr =
+        _prefs.getString(_getUserSpecificKey('session_timestamp'));
+    if (sessionStartStr == null) return false;
+    try {
+      final sessionStart = DateTime.parse(sessionStartStr);
+      final sessionAge = DateTime.now().difference(sessionStart);
+      return sessionAge <= sessionDuration;
+    } catch (e) {
+      return false;
+    }
+  }
+
   Future<bool> isAuthSynced() async {
     await ensureInitialized();
     return _prefs.getBool('auth_synced') ?? false;
@@ -178,21 +163,17 @@ class AuthService {
     if (syncTimeStr != null) {
       try {
         return DateTime.parse(syncTimeStr);
-      } catch (e) {
-        debugLog('AuthService', 'Error parsing last sync time: $e');
-      }
+      } catch (e) {}
     }
     return null;
   }
 
-  // 📊 Stats
   Future<Map<String, dynamic>> getAuthStats() async {
     await ensureInitialized();
-
     return {
       'has_token': (await getToken()) != null,
       'has_user_data':
-          _prefs.containsKey('offline_${AppConstants.userDataKey}'),
+          _prefs.containsKey(_getUserSpecificKey(AppConstants.userDataKey)),
       'registration_complete': await hasCompletedRegistration(),
       'has_selected_school': await hasSelectedSchool(),
       'has_fcm_token': (await getFcmToken()) != null,
@@ -203,25 +184,31 @@ class AuthService {
     };
   }
 
-  // 🧹 Cleanup
   Future<void> clearAllAuthData() async {
     await ensureInitialized();
-    debugLog('AuthService', '🚪 Clearing all auth data');
-
     await _secureStorage.deleteAll();
-
     final keys = _prefs.getKeys();
     for (final key in keys) {
       if (key.startsWith('auth_') ||
-          key == 'registration_complete' ||
-          key == 'selected_school_id' ||
-          key == 'fcm_token' ||
-          key == 'notifications_enabled' ||
-          key == 'session_timestamp') {
+          key.contains('registration_complete') ||
+          key.contains('selected_school_id') ||
+          key.contains('fcm_token') ||
+          key.contains('notifications_enabled') ||
+          key.contains('session_timestamp')) {
         await _prefs.remove(key);
       }
     }
+  }
 
-    debugLog('AuthService', '✅ All auth data cleared');
+  Future<void> setCurrentUserId(String userId) async {
+    await ensureInitialized();
+    _currentUserId = userId;
+    await _prefs.setString('current_user_id', userId);
+  }
+
+  Future<void> clearCurrentUserId() async {
+    await ensureInitialized();
+    _currentUserId = null;
+    await _prefs.remove('current_user_id');
   }
 }

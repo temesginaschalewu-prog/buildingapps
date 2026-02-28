@@ -1,5 +1,4 @@
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -9,63 +8,86 @@ void debugLog(String tag, String message) {
       '[${DateTime.now().toIso8601String().substring(11, 19)}] [$tag] $message');
 }
 
+// UNIFIED TOP SNACKBAR - all notifications from top, auto-dismiss
+void showTopSnackBar(BuildContext context, String message,
+    {bool isError = false, int durationSeconds = 3}) {
+  if (!context.mounted) return;
+
+  final overlay = Overlay.of(context);
+  if (overlay == null) return;
+
+  final overlayEntry = OverlayEntry(
+    builder: (context) => Positioned(
+      top: MediaQuery.of(context).padding.top + 10,
+      left: 16,
+      right: 16,
+      child: Material(
+        color: Colors.transparent,
+        child: AnimatedOpacity(
+          opacity: 1.0,
+          duration: const Duration(milliseconds: 300),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color:
+                  isError ? const Color(0xFFDC3545) : const Color(0xFF28A745),
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.2),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  isError
+                      ? Icons.error_outline_rounded
+                      : Icons.check_circle_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    message,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+
+  overlay.insert(overlayEntry);
+  Future.delayed(Duration(seconds: durationSeconds), () {
+    overlayEntry.remove();
+  });
+}
+
+// For backward compatibility - redirects to top snackbar
 void showSnackBar(BuildContext context, String message,
     {bool isError = false, int durationSeconds = 2}) {
-  // Check if context is still mounted/valid
-  if (!context.mounted) return;
-
-  try {
-    // Hide any current snackbar first
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-
-    final snackBar = SnackBar(
-      content: Text(message),
-      backgroundColor: isError ? Colors.red : Colors.green,
-      behavior: SnackBarBehavior.floating,
-      duration: Duration(seconds: durationSeconds),
-      // Remove the action button since you can swipe to dismiss
-      // This prevents the "OK" button from causing errors
-      action: SnackBarAction(
-        label: 'OK',
-        textColor: Colors.white,
-        onPressed: () {
-          // Safe check before using context
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).hideCurrentSnackBar();
-          }
-        },
-      ),
-    );
-
-    ScaffoldMessenger.of(context).showSnackBar(snackBar);
-  } catch (e) {
-    debugLog('Helpers', 'Error showing snackbar: $e');
-  }
+  showTopSnackBar(context, message,
+      isError: isError, durationSeconds: durationSeconds);
 }
 
-// Alternative simpler snackbar without action button
 void showSimpleSnackBar(BuildContext context, String message,
-    {bool isError = false, int durationSeconds = 2}) {
-  if (!context.mounted) return;
-
-  try {
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-
-    final snackBar = SnackBar(
-      content: Text(message),
-      backgroundColor: isError ? Colors.red : Colors.green,
-      behavior: SnackBarBehavior.floating,
-      duration: Duration(seconds: durationSeconds),
-      // No action button, just swipe to dismiss
-    );
-
-    ScaffoldMessenger.of(context).showSnackBar(snackBar);
-  } catch (e) {
-    debugLog('Helpers', 'Error showing simple snackbar: $e');
-  }
+    {bool isError = false}) {
+  showTopSnackBar(context, message, isError: isError);
 }
 
-// Rest of the file remains the same...
 double ensureDouble(dynamic value) {
   if (value is double) return value;
   if (value is int) return value.toDouble();
@@ -145,13 +167,9 @@ Future<void> showConfirmDialog(
 
 bool validatePassword(String password) {
   if (password.length < 6) return false;
-
   if (!password.contains(RegExp(r'[A-Z]'))) return false;
-
   if (!password.contains(RegExp(r'[a-z]'))) return false;
-
   if (!password.contains(RegExp(r'[0-9]'))) return false;
-
   return true;
 }
 

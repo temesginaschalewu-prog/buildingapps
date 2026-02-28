@@ -260,15 +260,16 @@ class ApiService {
     }
   }
 
-  Future<ApiResponse<Map<String, dynamic>>> register(
-      String username, String password, String deviceId) async {
+  Future<ApiResponse<Map<String, dynamic>>> register(String username,
+      String password, String deviceId, String? fcmToken) async {
     try {
       final response = await _dio.post(
         AppConstants.registerEndpoint,
         data: {
           'username': username,
           'password': password,
-          'deviceId': deviceId
+          'deviceId': deviceId,
+          'fcmToken': fcmToken,
         },
       );
 
@@ -664,13 +665,66 @@ class ApiService {
   Future<ApiResponse<Map<String, dynamic>>> getVideosByChapter(
       int chapterId) async {
     try {
-      final response = await _dio.get(AppConstants.videosByChapter(chapterId));
-      return ApiResponse.fromJson(
-          response.data, (data) => data as Map<String, dynamic>);
+      // Using the RESTful pattern that matches your backend
+      final response = await _dio.get('/videos/chapter/$chapterId');
+
+      if (response.data is Map && response.data['success'] == true) {
+        return ApiResponse<Map<String, dynamic>>(
+          success: true,
+          message: response.data['message'] ?? 'Videos retrieved',
+          data: response.data['data'] ?? {},
+        );
+      } else {
+        return ApiResponse<Map<String, dynamic>>(
+          success: false,
+          message: response.data['message'] ?? 'Failed to fetch videos',
+          data: {},
+        );
+      }
     } on DioException catch (e) {
+      if (e.response?.statusCode == 403) {
+        return ApiResponse<Map<String, dynamic>>(
+          success: false,
+          message: e.response?.data['message'] ?? 'Access denied',
+          data: e.response?.data ?? {},
+        );
+      }
       throw ApiError(
         message: e.response?.data['message'] ?? 'Failed to fetch videos',
         statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<ApiResponse<void>> incrementVideoViewCount(int videoId) async {
+    try {
+      final response = await _dio.post('/videos/$videoId/view');
+
+      return ApiResponse(
+        success: true,
+        message: response.data['message'] ?? 'View count updated',
+      );
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to update view count',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<ApiResponse<Map<String, dynamic>>> getUnreadCount() async {
+    try {
+      final response = await _dio.get('/notifications/unread-count');
+      return ApiResponse<Map<String, dynamic>>(
+        success: true,
+        message: response.data['message'] ?? 'Unread count retrieved',
+        data: response.data['data'] ?? {'unread_count': 0},
+      );
+    } on DioException catch (e) {
+      return ApiResponse<Map<String, dynamic>>(
+        success: false,
+        message: e.response?.data['message'] ?? 'Failed to get unread count',
+        error: e,
       );
     }
   }
@@ -1159,10 +1213,10 @@ class ApiService {
     }
   }
 
-  Future<ApiResponse<void>> deleteNotification(int notificationId) async {
+  Future<ApiResponse<void>> deleteNotification(int logId) async {
     try {
-      final response = await _dio
-          .delete('${AppConstants.notificationsEndpoint}/$notificationId');
+      final response =
+          await _dio.delete('${AppConstants.notificationsEndpoint}/$logId');
       return ApiResponse(success: true, message: response.data['message']);
     } on DioException catch (e) {
       throw ApiError(
@@ -1493,21 +1547,6 @@ class ApiService {
             e.response?.data['message'] ?? 'Failed to upload payment proof',
         statusCode: e.response?.statusCode,
         data: e.response?.data,
-      );
-    }
-  }
-
-  Future<ApiResponse<void>> incrementVideoViewCount(int videoId) async {
-    try {
-      final response =
-          await _dio.post(AppConstants.incrementViewEndpoint(videoId));
-      return ApiResponse(
-          success: true,
-          message: response.data['message'] ?? 'View count updated');
-    } on DioException catch (e) {
-      throw ApiError(
-        message: e.response?.data['message'] ?? 'Failed to update view count',
-        statusCode: e.response?.statusCode,
       );
     }
   }

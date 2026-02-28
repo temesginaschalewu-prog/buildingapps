@@ -3,31 +3,42 @@ import 'package:flutter/material.dart';
 import 'package:familyacademyclient/models/progress_model.dart';
 import 'package:familyacademyclient/utils/constants.dart';
 import 'package:familyacademyclient/utils/helpers.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/device_service.dart';
 
 class ProgressService {
   final DeviceService deviceService;
+  String? _currentUserId;
 
   ProgressService({required this.deviceService});
 
+  Future<void> _getCurrentUserId() async {
+    final prefs = await SharedPreferences.getInstance();
+    _currentUserId = prefs.getString('current_user_id');
+  }
+
+  String _getUserSpecificKey(String key) {
+    if (_currentUserId == null) return key;
+    return '${key}_$_currentUserId';
+  }
+
   Future<void> saveChapterProgressLocally(UserProgress progress) async {
-    final key = 'progress_chapter_${progress.chapterId}';
+    await _getCurrentUserId();
+    final key = _getUserSpecificKey('progress_chapter_${progress.chapterId}');
     await deviceService.saveCacheItem(key, progress.toJson(),
         ttl: Duration(days: 30), isUserSpecific: true);
-    debugPrint('📊 Saved local progress for chapter ${progress.chapterId}');
   }
 
   Future<UserProgress?> getChapterProgressLocally(int chapterId) async {
-    final key = 'progress_chapter_$chapterId';
+    await _getCurrentUserId();
+    final key = _getUserSpecificKey('progress_chapter_$chapterId');
     final progressJson = await deviceService
         .getCacheItem<Map<String, dynamic>>(key, isUserSpecific: true);
 
     if (progressJson != null) {
       try {
         return UserProgress.fromJson(progressJson);
-      } catch (e) {
-        debugPrint('❌ Error parsing progress: $e');
-      }
+      } catch (e) {}
     }
     return null;
   }
@@ -96,19 +107,10 @@ class ProgressService {
       final progress = await getChapterProgressLocally(chapterId);
       totalProgress += progress?.completionPercentage ?? 0;
     }
-
     return totalProgress / chapterIds.length;
   }
 
   Future<Map<String, dynamic>> getOverallProgressStats() async {
-    // This now uses DeviceService cache instead of SharedPreferences directly
-    // We'll get all progress items from cache
-    debugPrint('🔄 Getting overall progress stats from cache');
-
-    // Note: Since we're using DeviceService cache, we can't directly list all keys
-    // We'll track progress keys separately or use a different approach
-
-    // For now, return empty stats - the actual progress data is managed by ProgressProvider
     return {
       'total_chapters': 0,
       'average_completion': 0,
@@ -120,20 +122,13 @@ class ProgressService {
   }
 
   Future<void> clearLocalProgress() async {
-    // Clear all progress cache
-    await deviceService.clearCacheByPrefix('progress_');
-    debugPrint('🗑️ Cleared all local progress data');
+    await _getCurrentUserId();
+    await deviceService.clearCacheByPrefix(_getUserSpecificKey('progress_'));
   }
 
-  Future<void> syncProgressWithBackend() async {
-    debugPrint('🔄 Syncing progress with backend...');
-    final stats = await getOverallProgressStats();
-    debugPrint('📊 Progress stats: $stats');
-  }
+  Future<void> syncProgressWithBackend() async {}
 
-  // Clear all progress data (for logout)
   Future<void> clearUserProgress() async {
     await clearLocalProgress();
-    debugPrint('✅ Cleared user progress data');
   }
 }

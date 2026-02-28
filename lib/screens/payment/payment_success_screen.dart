@@ -1,5 +1,5 @@
 import 'dart:async';
-
+import 'dart:ui';
 import 'package:familyacademyclient/providers/auth_provider.dart';
 import 'package:familyacademyclient/services/device_service.dart';
 import 'package:familyacademyclient/themes/app_text_styles.dart';
@@ -10,10 +10,10 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
 import 'package:familyacademyclient/themes/app_themes.dart';
 import 'package:familyacademyclient/widgets/common/loading_indicator.dart';
-import 'package:familyacademyclient/widgets/common/empty_state.dart';
 import 'package:familyacademyclient/providers/subscription_provider.dart';
 import 'package:familyacademyclient/providers/category_provider.dart';
 import 'package:familyacademyclient/providers/settings_provider.dart';
+import 'package:shimmer/shimmer.dart';
 import '../../models/category_model.dart';
 import '../../utils/helpers.dart';
 import '../../themes/app_colors.dart';
@@ -40,6 +40,8 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
   String _categoryName = '';
   String _username = '';
   String _billingCycle = '';
+  int _months = 1;
+  String _durationText = '';
   String? _accountHolderName;
   bool _animationComplete = false;
   Timer? _redirectTimer;
@@ -53,22 +55,14 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
   void initState() {
     super.initState();
 
-    _checkAnimationController = AnimationController(
-      vsync: this,
-      duration: 800.ms,
-    );
-
-    _pulseAnimationController = AnimationController(
-      vsync: this,
-      duration: 1.seconds,
-    )..repeat(reverse: true);
-
+    _checkAnimationController =
+        AnimationController(vsync: this, duration: 800.ms);
+    _pulseAnimationController =
+        AnimationController(vsync: this, duration: 1.seconds)
+          ..repeat(reverse: true);
     _scaleAnimation = Tween<double>(begin: 0.8, end: 1.2).animate(
-      CurvedAnimation(
-        parent: _pulseAnimationController,
-        curve: Curves.easeInOut,
-      ),
-    );
+        CurvedAnimation(
+            parent: _pulseAnimationController, curve: Curves.easeInOut));
 
     _loadData();
   }
@@ -85,9 +79,6 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
     try {
       final args = widget.extra;
       if (args != null && args.isNotEmpty) {
-        debugLog('PaymentSuccessScreen', '📦 Processing payment success data');
-
-        // Extract all data from args
         _paymentType = args['payment_type'] as String? ?? 'first_time';
         _amount = (args['amount'] as num?)?.toDouble() ?? 0.0;
         _paymentMethod = args['payment_method'] as String? ?? 'unknown';
@@ -96,6 +87,9 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
         _categoryName = args['category_name'] as String? ?? '';
         _username = args['username'] as String? ?? '';
         _billingCycle = args['billing_cycle'] as String? ?? 'monthly';
+        _months = args['months'] as int? ?? 1;
+        _durationText =
+            args['duration_text'] as String? ?? _getAccessDurationText();
         _accountHolderName = args['account_holder_name'] as String?;
 
         final categoryId = args['category_id'] as int?;
@@ -115,30 +109,17 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
             _isLoading = false;
           });
         } else {
-          setState(() {
-            _isLoading = false;
-          });
+          setState(() => _isLoading = false);
         }
       } else {
         _tryToLoadFromCache();
       }
 
-      // Start checkmark animation
       _checkAnimationController.forward();
-
-      // Start auto-redirect timer
       _startRedirectTimer();
-
-      // Trigger animation completion
-      Future.delayed(1.seconds, () {
-        if (mounted) {
-          setState(() {
-            _animationComplete = true;
-          });
-        }
-      });
-    } catch (e, stackTrace) {
-      debugLog('PaymentSuccessScreen', '❌ Error loading data: $e\n$stackTrace');
+      Future.delayed(1.seconds,
+          () => mounted ? setState(() => _animationComplete = true) : null);
+    } catch (e) {
       setState(() {
         _hasError = true;
         _errorMessage = 'Failed to load payment details: $e';
@@ -147,12 +128,15 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
     }
   }
 
+  String _getAccessDurationText() {
+    if (_billingCycle == 'semester') return '4 months';
+    return '1 month';
+  }
+
   void _startRedirectTimer() {
     _redirectTimer = Timer.periodic(1.seconds, (timer) {
       if (_secondsRemaining > 0) {
-        setState(() {
-          _secondsRemaining--;
-        });
+        setState(() => _secondsRemaining--);
       } else {
         timer.cancel();
         _redirectToHome();
@@ -161,9 +145,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
   }
 
   void _redirectToHome() {
-    if (context.mounted) {
-      context.go('/');
-    }
+    if (context.mounted) context.go('/');
   }
 
   Future<void> _tryToLoadFromCache() async {
@@ -189,6 +171,9 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
               cachedPaymentData['categoryName'] ?? category?.name ?? '';
           _username = cachedPaymentData['username'] ?? '';
           _billingCycle = cachedPaymentData['billingCycle'] ?? 'monthly';
+          _months = cachedPaymentData['months'] ?? 1;
+          _durationText =
+              cachedPaymentData['durationText'] ?? _getAccessDurationText();
           _accountHolderName =
               cachedPaymentData['accountHolderName'] as String?;
           _isLoading = false;
@@ -201,13 +186,95 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
         });
       }
     } catch (e) {
-      debugLog('PaymentSuccessScreen', 'Cache load error: $e');
       setState(() {
         _hasError = true;
         _errorMessage = 'Failed to load payment information';
         _isLoading = false;
       });
     }
+  }
+
+  Widget _buildGlassContainer({required Widget child}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.getCard(context).withOpacity(0.4),
+                AppColors.getCard(context).withOpacity(0.2),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: AppColors.telegramBlue.withOpacity(0.2),
+              width: 1,
+            ),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSkeletonLoader() {
+    return Scaffold(
+      backgroundColor: AppColors.getBackground(context),
+      body: Center(
+        child: _buildGlassContainer(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Shimmer.fromColors(
+                  baseColor: Colors.grey[300]!.withOpacity(0.3),
+                  highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                  child: Container(
+                    width: 100,
+                    height: 100,
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Shimmer.fromColors(
+                  baseColor: Colors.grey[300]!.withOpacity(0.3),
+                  highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                  child: Container(
+                    width: 200,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Shimmer.fromColors(
+                  baseColor: Colors.grey[300]!.withOpacity(0.3),
+                  highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                  child: Container(
+                    width: 300,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildErrorScreen(BuildContext context) {
@@ -222,32 +289,21 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
               Container(
                 padding: EdgeInsets.all(AppThemes.spacingXL),
                 decoration: BoxDecoration(
-                  color: AppColors.telegramRed.withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.error_outline_rounded,
-                  size: 64,
-                  color: AppColors.telegramRed,
-                ),
+                    color: AppColors.telegramRed.withOpacity(0.1),
+                    shape: BoxShape.circle),
+                child: Icon(Icons.error_outline_rounded,
+                    size: 64, color: AppColors.telegramRed),
               ).animate().shake(duration: 1.seconds),
               SizedBox(height: AppThemes.spacingXL),
-              Text(
-                'Payment Error',
-                style: AppTextStyles.headlineLarge.copyWith(
-                  color: AppColors.getTextPrimary(context),
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
+              Text('Payment Error',
+                  style: AppTextStyles.headlineLarge.copyWith(
+                      color: AppColors.getTextPrimary(context),
+                      fontWeight: FontWeight.w700)),
               SizedBox(height: AppThemes.spacingL),
-              Text(
-                _errorMessage,
-                textAlign: TextAlign.center,
-                style: AppTextStyles.bodyLarge.copyWith(
-                  color: AppColors.getTextSecondary(context),
-                  height: 1.6,
-                ),
-              ),
+              Text(_errorMessage,
+                  textAlign: TextAlign.center,
+                  style: AppTextStyles.bodyLarge.copyWith(
+                      color: AppColors.getTextSecondary(context), height: 1.6)),
               SizedBox(height: AppThemes.spacingXXL),
               SizedBox(
                 width: double.infinity,
@@ -256,32 +312,23 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.telegramBlue,
                     foregroundColor: Colors.white,
-                    padding: EdgeInsets.symmetric(
-                      vertical: AppThemes.spacingL,
-                    ),
+                    padding: EdgeInsets.symmetric(vertical: AppThemes.spacingL),
                     shape: RoundedRectangleBorder(
-                      borderRadius:
-                          BorderRadius.circular(AppThemes.borderRadiusMedium),
-                    ),
+                        borderRadius: BorderRadius.circular(
+                            AppThemes.borderRadiusMedium)),
                   ),
-                  child: Text(
-                    'Go to Home',
-                    style: AppTextStyles.buttonMedium.copyWith(
-                      color: Colors.white,
-                    ),
-                  ),
+                  child: Text('Go to Home',
+                      style: AppTextStyles.buttonMedium
+                          .copyWith(color: Colors.white)),
                 ),
               ),
               SizedBox(height: AppThemes.spacingM),
               TextButton(
                 onPressed: () => context.push('/notifications'),
                 style: TextButton.styleFrom(
-                  foregroundColor: AppColors.telegramBlue,
-                ),
-                child: Text(
-                  'Check Notifications',
-                  style: AppTextStyles.buttonMedium,
-                ),
+                    foregroundColor: AppColors.telegramBlue),
+                child: Text('Check Notifications',
+                    style: AppTextStyles.buttonMedium),
               ),
             ],
           ),
@@ -294,7 +341,6 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
     return Stack(
       alignment: Alignment.center,
       children: [
-        // Pulsing background
         AnimatedBuilder(
           animation: _pulseAnimationController,
           builder: (context, child) {
@@ -303,20 +349,19 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
               height: 140 * _scaleAnimation.value,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    AppColors.telegramGreen.withOpacity(0.3),
-                    AppColors.telegramGreen.withOpacity(0.1),
-                    Colors.transparent,
-                  ],
-                  stops: const [0.1, 0.5, 1.0],
-                ),
+                gradient: RadialGradient(colors: [
+                  AppColors.telegramGreen.withOpacity(0.3),
+                  AppColors.telegramGreen.withOpacity(0.1),
+                  Colors.transparent
+                ], stops: const [
+                  0.1,
+                  0.5,
+                  1.0
+                ]),
               ),
             );
           },
         ),
-
-        // Checkmark circle
         AnimatedBuilder(
           animation: _checkAnimationController,
           builder: (context, child) {
@@ -327,21 +372,21 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                 width: 100,
                 height: 100,
                 decoration: BoxDecoration(
-                  color: AppColors.telegramGreen,
+                  gradient: LinearGradient(
+                    colors: [
+                      AppColors.telegramGreen,
+                      AppColors.telegramGreen.withOpacity(0.8),
+                    ],
+                  ),
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.telegramGreen.withOpacity(0.3),
-                      blurRadius: 20,
-                      spreadRadius: 5,
-                    ),
+                        color: AppColors.telegramGreen.withOpacity(0.3),
+                        blurRadius: 20,
+                        spreadRadius: 5)
                   ],
                 ),
-                child: Icon(
-                  Icons.check_rounded,
-                  size: 60,
-                  color: Colors.white,
-                ),
+                child: Icon(Icons.check_rounded, size: 60, color: Colors.white),
               ),
             );
           },
@@ -354,60 +399,47 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
     final title = _paymentType == 'first_time'
         ? 'Payment Submitted!'
         : 'Renewal Submitted!';
-
     final message = _categoryName.isNotEmpty
         ? 'Your payment for "$_categoryName" has been submitted successfully.'
         : 'Your payment has been submitted successfully.';
 
     return Column(
       children: [
-        Text(
-          title,
-          style: AppTextStyles.displaySmall.copyWith(
-            color: AppColors.getTextPrimary(context),
-            fontWeight: FontWeight.w700,
-          ),
-          textAlign: TextAlign.center,
-        ),
+        Text(title,
+            style: AppTextStyles.displaySmall.copyWith(
+                color: AppColors.getTextPrimary(context),
+                fontWeight: FontWeight.w700),
+            textAlign: TextAlign.center),
         SizedBox(height: AppThemes.spacingM),
-        Text(
-          message,
-          style: AppTextStyles.bodyLarge.copyWith(
-            color: AppColors.getTextSecondary(context),
-            height: 1.5,
-          ),
-          textAlign: TextAlign.center,
-        ),
+        Text(message,
+            style: AppTextStyles.bodyLarge.copyWith(
+                color: AppColors.getTextSecondary(context), height: 1.5),
+            textAlign: TextAlign.center),
         SizedBox(height: AppThemes.spacingM),
         Container(
           padding: EdgeInsets.symmetric(
-            horizontal: AppThemes.spacingL,
-            vertical: AppThemes.spacingS,
-          ),
+              horizontal: AppThemes.spacingL, vertical: AppThemes.spacingS),
           decoration: BoxDecoration(
-            color: AppColors.statusPending.withOpacity(0.1),
+            gradient: LinearGradient(
+              colors: [
+                AppColors.statusPending.withOpacity(0.2),
+                AppColors.statusPending.withOpacity(0.1),
+              ],
+            ),
             borderRadius: BorderRadius.circular(AppThemes.borderRadiusFull),
             border: Border.all(
-              color: AppColors.statusPending,
-              width: 1,
-            ),
+                color: AppColors.statusPending.withOpacity(0.3), width: 1),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                Icons.schedule_rounded,
-                size: 16,
-                color: AppColors.statusPending,
-              ),
+              Icon(Icons.schedule_rounded,
+                  size: 16, color: AppColors.statusPending),
               SizedBox(width: 4),
-              Text(
-                'Pending Verification',
-                style: AppTextStyles.labelSmall.copyWith(
-                  color: AppColors.statusPending,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              Text('Pending Verification',
+                  style: AppTextStyles.labelSmall.copyWith(
+                      color: AppColors.statusPending,
+                      fontWeight: FontWeight.w600)),
             ],
           ),
         ),
@@ -418,115 +450,99 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
   }
 
   Widget _buildPaymentDetails() {
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(AppThemes.spacingL),
-      decoration: BoxDecoration(
-        color: AppColors.getSurface(context),
-        borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
-        border: Border.all(
-          color: Theme.of(context).dividerColor,
-          width: 0.5,
+    return _buildGlassContainer(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            _buildDetailRow(
+                icon: Icons.category_rounded,
+                label: 'Category',
+                value: _categoryName.isNotEmpty
+                    ? _categoryName
+                    : (_category?.name ?? 'N/A')),
+            SizedBox(height: AppThemes.spacingM),
+            _buildDetailRow(
+                icon: Icons.attach_money_rounded,
+                label: 'Amount',
+                value: '${_amount.toStringAsFixed(0)} ETB'),
+            if (_paymentMethodName.isNotEmpty) ...[
+              SizedBox(height: AppThemes.spacingM),
+              _buildDetailRow(
+                  icon: Icons.payment_rounded,
+                  label: 'Method',
+                  value: _paymentMethodName),
+            ],
+            if (_accountHolderName != null &&
+                _accountHolderName!.isNotEmpty) ...[
+              SizedBox(height: AppThemes.spacingM),
+              _buildDetailRow(
+                  icon: Icons.person_rounded,
+                  label: 'Account Holder',
+                  value: _accountHolderName!),
+            ],
+            if (_username.isNotEmpty) ...[
+              SizedBox(height: AppThemes.spacingM),
+              _buildDetailRow(
+                  icon: Icons.person_rounded,
+                  label: 'Username',
+                  value: _username),
+            ],
+            SizedBox(height: AppThemes.spacingM),
+            _buildDetailRow(
+                icon: Icons.calendar_today_rounded,
+                label: 'Billing Cycle',
+                value: _billingCycle == 'semester'
+                    ? 'Semester (4 months)'
+                    : 'Monthly (1 month)'),
+            SizedBox(height: AppThemes.spacingM),
+            _buildDetailRow(
+                icon: Icons.timer_rounded,
+                label: 'Access Duration',
+                value: _durationText),
+            SizedBox(height: AppThemes.spacingM),
+            _buildDetailRow(
+                icon: Icons.info_rounded,
+                label: 'Status',
+                value: 'Pending Verification',
+                valueColor: AppColors.statusPending),
+          ],
         ),
-      ),
-      child: Column(
-        children: [
-          _buildDetailRow(
-            icon: Icons.category_rounded,
-            label: 'Category',
-            value: _categoryName.isNotEmpty
-                ? _categoryName
-                : (_category?.name ?? 'N/A'),
-          ),
-          SizedBox(height: AppThemes.spacingM),
-          _buildDetailRow(
-            icon: Icons.attach_money_rounded,
-            label: 'Amount',
-            value: '${_amount.toStringAsFixed(0)} ETB',
-          ),
-          if (_paymentMethodName.isNotEmpty) ...[
-            SizedBox(height: AppThemes.spacingM),
-            _buildDetailRow(
-              icon: Icons.payment_rounded,
-              label: 'Method',
-              value: _paymentMethodName,
-            ),
-          ],
-          if (_accountHolderName != null && _accountHolderName!.isNotEmpty) ...[
-            SizedBox(height: AppThemes.spacingM),
-            _buildDetailRow(
-              icon: Icons.person_rounded,
-              label: 'Account Holder',
-              value: _accountHolderName!,
-            ),
-          ],
-          if (_username.isNotEmpty) ...[
-            SizedBox(height: AppThemes.spacingM),
-            _buildDetailRow(
-              icon: Icons.person_rounded,
-              label: 'Username',
-              value: _username,
-            ),
-          ],
-          if (_billingCycle.isNotEmpty) ...[
-            SizedBox(height: AppThemes.spacingM),
-            _buildDetailRow(
-              icon: Icons.calendar_today_rounded,
-              label: 'Billing Cycle',
-              value: _billingCycle.toUpperCase(),
-            ),
-          ],
-          SizedBox(height: AppThemes.spacingM),
-          _buildDetailRow(
-            icon: Icons.info_rounded,
-            label: 'Status',
-            value: 'Pending Verification',
-            valueColor: AppColors.statusPending,
-          ),
-        ],
       ),
     );
   }
 
-  Widget _buildDetailRow({
-    required IconData icon,
-    required String label,
-    required String value,
-    Color? valueColor,
-  }) {
+  Widget _buildDetailRow(
+      {required IconData icon,
+      required String label,
+      required String value,
+      Color? valueColor}) {
     return Row(
       children: [
         Container(
-          width: 32,
-          height: 32,
-          decoration: BoxDecoration(
-            color: AppColors.telegramBlue.withOpacity(0.1),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(
-            icon,
-            size: 16,
-            color: AppColors.telegramBlue,
-          ),
-        ),
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    AppColors.telegramBlue.withOpacity(0.2),
+                    AppColors.telegramPurple.withOpacity(0.1),
+                  ],
+                ),
+                shape: BoxShape.circle),
+            child: Icon(icon, size: 16, color: AppColors.telegramBlue)),
         SizedBox(width: AppThemes.spacingM),
         Expanded(
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                label,
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: AppColors.getTextSecondary(context),
-                ),
-              ),
-              Text(
-                value,
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: valueColor ?? AppColors.getTextPrimary(context),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              Text(label,
+                  style: AppTextStyles.bodyMedium
+                      .copyWith(color: AppColors.getTextSecondary(context))),
+              Text(value,
+                  style: AppTextStyles.bodyMedium.copyWith(
+                      color: valueColor ?? AppColors.getTextPrimary(context),
+                      fontWeight: FontWeight.w600)),
             ],
           ),
         ),
@@ -544,20 +560,14 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.telegramBlue,
               foregroundColor: Colors.white,
-              padding: EdgeInsets.symmetric(
-                vertical: AppThemes.spacingL,
-              ),
+              padding: EdgeInsets.symmetric(vertical: AppThemes.spacingL),
               shape: RoundedRectangleBorder(
-                borderRadius:
-                    BorderRadius.circular(AppThemes.borderRadiusMedium),
-              ),
+                  borderRadius:
+                      BorderRadius.circular(AppThemes.borderRadiusMedium)),
             ),
-            child: Text(
-              'Continue to Home',
-              style: AppTextStyles.buttonMedium.copyWith(
-                color: Colors.white,
-              ),
-            ),
+            child: Text('Continue to Home',
+                style:
+                    AppTextStyles.buttonMedium.copyWith(color: Colors.white)),
           ),
         ),
         SizedBox(height: AppThemes.spacingL),
@@ -565,49 +575,44 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             _buildActionChip(
-              icon: Icons.subscriptions_rounded,
-              label: 'Subscriptions',
-              onTap: () => context.push('/subscriptions'),
-            ),
+                icon: Icons.subscriptions_rounded,
+                label: 'Subscriptions',
+                onTap: () => context.push('/subscriptions')),
             SizedBox(width: AppThemes.spacingM),
             _buildActionChip(
-              icon: Icons.notifications_rounded,
-              label: 'Notifications',
-              onTap: () => context.push('/notifications'),
-            ),
+                icon: Icons.notifications_rounded,
+                label: 'Notifications',
+                onTap: () => context.push('/notifications')),
           ],
         ),
         if (_animationComplete) ...[
           SizedBox(height: AppThemes.spacingXL),
           Container(
             padding: EdgeInsets.symmetric(
-              horizontal: AppThemes.spacingL,
-              vertical: AppThemes.spacingM,
-            ),
+                horizontal: AppThemes.spacingL, vertical: AppThemes.spacingM),
             decoration: BoxDecoration(
-              color: AppColors.getSurface(context),
-              borderRadius: BorderRadius.circular(AppThemes.borderRadiusFull),
-            ),
+                gradient: LinearGradient(
+                  colors: [
+                    AppColors.getSurface(context).withOpacity(0.3),
+                    AppColors.getSurface(context).withOpacity(0.1),
+                  ],
+                ),
+                borderRadius:
+                    BorderRadius.circular(AppThemes.borderRadiusFull)),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      AppColors.telegramBlue,
-                    ),
-                  ),
-                ),
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                            AppColors.telegramBlue))),
                 SizedBox(width: AppThemes.spacingM),
-                Text(
-                  'Redirecting in $_secondsRemaining seconds...',
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.getTextSecondary(context),
-                  ),
-                ),
+                Text('Redirecting in $_secondsRemaining seconds...',
+                    style: AppTextStyles.bodySmall
+                        .copyWith(color: AppColors.getTextSecondary(context))),
               ],
             ),
           ),
@@ -616,11 +621,10 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
     );
   }
 
-  Widget _buildActionChip({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
+  Widget _buildActionChip(
+      {required IconData icon,
+      required String label,
+      required VoidCallback onTap}) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -628,33 +632,28 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
         borderRadius: BorderRadius.circular(AppThemes.borderRadiusFull),
         child: Container(
           padding: EdgeInsets.symmetric(
-            horizontal: AppThemes.spacingL,
-            vertical: AppThemes.spacingS,
-          ),
+              horizontal: AppThemes.spacingL, vertical: AppThemes.spacingS),
           decoration: BoxDecoration(
-            color: AppColors.getSurface(context),
+            gradient: LinearGradient(
+              colors: [
+                AppColors.getSurface(context).withOpacity(0.3),
+                AppColors.getSurface(context).withOpacity(0.1),
+              ],
+            ),
             borderRadius: BorderRadius.circular(AppThemes.borderRadiusFull),
             border: Border.all(
-              color: Theme.of(context).dividerColor,
-              width: 1,
-            ),
+                color: Theme.of(context).dividerColor.withOpacity(0.2),
+                width: 1),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                icon,
-                size: 16,
-                color: AppColors.telegramBlue,
-              ),
+              Icon(icon, size: 16, color: AppColors.telegramBlue),
               SizedBox(width: 4),
-              Text(
-                label,
-                style: AppTextStyles.labelSmall.copyWith(
-                  color: AppColors.telegramBlue,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              Text(label,
+                  style: AppTextStyles.labelSmall.copyWith(
+                      color: AppColors.telegramBlue,
+                      fontWeight: FontWeight.w600)),
             ],
           ),
         ),
@@ -691,16 +690,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
         child: Container(
           constraints: const BoxConstraints(maxWidth: 500),
           margin: EdgeInsets.all(AppThemes.spacingXXL),
-          child: Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
-              side: BorderSide(
-                color: Theme.of(context).dividerColor,
-                width: 0.5,
-              ),
-            ),
-            color: AppColors.getCard(context),
+          child: _buildGlassContainer(
             child: Padding(
               padding: EdgeInsets.all(AppThemes.spacingXXXL),
               child: Column(
@@ -723,21 +713,10 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return Scaffold(
-        backgroundColor: AppColors.getBackground(context),
-        body: Center(
-          child: LoadingIndicator(
-            message: 'Loading payment details...',
-            type: LoadingType.circular,
-            color: AppColors.telegramBlue,
-          ),
-        ),
-      );
+      return _buildSkeletonLoader();
     }
 
-    if (_hasError) {
-      return _buildErrorScreen(context);
-    }
+    if (_hasError) return _buildErrorScreen(context);
 
     return ResponsiveLayout(
       mobile: _buildMobileLayout(context),

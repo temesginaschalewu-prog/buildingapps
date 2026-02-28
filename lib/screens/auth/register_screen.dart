@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -44,20 +45,13 @@ class _RegisterScreenState extends State<RegisterScreen>
   void initState() {
     super.initState();
 
-    _logoAnimationController = AnimationController(
-      vsync: this,
-      duration: 600.ms,
-    )..forward();
-
+    _logoAnimationController =
+        AnimationController(vsync: this, duration: 600.ms)..forward();
     _logoScaleAnimation = CurvedAnimation(
-      parent: _logoAnimationController,
-      curve: Curves.elasticOut,
-    );
+        parent: _logoAnimationController, curve: Curves.elasticOut);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_mounted) {
-        _initializeDeviceAndServices();
-      }
+      if (_mounted) _initializeDeviceAndServices();
     });
   }
 
@@ -71,9 +65,89 @@ class _RegisterScreenState extends State<RegisterScreen>
     super.dispose();
   }
 
+  Widget _buildGlassContainer({required Widget child}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.getCard(context).withOpacity(0.4),
+                AppColors.getCard(context).withOpacity(0.2),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: AppColors.telegramBlue.withOpacity(0.2),
+              width: 1,
+            ),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGlassButton({
+    required String label,
+    required VoidCallback onPressed,
+    required List<Color> gradient,
+    bool isLoading = false,
+    bool isEnabled = true,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: isEnabled ? LinearGradient(colors: gradient) : null,
+        color: isEnabled
+            ? null
+            : AppColors.getTextSecondary(context).withOpacity(0.2),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: isEnabled
+            ? [
+                BoxShadow(
+                  color: gradient.first.withOpacity(0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : null,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: isEnabled ? onPressed : null,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            alignment: Alignment.center,
+            child: isLoading
+                ? SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation(Colors.white)),
+                  )
+                : Text(
+                    label,
+                    style: AppTextStyles.buttonLarge.copyWith(
+                      color: isEnabled
+                          ? Colors.white
+                          : AppColors.getTextSecondary(context),
+                    ),
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _initializeDeviceAndServices() async {
     if (!_mounted || _isInitializing) return;
-
     _isInitializing = true;
     if (_mounted) setState(() {});
 
@@ -82,7 +156,6 @@ class _RegisterScreenState extends State<RegisterScreen>
       await _deviceService!.init();
 
       final deviceId = await _deviceService!.getDeviceId();
-
       await _notificationService.init();
 
       String? fcmToken;
@@ -97,111 +170,27 @@ class _RegisterScreenState extends State<RegisterScreen>
           _isInitializing = false;
         });
       }
-
-      debugLog('RegisterScreen',
-          '✅ Services initialized. Device ID: ${deviceId.substring(0, 10)}..., FCM Token: ${fcmToken != null}');
     } catch (e) {
-      debugLog('RegisterScreen', '❌ Error initializing services: $e');
       if (_mounted) {
-        setState(() {
-          _isInitializing = false;
-        });
-
+        setState(() => _isInitializing = false);
         if (Platform.isAndroid || Platform.isIOS) {
-          _showTelegramSnackBar(
-            context,
-            'Service initialization failed. Please restart the app.',
-            isError: true,
-          );
+          showTopSnackBar(
+              context, 'Service initialization failed. Please restart the app.',
+              isError: true);
         }
       }
     }
   }
 
-  void _showTelegramSnackBar(BuildContext context, String message,
-      {bool isError = false}) {
-    final overlay = Overlay.of(context);
-    if (overlay == null) return;
-
-    final overlayEntry = OverlayEntry(
-      builder: (context) => Positioned(
-        top: MediaQuery.of(context).padding.top + 10,
-        left: 16,
-        right: 16,
-        child: Material(
-          color: Colors.transparent,
-          child: Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 12,
-            ),
-            decoration: BoxDecoration(
-              color: isError ? AppColors.telegramRed : AppColors.telegramGreen,
-              borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.2),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  isError
-                      ? Icons.error_outline_rounded
-                      : Icons.check_circle_rounded,
-                  color: Colors.white,
-                  size: 20,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    message,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          )
-              .animate()
-              .slideY(
-                begin: -1,
-                end: 0,
-                duration: 300.ms,
-                curve: Curves.easeOut,
-              )
-              .fadeIn(duration: 300.ms),
-        ),
-      ),
-    );
-
-    overlay.insert(overlayEntry);
-    Future.delayed(const Duration(seconds: 3), () {
-      overlayEntry.remove();
-    });
-  }
-
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
-
     if (_deviceId == null || _deviceId!.isEmpty) {
-      _showTelegramSnackBar(
-          context, 'Device not ready. Please restart the app.',
+      showTopSnackBar(context, 'Device not ready. Please restart the app.',
           isError: true);
       return;
     }
 
-    if (_mounted) {
-      setState(() => _isLoading = true);
-    }
+    if (_mounted) setState(() => _isLoading = true);
 
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final username = _usernameController.text.trim();
@@ -210,68 +199,44 @@ class _RegisterScreenState extends State<RegisterScreen>
     if (Platform.isAndroid || Platform.isIOS && _fcmToken == null) {
       try {
         final fcmToken = await _notificationService.getFCMToken();
-        if (fcmToken != null) {
-          _fcmToken = fcmToken;
-        }
-      } catch (e) {
-        debugLog('RegisterScreen', '⚠️ Failed to get FCM token: $e');
-      }
+        if (fcmToken != null) _fcmToken = fcmToken;
+      } catch (e) {}
     }
 
     try {
-      debugLog('RegisterScreen',
-          '📝 Registering with device ID: ${_deviceId!.substring(0, 15)}... and FCM: ${_fcmToken != null}');
-
       if (_deviceService != null) {
         await _deviceService!.clearAllCache();
-        debugLog('RegisterScreen', '🧹 Cleared all cache before registration');
       }
 
       final result = await authProvider.register(
           username, password, _deviceId!, _fcmToken);
 
       if (result['success'] == true && _mounted) {
-        debugLog('RegisterScreen',
-            '✅ Registration successful, checking next step: ${result['next_step']}');
-
-        if (_deviceService != null) {
-          await _deviceService!.clearUserCache();
-        }
-
-        _showTelegramSnackBar(context, 'Registration successful!');
-
+        if (_deviceService != null) await _deviceService!.clearUserCache();
+        showTopSnackBar(context, 'Registration successful!');
         await Future.delayed(const Duration(milliseconds: 100));
 
         if (_mounted) {
           if (result['next_step'] == 'select_school') {
-            debugLog('RegisterScreen', '🏫 Redirecting to school selection');
-
             appRouter.setNavigatingToSchoolSelection(true);
             appRouter.setPendingDestination('/school-selection');
             context.go('/school-selection');
           } else {
-            debugLog('RegisterScreen', '🏠 Redirecting to home');
-
             appRouter.setNavigatingToHome(true);
             appRouter.setPendingDestination('/');
             context.go('/');
           }
         }
       } else if (_mounted) {
-        final errorMessage = result['message'] ?? 'Registration failed';
-        debugLog('RegisterScreen', '❌ Registration failed: $errorMessage');
-        _showTelegramSnackBar(context, errorMessage, isError: true);
-      }
-    } catch (e) {
-      if (_mounted) {
-        debugLog('RegisterScreen', '❌ Registration exception: $e');
-        _showTelegramSnackBar(context, 'Registration failed: ${e.toString()}',
+        showTopSnackBar(context, result['message'] ?? 'Registration failed',
             isError: true);
       }
+    } catch (e) {
+      if (_mounted)
+        showTopSnackBar(context, 'Registration failed: ${e.toString()}',
+            isError: true);
     } finally {
-      if (_mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (_mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -285,76 +250,52 @@ class _RegisterScreenState extends State<RegisterScreen>
             width: 80,
             height: 80,
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: AppColors.blueGradient,
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
+              gradient: const LinearGradient(
+                  colors: AppColors.blueGradient,
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight),
+              borderRadius: BorderRadius.circular(20),
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.telegramBlue.withOpacity(0.3),
-                  blurRadius: 20,
-                  spreadRadius: 2,
-                ),
+                    color: AppColors.telegramBlue.withOpacity(0.3),
+                    blurRadius: 20,
+                    spreadRadius: 2)
               ],
             ),
-            child: const Icon(
-              Icons.school_rounded,
-              size: 40,
-              color: Colors.white,
-            ),
+            child:
+                const Icon(Icons.school_rounded, size: 40, color: Colors.white),
           ),
         ),
         const SizedBox(height: 24),
-        Text(
-          'Create Account',
-          style: AppTextStyles.displaySmall.copyWith(
-            color: AppColors.getTextPrimary(context),
-            fontWeight: FontWeight.w800,
-          ),
-        ),
+        Text('Create Account',
+            style: AppTextStyles.displaySmall.copyWith(
+                color: AppColors.getTextPrimary(context),
+                fontWeight: FontWeight.w800)),
         const SizedBox(height: 8),
-        Text(
-          'Join Family Academy',
-          style: AppTextStyles.bodyLarge.copyWith(
-            color: AppColors.getTextSecondary(context),
-          ),
-        ),
+        Text('Join Family Academy',
+            style: AppTextStyles.bodyLarge
+                .copyWith(color: AppColors.getTextSecondary(context))),
       ],
     );
   }
 
   Widget _buildUsernameField() {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.getSurface(context),
-        borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
-      ),
+    return _buildGlassContainer(
       child: TextFormField(
         controller: _usernameController,
         decoration: InputDecoration(
           hintText: 'Username',
-          hintStyle: AppTextStyles.bodyMedium.copyWith(
-            color: AppColors.getTextSecondary(context),
-          ),
+          hintStyle: AppTextStyles.bodyMedium
+              .copyWith(color: AppColors.getTextSecondary(context)),
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 16,
-          ),
-          prefixIcon: Icon(
-            Icons.person_outline_rounded,
-            color: AppColors.getTextSecondary(context),
-            size: 20,
-          ),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          prefixIcon: Icon(Icons.person_outline_rounded,
+              color: AppColors.getTextSecondary(context), size: 20),
           suffixIcon: _usernameController.text.isNotEmpty
               ? IconButton(
-                  icon: Icon(
-                    Icons.clear_rounded,
-                    color: AppColors.getTextSecondary(context),
-                    size: 20,
-                  ),
+                  icon: Icon(Icons.clear_rounded,
+                      color: AppColors.getTextSecondary(context), size: 20),
                   onPressed: () {
                     _usernameController.clear();
                     setState(() {});
@@ -362,29 +303,21 @@ class _RegisterScreenState extends State<RegisterScreen>
                 )
               : null,
         ),
-        style: AppTextStyles.bodyLarge.copyWith(
-          color: AppColors.getTextPrimary(context),
-        ),
+        style: AppTextStyles.bodyLarge
+            .copyWith(color: AppColors.getTextPrimary(context)),
         validator: (value) {
-          if (value == null || value.isEmpty) {
-            return 'Username is required';
-          }
-          if (value.length < 3) {
-            return 'Username must be at least 3 characters';
-          }
-          if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(value)) {
+          if (value == null || value.isEmpty) return 'Username is required';
+          if (value.length < 3) return 'Username must be at least 3 characters';
+          if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(value))
             return 'Only letters, numbers and underscore allowed';
-          }
           return null;
         },
         onChanged: (value) => setState(() {}),
       ),
-    ).animate().fadeIn(duration: 300.ms, delay: 100.ms).slideX(
-          begin: -0.1,
-          end: 0,
-          duration: 300.ms,
-          delay: 100.ms,
-        );
+    )
+        .animate()
+        .fadeIn(duration: 300.ms, delay: 100.ms)
+        .slideX(begin: -0.1, end: 0, duration: 300.ms, delay: 100.ms);
   }
 
   Widget _buildPasswordField() {
@@ -392,65 +325,44 @@ class _RegisterScreenState extends State<RegisterScreen>
 
     return StatefulBuilder(
       builder: (context, setState) {
-        return Container(
-          decoration: BoxDecoration(
-            color: AppColors.getSurface(context),
-            borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
-          ),
+        return _buildGlassContainer(
           child: TextFormField(
             controller: _passwordController,
             obscureText: _obscureText,
             decoration: InputDecoration(
               hintText: 'Password',
-              hintStyle: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.getTextSecondary(context),
-              ),
+              hintStyle: AppTextStyles.bodyMedium
+                  .copyWith(color: AppColors.getTextSecondary(context)),
               border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 16,
-              ),
-              prefixIcon: Icon(
-                Icons.lock_outline_rounded,
-                color: AppColors.getTextSecondary(context),
-                size: 20,
-              ),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              prefixIcon: Icon(Icons.lock_outline_rounded,
+                  color: AppColors.getTextSecondary(context), size: 20),
               suffixIcon: IconButton(
                 icon: Icon(
-                  _obscureText
-                      ? Icons.visibility_off_rounded
-                      : Icons.visibility_rounded,
-                  color: AppColors.getTextSecondary(context),
-                  size: 20,
-                ),
-                onPressed: () {
-                  setState(() {
-                    _obscureText = !_obscureText;
-                  });
-                },
+                    _obscureText
+                        ? Icons.visibility_off_rounded
+                        : Icons.visibility_rounded,
+                    color: AppColors.getTextSecondary(context),
+                    size: 20),
+                onPressed: () => setState(() => _obscureText = !_obscureText),
               ),
             ),
-            style: AppTextStyles.bodyLarge.copyWith(
-              color: AppColors.getTextPrimary(context),
-            ),
+            style: AppTextStyles.bodyLarge
+                .copyWith(color: AppColors.getTextPrimary(context)),
             validator: (value) {
-              if (value == null || value.isEmpty) {
-                return 'Password is required';
-              }
-              if (value.length < 8) {
+              if (value == null || value.isEmpty) return 'Password is required';
+              if (value.length < 8)
                 return 'Password must be at least 8 characters';
-              }
               return null;
             },
           ),
         );
       },
-    ).animate().fadeIn(duration: 300.ms, delay: 200.ms).slideX(
-          begin: -0.1,
-          end: 0,
-          duration: 300.ms,
-          delay: 200.ms,
-        );
+    )
+        .animate()
+        .fadeIn(duration: 300.ms, delay: 200.ms)
+        .slideX(begin: -0.1, end: 0, duration: 300.ms, delay: 200.ms);
   }
 
   Widget _buildConfirmPasswordField() {
@@ -458,151 +370,45 @@ class _RegisterScreenState extends State<RegisterScreen>
 
     return StatefulBuilder(
       builder: (context, setState) {
-        return Container(
-          decoration: BoxDecoration(
-            color: AppColors.getSurface(context),
-            borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
-          ),
+        return _buildGlassContainer(
           child: TextFormField(
             controller: _confirmPasswordController,
             obscureText: _obscureText,
             decoration: InputDecoration(
               hintText: 'Confirm Password',
-              hintStyle: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.getTextSecondary(context),
-              ),
+              hintStyle: AppTextStyles.bodyMedium
+                  .copyWith(color: AppColors.getTextSecondary(context)),
               border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 16,
-              ),
-              prefixIcon: Icon(
-                Icons.lock_outline_rounded,
-                color: AppColors.getTextSecondary(context),
-                size: 20,
-              ),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              prefixIcon: Icon(Icons.lock_outline_rounded,
+                  color: AppColors.getTextSecondary(context), size: 20),
               suffixIcon: IconButton(
                 icon: Icon(
-                  _obscureText
-                      ? Icons.visibility_off_rounded
-                      : Icons.visibility_rounded,
-                  color: AppColors.getTextSecondary(context),
-                  size: 20,
-                ),
-                onPressed: () {
-                  setState(() {
-                    _obscureText = !_obscureText;
-                  });
-                },
+                    _obscureText
+                        ? Icons.visibility_off_rounded
+                        : Icons.visibility_rounded,
+                    color: AppColors.getTextSecondary(context),
+                    size: 20),
+                onPressed: () => setState(() => _obscureText = !_obscureText),
               ),
             ),
-            style: AppTextStyles.bodyLarge.copyWith(
-              color: AppColors.getTextPrimary(context),
-            ),
+            style: AppTextStyles.bodyLarge
+                .copyWith(color: AppColors.getTextPrimary(context)),
             validator: (value) {
-              if (value == null || value.isEmpty) {
+              if (value == null || value.isEmpty)
                 return 'Please confirm your password';
-              }
-              if (value != _passwordController.text) {
+              if (value != _passwordController.text)
                 return 'Passwords do not match';
-              }
               return null;
             },
           ),
         );
       },
-    ).animate().fadeIn(duration: 300.ms, delay: 300.ms).slideX(
-          begin: -0.1,
-          end: 0,
-          duration: 300.ms,
-          delay: 300.ms,
-        );
-  }
-
-  Widget _buildRegisterButton() {
-    final isDisabled = _isLoading || _isInitializing || _deviceId == null;
-
-    return Container(
-      height: 52,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
-        gradient: LinearGradient(
-          colors: isDisabled
-              ? [
-                  AppColors.telegramBlue.withOpacity(0.5),
-                  AppColors.telegramBlue.withOpacity(0.5)
-                ]
-              : AppColors.blueGradient,
-        ),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: isDisabled ? null : _register,
-          borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
-          child: Container(
-            alignment: Alignment.center,
-            child: _isLoading
-                ? SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation(Colors.white),
-                    ),
-                  )
-                : Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        _deviceId == null
-                            ? 'Initializing...'
-                            : 'Create Account',
-                        style: AppTextStyles.buttonLarge.copyWith(
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      const Icon(
-                        Icons.arrow_forward_rounded,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ],
-                  ),
-          ),
-        ),
-      ),
-    ).animate().scale(
-          duration: 300.ms,
-          curve: Curves.easeOut,
-          delay: 400.ms,
-        );
-  }
-
-  Widget _buildLoginLink() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text(
-          'Already have an account?',
-          style: AppTextStyles.bodyMedium.copyWith(
-            color: AppColors.getTextSecondary(context),
-          ),
-        ),
-        const SizedBox(width: 4),
-        GestureDetector(
-          onTap: () => context.go('/auth/login'),
-          child: Text(
-            'Sign in',
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.telegramBlue,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      ],
-    );
+    )
+        .animate()
+        .fadeIn(duration: 300.ms, delay: 300.ms)
+        .slideX(begin: -0.1, end: 0, duration: 300.ms, delay: 300.ms);
   }
 
   Widget _buildForm() {
@@ -619,9 +425,34 @@ class _RegisterScreenState extends State<RegisterScreen>
           const SizedBox(height: 16),
           _buildConfirmPasswordField(),
           const SizedBox(height: 32),
-          _buildRegisterButton(),
+          _buildGlassButton(
+            label: _deviceId == null
+                ? 'Initializing...'
+                : (_isLoading ? 'Creating Account...' : 'Create Account'),
+            onPressed: _register,
+            gradient: const [Color(0xFF2AABEE), Color(0xFF5856D6)],
+            isLoading: _isLoading,
+            isEnabled: !_isLoading && _deviceId != null,
+          )
+              .animate()
+              .scale(duration: 300.ms, curve: Curves.easeOut, delay: 400.ms),
           const SizedBox(height: 24),
-          _buildLoginLink(),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text('Already have an account?',
+                  style: AppTextStyles.bodyMedium
+                      .copyWith(color: AppColors.getTextSecondary(context))),
+              const SizedBox(width: 4),
+              GestureDetector(
+                onTap: () => context.go('/auth/login'),
+                child: Text('Sign in',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                        color: AppColors.telegramBlue,
+                        fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ).animate().fadeIn(duration: 300.ms, delay: 500.ms),
           SizedBox(height: MediaQuery.of(context).viewInsets.bottom + 20),
         ],
       ),
@@ -633,7 +464,7 @@ class _RegisterScreenState extends State<RegisterScreen>
       backgroundColor: AppColors.getBackground(context),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
           child: _buildForm(),
         ),
       ),
@@ -649,25 +480,11 @@ class _RegisterScreenState extends State<RegisterScreen>
             constraints: const BoxConstraints(maxWidth: 500),
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 40),
-              child: Container(
-                padding: const EdgeInsets.all(32),
-                decoration: BoxDecoration(
-                  color: AppColors.getCard(context),
-                  borderRadius:
-                      BorderRadius.circular(AppThemes.borderRadiusLarge),
-                  border: Border.all(
-                    color: Theme.of(context).dividerColor,
-                    width: 0.5,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 20,
-                      spreadRadius: 2,
-                    ),
-                  ],
+              child: _buildGlassContainer(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: _buildForm(),
                 ),
-                child: _buildForm(),
               ),
             ),
           ),
@@ -688,15 +505,13 @@ class _RegisterScreenState extends State<RegisterScreen>
                 Expanded(
                   child: Container(
                     padding: const EdgeInsets.all(48),
-                    decoration: BoxDecoration(
+                    decoration: const BoxDecoration(
                       gradient: LinearGradient(
-                        colors: AppColors.blueGradient,
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.horizontal(
-                        left: Radius.circular(AppThemes.borderRadiusLarge),
-                      ),
+                          colors: AppColors.blueGradient,
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight),
+                      borderRadius:
+                          BorderRadius.horizontal(left: Radius.circular(24)),
                     ),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -705,31 +520,22 @@ class _RegisterScreenState extends State<RegisterScreen>
                           width: 120,
                           height: 120,
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(
-                                AppThemes.borderRadiusLarge),
-                          ),
-                          child: const Icon(
-                            Icons.school_rounded,
-                            size: 60,
-                            color: Colors.white,
-                          ),
+                              color: Colors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(20)),
+                          child: const Icon(Icons.school_rounded,
+                              size: 60, color: Colors.white),
                         ),
                         const SizedBox(height: 40),
-                        Text(
-                          'Welcome to\nFamily Academy',
-                          style: AppTextStyles.displayMedium.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w800,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
+                        const Text('Welcome to\nFamily Academy',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 32,
+                                fontWeight: FontWeight.w800),
+                            textAlign: TextAlign.center),
                         const SizedBox(height: 16),
-                        Text(
+                        const Text(
                           'Join thousands of students learning with our comprehensive educational platform',
-                          style: AppTextStyles.bodyLarge.copyWith(
-                            color: Colors.white.withOpacity(0.9),
-                          ),
+                          style: TextStyle(color: Colors.white, fontSize: 16),
                           textAlign: TextAlign.center,
                         ),
                       ],
@@ -740,9 +546,8 @@ class _RegisterScreenState extends State<RegisterScreen>
                   child: Container(
                     decoration: BoxDecoration(
                       color: AppColors.getCard(context),
-                      borderRadius: BorderRadius.horizontal(
-                        right: Radius.circular(AppThemes.borderRadiusLarge),
-                      ),
+                      borderRadius: const BorderRadius.horizontal(
+                          right: Radius.circular(24)),
                     ),
                     child: SingleChildScrollView(
                       padding: const EdgeInsets.all(48),

@@ -27,6 +27,7 @@ import 'package:familyacademyclient/services/api_service.dart';
 import 'package:familyacademyclient/services/device_service.dart';
 import 'package:familyacademyclient/services/storage_service.dart';
 import 'package:familyacademyclient/services/notification_service.dart';
+import 'package:familyacademyclient/utils/helpers.dart';
 import 'package:familyacademyclient/utils/screen_protection.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -35,33 +36,22 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
-// IMPORTANT: Fix MediaKit imports for cross-platform
 import 'package:media_kit/media_kit.dart' as media_kit;
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   try {
-    // Only initialize Firebase if on mobile
     if (Platform.isAndroid || Platform.isIOS) {
       await Firebase.initializeApp();
     }
-    debugPrint("Handling a background message: ${message.messageId}");
 
     final prefs = await SharedPreferences.getInstance();
     final notificationsEnabled = prefs.getBool('notifications_enabled') ?? true;
-
-    if (!notificationsEnabled) {
-      debugPrint(
-          "Notifications are disabled, skipping background notification");
-      return;
-    }
+    if (!notificationsEnabled) return;
 
     final notificationService = NotificationService();
     await notificationService.handleBackgroundMessage(message);
-  } catch (e) {
-    debugPrint('Background message handler error: $e');
-  }
+  } catch (e) {}
 }
 
 class AppLifecycleObserver extends WidgetsBindingObserver {
@@ -70,10 +60,9 @@ class AppLifecycleObserver extends WidgetsBindingObserver {
     switch (state) {
       case AppLifecycleState.resumed:
         ScreenProtectionService.enableOnResume();
+        _handleAppResumed();
         break;
       case AppLifecycleState.paused:
-        ScreenProtectionService.disableOnPause();
-        break;
       case AppLifecycleState.inactive:
         ScreenProtectionService.disableOnPause();
         break;
@@ -81,7 +70,38 @@ class AppLifecycleObserver extends WidgetsBindingObserver {
         break;
     }
   }
+
+  Future<void> _handleAppResumed() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final notificationService = NotificationService();
+      final newToken = await notificationService.getFCMToken();
+      final oldToken = prefs.getString('fcm_token');
+
+      if (newToken != null && newToken != oldToken) {
+        final context = _getContext();
+        if (context != null) {
+          final authProvider =
+              Provider.of<AuthProvider>(context, listen: false);
+          if (authProvider.isAuthenticated) {
+            final apiService = Provider.of<ApiService>(context, listen: false);
+            await apiService.updateFcmToken(newToken);
+            await prefs.setString('fcm_token', newToken);
+            debugLog('AppLifecycle', 'FCM token refreshed on resume');
+          }
+        }
+      }
+    } catch (e) {
+      debugLog('AppLifecycle', 'Error refreshing token: $e');
+    }
+  }
+
+  BuildContext? _getContext() {
+    return _appContext;
+  }
 }
+
+BuildContext? _appContext;
 
 void _syncProviders(BuildContext context) {
   try {
@@ -89,11 +109,9 @@ void _syncProviders(BuildContext context) {
         Provider.of<SubscriptionProvider>(context, listen: false);
     final categoryProvider =
         Provider.of<CategoryProvider>(context, listen: false);
-
     subscriptionProvider.setCategoryProvider(categoryProvider);
 
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-
     authProvider.registerOnLogoutCallback(() {
       categoryProvider.clearUserData();
       subscriptionProvider.clearUserData();
@@ -102,166 +120,182 @@ void _syncProviders(BuildContext context) {
     authProvider.registerOnLoginCallback(() async {
       await subscriptionProvider.loadSubscriptions();
       await categoryProvider.loadCategories();
+
+      final notificationService = NotificationService();
+      final fcmToken = await notificationService.getFCMToken();
+      if (fcmToken != null) {
+        final apiService = Provider.of<ApiService>(context, listen: false);
+        await apiService.updateFcmToken(fcmToken);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('fcm_token', fcmToken);
+      }
     });
 
-    debugPrint('Main ✅ Provider synchronization complete');
-  } catch (e) {
-    debugPrint('Main ❌ Provider synchronization error: $e');
-  }
+    authProvider.deviceChangeRequired.listen((requiresChange) {
+      if (requiresChange && context.mounted) {
+        _showDeviceChangeDialog(context);
+      }
+    });
+
+    authProvider.deviceDeactivated.listen((message) {
+      if (message != null && context.mounted) {
+        _showDeviceDeactivatedDialog(context, message);
+      }
+    });
+  } catch (e) {}
+}
+
+void _showDeviceChangeDialog(BuildContext context) {
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Device Change Required'),
+      content: const Text(
+          'You are trying to login from a new device. This requires approval.'),
+      actions: [
+        TextButton(
+          onPressed: () {
+            Navigator.of(dialogContext).pop();
+
+            Navigator.of(context).pushNamed('/device-change');
+          },
+          child: const Text('Continue'),
+        ),
+        TextButton(
+          onPressed: () {
+            Navigator.of(dialogContext).pop();
+            Provider.of<AuthProvider>(context, listen: false).logout();
+          },
+          child: const Text('Cancel'),
+        ),
+      ],
+    ),
+  );
+}
+
+void _showDeviceDeactivatedDialog(BuildContext context, String message) {
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Device Deactivated'),
+      content: Text(message),
+      actions: [
+        TextButton(
+          onPressed: () {
+            Navigator.of(dialogContext).pop();
+            Provider.of<AuthProvider>(context, listen: false).logout();
+          },
+          child: const Text('OK'),
+        ),
+      ],
+    ),
+  );
 }
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // CRITICAL FIX: Initialize MediaKit with proper error handling for all platforms
   try {
     media_kit.MediaKit.ensureInitialized();
-    debugPrint('Main ✅ MediaKit initialized successfully');
+
+    if (Platform.isAndroid) {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    }
+    debugLog('Main', 'MediaKit initialized successfully');
   } catch (e) {
-    debugPrint('Main ⚠️ MediaKit initialization error (non-critical): $e');
+    debugLog('Main', 'MediaKit init error: $e');
   }
 
-  // Better .env file loading with multiple fallback paths for Windows
   try {
-    // Try multiple possible paths for the .env file
     const possiblePaths = [
       '.env',
       'assets/.env',
       'lib/.env',
-      'data/flutter_assets/.env', // Windows build path
+      'data/flutter_assets/.env'
     ];
-
     bool envLoaded = false;
-
     for (final envPath in possiblePaths) {
       try {
         await dotenv.load(fileName: envPath);
-        debugPrint('Main ✅ Loaded .env file from: $envPath');
         envLoaded = true;
         break;
-      } catch (e) {
-        debugPrint('Main ⚠️ Could not load .env from $envPath: $e');
-      }
+      } catch (e) {}
     }
+    if (!envLoaded) {}
+  } catch (e) {}
 
-    if (!envLoaded) {
-      // Fallback to environment variables - no testLoad, just continue
-      debugPrint('Main ⚠️ No .env file found, using default configuration');
-      // Set default values in memory by loading from a string
-      // This is a workaround - we'll just proceed without .env
-      // The app will use hardcoded defaults from constants.dart
-    }
-  } catch (e) {
-    debugPrint('Main ⚠️ Error loading .env: $e');
-  }
-
-  // Enable edge-to-edge on Android/iOS only
   if (Platform.isAndroid || Platform.isIOS) {
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-
-    // Set status bar and navigation bar colors
     SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
       systemNavigationBarColor: Colors.transparent,
       systemNavigationBarDividerColor: Colors.transparent,
     ));
   } else {
-    // Windows/Linux - just set minimal UI
     try {
       await SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
           overlays: []);
-    } catch (e) {
-      debugPrint('Main ⚠️ System UI mode error: $e');
-    }
+    } catch (e) {}
   }
 
-  // Initialize Firebase for mobile platforms ONLY
   FirebaseApp? firebaseApp;
+  final notificationService = NotificationService();
+
   if (Platform.isAndroid || Platform.isIOS) {
     try {
       firebaseApp = await Firebase.initializeApp();
-      debugPrint(
-          "✅ Firebase initialized for mobile platform (${Platform.operatingSystem})");
-
-      // Only initialize notification service for mobile platforms
-      final notificationService = NotificationService();
       await notificationService.init();
-      debugPrint('Main: NotificationService initialized for mobile');
 
       FirebaseMessaging.onBackgroundMessage(
           _firebaseMessagingBackgroundHandler);
 
       final messaging = FirebaseMessaging.instance;
-
       final currentSettings = await messaging.getNotificationSettings();
       if (currentSettings.authorizationStatus ==
           AuthorizationStatus.notDetermined) {
-        final settings = await messaging.requestPermission(
+        await messaging.requestPermission(
           alert: true,
-          announcement: false,
           badge: true,
-          carPlay: false,
-          criticalAlert: false,
-          provisional: false,
           sound: true,
         );
-
-        debugPrint('User granted permission: ${settings.authorizationStatus}');
       }
 
       final token = await messaging.getToken();
-      debugPrint("Firebase Messaging Token: ${token?.substring(0, 20)}...");
-
       final prefs = await SharedPreferences.getInstance();
       if (token != null) {
         await prefs.setString('fcm_token', token);
-        debugPrint("Saved FCM token to shared preferences");
+        debugLog('Main', 'FCM token saved: ${token.substring(0, 20)}...');
       }
     } catch (e) {
-      debugPrint('Firebase initialization failed: $e');
+      debugLog('Main', 'Firebase init error: $e');
     }
   } else {
-    debugPrint(
-        "⚠️ Firebase not initialized for non-mobile platform (${Platform.operatingSystem}) - notifications will be local only");
-    // Still initialize notification service for local notifications on Windows
     try {
-      final notificationService = NotificationService();
       await notificationService.init();
-      debugPrint(
-          'Main: NotificationService initialized for local notifications');
-    } catch (e) {
-      debugPrint('Main ⚠️ Local notification init error: $e');
-    }
+    } catch (e) {}
   }
 
-  // Initialize screen protection (safe for all platforms)
   try {
     await ScreenProtectionService.initialize();
-  } catch (e) {
-    debugPrint('Main ⚠️ Screen protection init error: $e');
-  }
+  } catch (e) {}
 
-  // Initialize services IN ORDER with error handling
   final storageService = StorageService();
   try {
     await storageService.init();
-    debugPrint('Main: StorageService initialized');
-  } catch (e) {
-    debugPrint('Main ⚠️ StorageService init error: $e');
-  }
+  } catch (e) {}
 
   final deviceService = DeviceService();
   try {
     await deviceService.init();
-    debugPrint('Main: DeviceService initialized');
-  } catch (e) {
-    debugPrint('Main ⚠️ DeviceService init error: $e');
-  }
+  } catch (e) {}
 
   final apiService = ApiService();
-  debugPrint('Main: ApiService created');
-
-  final notificationService = NotificationService();
 
   final appLifecycleObserver = AppLifecycleObserver();
   WidgetsBinding.instance.addObserver(appLifecycleObserver);
@@ -377,7 +411,11 @@ Future<void> main() async {
             deviceService: context.read<DeviceService>(),
           ),
         ),
-        ChangeNotifierProvider(create: (_) => ChatbotProvider()),
+        ChangeNotifierProvider(
+          create: (context) => ChatbotProvider(
+            apiService: context.read<ApiService>(),
+          ),
+        ),
         ChangeNotifierProvider(
           create: (context) => SettingsProvider(
             apiService: context.read<ApiService>(),
@@ -388,18 +426,18 @@ Future<void> main() async {
           create: (context) => ProgressProvider(
             apiService: context.read<ApiService>(),
             streakProvider: StreakProvider(
-                apiService: context.read<ApiService>(),
-                deviceService: deviceService),
+              apiService: context.read<ApiService>(),
+              deviceService: deviceService,
+            ),
             deviceService: context.read<DeviceService>(),
           ),
         ),
       ],
       child: Builder(
         builder: (context) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _syncProviders(context);
-          });
-
+          _appContext = context;
+          WidgetsBinding.instance
+              .addPostFrameCallback((_) => _syncProviders(context));
           return FamilyAcademyApp(
             apiService: apiService,
             notificationService: notificationService,

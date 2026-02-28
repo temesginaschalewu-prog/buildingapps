@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -16,10 +17,7 @@ import '../../utils/helpers.dart';
 class MainNavigation extends StatefulWidget {
   final Widget child;
 
-  const MainNavigation({
-    super.key,
-    required this.child,
-  });
+  const MainNavigation({super.key, required this.child});
 
   @override
   State<MainNavigation> createState() => _MainNavigationState();
@@ -44,14 +42,9 @@ class _MainNavigationState extends State<MainNavigation>
     super.initState();
 
     _tabAnimationController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-
+        duration: const Duration(milliseconds: 300), vsync: this);
     _tabAnimation = CurvedAnimation(
-      parent: _tabAnimationController,
-      curve: Curves.easeInOut,
-    );
+        parent: _tabAnimationController, curve: Curves.easeInOut);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeUserDataInBackground();
@@ -59,13 +52,8 @@ class _MainNavigationState extends State<MainNavigation>
       _updateCurrentIndexFromRoute();
     });
 
-    // Hide labels after 3 seconds, show on hover or tap
     _labelTimer = Timer(const Duration(seconds: 3), () {
-      if (mounted) {
-        setState(() {
-          _showLabels = false;
-        });
-      }
+      if (mounted) setState(() => _showLabels = false);
     });
   }
 
@@ -78,9 +66,7 @@ class _MainNavigationState extends State<MainNavigation>
       if (isAuth) {
         _initializeUserDataInBackground();
       } else {
-        setState(() {
-          _dataLoadedInBackground = false;
-        });
+        setState(() => _dataLoadedInBackground = false);
       }
     });
 
@@ -88,16 +74,13 @@ class _MainNavigationState extends State<MainNavigation>
   }
 
   void _refreshUIOnNotificationChange() {
-    if (mounted) {
-      setState(() {});
-    }
+    if (mounted) setState(() {});
   }
 
   Future<void> _initializeUserDataInBackground() async {
     if (_isInitializing || _dataLoadedInBackground) return;
 
     _isInitializing = true;
-    debugLog('MainNavigation', '🔄 Initializing user data in background');
 
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final userProvider = Provider.of<UserProvider>(context, listen: false);
@@ -111,20 +94,15 @@ class _MainNavigationState extends State<MainNavigation>
     if (authProvider.isAuthenticated && !_dataLoadedInBackground) {
       try {
         await userProvider.loadUserProfile();
-
         await Future.wait([
           subscriptionProvider.loadSubscriptions(),
-          categoryProvider.loadCategoriesWithSubscriptionCheck(),
+          categoryProvider.loadCategoriesWithSubscriptionCheck()
         ]);
-
         unawaited(notificationProvider.loadNotifications());
         unawaited(userProvider.loadPayments());
 
         _dataLoadedInBackground = true;
-        debugLog('MainNavigation', '✅ Background data loaded successfully');
-      } catch (e) {
-        debugLog('MainNavigation', '❌ Background data loading error: $e');
-      }
+      } catch (e) {}
     }
 
     _isInitializing = false;
@@ -149,124 +127,119 @@ class _MainNavigationState extends State<MainNavigation>
   void _setCurrentIndexWithAnimation(int newIndex) {
     if (newIndex != _currentIndex) {
       _navigationHistory.add(newIndex);
-      if (_navigationHistory.length > 5) {
-        _navigationHistory.removeAt(0);
-      }
+      if (_navigationHistory.length > 5) _navigationHistory.removeAt(0);
 
-      // Show labels when tapping navigation items
       if (!_showLabels) {
-        setState(() {
-          _showLabels = true;
-        });
-
+        setState(() => _showLabels = true);
         Future.delayed(const Duration(seconds: 2), () {
-          if (mounted) {
-            setState(() {
-              _showLabels = false;
-            });
-          }
+          if (mounted) setState(() => _showLabels = false);
         });
       }
 
       _tabAnimationController.reset();
       _tabAnimationController.forward();
 
-      setState(() {
-        _currentIndex = newIndex;
-      });
+      setState(() => _currentIndex = newIndex);
     }
   }
 
-  // Telegram-like Bottom Navigation for Mobile
+  Widget _buildGlassContainer(
+      {required Widget child, double? width, double? height}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Container(
+          width: width,
+          height: height,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.getCard(context).withOpacity(0.4),
+                AppColors.getCard(context).withOpacity(0.2),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: AppColors.telegramBlue.withOpacity(0.2),
+              width: 1,
+            ),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
   Widget _buildMobileNavigation() {
     final notificationProvider =
         Provider.of<NotificationProvider>(context, listen: true);
     final unreadCount = notificationProvider.unreadCount;
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       body: widget.child,
       bottomNavigationBar: GestureDetector(
-        onTapDown: (_) {
-          setState(() {
-            _showLabels = true;
-          });
-        },
+        onTapDown: (_) => setState(() => _showLabels = true),
         onTapUp: (_) {
           Future.delayed(const Duration(seconds: 2), () {
-            if (mounted) {
-              setState(() {
-                _showLabels = false;
-              });
-            }
+            if (mounted) setState(() => _showLabels = false);
           });
         },
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-          height: _showLabels ? 72 : 64,
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom > 0
-                ? MediaQuery.of(context).viewInsets.bottom
-                : 0,
-          ),
-          decoration: BoxDecoration(
-            color: isDark ? AppColors.bottomNavBarDark : AppColors.bottomNavBar,
-            border: Border(
-              top: BorderSide(
-                color: isDark ? AppColors.darkDivider : AppColors.lightDivider,
-                width: 0.5,
-              ),
+        child: _buildGlassContainer(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+            height: _showLabels ? 72 : 64,
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom > 0
+                  ? MediaQuery.of(context).viewInsets.bottom
+                  : 0,
             ),
-          ),
-          child: Row(
-            children: [
-              _buildMobileNavItem(
-                index: 0,
-                icon: Icons.home_outlined,
-                activeIcon: Icons.home_rounded,
-                label: 'Home',
-                unreadCount: 0,
-              ),
-              _buildMobileNavItem(
-                index: 1,
-                icon: Icons.chat_bubble_outline_rounded,
-                activeIcon: Icons.chat_bubble_rounded,
-                label: 'Chat',
-                unreadCount: 0,
-              ),
-              _buildMobileNavItem(
-                index: 2,
-                icon: Icons.auto_graph_outlined,
-                activeIcon: Icons.auto_graph_rounded,
-                label: 'Progress',
-                unreadCount: 0,
-              ),
-              _buildMobileNavItem(
-                index: 3,
-                icon: Icons.person_outline_rounded,
-                activeIcon: Icons.person_rounded,
-                label: 'Profile',
-                unreadCount: unreadCount,
-              ),
-            ],
+            child: Row(
+              children: [
+                _buildMobileNavItem(
+                    index: 0,
+                    icon: Icons.home_outlined,
+                    activeIcon: Icons.home_rounded,
+                    label: 'Home',
+                    unreadCount: 0),
+                _buildMobileNavItem(
+                    index: 1,
+                    icon: Icons.chat_bubble_outline_rounded,
+                    activeIcon: Icons.chat_bubble_rounded,
+                    label: 'Chat',
+                    unreadCount: 0),
+                _buildMobileNavItem(
+                    index: 2,
+                    icon: Icons.auto_graph_outlined,
+                    activeIcon: Icons.auto_graph_rounded,
+                    label: 'Progress',
+                    unreadCount: 0),
+                _buildMobileNavItem(
+                    index: 3,
+                    icon: Icons.person_outline_rounded,
+                    activeIcon: Icons.person_rounded,
+                    label: 'Profile',
+                    unreadCount: unreadCount),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildMobileNavItem({
-    required int index,
-    required IconData icon,
-    required IconData activeIcon,
-    required String label,
-    required int unreadCount,
-  }) {
+  Widget _buildMobileNavItem(
+      {required int index,
+      required IconData icon,
+      required IconData activeIcon,
+      required String label,
+      required int unreadCount}) {
     final isSelected = _currentIndex == index;
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Expanded(
       child: GestureDetector(
@@ -284,9 +257,14 @@ class _MainNavigationState extends State<MainNavigation>
                     width: 32,
                     height: 32,
                     decoration: BoxDecoration(
-                      color: isSelected
-                          ? AppColors.telegramBlue.withOpacity(0.1)
-                          : Colors.transparent,
+                      gradient: isSelected
+                          ? LinearGradient(
+                              colors: [
+                                AppColors.telegramBlue.withOpacity(0.2),
+                                AppColors.telegramPurple.withOpacity(0.1),
+                              ],
+                            )
+                          : null,
                       shape: BoxShape.circle,
                     ),
                     child: Center(
@@ -294,9 +272,9 @@ class _MainNavigationState extends State<MainNavigation>
                         isSelected ? activeIcon : icon,
                         color: isSelected
                             ? AppColors.telegramBlue
-                            : isDark
+                            : (isDark
                                 ? AppColors.darkTextSecondary
-                                : AppColors.lightTextSecondary,
+                                : AppColors.lightTextSecondary),
                         size: isSelected ? 22 : 20,
                       ),
                     ),
@@ -307,25 +285,21 @@ class _MainNavigationState extends State<MainNavigation>
                       right: 6,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 4,
-                          vertical: 1,
-                        ),
+                            horizontal: 4, vertical: 1),
                         decoration: BoxDecoration(
-                          color: AppColors.telegramRed,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        constraints: const BoxConstraints(
-                          minWidth: 16,
-                          minHeight: 16,
-                        ),
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFFF3B30), Color(0xFFE6204A)],
+                            ),
+                            borderRadius: BorderRadius.circular(8)),
+                        constraints:
+                            const BoxConstraints(minWidth: 16, minHeight: 16),
                         child: Text(
                           unreadCount > 9 ? '9+' : unreadCount.toString(),
                           style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
-                            height: 1.0,
-                          ),
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              height: 1.0),
                           textAlign: TextAlign.center,
                         ),
                       ),
@@ -343,9 +317,9 @@ class _MainNavigationState extends State<MainNavigation>
                     fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                     color: isSelected
                         ? AppColors.telegramBlue
-                        : isDark
+                        : (isDark
                             ? AppColors.darkTextSecondary
-                            : AppColors.lightTextSecondary,
+                            : AppColors.lightTextSecondary),
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -358,124 +332,112 @@ class _MainNavigationState extends State<MainNavigation>
     );
   }
 
-  // Telegram-like Side Navigation for Tablet
   Widget _buildTabletNavigation() {
     final notificationProvider =
         Provider.of<NotificationProvider>(context, listen: true);
     final unreadCount = notificationProvider.unreadCount;
     final authProvider = Provider.of<AuthProvider>(context, listen: true);
     final user = authProvider.currentUser;
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       body: Row(
         children: [
-          Container(
+          _buildGlassContainer(
             width: 88,
-            decoration: BoxDecoration(
-              color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
-              border: Border(
-                right: BorderSide(
-                  color:
-                      isDark ? AppColors.darkDivider : AppColors.lightDivider,
-                  width: 0.5,
-                ),
-              ),
-            ),
-            child: Column(
-              children: [
-                const SizedBox(height: 32),
-                Container(
-                  width: 48,
-                  height: 48,
-                  margin: const EdgeInsets.only(bottom: 32),
-                  decoration: BoxDecoration(
-                    color: AppColors.telegramBlue,
-                    borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Column(
+                children: [
+                  const SizedBox(height: 32),
+                  Container(
+                    width: 48,
+                    height: 48,
+                    margin: const EdgeInsets.only(bottom: 32),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                          colors: AppColors.blueGradient,
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.school_rounded,
+                        color: Colors.white, size: 24),
                   ),
-                  child: Icon(
-                    Icons.school_rounded,
-                    color: Colors.white,
-                    size: 24,
+                  _buildTabletNavItem(
+                      index: 0,
+                      icon: Icons.home_outlined,
+                      activeIcon: Icons.home_rounded,
+                      label: 'Home',
+                      unreadCount: 0),
+                  const SizedBox(height: 12),
+                  _buildTabletNavItem(
+                      index: 1,
+                      icon: Icons.chat_bubble_outline_rounded,
+                      activeIcon: Icons.chat_bubble_rounded,
+                      label: 'Chat',
+                      unreadCount: 0),
+                  const SizedBox(height: 12),
+                  _buildTabletNavItem(
+                      index: 2,
+                      icon: Icons.auto_graph_outlined,
+                      activeIcon: Icons.auto_graph_rounded,
+                      label: 'Progress',
+                      unreadCount: 0),
+                  const SizedBox(height: 12),
+                  _buildTabletNavItem(
+                    index: 3,
+                    icon: Icons.person_outline_rounded,
+                    activeIcon: Icons.person_rounded,
+                    label: 'Profile',
+                    unreadCount: unreadCount,
                   ),
-                ),
-                _buildTabletNavItem(
-                  index: 0,
-                  icon: Icons.home_outlined,
-                  activeIcon: Icons.home_rounded,
-                  label: 'Home',
-                ),
-                const SizedBox(height: 12),
-                _buildTabletNavItem(
-                  index: 1,
-                  icon: Icons.chat_bubble_outline_rounded,
-                  activeIcon: Icons.chat_bubble_rounded,
-                  label: 'Chat',
-                ),
-                const SizedBox(height: 12),
-                _buildTabletNavItem(
-                  index: 2,
-                  icon: Icons.auto_graph_outlined,
-                  activeIcon: Icons.auto_graph_rounded,
-                  label: 'Progress',
-                ),
-                const SizedBox(height: 12),
-                _buildTabletNavItem(
-                  index: 3,
-                  icon: Icons.person_outline_rounded,
-                  activeIcon: Icons.person_rounded,
-                  label: 'Profile',
-                  unreadCount: unreadCount,
-                ),
-                const Spacer(),
-                if (user != null)
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Tooltip(
-                      message: user.username,
-                      child: Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: AppColors.telegramBlue,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Center(
-                          child: Text(
-                            user.username.substring(0, 2).toUpperCase(),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                            ),
+                  const Spacer(),
+                  if (user != null)
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Tooltip(
+                        message: user.username,
+                        child: Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                                colors: AppColors.purpleGradient,
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Center(
+                            child: Text(
+                                user.username.substring(0, 2).toUpperCase(),
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14)),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                const SizedBox(height: 16),
-              ],
+                  const SizedBox(height: 16),
+                ],
+              ),
             ),
           ),
-          Expanded(
-            child: widget.child,
-          ),
+          Expanded(child: widget.child),
         ],
       ),
     );
   }
 
-  Widget _buildTabletNavItem({
-    required int index,
-    required IconData icon,
-    required IconData activeIcon,
-    required String label,
-    int unreadCount = 0,
-  }) {
+  Widget _buildTabletNavItem(
+      {required int index,
+      required IconData icon,
+      required IconData activeIcon,
+      required String label,
+      int unreadCount = 0}) {
     final isSelected = _currentIndex == index;
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Tooltip(
       message: label,
@@ -492,36 +454,36 @@ class _MainNavigationState extends State<MainNavigation>
                     width: 48,
                     height: 48,
                     decoration: BoxDecoration(
-                      color: isSelected
-                          ? AppColors.telegramBlue.withOpacity(0.1)
-                          : Colors.transparent,
+                      gradient: isSelected
+                          ? LinearGradient(
+                              colors: [
+                                AppColors.telegramBlue.withOpacity(0.2),
+                                AppColors.telegramPurple.withOpacity(0.1),
+                              ],
+                            )
+                          : null,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Center(
                       child: Stack(
                         children: [
-                          Icon(
-                            isSelected ? activeIcon : icon,
-                            color: isSelected
-                                ? AppColors.telegramBlue
-                                : isDark
-                                    ? AppColors.darkTextSecondary
-                                    : AppColors.lightTextSecondary,
-                            size: isSelected ? 24 : 22,
-                          ),
+                          Icon(isSelected ? activeIcon : icon,
+                              color: isSelected
+                                  ? AppColors.telegramBlue
+                                  : (isDark
+                                      ? AppColors.darkTextSecondary
+                                      : AppColors.lightTextSecondary),
+                              size: isSelected ? 24 : 22),
                           if (unreadCount > 0)
                             Positioned(
-                              top: 4,
-                              right: 4,
-                              child: Container(
-                                width: 8,
-                                height: 8,
-                                decoration: BoxDecoration(
-                                  color: AppColors.telegramRed,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                            ),
+                                top: 4,
+                                right: 4,
+                                child: Container(
+                                    width: 8,
+                                    height: 8,
+                                    decoration: const BoxDecoration(
+                                        color: Color(0xFFFF3B30),
+                                        shape: BoxShape.circle))),
                         ],
                       ),
                     ),
@@ -532,14 +494,13 @@ class _MainNavigationState extends State<MainNavigation>
               Text(
                 label,
                 style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w500,
-                  color: isSelected
-                      ? AppColors.telegramBlue
-                      : isDark
-                          ? AppColors.darkTextSecondary
-                          : AppColors.lightTextSecondary,
-                ),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                    color: isSelected
+                        ? AppColors.telegramBlue
+                        : (isDark
+                            ? AppColors.darkTextSecondary
+                            : AppColors.lightTextSecondary)),
               ),
             ],
           ),
@@ -548,211 +509,184 @@ class _MainNavigationState extends State<MainNavigation>
     );
   }
 
-  // Telegram-like Side Navigation for Desktop
   Widget _buildDesktopNavigation() {
     final notificationProvider =
         Provider.of<NotificationProvider>(context, listen: true);
     final unreadCount = notificationProvider.unreadCount;
     final authProvider = Provider.of<AuthProvider>(context, listen: true);
     final user = authProvider.currentUser;
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       body: Row(
         children: [
-          Container(
+          _buildGlassContainer(
             width: 260,
-            decoration: BoxDecoration(
-              color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
-              border: Border(
-                right: BorderSide(
-                  color:
-                      isDark ? AppColors.darkDivider : AppColors.lightDivider,
-                  width: 0.5,
-                ),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(left: 24, top: 32, bottom: 32),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 40,
-                        height: 40,
-                        margin: const EdgeInsets.only(right: 12),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: AppColors.blueGradient,
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Icon(
-                          Icons.school_rounded,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                      ),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Family Academy',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: isDark
-                                  ? Colors.white
-                                  : AppColors.lightTextPrimary,
-                            ),
-                          ),
-                          Text(
-                            'Learning Platform',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: isDark
-                                  ? AppColors.darkTextSecondary
-                                  : AppColors.lightTextSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: SingleChildScrollView(
-                    child: Column(
-                      children: [
-                        _buildDesktopNavItem(
-                          index: 0,
-                          icon: Icons.home_outlined,
-                          activeIcon: Icons.home_rounded,
-                          label: 'Home',
-                          description: 'Discover courses and content',
-                        ),
-                        _buildDesktopNavItem(
-                          index: 1,
-                          icon: Icons.chat_bubble_outline_rounded,
-                          activeIcon: Icons.chat_bubble_rounded,
-                          label: 'Chat Assistant',
-                          description: 'AI-powered learning help',
-                        ),
-                        _buildDesktopNavItem(
-                          index: 2,
-                          icon: Icons.auto_graph_outlined,
-                          activeIcon: Icons.auto_graph_rounded,
-                          label: 'Progress',
-                          description: 'Track your learning journey',
-                        ),
-                        _buildDesktopNavItem(
-                          index: 3,
-                          icon: Icons.person_outline_rounded,
-                          activeIcon: Icons.person_rounded,
-                          label: 'Profile',
-                          description: 'Account and settings',
-                          unreadCount: unreadCount,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                if (user != null)
-                  Container(
-                    margin: const EdgeInsets.all(16),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: isDark ? AppColors.darkCard : AppColors.lightCard,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: isDark
-                            ? AppColors.darkDivider
-                            : AppColors.lightDivider,
-                        width: 0.5,
-                      ),
-                    ),
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding:
+                        const EdgeInsets.only(left: 24, top: 32, bottom: 32),
                     child: Row(
                       children: [
                         Container(
                           width: 40,
                           height: 40,
+                          margin: const EdgeInsets.only(right: 12),
                           decoration: BoxDecoration(
-                            color: AppColors.telegramBlue,
-                            shape: BoxShape.circle,
+                            gradient: const LinearGradient(
+                                colors: AppColors.blueGradient,
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight),
+                            borderRadius: BorderRadius.circular(10),
                           ),
-                          child: Center(
-                            child: Text(
-                              user.username.substring(0, 2).toUpperCase(),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ),
+                          child: const Icon(Icons.school_rounded,
+                              color: Colors.white, size: 20),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                user.username,
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Family Academy',
                                 style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: isDark
-                                      ? Colors.white
-                                      : AppColors.lightTextPrimary,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              if (user.email != null && user.email!.isNotEmpty)
-                                Text(
-                                  user.email!,
-                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                    color: isDark
+                                        ? Colors.white
+                                        : AppColors.lightTextPrimary)),
+                            Text('Learning Platform',
+                                style: TextStyle(
                                     fontSize: 12,
                                     color: isDark
                                         ? AppColors.darkTextSecondary
-                                        : AppColors.lightTextSecondary,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                            ],
-                          ),
+                                        : AppColors.lightTextSecondary)),
+                          ],
                         ),
                       ],
                     ),
                   ),
-              ],
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: [
+                          _buildDesktopNavItem(
+                              index: 0,
+                              icon: Icons.home_outlined,
+                              activeIcon: Icons.home_rounded,
+                              label: 'Home',
+                              description: 'Discover courses and content',
+                              unreadCount: 0),
+                          _buildDesktopNavItem(
+                              index: 1,
+                              icon: Icons.chat_bubble_outline_rounded,
+                              activeIcon: Icons.chat_bubble_rounded,
+                              label: 'Chat Assistant',
+                              description: 'AI-powered learning help',
+                              unreadCount: 0),
+                          _buildDesktopNavItem(
+                              index: 2,
+                              icon: Icons.auto_graph_outlined,
+                              activeIcon: Icons.auto_graph_rounded,
+                              label: 'Progress',
+                              description: 'Track your learning journey',
+                              unreadCount: 0),
+                          _buildDesktopNavItem(
+                            index: 3,
+                            icon: Icons.person_outline_rounded,
+                            activeIcon: Icons.person_rounded,
+                            label: 'Profile',
+                            description: 'Account and settings',
+                            unreadCount: unreadCount,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (user != null)
+                    Container(
+                      margin: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            AppColors.getCard(context).withOpacity(0.4),
+                            AppColors.getCard(context).withOpacity(0.2),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                  colors: AppColors.purpleGradient,
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Center(
+                              child: Text(
+                                  user.username.substring(0, 2).toUpperCase(),
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14)),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(user.username,
+                                    style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                        color: isDark
+                                            ? Colors.white
+                                            : AppColors.lightTextPrimary),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis),
+                                if (user.email != null &&
+                                    user.email!.isNotEmpty)
+                                  Text(user.email!,
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          color: isDark
+                                              ? AppColors.darkTextSecondary
+                                              : AppColors.lightTextSecondary),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
-          Expanded(
-            child: widget.child,
-          ),
+          Expanded(child: widget.child),
         ],
       ),
     );
   }
 
-  Widget _buildDesktopNavItem({
-    required int index,
-    required IconData icon,
-    required IconData activeIcon,
-    required String label,
-    required String description,
-    int unreadCount = 0,
-  }) {
+  Widget _buildDesktopNavItem(
+      {required int index,
+      required IconData icon,
+      required IconData activeIcon,
+      required String label,
+      required String description,
+      int unreadCount = 0}) {
     final isSelected = _currentIndex == index;
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return GestureDetector(
       onTap: () => _onNavigationItemTapped(index),
@@ -762,15 +696,18 @@ class _MainNavigationState extends State<MainNavigation>
         margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
         decoration: BoxDecoration(
-          color: isSelected
-              ? AppColors.telegramBlue.withOpacity(0.1)
-              : Colors.transparent,
+          gradient: isSelected
+              ? LinearGradient(
+                  colors: [
+                    AppColors.telegramBlue.withOpacity(0.2),
+                    AppColors.telegramPurple.withOpacity(0.1),
+                  ],
+                )
+              : null,
           borderRadius: BorderRadius.circular(12),
           border: isSelected
               ? Border.all(
-                  color: AppColors.telegramBlue.withOpacity(0.3),
-                  width: 1,
-                )
+                  color: AppColors.telegramBlue.withOpacity(0.3), width: 1)
               : null,
         ),
         child: Row(
@@ -782,38 +719,41 @@ class _MainNavigationState extends State<MainNavigation>
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
-                    color: isSelected
-                        ? AppColors.telegramBlue.withOpacity(0.2)
-                        : isDark
-                            ? AppColors.darkCard
-                            : AppColors.lightCard,
+                    gradient: isSelected
+                        ? LinearGradient(
+                            colors: [
+                              AppColors.telegramBlue.withOpacity(0.2),
+                              AppColors.telegramPurple.withOpacity(0.1),
+                            ],
+                          )
+                        : LinearGradient(
+                            colors: [
+                              AppColors.getCard(context).withOpacity(0.3),
+                              AppColors.getCard(context).withOpacity(0.1),
+                            ],
+                          ),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Center(
                     child: Stack(
                       children: [
-                        Icon(
-                          isSelected ? activeIcon : icon,
-                          color: isSelected
-                              ? AppColors.telegramBlue
-                              : isDark
-                                  ? AppColors.darkTextSecondary
-                                  : AppColors.lightTextSecondary,
-                          size: isSelected ? 20 : 18,
-                        ),
+                        Icon(isSelected ? activeIcon : icon,
+                            color: isSelected
+                                ? AppColors.telegramBlue
+                                : (isDark
+                                    ? AppColors.darkTextSecondary
+                                    : AppColors.lightTextSecondary),
+                            size: isSelected ? 20 : 18),
                         if (unreadCount > 0)
                           Positioned(
-                            top: 2,
-                            right: 2,
-                            child: Container(
-                              width: 8,
-                              height: 8,
-                              decoration: BoxDecoration(
-                                color: AppColors.telegramRed,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                          ),
+                              top: 2,
+                              right: 2,
+                              child: Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: const BoxDecoration(
+                                      color: Color(0xFFFF3B30),
+                                      shape: BoxShape.circle))),
                       ],
                     ),
                   ),
@@ -825,42 +765,33 @@ class _MainNavigationState extends State<MainNavigation>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight:
-                          isSelected ? FontWeight.w600 : FontWeight.w500,
-                      color: isSelected
-                          ? AppColors.telegramBlue
-                          : isDark
-                              ? Colors.white
-                              : AppColors.lightTextPrimary,
-                    ),
-                  ),
+                  Text(label,
+                      style: TextStyle(
+                          fontSize: 14,
+                          fontWeight:
+                              isSelected ? FontWeight.w600 : FontWeight.w500,
+                          color: isSelected
+                              ? AppColors.telegramBlue
+                              : (isDark
+                                  ? Colors.white
+                                  : AppColors.lightTextPrimary))),
                   const SizedBox(height: 2),
-                  Text(
-                    description,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: isSelected
-                          ? AppColors.telegramBlue.withOpacity(0.8)
-                          : isDark
-                              ? AppColors.darkTextSecondary
-                              : AppColors.lightTextSecondary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  Text(description,
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: isSelected
+                              ? AppColors.telegramBlue.withOpacity(0.8)
+                              : (isDark
+                                  ? AppColors.darkTextSecondary
+                                  : AppColors.lightTextSecondary)),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
                 ],
               ),
             ),
             if (isSelected)
-              Icon(
-                Icons.arrow_forward_ios_rounded,
-                size: 14,
-                color: AppColors.telegramBlue,
-              ),
+              Icon(Icons.arrow_forward_ios_rounded,
+                  size: 14, color: AppColors.telegramBlue),
           ],
         ),
       ),
@@ -901,14 +832,12 @@ class _MainNavigationState extends State<MainNavigation>
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context, listen: true);
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _updateCurrentIndexFromRoute();
-    });
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _updateCurrentIndexFromRoute());
 
     if (authProvider.isAuthenticated && !authProvider.isInitializing) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        authProvider.checkSession();
-      });
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => authProvider.checkSession());
     }
 
     return ResponsiveLayout(

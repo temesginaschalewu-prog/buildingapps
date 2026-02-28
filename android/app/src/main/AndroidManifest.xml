@@ -111,10 +111,10 @@
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="family_academy_channel"/>
         
-        <!-- Firebase Messaging default notification icon -->
+        <!-- Firebase Messaging default notification icon - UPDATED with better icons -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
-            android:resource="@drawable/ic_notification" />
+            android:resource="@drawable/ic_notification_small" />
         
         <!-- Firebase Messaging default notification color -->
         <meta-data
@@ -193,5 +193,4 @@
             <data android:mimeType="*/*"/>
         </intent>
     </queries>
-
 </manifest>

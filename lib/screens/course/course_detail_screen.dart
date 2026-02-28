@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 import 'package:familyacademyclient/models/course_model.dart';
 import 'package:familyacademyclient/models/payment_model.dart';
 import 'package:familyacademyclient/services/device_service.dart';
@@ -6,14 +7,11 @@ import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/themes/app_text_styles.dart';
 import 'package:familyacademyclient/widgets/chapter/chapter_card.dart';
 import 'package:familyacademyclient/widgets/common/empty_state.dart';
-import 'package:familyacademyclient/widgets/common/error_widget.dart';
-import 'package:familyacademyclient/widgets/common/loading_indicator.dart';
 import 'package:familyacademyclient/widgets/exam/exam_card.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:pull_to_refresh/pull_to_refresh.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
 import 'package:familyacademyclient/themes/app_themes.dart';
@@ -28,7 +26,6 @@ import 'package:familyacademyclient/providers/subscription_provider.dart';
 import 'package:familyacademyclient/providers/payment_provider.dart';
 import 'package:familyacademyclient/providers/auth_provider.dart';
 import 'package:familyacademyclient/utils/helpers.dart';
-import 'package:familyacademyclient/utils/api_response.dart';
 import 'package:shimmer/shimmer.dart';
 
 class CourseDetailScreen extends StatefulWidget {
@@ -60,7 +57,6 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
   bool _hasPendingPayment = false;
   String? _rejectionReason;
 
-  // Offline-first flags
   bool _hasCachedData = false;
   bool _isOffline = false;
   bool _isRefreshing = false;
@@ -72,9 +68,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initializeScreen();
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _initializeScreen());
   }
 
   @override
@@ -84,52 +78,31 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
   }
 
   void _setupListeners() {
-    final subscriptionProvider = Provider.of<SubscriptionProvider>(
-      context,
-      listen: false,
-    );
-
+    final subscriptionProvider =
+        Provider.of<SubscriptionProvider>(context, listen: false);
     _subscriptionListener?.cancel();
     _subscriptionListener =
         subscriptionProvider.subscriptionUpdates.listen((_) {
-      if (mounted && _category != null) {
-        _updateAccessStatus();
-      }
+      if (mounted && _category != null) _updateAccessStatus();
     });
   }
 
-  // 🎯 Telegram-style cache-first loading
   Future<void> _initializeScreen() async {
-    // First, try to load from cache
     await _loadFromCache();
-
     if (_course != null && _hasCachedData) {
-      debugLog('CourseDetail', '📦 Showing cached course data');
-      setState(() {
-        _isFirstLoad = false;
-      });
-
-      // Refresh in background
+      setState(() => _isFirstLoad = false);
       _refreshInBackground();
     } else {
-      // No cache, load fresh
       await _loadFreshData();
     }
   }
 
   Future<void> _loadFromCache() async {
     try {
-      final deviceService = Provider.of<DeviceService>(
-        context,
-        listen: false,
-      );
-
-      // Try to get cached course
-      final cachedCourse =
-          await deviceService.getCacheItem<Map<String, dynamic>>(
-        'course_${widget.courseId}',
-        isUserSpecific: true,
-      );
+      final deviceService = Provider.of<DeviceService>(context, listen: false);
+      final cachedCourse = await deviceService
+          .getCacheItem<Map<String, dynamic>>('course_${widget.courseId}',
+              isUserSpecific: true);
 
       if (cachedCourse != null) {
         _course = Course.fromJson(cachedCourse['course']);
@@ -139,96 +112,50 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         _hasAccess = cachedCourse['has_access'] ?? false;
         _hasPendingPayment = cachedCourse['has_pending_payment'] ?? false;
         _hasCachedData = true;
-
-        debugLog('CourseDetail', '✅ Loaded course from cache');
       } else if (widget.course != null) {
         _course = widget.course;
         _category = widget.category;
         _hasAccess = widget.hasAccess ?? false;
         _hasCachedData = true;
       }
-    } catch (e) {
-      debugLog('CourseDetail', 'Error loading from cache: $e');
-    }
+    } catch (e) {}
   }
 
   Future<void> _loadFreshData() async {
     try {
-      debugLog('CourseDetail', '🚀 Loading fresh data...');
+      final courseProvider =
+          Provider.of<CourseProvider>(context, listen: false);
+      final categoryProvider =
+          Provider.of<CategoryProvider>(context, listen: false);
 
-      final courseProvider = Provider.of<CourseProvider>(
-        context,
-        listen: false,
-      );
-      final categoryProvider = Provider.of<CategoryProvider>(
-        context,
-        listen: false,
-      );
-
-      // Find the course if not provided
-      if (_course == null) {
+      if (_course == null)
         _course = await _findCourse(courseProvider, categoryProvider);
-      }
+      if (_course == null) throw Exception('Course not found');
 
-      if (_course == null) {
-        throw Exception('Course not found');
-      }
-
-      // Get category info
       if (_category == null && _course!.categoryId > 0) {
         _category = categoryProvider.getCategoryById(_course!.categoryId);
       }
 
-      // Check access status
       await _checkAccessStatus();
-
-      // Load payment info
       await _loadPaymentInfo();
-
-      // Load chapters and exams in parallel
-      await Future.wait([
-        _loadChapters(),
-        _loadExams(),
-      ]);
-
-      // Save to cache
+      await Future.wait([_loadChapters(), _loadExams()]);
       await _saveToCache();
-
-      debugLog('CourseDetail', '✅ Fresh data loaded');
     } catch (e) {
-      debugLog('CourseDetail', '❌ Error loading fresh data: $e');
-      setState(() {
-        _isOffline = true;
-      });
+      setState(() => _isOffline = true);
     } finally {
-      if (mounted) {
-        setState(() {
-          _isFirstLoad = false;
-        });
-      }
+      if (mounted) setState(() => _isFirstLoad = false);
     }
   }
 
   Future<Course?> _findCourse(
-    CourseProvider courseProvider,
-    CategoryProvider categoryProvider,
-  ) async {
+      CourseProvider courseProvider, CategoryProvider categoryProvider) async {
     for (final category in categoryProvider.categories) {
       final courses = courseProvider.getCoursesByCategory(category.id);
-      final foundCourse = courses.firstWhere(
-        (c) => c.id == widget.courseId,
-        orElse: () => Course(
-          id: 0,
-          name: '',
-          categoryId: 0,
-          chapterCount: 0,
-        ),
-      );
-
+      final foundCourse = courses.firstWhere((c) => c.id == widget.courseId,
+          orElse: () =>
+              Course(id: 0, name: '', categoryId: 0, chapterCount: 0));
       if (foundCourse.id > 0) {
-        if (_category == null) {
-          _category = category;
-        }
+        if (_category == null) _category = category;
         return foundCourse;
       }
     }
@@ -237,32 +164,21 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
 
   Future<void> _refreshInBackground() async {
     if (_isRefreshing) return;
-
     _isRefreshing = true;
-    debugLog('CourseDetail', '🔄 Background refresh started');
 
     try {
-      final courseProvider = Provider.of<CourseProvider>(
-        context,
-        listen: false,
-      );
-
+      final courseProvider =
+          Provider.of<CourseProvider>(context, listen: false);
       if (_course != null && _category != null) {
         await courseProvider.refreshCoursesWithAccessCheck(
-          _category!.id,
-          _hasAccess,
-        );
+            _category!.id, _hasAccess);
       }
-
       await _checkAccessStatus(forceCheck: true);
       await _loadPaymentInfo(forceRefresh: true);
       await _loadChapters(forceRefresh: true);
       await _loadExams(forceRefresh: true);
       await _saveToCache();
-
-      debugLog('CourseDetail', '✅ Background refresh complete');
     } catch (e) {
-      debugLog('CourseDetail', 'Background refresh error: $e');
     } finally {
       _isRefreshing = false;
     }
@@ -270,110 +186,61 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
 
   Future<void> _manualRefresh() async {
     if (_isRefreshing) return;
-
-    setState(() {
-      _isRefreshing = true;
-    });
+    setState(() => _isRefreshing = true);
 
     try {
-      final courseProvider = Provider.of<CourseProvider>(
-        context,
-        listen: false,
-      );
-
+      final courseProvider =
+          Provider.of<CourseProvider>(context, listen: false);
       if (_course != null && _category != null) {
         await courseProvider.refreshCoursesWithAccessCheck(
-          _category!.id,
-          _hasAccess,
-        );
+            _category!.id, _hasAccess);
       }
-
       await _checkAccessStatus(forceCheck: true);
       await _loadPaymentInfo(forceRefresh: true);
       await _loadChapters(forceRefresh: true);
       await _loadExams(forceRefresh: true);
       await _saveToCache();
 
-      setState(() {
-        _isOffline = false;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Course updated'),
-          backgroundColor: AppColors.telegramGreen,
-          behavior: SnackBarBehavior.floating,
-          duration: Duration(seconds: 1),
-        ),
-      );
+      setState(() => _isOffline = false);
+      showTopSnackBar(context, 'Course updated');
     } catch (e) {
-      debugLog('CourseDetail', 'Manual refresh error: $e');
-      setState(() {
-        _isOffline = true;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Refresh failed, using cached data'),
-          backgroundColor: AppColors.telegramRed,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      setState(() => _isOffline = true);
+      showTopSnackBar(context, 'Refresh failed, using cached data',
+          isError: true);
     } finally {
-      setState(() {
-        _isRefreshing = false;
-      });
+      setState(() => _isRefreshing = false);
       _refreshController.refreshCompleted();
     }
   }
 
   Future<void> _checkAccessStatus({bool forceCheck = false}) async {
     if (_category == null) return;
-
-    final subscriptionProvider = Provider.of<SubscriptionProvider>(
-      context,
-      listen: false,
-    );
-
-    if (forceCheck) {
-      _hasAccess = await subscriptionProvider
-          .checkHasActiveSubscriptionForCategory(_category!.id);
-    } else {
-      _hasAccess =
-          subscriptionProvider.hasActiveSubscriptionForCategory(_category!.id);
-    }
+    final subscriptionProvider =
+        Provider.of<SubscriptionProvider>(context, listen: false);
+    _hasAccess = forceCheck
+        ? await subscriptionProvider
+            .checkHasActiveSubscriptionForCategory(_category!.id)
+        : subscriptionProvider.hasActiveSubscriptionForCategory(_category!.id);
   }
 
   Future<void> _updateAccessStatus() async {
     if (_category == null) return;
-
-    final subscriptionProvider = Provider.of<SubscriptionProvider>(
-      context,
-      listen: false,
-    );
-
+    final subscriptionProvider =
+        Provider.of<SubscriptionProvider>(context, listen: false);
     final newAccess =
         subscriptionProvider.hasActiveSubscriptionForCategory(_category!.id);
-
     if (newAccess != _hasAccess && mounted) {
-      setState(() {
-        _hasAccess = newAccess;
-      });
+      setState(() => _hasAccess = newAccess);
       await _saveToCache();
     }
   }
 
   Future<void> _loadPaymentInfo({bool forceRefresh = false}) async {
     if (_category == null) return;
-
-    final paymentProvider = Provider.of<PaymentProvider>(
-      context,
-      listen: false,
-    );
-
+    final paymentProvider =
+        Provider.of<PaymentProvider>(context, listen: false);
     try {
       await paymentProvider.loadPayments(forceRefresh: forceRefresh);
-
       final pendingPayments = paymentProvider.getPendingPayments();
       _hasPendingPayment = pendingPayments.any((payment) =>
           payment.categoryName.toLowerCase() == _category!.name.toLowerCase());
@@ -382,80 +249,51 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
       final recentRejected = rejectedPayments.firstWhere(
         (p) => p.categoryName.toLowerCase() == _category!.name.toLowerCase(),
         orElse: () => Payment(
-          id: 0,
-          paymentType: '',
-          amount: 0,
-          paymentMethod: '',
-          status: '',
-          createdAt: DateTime.now(),
-          categoryName: '',
-        ),
+            id: 0,
+            paymentType: '',
+            amount: 0,
+            paymentMethod: '',
+            status: '',
+            createdAt: DateTime.now(),
+            categoryName: ''),
       );
-
       _rejectionReason =
           recentRejected.id != 0 ? recentRejected.rejectionReason : null;
-    } catch (e) {
-      debugLog('CourseDetail', 'Error loading payment info: $e');
-    }
+    } catch (e) {}
   }
 
   Future<void> _loadChapters({bool forceRefresh = false}) async {
     if (_course == null) return;
-
-    final chapterProvider = Provider.of<ChapterProvider>(
-      context,
-      listen: false,
-    );
-
-    await chapterProvider.loadChaptersByCourse(
-      _course!.id,
-      forceRefresh: forceRefresh,
-    );
+    final chapterProvider =
+        Provider.of<ChapterProvider>(context, listen: false);
+    await chapterProvider.loadChaptersByCourse(_course!.id,
+        forceRefresh: forceRefresh);
   }
 
   Future<void> _loadExams({bool forceRefresh = false}) async {
     if (_course == null) return;
-
-    final examProvider = Provider.of<ExamProvider>(
-      context,
-      listen: false,
-    );
-
-    await examProvider.loadExamsByCourse(
-      _course!.id,
-      forceRefresh: forceRefresh,
-    );
+    final examProvider = Provider.of<ExamProvider>(context, listen: false);
+    await examProvider.loadExamsByCourse(_course!.id,
+        forceRefresh: forceRefresh);
   }
 
   Future<void> _saveToCache() async {
     if (_course == null) return;
-
     try {
-      final deviceService = Provider.of<DeviceService>(
-        context,
-        listen: false,
-      );
-
-      final cacheData = {
-        'course': _course!.toJson(),
-        'category': _category?.toJson(),
-        'has_access': _hasAccess,
-        'has_pending_payment': _hasPendingPayment,
-        'rejection_reason': _rejectionReason,
-        'timestamp': DateTime.now().toIso8601String(),
-      };
-
+      final deviceService = Provider.of<DeviceService>(context, listen: false);
       await deviceService.saveCacheItem(
-        'course_${widget.courseId}',
-        cacheData,
-        ttl: Duration(hours: 1),
-        isUserSpecific: true,
-      );
-
-      debugLog('CourseDetail', '✅ Saved course to cache');
-    } catch (e) {
-      debugLog('CourseDetail', 'Error saving to cache: $e');
-    }
+          'course_${widget.courseId}',
+          {
+            'course': _course!.toJson(),
+            'category': _category?.toJson(),
+            'has_access': _hasAccess,
+            'has_pending_payment': _hasPendingPayment,
+            'rejection_reason': _rejectionReason,
+            'timestamp': DateTime.now().toIso8601String(),
+          },
+          ttl: const Duration(hours: 1),
+          isUserSpecific: true);
+    } catch (e) {}
   }
 
   void _handleChapterTap(Chapter chapter) {
@@ -464,7 +302,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         'chapter': chapter,
         'course': _course,
         'category': _category,
-        'hasAccess': _hasAccess,
+        'hasAccess': _hasAccess
       });
     } else if (_hasPendingPayment) {
       _showPendingPaymentDialog();
@@ -483,7 +321,12 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
 
   void _showPaymentDialog() {
     if (_category == null) {
-      showSimpleSnackBar(context, 'Category not found', isError: true);
+      showTopSnackBar(context, 'Category not found', isError: true);
+      return;
+    }
+
+    if (_rejectionReason != null) {
+      _showRejectedPaymentDialog();
       return;
     }
 
@@ -491,159 +334,96 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: BoxDecoration(
-          color: AppColors.getCard(context),
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(AppThemes.borderRadiusLarge),
-            topRight: Radius.circular(AppThemes.borderRadiusLarge),
-          ),
+      builder: (context) => _buildGlassBottomSheet(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildBottomSheetHandle(),
+            const SizedBox(height: 20),
+            _buildPaymentDialogContent(
+              icon: Icons.lock_open_rounded,
+              iconColor: AppColors.telegramBlue,
+              title: 'Unlock Content',
+              message: 'Purchase "${_category!.name}" to access all content',
+              buttonText: 'Purchase Access',
+              onButtonPressed: () {
+                Navigator.pop(context);
+                context.push('/payment', extra: {
+                  'category': _category,
+                  'paymentType': _hasAccess ? 'repayment' : 'first_time'
+                });
+              },
+            ),
+          ],
         ),
-        child: Padding(
-          padding: EdgeInsets.all(AppThemes.spacingL),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppColors.getTextSecondary(context).withOpacity(0.3),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              SizedBox(height: AppThemes.spacingL),
+      ),
+    );
+  }
 
-              // Icon and title
-              Row(
-                children: [
-                  Container(
-                    padding: EdgeInsets.all(AppThemes.spacingM),
-                    decoration: BoxDecoration(
-                      color: AppColors.telegramBlue.withOpacity(0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      Icons.lock_open_rounded,
-                      color: AppColors.telegramBlue,
-                      size: AppThemes.iconSizeL,
-                    ),
-                  ),
-                  SizedBox(width: AppThemes.spacingL),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Unlock Content',
-                          style: AppTextStyles.titleMedium.copyWith(
-                            color: AppColors.getTextPrimary(context),
-                          ),
-                        ),
-                        SizedBox(height: AppThemes.spacingXS),
-                        Text(
-                          'Purchase "${_category!.name}" to access all content',
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.getTextSecondary(context),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-
-              SizedBox(height: AppThemes.spacingXL),
-
-              // Action buttons
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    context.push(
-                      '/payment',
-                      extra: {
-                        'category': _category,
-                        'paymentType': _hasAccess ? 'repayment' : 'first_time',
-                      },
-                    );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.telegramBlue,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius:
-                          BorderRadius.circular(AppThemes.borderRadiusMedium),
-                    ),
-                    padding: EdgeInsets.symmetric(vertical: AppThemes.spacingL),
-                  ),
-                  child: Text(
-                    'Purchase Access',
-                    style: AppTextStyles.buttonMedium,
-                  ),
-                ),
-              ),
-              SizedBox(height: AppThemes.spacingL),
-              SizedBox(
-                width: double.infinity,
-                child: TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppColors.getTextSecondary(context),
-                  ),
-                  child: Text(
-                    'Not Now',
-                    style: AppTextStyles.buttonMedium,
-                  ),
-                ),
-              ),
-            ],
-          ),
+  void _showRejectedPaymentDialog() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _buildGlassBottomSheet(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildBottomSheetHandle(),
+            const SizedBox(height: 20),
+            _buildPaymentDialogContent(
+              icon: Icons.error_outline_rounded,
+              iconColor: AppColors.telegramRed,
+              title: 'Payment Rejected',
+              message: _rejectionReason != null
+                  ? 'Reason: $_rejectionReason'
+                  : 'Your previous payment was rejected.',
+              buttonText: 'Pay Now',
+              onButtonPressed: () {
+                Navigator.pop(context);
+                context.push('/payment', extra: {
+                  'category': _category,
+                  'paymentType': 'first_time',
+                });
+              },
+            ),
+          ],
         ),
       ),
     );
   }
 
   void _showPendingPaymentDialog() {
-    showModalBottomSheet(
+    showDialog(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: BoxDecoration(
-          color: AppColors.getCard(context),
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(AppThemes.borderRadiusLarge),
-            topRight: Radius.circular(AppThemes.borderRadiusLarge),
-          ),
-        ),
-        child: Padding(
-          padding: EdgeInsets.all(AppThemes.spacingL),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppColors.getTextSecondary(context).withOpacity(0.3),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    AppColors.getCard(context).withOpacity(0.4),
+                    AppColors.getCard(context).withOpacity(0.2),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: AppColors.statusPending.withOpacity(0.3),
+                  width: 1,
                 ),
               ),
-              SizedBox(height: AppThemes.spacingL),
-
-              // Icon and title
-              Row(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
-                    padding: EdgeInsets.all(AppThemes.spacingM),
+                    padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       color: AppColors.statusPending.withOpacity(0.1),
                       shape: BoxShape.circle,
@@ -651,61 +431,206 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
                     child: Icon(
                       Icons.schedule_rounded,
                       color: AppColors.statusPending,
-                      size: AppThemes.iconSizeL,
+                      size: 32,
                     ),
                   ),
-                  SizedBox(width: AppThemes.spacingL),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Payment Pending',
-                          style: AppTextStyles.titleMedium.copyWith(
-                            color: AppColors.getTextPrimary(context),
-                          ),
-                        ),
-                        SizedBox(height: AppThemes.spacingXS),
-                        Text(
-                          'Your payment is being verified (1-3 working days)',
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.getTextSecondary(context),
-                          ),
-                        ),
-                      ],
+                  const SizedBox(height: 16),
+                  Text(
+                    'Payment Pending',
+                    style: AppTextStyles.titleLarge.copyWith(
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'You have a pending payment for ${_category?.name}. Please wait for admin verification (1-3 working days).',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.getTextSecondary(context),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: _buildGradientButton(
+                      label: 'OK',
+                      onPressed: () => Navigator.pop(context),
+                      gradient: const [Color(0xFF2AABEE), Color(0xFF5856D6)],
                     ),
                   ),
                 ],
               ),
-
-              SizedBox(height: AppThemes.spacingXL),
-
-              // Action buttons
-
-              SizedBox(height: AppThemes.spacingL),
-              SizedBox(
-                width: double.infinity,
-                child: TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppColors.getTextSecondary(context),
-                  ),
-                  child: Text(
-                    'Close',
-                    style: AppTextStyles.buttonMedium,
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  // 🎨 Access banner
+  Widget _buildGlassBottomSheet({required Widget child}) {
+    return ClipRRect(
+      borderRadius: const BorderRadius.only(
+        topLeft: Radius.circular(24),
+        topRight: Radius.circular(24),
+      ),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.getCard(context).withOpacity(0.4),
+                AppColors.getCard(context).withOpacity(0.2),
+              ],
+            ),
+            border: Border.all(
+              color: AppColors.telegramBlue.withOpacity(0.2),
+              width: 1,
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomSheetHandle() {
+    return Center(
+      child: Container(
+        width: 40,
+        height: 4,
+        decoration: BoxDecoration(
+          color: AppColors.getTextSecondary(context).withOpacity(0.3),
+          borderRadius: BorderRadius.circular(2),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPaymentDialogContent({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String message,
+    required String buttonText,
+    required VoidCallback onButtonPressed,
+  }) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: iconColor.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: iconColor, size: 28),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: AppTextStyles.titleMedium.copyWith(
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    message,
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.getTextSecondary(context),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
+        Row(
+          children: [
+            Expanded(
+              child: TextButton(
+                onPressed: () => Navigator.pop(context),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: Text(
+                  'Cancel',
+                  style: AppTextStyles.labelLarge.copyWith(
+                    color: AppColors.getTextSecondary(context),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildGradientButton(
+                label: buttonText,
+                onPressed: onButtonPressed,
+                gradient: const [Color(0xFF2AABEE), Color(0xFF5856D6)],
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGradientButton({
+    required String label,
+    required VoidCallback onPressed,
+    required List<Color> gradient,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(colors: gradient),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: gradient.first.withOpacity(0.3),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            alignment: Alignment.center,
+            child: Text(
+              label,
+              style: AppTextStyles.labelLarge.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildAccessBanner() {
-    if (_category == null) return SizedBox.shrink();
+    if (_category == null) return const SizedBox.shrink();
 
     if (_category!.isFree) {
       return _buildStatusBanner(
@@ -713,6 +638,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         color: AppColors.telegramGreen,
         title: 'Free Category',
         message: 'All content is free and accessible',
+        backgroundColor: AppColors.greenFaded,
+        borderColor: AppColors.telegramGreen.withOpacity(0.3),
       );
     }
 
@@ -722,6 +649,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         color: AppColors.telegramGreen,
         title: 'Full Access',
         message: 'You have access to all content in this course',
+        backgroundColor: AppColors.greenFaded,
+        borderColor: AppColors.telegramGreen.withOpacity(0.3),
       );
     }
 
@@ -731,6 +660,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         color: AppColors.statusPending,
         title: 'Payment Pending',
         message: 'Please wait for admin verification (1-3 working days)',
+        backgroundColor: AppColors.orangeFaded,
+        borderColor: AppColors.statusPending.withOpacity(0.3),
       );
     }
 
@@ -742,6 +673,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         message: 'Reason: $_rejectionReason',
         actionText: 'Pay Now',
         onAction: _showPaymentDialog,
+        backgroundColor: AppColors.redFaded,
+        borderColor: AppColors.telegramRed.withOpacity(0.3),
       );
     }
 
@@ -752,6 +685,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
       message: 'Free chapters only. Purchase to unlock all content.',
       actionText: 'Purchase',
       onAction: _showPaymentDialog,
+      backgroundColor: AppColors.blueFaded,
+      borderColor: AppColors.telegramBlue.withOpacity(0.3),
     );
   }
 
@@ -762,94 +697,120 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     required String message,
     String? actionText,
     VoidCallback? onAction,
+    Color? backgroundColor,
+    Color? borderColor,
   }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Container(
       margin: EdgeInsets.symmetric(
         horizontal: ScreenSize.responsiveValue(
           context: context,
-          mobile: AppThemes.spacingL,
-          tablet: AppThemes.spacingXL,
-          desktop: AppThemes.spacingXXL,
+          mobile: 16,
+          tablet: 20,
+          desktop: 24,
         ),
-        vertical: AppThemes.spacingS,
+        vertical: 8,
       ),
-      padding: EdgeInsets.all(ScreenSize.responsiveValue(
-        context: context,
-        mobile: AppThemes.spacingL,
-        tablet: AppThemes.spacingXL,
-        desktop: AppThemes.spacingXXL,
-      )),
-      decoration: BoxDecoration(
-        color: isDark ? color.withOpacity(0.1) : color.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
-        border: Border.all(
-          color: color.withOpacity(0.3),
-          width: 1,
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: EdgeInsets.all(AppThemes.spacingM),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+          child: Container(
+            padding: EdgeInsets.all(ScreenSize.responsiveValue(
+              context: context,
+              mobile: 16,
+              tablet: 20,
+              desktop: 24,
+            )),
             decoration: BoxDecoration(
-              color: isDark ? color.withOpacity(0.2) : color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
+              color: backgroundColor ?? color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: borderColor ?? color.withOpacity(0.3),
+                width: 1,
+              ),
             ),
-            child: Icon(
-              icon,
-              color: color,
-              size: 24,
-            ),
-          ),
-          SizedBox(width: AppThemes.spacingL),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
               children: [
-                Text(
-                  title,
-                  style: AppTextStyles.titleSmall.copyWith(
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(icon, color: color, size: 24),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: AppTextStyles.titleSmall.copyWith(
+                          color: color,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        message,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.getTextSecondary(context),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (actionText != null && onAction != null) ...[
+                  const SizedBox(width: 12),
+                  _buildGlassButton(
+                    label: actionText,
+                    onPressed: onAction,
                     color: color,
-                    fontWeight: FontWeight.w600,
                   ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  message,
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.getTextSecondary(context),
-                  ),
-                ),
+                ],
               ],
             ),
           ),
-          if (actionText != null && onAction != null)
-            TextButton(
-              onPressed: onAction,
-              style: TextButton.styleFrom(
-                foregroundColor: color,
-                padding: EdgeInsets.symmetric(
-                  horizontal: AppThemes.spacingL,
-                  vertical: AppThemes.spacingS,
-                ),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: Text(
-                actionText,
-                style: AppTextStyles.labelMedium.copyWith(
-                  color: color,
-                ),
-              ),
-            ),
-        ],
+        ),
       ),
     );
   }
 
-  // 🦴 Skeleton loader for first load
+  Widget _buildGlassButton({
+    required String label,
+    required VoidCallback onPressed,
+    required Color color,
+  }) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Material(
+        color: color.withOpacity(0.1),
+        child: InkWell(
+          onTap: onPressed,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: color.withOpacity(0.3),
+                width: 1,
+              ),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              label,
+              style: AppTextStyles.labelMedium.copyWith(
+                color: color,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildSkeletonLoader() {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
@@ -864,8 +825,9 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
           onPressed: () => context.pop(),
         ),
         title: Shimmer.fromColors(
-          baseColor: Colors.grey[300]!,
-          highlightColor: Colors.grey[100]!,
+          baseColor: Colors.grey[300]!.withOpacity(0.3),
+          highlightColor: Colors.grey[100]!.withOpacity(0.6),
+          period: const Duration(milliseconds: 1500),
           child: Container(
             width: 200,
             height: 24,
@@ -873,12 +835,12 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
           ),
         ),
         bottom: PreferredSize(
-          preferredSize: Size.fromHeight(48),
+          preferredSize: const Size.fromHeight(48),
           child: Container(
             decoration: BoxDecoration(
               border: Border(
                 bottom: BorderSide(
-                  color: Theme.of(context).dividerColor,
+                  color: Theme.of(context).dividerColor.withOpacity(0.5),
                   width: 0.5,
                 ),
               ),
@@ -889,24 +851,42 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
                 Tab(text: 'Chapters'),
                 Tab(text: 'Exams'),
               ],
+              labelStyle: AppTextStyles.labelMedium,
+              unselectedLabelStyle: AppTextStyles.labelMedium,
+              indicatorColor: AppColors.telegramBlue,
+              indicatorWeight: 3,
+              labelColor: AppColors.telegramBlue,
+              unselectedLabelColor: AppColors.getTextSecondary(context),
             ),
           ),
         ),
       ),
       body: Padding(
-        padding: EdgeInsets.all(AppThemes.spacingL),
+        padding: const EdgeInsets.all(16),
         child: ListView.separated(
           itemCount: 5,
-          separatorBuilder: (_, __) => SizedBox(height: AppThemes.spacingL),
+          separatorBuilder: (_, __) => const SizedBox(height: 16),
           itemBuilder: (context, index) => Shimmer.fromColors(
-            baseColor: Colors.grey[300]!,
-            highlightColor: Colors.grey[100]!,
-            child: Container(
-              height: 100,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius:
-                    BorderRadius.circular(AppThemes.borderRadiusLarge),
+            baseColor: Colors.grey[300]!.withOpacity(0.3),
+            highlightColor: Colors.grey[100]!.withOpacity(0.6),
+            period: const Duration(milliseconds: 1500),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
+                child: Container(
+                  height: 100,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Colors.white.withOpacity(0.4),
+                        Colors.white.withOpacity(0.2),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
@@ -917,12 +897,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
 
   @override
   Widget build(BuildContext context) {
-    // Show skeleton loader on first load with no cache
-    if (_isFirstLoad && !_hasCachedData) {
-      return _buildSkeletonLoader();
-    }
+    if (_isFirstLoad && !_hasCachedData) return _buildSkeletonLoader();
 
-    // Show error if no course
     if (_course == null) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
@@ -938,15 +914,56 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
           ),
         ),
         body: Center(
-          child: EmptyState(
-            icon: Icons.error_outline,
-            title: 'Course not found',
-            message: _isOffline
-                ? 'No cached data available. Please check your connection.'
-                : 'The course you\'re looking for doesn\'t exist.',
-            type: EmptyStateType.error,
-            actionText: 'Retry',
-            onAction: _manualRefresh,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(30),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: Container(
+                padding: const EdgeInsets.all(32),
+                decoration: BoxDecoration(
+                  color: AppColors.getCard(context).withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(30),
+                  border: Border.all(
+                    color: AppColors.telegramRed.withOpacity(0.2),
+                    width: 1,
+                  ),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.error_outline_rounded,
+                      size: 64,
+                      color: AppColors.telegramRed.withOpacity(0.5),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Course not found',
+                      style: AppTextStyles.titleLarge.copyWith(
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _isOffline
+                          ? 'No cached data available. Please check your connection.'
+                          : 'The course you\'re looking for doesn\'t exist.',
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: AppColors.getTextSecondary(context),
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    _buildGradientButton(
+                      label: 'Retry',
+                      onPressed: _manualRefresh,
+                      gradient: const [Color(0xFF2AABEE), Color(0xFF5856D6)],
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       );
@@ -964,6 +981,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
           _course!.name,
           style: AppTextStyles.titleMedium.copyWith(
             color: AppColors.getTextPrimary(context),
+            letterSpacing: -0.3,
           ),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
@@ -980,7 +998,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         actions: [
           if (_isRefreshing)
             Padding(
-              padding: EdgeInsets.all(16),
+              padding: const EdgeInsets.all(16),
               child: SizedBox(
                 width: 20,
                 height: 20,
@@ -992,27 +1010,21 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
             ),
         ],
         bottom: PreferredSize(
-          preferredSize: Size.fromHeight(48),
+          preferredSize: const Size.fromHeight(48),
           child: Container(
             decoration: BoxDecoration(
               border: Border(
                 bottom: BorderSide(
-                  color: Theme.of(context).dividerColor,
+                  color: Theme.of(context).dividerColor.withOpacity(0.5),
                   width: 0.5,
                 ),
               ),
             ),
             child: TabBar(
               controller: _tabController,
-              tabs: [
-                Tab(
-                  icon: Icon(Icons.menu_book_rounded),
-                  text: 'Chapters',
-                ),
-                Tab(
-                  icon: Icon(Icons.quiz_rounded),
-                  text: 'Exams',
-                ),
+              tabs: const [
+                Tab(icon: Icon(Icons.menu_book_rounded), text: 'Chapters'),
+                Tab(icon: Icon(Icons.quiz_rounded), text: 'Exams'),
               ],
               labelStyle: AppTextStyles.labelMedium,
               unselectedLabelStyle: AppTextStyles.labelMedium,
@@ -1024,43 +1036,47 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
           ),
         ),
       ),
-      body: SmartRefresher(
-        controller: _refreshController,
-        onRefresh: _manualRefresh,
-        enablePullDown: true,
-        header: WaterDropHeader(
-          waterDropColor: AppColors.telegramBlue,
-          refresh: SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation(AppColors.telegramBlue),
-            ),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              AppColors.getBackground(context).withOpacity(0.95),
+              AppColors.getBackground(context),
+            ],
           ),
         ),
-        child: CustomScrollView(
-          physics: const BouncingScrollPhysics(),
-          slivers: [
-            // Access banner
-            SliverToBoxAdapter(
-              child: _buildAccessBanner(),
-            ),
-
-            // Tab content
-            SliverFillRemaining(
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  // Chapters tab
-                  _buildChaptersList(chapters),
-
-                  // Exams tab
-                  _buildExamsList(exams),
-                ],
+        child: SmartRefresher(
+          controller: _refreshController,
+          onRefresh: _manualRefresh,
+          enablePullDown: true,
+          header: WaterDropHeader(
+            waterDropColor: AppColors.telegramBlue,
+            refresh: SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation(AppColors.telegramBlue),
               ),
             ),
-          ],
+          ),
+          child: CustomScrollView(
+            physics: const BouncingScrollPhysics(),
+            slivers: [
+              SliverToBoxAdapter(child: _buildAccessBanner()),
+              SliverFillRemaining(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildChaptersList(chapters),
+                    _buildExamsList(exams),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     ).animate().fadeIn(duration: AppThemes.animationDurationMedium);
@@ -1085,19 +1101,30 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     return ListView.builder(
       padding: EdgeInsets.all(ScreenSize.responsiveValue(
         context: context,
-        mobile: AppThemes.spacingL,
-        tablet: AppThemes.spacingXL,
-        desktop: AppThemes.spacingXXL,
+        mobile: 16,
+        tablet: 20,
+        desktop: 24,
       )),
       itemCount: chapters.length,
       itemBuilder: (context, index) {
         final chapter = chapters[index];
-        return ChapterCard(
-          chapter: chapter,
-          courseId: _course!.id,
-          categoryId: _category?.id ?? 0,
-          categoryName: _category?.name ?? 'Category',
-          onTap: () => _handleChapterTap(chapter),
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: ScreenSize.responsiveValue(
+              context: context,
+              mobile: 16,
+              tablet: 20,
+              desktop: 24,
+            ),
+          ),
+          child: ChapterCard(
+            chapter: chapter,
+            courseId: _course!.id,
+            categoryId: _category?.id ?? 0,
+            categoryName: _category?.name ?? 'Category',
+            onTap: () => _handleChapterTap(chapter),
+            index: index,
+          ),
         );
       },
     );
@@ -1122,18 +1149,26 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     return ListView.builder(
       padding: EdgeInsets.all(ScreenSize.responsiveValue(
         context: context,
-        mobile: AppThemes.spacingL,
-        tablet: AppThemes.spacingXL,
-        desktop: AppThemes.spacingXXL,
+        mobile: 16,
+        tablet: 20,
+        desktop: 24,
       )),
       itemCount: exams.length,
       itemBuilder: (context, index) {
         final exam = exams[index];
         return Padding(
-          padding: EdgeInsets.only(bottom: AppThemes.spacingL),
+          padding: EdgeInsets.only(
+            bottom: ScreenSize.responsiveValue(
+              context: context,
+              mobile: 16,
+              tablet: 20,
+              desktop: 24,
+            ),
+          ),
           child: ExamCard(
             exam: exam,
             onTap: () => _handleExamTap(exam),
+            index: index,
           ),
         );
       },

@@ -23,9 +23,7 @@ class NotificationProvider with ChangeNotifier {
   NotificationProvider(
       {required this.apiService, required this.deviceService}) {
     _refreshTimer = Timer.periodic(_refreshInterval, (_) {
-      if (_hasLoaded && !_isLoading) {
-        loadNotifications();
-      }
+      if (_hasLoaded && !_isLoading) loadNotifications();
     });
   }
 
@@ -46,17 +44,12 @@ class NotificationProvider with ChangeNotifier {
   Future<void> loadNotifications({bool forceRefresh = false}) async {
     if (_isLoading && !forceRefresh) return;
 
-    // Check cache first
     if (!forceRefresh && _hasLoaded) {
       final now = DateTime.now();
       if (_lastLoadTime != null &&
-          now.difference(_lastLoadTime!) < _cacheDuration) {
-        debugLog('NotificationProvider', 'Using recent cache');
-        return;
-      }
+          now.difference(_lastLoadTime!) < _cacheDuration) return;
     }
 
-    // Try to load from cache first for instant UI
     if (!forceRefresh && !_hasLoaded) {
       final cachedNotifications = await deviceService
           .getCacheItem<List<AppNotification.Notification>>('notifications',
@@ -67,10 +60,6 @@ class NotificationProvider with ChangeNotifier {
             _notifications.where((n) => !n.isRead && n.isDelivered).length;
         _hasLoaded = true;
         _notifySafely();
-        debugLog('NotificationProvider',
-            '✅ Loaded ${_notifications.length} notifications from cache');
-
-        // Refresh in background
         _refreshFromApi();
         return;
       }
@@ -81,7 +70,6 @@ class NotificationProvider with ChangeNotifier {
     _notifySafely();
 
     try {
-      debugLog('NotificationProvider', 'Loading notifications from API');
       final response = await apiService.getMyNotifications();
 
       if (response.success && response.data != null) {
@@ -91,28 +79,14 @@ class NotificationProvider with ChangeNotifier {
         _hasLoaded = true;
         _lastLoadTime = DateTime.now();
 
-        // Cache the notifications
-        await deviceService.saveCacheItem(
-          'notifications',
-          _notifications,
-          ttl: _cacheDuration,
-          isUserSpecific: true,
-        );
-
-        debugLog('NotificationProvider',
-            '✅ Loaded ${_notifications.length} notifications, Unread: $_unreadCount');
+        await deviceService.saveCacheItem('notifications', _notifications,
+            ttl: _cacheDuration, isUserSpecific: true);
       } else {
         _error = response.message ?? 'Failed to load notifications';
-        debugLog('NotificationProvider', '❌ API error: ${response.message}');
       }
     } catch (e) {
       _error = e.toString();
-      debugLog('NotificationProvider', 'loadNotifications error: $e');
-
-      // If offline and no cache, show empty state with retry option
-      if (!_hasLoaded) {
-        _error = 'No internet connection';
-      }
+      if (!_hasLoaded) _error = 'No internet connection';
     } finally {
       _isLoading = false;
       _notifySafely();
@@ -121,49 +95,38 @@ class NotificationProvider with ChangeNotifier {
 
   Future<void> _refreshFromApi() async {
     try {
-      debugLog(
-          'NotificationProvider', 'Refreshing notifications in background');
       final response = await apiService.getMyNotifications();
 
       if (response.success && response.data != null) {
         final newNotifications = response.data ?? [];
-
-        // Merge with existing notifications
         final Map<int, AppNotification.Notification> notificationMap = {};
-        for (final notif in _notifications) {
+        for (final notif in _notifications)
           notificationMap[notif.logId] = notif;
-        }
-
-        // Update with new data
-        for (final notif in newNotifications) {
+        for (final notif in newNotifications)
           notificationMap[notif.logId] = notif;
-        }
 
         _notifications = notificationMap.values.toList()
           ..sort((a, b) => b.receivedAt.compareTo(a.receivedAt));
-
         _unreadCount =
             _notifications.where((n) => !n.isRead && n.isDelivered).length;
         _lastLoadTime = DateTime.now();
 
-        // Update cache
-        await deviceService.saveCacheItem(
-          'notifications',
-          _notifications,
-          ttl: _cacheDuration,
-          isUserSpecific: true,
-        );
+        await deviceService.saveCacheItem('notifications', _notifications,
+            ttl: _cacheDuration, isUserSpecific: true);
+        if (hasListeners) _notifySafely();
+      }
+    } catch (e) {}
+  }
 
-        debugLog('NotificationProvider',
-            '✅ Background refresh: ${_notifications.length} notifications');
-
-        if (hasListeners) {
-          _notifySafely();
-        }
+  Future<void> refreshUnreadCount() async {
+    try {
+      final response = await apiService.getUnreadCount();
+      if (response.success && response.data != null) {
+        _unreadCount = response.data!['unread_count'] ?? 0;
+        notifyListeners();
       }
     } catch (e) {
-      debugLog('NotificationProvider', 'Background refresh error: $e');
-      // Silently fail for background refresh
+      debugLog('NotificationProvider', 'Refresh unread count error: $e');
     }
   }
 
@@ -186,31 +149,15 @@ class NotificationProvider with ChangeNotifier {
         );
 
         _unreadCount = unreadNotifications.length;
-
-        // Update cache
-        await deviceService.saveCacheItem(
-          'notifications',
-          _notifications,
-          ttl: _cacheDuration,
-          isUserSpecific: true,
-        );
-
+        await deviceService.saveCacheItem('notifications', _notifications,
+            ttl: _cacheDuration, isUserSpecific: true);
         _notifySafely();
 
-        // Try to sync with API
         try {
           await apiService.markNotificationAsRead(logId);
-          debugLog('NotificationProvider',
-              '✅ Synced read status for notification $logId');
-        } catch (e) {
-          debugLog(
-              'NotificationProvider', '❌ API sync failed for read status: $e');
-          // Still keep local state
-        }
+        } catch (e) {}
       }
-    } catch (e) {
-      debugLog('NotificationProvider', 'Error marking as read: $e');
-    }
+    } catch (e) {}
   }
 
   Future<void> markAllAsRead() async {
@@ -232,86 +179,58 @@ class NotificationProvider with ChangeNotifier {
       }).toList();
 
       _unreadCount = 0;
-
-      // Update cache
-      await deviceService.saveCacheItem(
-        'notifications',
-        _notifications,
-        ttl: _cacheDuration,
-        isUserSpecific: true,
-      );
-
+      await deviceService.saveCacheItem('notifications', _notifications,
+          ttl: _cacheDuration, isUserSpecific: true);
       _notifySafely();
 
-      // Try to sync with API
       try {
         await apiService.markAllNotificationsAsRead();
-        debugLog('NotificationProvider', '✅ Synced mark all as read');
-      } catch (e) {
-        debugLog('NotificationProvider', '❌ API sync failed for mark all: $e');
-        // Still keep local state
-      }
-    } catch (e) {
-      debugLog('NotificationProvider', 'Error marking all as read: $e');
-    }
+      } catch (e) {}
+    } catch (e) {}
   }
 
   Future<void> deleteNotification(int logId) async {
     try {
+      // Remove from local list immediately for UI responsiveness
       _notifications.removeWhere((n) => n.logId == logId);
       _unreadCount = unreadNotifications.length;
 
-      // Update cache
-      await deviceService.saveCacheItem(
-        'notifications',
-        _notifications,
-        ttl: _cacheDuration,
-        isUserSpecific: true,
-      );
-
+      // Save to cache
+      await deviceService.saveCacheItem('notifications', _notifications,
+          ttl: _cacheDuration, isUserSpecific: true);
       _notifySafely();
 
-      // Try to sync with API
+      // Call API to delete from backend
       try {
         await apiService.deleteNotification(logId);
-        debugLog(
-            'NotificationProvider', '✅ Synced delete for notification $logId');
+        debugLog('NotificationProvider',
+            '✅ Deleted notification $logId from backend');
       } catch (e) {
-        debugLog('NotificationProvider', '❌ API sync failed for delete: $e');
-        // Still keep local state
+        debugLog('NotificationProvider',
+            '⚠️ Backend delete failed, but removed locally: $e');
+        // If backend delete fails, we should refresh to sync
+        Future.delayed(const Duration(seconds: 2),
+            () => loadNotifications(forceRefresh: true));
       }
     } catch (e) {
-      debugLog('NotificationProvider', 'Error deleting notification: $e');
+      debugLog('NotificationProvider', '❌ Delete notification error: $e');
     }
   }
 
   void addNotification(AppNotification.Notification notification) {
     _notifications.insert(0, notification);
-    if (!notification.isRead && notification.isDelivered) {
-      _unreadCount++;
-    }
-
-    // Update cache
-    deviceService.saveCacheItem(
-      'notifications',
-      _notifications,
-      ttl: _cacheDuration,
-      isUserSpecific: true,
-    );
-
+    if (!notification.isRead && notification.isDelivered) _unreadCount++;
+    deviceService.saveCacheItem('notifications', _notifications,
+        ttl: _cacheDuration, isUserSpecific: true);
     _notifySafely();
   }
 
   Future<void> clearUserData() async {
-    debugLog('NotificationProvider', 'Clearing notification data');
-
     await deviceService.clearCacheByPrefix('notifications');
-
     _notifications.clear();
     _unreadCount = 0;
     _hasLoaded = false;
     _lastLoadTime = null;
-
     _notifySafely();
   }
 
@@ -326,41 +245,12 @@ class NotificationProvider with ChangeNotifier {
     _notifySafely();
   }
 
-  void refreshUnreadCount() {
-    _unreadCount = unreadNotifications.length;
-    _notifySafely();
-  }
-
   AppNotification.Notification? getNotificationByLogId(int logId) {
     try {
       return _notifications.firstWhere((n) => n.logId == logId);
     } catch (e) {
       return null;
     }
-  }
-
-  void addTestNotification() {
-    final testNotification = AppNotification.Notification(
-      logId: DateTime.now().millisecondsSinceEpoch,
-      title: 'Test Notification',
-      message: 'This is a test notification to verify the system is working.',
-      deliveryStatus: 'delivered',
-      isRead: false,
-      receivedAt: DateTime.now(),
-    );
-
-    _notifications.insert(0, testNotification);
-    _unreadCount++;
-
-    deviceService.saveCacheItem(
-      'notifications',
-      _notifications,
-      ttl: Duration(minutes: 5),
-      isUserSpecific: true,
-    );
-
-    _notifySafely();
-    debugLog('NotificationProvider', 'Added test notification');
   }
 
   @override
@@ -372,9 +262,7 @@ class NotificationProvider with ChangeNotifier {
   void _notifySafely() {
     if (hasListeners) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (hasListeners) {
-          notifyListeners();
-        }
+        if (hasListeners) notifyListeners();
       });
     }
   }

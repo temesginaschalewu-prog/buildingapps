@@ -15,11 +15,8 @@ class ApiResponse<T> {
     DateTime? timestamp,
   }) : timestamp = timestamp ?? DateTime.now();
 
-  factory ApiResponse.success({
-    required String message,
-    T? data,
-    int? statusCode,
-  }) {
+  factory ApiResponse.success(
+      {required String message, T? data, int? statusCode}) {
     return ApiResponse<T>(
       success: true,
       message: message,
@@ -28,12 +25,8 @@ class ApiResponse<T> {
     );
   }
 
-  factory ApiResponse.error({
-    required String message,
-    dynamic error,
-    int? statusCode,
-    T? data,
-  }) {
+  factory ApiResponse.error(
+      {required String message, dynamic error, int? statusCode, T? data}) {
     return ApiResponse<T>(
       success: false,
       message: message,
@@ -44,9 +37,7 @@ class ApiResponse<T> {
   }
 
   factory ApiResponse.fromJson(
-    Map<String, dynamic> json,
-    T Function(dynamic) fromJson,
-  ) {
+      Map<String, dynamic> json, T Function(dynamic) fromJson) {
     try {
       return ApiResponse<T>(
         success: json['success'] ?? false,
@@ -100,23 +91,16 @@ class ApiResponse<T> {
   }
 
   T getDataOrThrow() {
-    if (!success) {
-      throw ApiError.fromResponse(this);
-    }
-    if (data == null) {
-      throw ApiError(message: 'No data available');
-    }
+    if (!success) throw ApiError.fromResponse(this);
+    if (data == null) throw ApiError(message: 'No data available');
     return data as T;
   }
 
-  T? getDataOrNull() {
-    return success ? data : null;
-  }
+  T? getDataOrNull() => success ? data : null;
 
   @override
-  String toString() {
-    return 'ApiResponse{success: $success, message: $message, hasData: ${data != null}, statusCode: $statusCode}';
-  }
+  String toString() =>
+      'ApiResponse{success: $success, message: $message, hasData: ${data != null}, statusCode: $statusCode}';
 }
 
 class ApiError {
@@ -156,30 +140,21 @@ class ApiError {
 
   factory ApiError.networkError() {
     return ApiError(
-      message: 'Network error. Please check your connection.',
-      statusCode: 0,
-    );
+        message: 'Network error. Please check your connection.', statusCode: 0);
   }
 
   factory ApiError.timeoutError() {
     return ApiError(
-      message: 'Request timeout. Please try again.',
-      statusCode: 408,
-    );
+        message: 'Request timeout. Please try again.', statusCode: 408);
   }
 
   factory ApiError.unauthorized() {
     return ApiError(
-      message: 'Unauthorized. Please login again.',
-      statusCode: 401,
-    );
+        message: 'Unauthorized. Please login again.', statusCode: 401);
   }
 
   factory ApiError.notFound() {
-    return ApiError(
-      message: 'Resource not found.',
-      statusCode: 404,
-    );
+    return ApiError(message: 'Resource not found.', statusCode: 404);
   }
 
   Map<String, dynamic> toJson() {
@@ -199,27 +174,16 @@ class ApiError {
   bool get isServerError => statusCode != null && statusCode! >= 500;
 
   String get userFriendlyMessage {
-    if (isNetworkError) {
+    if (isNetworkError)
       return 'Network error. Please check your internet connection.';
-    }
-    if (isTimeout) {
-      return 'Request took too long. Please try again.';
-    }
-    if (isUnauthorized) {
-      return 'Your session has expired. Please login again.';
-    }
-    if (isNotFound) {
-      return 'The requested resource was not found.';
-    }
-    if (isServerError) {
-      return 'Server error. Please try again later.';
-    }
+    if (isTimeout) return 'Request took too long. Please try again.';
+    if (isUnauthorized) return 'Your session has expired. Please login again.';
+    if (isNotFound) return 'The requested resource was not found.';
+    if (isServerError) return 'Server error. Please try again later.';
     return message;
   }
 
-  bool requiresAction() {
-    return action != null && action!.isNotEmpty;
-  }
+  bool requiresAction() => action != null && action!.isNotEmpty;
 }
 
 class PaginatedResponse<T> {
@@ -240,9 +204,7 @@ class PaginatedResponse<T> {
   });
 
   factory PaginatedResponse.fromJson(
-    Map<String, dynamic> json,
-    T Function(dynamic) fromJson,
-  ) {
+      Map<String, dynamic> json, T Function(dynamic) fromJson) {
     final itemsData = json['items'] ?? json['data'] ?? [];
     final items = List<T>.from(itemsData.map((x) => fromJson(x)));
 

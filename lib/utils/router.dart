@@ -10,7 +10,6 @@ import 'package:familyacademyclient/screens/auth/register_screen.dart';
 import 'package:familyacademyclient/screens/category/category_detail_screen.dart';
 import 'package:familyacademyclient/screens/chapter/chapter_content_screen.dart';
 import 'package:familyacademyclient/screens/course/course_detail_screen.dart';
-import 'package:familyacademyclient/screens/exam/exam_list_screen.dart';
 import 'package:familyacademyclient/screens/exam/exam_screen.dart';
 import 'package:familyacademyclient/screens/main/chatbot_screen.dart';
 import 'package:familyacademyclient/screens/main/home_screen.dart';
@@ -31,12 +30,10 @@ class AppRouter {
   late final GoRouter router;
   bool _isLoginInProgress = false;
   bool _isDeviceChangeInProgress = false;
-
   bool _isNavigatingToHome = false;
   bool _isNavigatingToSchoolSelection = false;
   bool _isNavigatingFromDeviceChange = false;
   String? _pendingDestination;
-
   Map<String, dynamic>? _pendingDeviceChangeData;
 
   AppRouter() {
@@ -44,30 +41,22 @@ class AppRouter {
       initialLocation: '/splash',
       redirect: (context, state) async {
         final location = state.uri.toString();
-        debugLog('AppRouter', '📍 Route check: $location');
 
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
         if (_isNavigatingToHome ||
             _isNavigatingToSchoolSelection ||
             _isNavigatingFromDeviceChange) {
-          debugLog(
-              'AppRouter', '⏳ Navigation in progress - allowing current route');
-
           Future.delayed(const Duration(milliseconds: 500), () {
             _isNavigatingToHome = false;
             _isNavigatingToSchoolSelection = false;
             _isNavigatingFromDeviceChange = false;
             _pendingDestination = null;
           });
-
           return null;
         }
 
         if (authProvider.requiresDeviceChange && !_isDeviceChangeInProgress) {
-          debugLog('AppRouter',
-              '⚠️ Device change required - checking for pending data');
-
           final lastLoginResult = authProvider.lastLoginResult;
 
           if (lastLoginResult != null && lastLoginResult['data'] != null) {
@@ -85,21 +74,13 @@ class AppRouter {
               'canChangeDevice':
                   lastLoginResult['data']['canChangeDevice'] ?? true,
             };
-
-            debugLog('AppRouter',
-                '📦 Using pending device change data: $_pendingDeviceChangeData');
           }
 
           _isDeviceChangeInProgress = true;
-          if (location != '/device-change') {
-            return '/device-change';
-          }
+          if (location != '/device-change') return '/device-change';
         }
 
-        if (location.startsWith('/device-change')) {
-          debugLog('AppRouter', '✅ Device change route - allowing access');
-          return null;
-        }
+        if (location.startsWith('/device-change')) return null;
 
         if (!location.startsWith('/device-change') &&
             _isDeviceChangeInProgress) {
@@ -111,30 +92,19 @@ class AppRouter {
           if (authProvider.isInitialized) {
             if (authProvider.isAuthenticated) {
               final user = authProvider.currentUser;
-              if (user?.schoolId == null) {
-                debugLog('AppRouter',
-                    '🏫 Auth initialized + authenticated + no school → school-selection');
+              if (user?.schoolId == null)
                 return '/school-selection';
-              } else {
-                debugLog(
-                    'AppRouter', '🏠 Auth initialized + authenticated → home');
+              else
                 return '/';
-              }
             } else {
-              debugLog('AppRouter',
-                  '🔐 Auth initialized + not authenticated → login');
               return '/auth/login';
             }
           }
-
-          debugLog('AppRouter', '✅ First launch - showing splash');
           return null;
         }
 
-        if (!authProvider.isInitialized && location != '/splash') {
-          debugLog('AppRouter', '⏳ Auth not initialized - going to splash');
+        if (!authProvider.isInitialized && location != '/splash')
           return '/splash';
-        }
 
         final isAuthenticated = authProvider.isAuthenticated;
         final user = authProvider.currentUser;
@@ -143,26 +113,18 @@ class AppRouter {
           '/auth/login',
           '/auth/register',
           '/device-change',
-          '/payment-success',
+          '/payment-success'
         ];
 
         final isPublicRoute = publicRoutes.any(
             (route) => location == route || location.startsWith('$route?'));
 
-        if (!isAuthenticated && !isPublicRoute) {
-          debugLog('AppRouter', '🔐 Not authenticated - redirecting to login');
-          return '/auth/login';
-        }
+        if (!isAuthenticated && !isPublicRoute) return '/auth/login';
 
         if (isAuthenticated &&
             location.startsWith('/auth/') &&
             location != '/auth/logout') {
-          if (user?.schoolId == null) {
-            debugLog('AppRouter',
-                '🏫 No school selected - going to school selection');
-            return '/school-selection';
-          }
-          debugLog('AppRouter', '✅ Going to home');
+          if (user?.schoolId == null) return '/school-selection';
           return '/';
         }
 
@@ -173,13 +135,10 @@ class AppRouter {
               !location.startsWith('/auth/') &&
               location != '/splash' &&
               !location.startsWith('/device-change')) {
-            debugLog(
-                'AppRouter', '📚 No school - redirecting to school selection');
             return '/school-selection';
           }
         }
 
-        debugLog('AppRouter', '✅ Route allowed: $location');
         return null;
       },
       routes: [
@@ -190,12 +149,8 @@ class AppRouter {
             key: state.pageKey,
             child: const SplashScreen(),
             transitionsBuilder:
-                (context, animation, secondaryAnimation, child) {
-              return FadeTransition(
-                opacity: animation,
-                child: child,
-              );
-            },
+                (context, animation, secondaryAnimation, child) =>
+                    FadeTransition(opacity: animation, child: child),
           ),
         ),
         GoRoute(
@@ -205,15 +160,13 @@ class AppRouter {
             key: state.pageKey,
             child: const RegisterScreen(),
             transitionsBuilder:
-                (context, animation, secondaryAnimation, child) {
-              return SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(1, 0),
-                  end: Offset.zero,
-                ).animate(animation),
-                child: child,
-              );
-            },
+                (context, animation, secondaryAnimation, child) =>
+                    SlideTransition(
+              position:
+                  Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero)
+                      .animate(animation),
+              child: child,
+            ),
           ),
         ),
         GoRoute(
@@ -226,12 +179,8 @@ class AppRouter {
               child: const LoginScreen(),
               fullscreenDialog: forceLogin,
               transitionsBuilder:
-                  (context, animation, secondaryAnimation, child) {
-                return FadeTransition(
-                  opacity: animation,
-                  child: child,
-                );
-              },
+                  (context, animation, secondaryAnimation, child) =>
+                      FadeTransition(opacity: animation, child: child),
             );
           },
         ),
@@ -240,20 +189,14 @@ class AppRouter {
           name: 'device-change',
           pageBuilder: (context, state) {
             Map<String, dynamic> extra = {};
-
             if (state.extra != null && state.extra is Map<String, dynamic>) {
               extra = state.extra as Map<String, dynamic>;
-              debugLog('AppRouter',
-                  '📱 Got device-change data from state.extra: $extra');
             } else if (_pendingDeviceChangeData != null) {
               extra = _pendingDeviceChangeData!;
-              debugLog(
-                  'AppRouter', '📱 Using pending device change data: $extra');
             }
-
             return MaterialPage(
               key: state.pageKey,
-              child: DeviceChangeScreen(),
+              child: const DeviceChangeScreen(),
               fullscreenDialog: true,
               arguments: extra,
             );
@@ -266,51 +209,37 @@ class AppRouter {
             key: state.pageKey,
             child: const SchoolSelectionScreen(),
             transitionsBuilder:
-                (context, animation, secondaryAnimation, child) {
-              return FadeTransition(
-                opacity: animation,
-                child: child,
-              );
-            },
+                (context, animation, secondaryAnimation, child) =>
+                    FadeTransition(opacity: animation, child: child),
           ),
         ),
         GoRoute(
           path: '/payment',
           name: 'payment',
-          pageBuilder: (context, state) {
-            return CustomTransitionPage(
-              key: state.pageKey,
-              child: PaymentScreen(extra: state.extra as Map<String, dynamic>?),
-              transitionsBuilder:
-                  (context, animation, secondaryAnimation, child) {
-                return SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0, 1),
-                    end: Offset.zero,
-                  ).animate(animation),
-                  child: child,
-                );
-              },
-            );
-          },
+          pageBuilder: (context, state) => CustomTransitionPage(
+            key: state.pageKey,
+            child: PaymentScreen(extra: state.extra as Map<String, dynamic>?),
+            transitionsBuilder:
+                (context, animation, secondaryAnimation, child) =>
+                    SlideTransition(
+              position:
+                  Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+                      .animate(animation),
+              child: child,
+            ),
+          ),
         ),
         GoRoute(
           path: '/payment-success',
           name: 'payment-success',
-          pageBuilder: (context, state) {
-            return CustomTransitionPage(
-              key: state.pageKey,
-              child: PaymentSuccessScreen(
-                  extra: state.extra as Map<String, dynamic>?),
-              transitionsBuilder:
-                  (context, animation, secondaryAnimation, child) {
-                return FadeTransition(
-                  opacity: animation,
-                  child: child,
-                );
-              },
-            );
-          },
+          pageBuilder: (context, state) => CustomTransitionPage(
+            key: state.pageKey,
+            child: PaymentSuccessScreen(
+                extra: state.extra as Map<String, dynamic>?),
+            transitionsBuilder:
+                (context, animation, secondaryAnimation, child) =>
+                    FadeTransition(opacity: animation, child: child),
+          ),
         ),
         GoRoute(
           path: '/subscriptions',
@@ -319,15 +248,13 @@ class AppRouter {
             key: state.pageKey,
             child: const SubscriptionScreen(),
             transitionsBuilder:
-                (context, animation, secondaryAnimation, child) {
-              return SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(1, 0),
-                  end: Offset.zero,
-                ).animate(animation),
-                child: child,
-              );
-            },
+                (context, animation, secondaryAnimation, child) =>
+                    SlideTransition(
+              position:
+                  Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero)
+                      .animate(animation),
+              child: child,
+            ),
           ),
         ),
         GoRoute(
@@ -337,12 +264,8 @@ class AppRouter {
             key: state.pageKey,
             child: const TvPairingScreen(),
             transitionsBuilder:
-                (context, animation, secondaryAnimation, child) {
-              return FadeTransition(
-                opacity: animation,
-                child: child,
-              );
-            },
+                (context, animation, secondaryAnimation, child) =>
+                    FadeTransition(opacity: animation, child: child),
           ),
         ),
         GoRoute(
@@ -352,15 +275,13 @@ class AppRouter {
             key: state.pageKey,
             child: const ParentLinkScreen(),
             transitionsBuilder:
-                (context, animation, secondaryAnimation, child) {
-              return SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(1, 0),
-                  end: Offset.zero,
-                ).animate(animation),
-                child: child,
-              );
-            },
+                (context, animation, secondaryAnimation, child) =>
+                    SlideTransition(
+              position:
+                  Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero)
+                      .animate(animation),
+              child: child,
+            ),
           ),
         ),
         GoRoute(
@@ -370,12 +291,8 @@ class AppRouter {
             key: state.pageKey,
             child: const SupportScreen(),
             transitionsBuilder:
-                (context, animation, secondaryAnimation, child) {
-              return FadeTransition(
-                opacity: animation,
-                child: child,
-              );
-            },
+                (context, animation, secondaryAnimation, child) =>
+                    FadeTransition(opacity: animation, child: child),
           ),
         ),
         GoRoute(
@@ -385,15 +302,13 @@ class AppRouter {
             key: state.pageKey,
             child: const NotificationsScreen(),
             transitionsBuilder:
-                (context, animation, secondaryAnimation, child) {
-              return SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(0, 1),
-                  end: Offset.zero,
-                ).animate(animation),
-                child: child,
-              );
-            },
+                (context, animation, secondaryAnimation, child) =>
+                    SlideTransition(
+              position:
+                  Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+                      .animate(animation),
+              child: child,
+            ),
           ),
         ),
         GoRoute(
@@ -406,12 +321,8 @@ class AppRouter {
               key: ValueKey('category-$categoryId'),
               child: CategoryDetailScreen(categoryId: categoryId),
               transitionsBuilder:
-                  (context, animation, secondaryAnimation, child) {
-                return FadeTransition(
-                  opacity: animation,
-                  child: child,
-                );
-              },
+                  (context, animation, secondaryAnimation, child) =>
+                      FadeTransition(opacity: animation, child: child),
             );
           },
         ),
@@ -425,15 +336,13 @@ class AppRouter {
               key: ValueKey('course-$courseId'),
               child: CourseDetailScreen(courseId: courseId),
               transitionsBuilder:
-                  (context, animation, secondaryAnimation, child) {
-                return SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(1, 0),
-                    end: Offset.zero,
-                  ).animate(animation),
-                  child: child,
-                );
-              },
+                  (context, animation, secondaryAnimation, child) =>
+                      SlideTransition(
+                position:
+                    Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero)
+                        .animate(animation),
+                child: child,
+              ),
             );
           },
         ),
@@ -447,12 +356,8 @@ class AppRouter {
               key: ValueKey('chapter-$chapterId'),
               child: ChapterContentScreen(chapterId: chapterId),
               transitionsBuilder:
-                  (context, animation, secondaryAnimation, child) {
-                return FadeTransition(
-                  opacity: animation,
-                  child: child,
-                );
-              },
+                  (context, animation, secondaryAnimation, child) =>
+                      FadeTransition(opacity: animation, child: child),
             );
           },
         ),
@@ -465,114 +370,68 @@ class AppRouter {
             final exam = state.extra as Exam?;
             return CustomTransitionPage(
               key: ValueKey('exam-$examId'),
-              child: ExamScreen(
-                examId: examId,
-                exam: exam,
-              ),
+              child: ExamScreen(examId: examId, exam: exam),
               transitionsBuilder:
-                  (context, animation, secondaryAnimation, child) {
-                return ScaleTransition(
-                  scale: animation,
-                  child: child,
-                );
-              },
+                  (context, animation, secondaryAnimation, child) =>
+                      ScaleTransition(scale: animation, child: child),
             );
           },
         ),
-        GoRoute(
-          path: '/course/:courseId/exams',
-          name: 'exam-list',
-          pageBuilder: (context, state) {
-            final courseId =
-                int.tryParse(state.pathParameters['courseId'] ?? '0') ?? 0;
-            return CustomTransitionPage(
-              key: ValueKey('exam-list-$courseId'),
-              child: ExamListScreen(courseId: courseId),
-              transitionsBuilder:
-                  (context, animation, secondaryAnimation, child) {
-                return SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0, 1),
-                    end: Offset.zero,
-                  ).animate(animation),
-                  child: child,
-                );
-              },
-            );
-          },
-        ),
+        // REMOVED: '/course/:courseId/exams' route - exams now shown directly in CourseDetailScreen
+
         ShellRoute(
-          builder: (context, state, child) {
-            return MainNavigation(child: child);
-          },
+          builder: (context, state, child) => MainNavigation(child: child),
           routes: [
             GoRoute(
-              path: '/',
-              name: 'home',
-              pageBuilder: (context, state) =>
-                  const NoTransitionPage(child: HomeScreen()),
-            ),
+                path: '/',
+                name: 'home',
+                pageBuilder: (context, state) =>
+                    const NoTransitionPage(child: HomeScreen())),
             GoRoute(
-              path: '/chatbot',
-              name: 'chatbot',
-              pageBuilder: (context, state) =>
-                  const NoTransitionPage(child: ChatbotScreen()),
-            ),
+                path: '/chatbot',
+                name: 'chatbot',
+                pageBuilder: (context, state) =>
+                    const NoTransitionPage(child: ChatbotScreen())),
             GoRoute(
-              path: '/progress',
-              name: 'progress',
-              pageBuilder: (context, state) =>
-                  const NoTransitionPage(child: ProgressScreen()),
-            ),
+                path: '/progress',
+                name: 'progress',
+                pageBuilder: (context, state) =>
+                    const NoTransitionPage(child: ProgressScreen())),
             GoRoute(
-              path: '/profile',
-              name: 'profile',
-              pageBuilder: (context, state) =>
-                  const NoTransitionPage(child: ProfileScreen()),
-            ),
+                path: '/profile',
+                name: 'profile',
+                pageBuilder: (context, state) =>
+                    const NoTransitionPage(child: ProfileScreen())),
           ],
         ),
       ],
       errorBuilder: (context, state) {
-        debugLog('AppRouter', '❌ Route error: ${state.error}');
-
         return Scaffold(
           appBar: AppBar(title: const Text('Error')),
           body: Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(
-                  Icons.error_outline,
-                  size: 64,
-                  color: Theme.of(context).colorScheme.error,
-                ),
+                Icon(Icons.error_outline,
+                    size: 64, color: Theme.of(context).colorScheme.error),
                 const SizedBox(height: 24),
-                Text(
-                  'Oops!',
-                  style: TextStyle(
-                    fontSize: 36,
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).colorScheme.error,
-                  ),
-                ),
+                Text('Oops!',
+                    style: TextStyle(
+                        fontSize: 36,
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.error)),
                 const SizedBox(height: 16),
-                Text(
-                  'The page you\'re looking for\ncouldn\'t be found.',
-                  style: Theme.of(context).textTheme.titleLarge,
-                  textAlign: TextAlign.center,
-                ),
+                Text('The page you\'re looking for couldn\'t be found.',
+                    style: Theme.of(context).textTheme.titleLarge,
+                    textAlign: TextAlign.center),
                 const SizedBox(height: 32),
                 ElevatedButton(
                   onPressed: () => context.go('/'),
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 32,
-                      vertical: 16,
-                    ),
+                        horizontal: 32, vertical: 16),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                        borderRadius: BorderRadius.circular(12)),
                   ),
                   child: const Text('Go Home'),
                 ),
@@ -585,30 +444,14 @@ class AppRouter {
     );
   }
 
-  void setNavigatingToHome(bool value) {
-    _isNavigatingToHome = value;
-    debugLog('AppRouter', '🏠 Navigation to home flag: $value');
-  }
-
-  void setNavigatingToSchoolSelection(bool value) {
-    _isNavigatingToSchoolSelection = value;
-    debugLog('AppRouter', '🏫 Navigation to school selection flag: $value');
-  }
-
-  void setNavigatingFromDeviceChange(bool value) {
-    _isNavigatingFromDeviceChange = value;
-    debugLog('AppRouter', '📱 Navigation from device change flag: $value');
-  }
-
-  void setPendingDestination(String? destination) {
-    _pendingDestination = destination;
-    debugLog('AppRouter', '📍 Pending destination set: $destination');
-  }
-
-  void markLoginInProgress(bool inProgress) {
-    _isLoginInProgress = inProgress;
-    debugLog('AppRouter', '🔐 Login in progress: $inProgress');
-  }
+  void setNavigatingToHome(bool value) => _isNavigatingToHome = value;
+  void setNavigatingToSchoolSelection(bool value) =>
+      _isNavigatingToSchoolSelection = value;
+  void setNavigatingFromDeviceChange(bool value) =>
+      _isNavigatingFromDeviceChange = value;
+  void setPendingDestination(String? destination) =>
+      _pendingDestination = destination;
+  void markLoginInProgress(bool inProgress) => _isLoginInProgress = inProgress;
 }
 
 final appRouter = AppRouter();

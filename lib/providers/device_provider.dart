@@ -32,12 +32,10 @@ class DeviceProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get isInitialized => _isInitialized;
   String? get error => _error;
-
   bool get hasTvDevice => _tvDeviceId != null && _tvDeviceId!.isNotEmpty;
-  bool get isPairingExpired {
-    if (_pairingExpiresAt == null) return true;
-    return DateTime.now().isAfter(_pairingExpiresAt!);
-  }
+  bool get isPairingExpired => _pairingExpiresAt == null
+      ? true
+      : DateTime.now().isAfter(_pairingExpiresAt!);
 
   Future<void> _initializeAsync() async {
     try {
@@ -46,10 +44,8 @@ class DeviceProvider with ChangeNotifier {
       _tvDeviceId = await deviceService.getTvDeviceId();
       await _loadPairingCode();
       _isInitialized = true;
-      debugLog('DeviceProvider', '✅ Initialized with device ID: $_deviceId');
     } catch (e) {
       _error = e.toString();
-      debugLog('DeviceProvider', 'initialize error: $e');
     }
   }
 
@@ -77,8 +73,6 @@ class DeviceProvider with ChangeNotifier {
       _pairingCode = code;
       _pairingExpiresAt = DateTime.fromMillisecondsSinceEpoch(expiresAt);
       _isPairing = true;
-      debugLog('DeviceProvider',
-          'Loaded pairing code: $code, expires: $_pairingExpiresAt');
     }
   }
 
@@ -106,7 +100,6 @@ class DeviceProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      debugLog('DeviceProvider', 'Pairing TV device: $tvDeviceId');
       final response = await apiService.pairTvDevice(tvDeviceId);
       final data = response.data!;
 
@@ -114,13 +107,9 @@ class DeviceProvider with ChangeNotifier {
       final expiresIn = data['expires_in'] ?? 600;
 
       await _savePairingCode(code, expiresIn);
-
-      debugLog('DeviceProvider',
-          'Pairing code generated: $code, expires in: ${expiresIn}s');
       notifyListeners();
     } catch (e) {
       _error = e.toString();
-      debugLog('DeviceProvider', 'pairTvDevice error: $e');
       notifyListeners();
       rethrow;
     } finally {
@@ -137,7 +126,6 @@ class DeviceProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      debugLog('DeviceProvider', 'Verifying TV pairing code: $code');
       final response = await apiService.verifyTvPairing(code);
       final data = response.data!;
 
@@ -145,15 +133,11 @@ class DeviceProvider with ChangeNotifier {
       _tvDeviceId = data['tv_device_id'];
 
       await _clearPairingState();
-
       await apiService.updateDevice('tv', data['tv_device_id']);
 
-      debugLog('DeviceProvider',
-          'TV device paired successfully: ${data['tv_device_id']}');
       notifyListeners();
     } catch (e) {
       _error = e.toString();
-      debugLog('DeviceProvider', 'verifyTvPairing error: $e');
       notifyListeners();
       rethrow;
     } finally {
@@ -170,19 +154,13 @@ class DeviceProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      debugLog('DeviceProvider', 'Unpairing TV device');
       await apiService.unpairTvDevice();
-
       await deviceService.clearTvDeviceId();
       _tvDeviceId = null;
-
       await apiService.updateDevice('tv', '');
-
-      debugLog('DeviceProvider', 'TV device unpaired successfully');
       notifyListeners();
     } catch (e) {
       _error = e.toString();
-      debugLog('DeviceProvider', 'unpairTvDevice error: $e');
       notifyListeners();
       rethrow;
     } finally {
@@ -199,13 +177,11 @@ class DeviceProvider with ChangeNotifier {
     _pairingCode = null;
     _pairingExpiresAt = null;
     _isPairing = false;
-    debugLog('DeviceProvider', 'Pairing state cleared');
     notifyListeners();
   }
 
   Future<void> cancelPairing() async {
     await _clearPairingState();
-    debugLog('DeviceProvider', 'Pairing cancelled by user');
   }
 
   void clearError() {
@@ -215,18 +191,14 @@ class DeviceProvider with ChangeNotifier {
 
   Future<Map<String, dynamic>> getDeviceInfo() async {
     if (!_isInitialized) await initialize();
-
     try {
       return await deviceService.getDeviceInfo();
     } catch (e) {
-      debugLog('DeviceProvider', 'getDeviceInfo error: $e');
       return {};
     }
   }
 
   Future<void> clearUserData() async {
-    debugLog('DeviceProvider', 'Clearing user device data (keeping device ID)');
-
     _tvDeviceId = null;
     _pairingCode = null;
     _pairingExpiresAt = null;
@@ -236,9 +208,6 @@ class DeviceProvider with ChangeNotifier {
     await prefs.remove('pairing_code');
     await prefs.remove('pairing_expires_at');
     await deviceService.clearTvDeviceId();
-
-    debugLog(
-        'DeviceProvider', '✅ User device data cleared (device ID preserved)');
 
     notifyListeners();
   }

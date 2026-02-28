@@ -31,7 +31,6 @@ class ChatbotProvider extends ChangeNotifier {
     loadUsageStats();
   }
 
-  // Getters
   List<ChatbotMessage> get messages => List.unmodifiable(_messages);
   List<ChatbotConversation> get conversations =>
       List.unmodifiable(_conversations);
@@ -50,7 +49,6 @@ class ChatbotProvider extends ChangeNotifier {
 
   bool get hasMoreConversations => _hasMoreConversations;
 
-  // Load usage stats
   Future<void> loadUsageStats() async {
     try {
       final response = await apiService.dio.get('/chatbot/usage');
@@ -60,6 +58,8 @@ class ChatbotProvider extends ChangeNotifier {
         _dailyLimit = stats.limit;
         _totalMessages = stats.totalMessages;
         _totalConversations = stats.totalConversations;
+        debugLog('ChatbotProvider',
+            '📊 Usage stats loaded: $_remainingMessages/$_dailyLimit');
         notifyListeners();
       }
     } catch (e) {
@@ -67,7 +67,6 @@ class ChatbotProvider extends ChangeNotifier {
     }
   }
 
-  // Load conversations
   Future<void> loadConversations({bool refresh = false}) async {
     if (refresh) {
       _currentPage = 1;
@@ -98,7 +97,6 @@ class ChatbotProvider extends ChangeNotifier {
           _conversations.addAll(newConversations);
         }
 
-        // Check if there are more pages
         final pagination = response.data['pagination'] ?? {};
         final totalPages = pagination['pages'] ?? 1;
         _hasMoreConversations = _currentPage < totalPages;
@@ -106,6 +104,9 @@ class ChatbotProvider extends ChangeNotifier {
         if (_hasMoreConversations) {
           _currentPage++;
         }
+
+        debugLog('ChatbotProvider',
+            '📋 Loaded ${newConversations.length} conversations');
       }
     } catch (e) {
       _error = 'Failed to load conversations';
@@ -117,7 +118,6 @@ class ChatbotProvider extends ChangeNotifier {
     }
   }
 
-  // Load messages for a conversation
   Future<void> loadMessages(int conversationId) async {
     _isLoadingMessages = true;
     _error = null;
@@ -132,7 +132,6 @@ class ChatbotProvider extends ChangeNotifier {
         final List<dynamic> data = response.data['data'];
         _messages = data.map((json) => ChatbotMessage.fromJson(json)).toList();
 
-        // Find and set current conversation
         _currentConversation = _conversations.firstWhere(
           (c) => c.id == conversationId,
           orElse: () => ChatbotConversation(
@@ -143,6 +142,12 @@ class ChatbotProvider extends ChangeNotifier {
             messageCount: _messages.length,
           ),
         );
+
+        debugLog('ChatbotProvider', '💬 Loaded ${_messages.length} messages');
+
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          notifyListeners();
+        });
       }
     } catch (e) {
       _error = 'Failed to load messages';
@@ -153,7 +158,13 @@ class ChatbotProvider extends ChangeNotifier {
     }
   }
 
-  // Send a message
+  List<T> _takeLast<T>(Iterable<T> items, int n) {
+    final list = items.toList();
+    if (list.isEmpty) return [];
+    if (list.length <= n) return list;
+    return list.sublist(list.length - n);
+  }
+
   Future<Map<String, dynamic>> sendMessage(
     String message, {
     int? conversationId,
@@ -172,7 +183,6 @@ class ChatbotProvider extends ChangeNotifier {
     _isLoading = true;
     _error = null;
 
-    // Add user message immediately
     final tempUserMessage = ChatbotMessage(
       id: DateTime.now().millisecondsSinceEpoch,
       role: 'user',
@@ -183,19 +193,31 @@ class ChatbotProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      final List<String> history = [];
+      if (_messages.length > 1) {
+        for (int i = 0; i < _messages.length - 1; i++) {
+          if (_messages[i].id < 1000000) {
+            history.add(_messages[i].content);
+          }
+        }
+
+        if (history.length > 10) {
+          history.removeRange(0, history.length - 10);
+        }
+      }
+
       final response = await apiService.dio.post(
         '/chatbot/chat',
         data: {
           'message': message,
           'conversation_id': conversationId,
-          'history': _messages.takeLast(10).map((m) => m.content).toList(),
+          'history': history,
         },
       );
 
       if (response.statusCode == 200 && response.data['success'] == true) {
         final data = response.data['data'];
 
-        // Add AI response
         final aiMessage = ChatbotMessage(
           id: DateTime.now().millisecondsSinceEpoch + 1,
           role: 'assistant',
@@ -204,12 +226,14 @@ class ChatbotProvider extends ChangeNotifier {
         );
         _messages.add(aiMessage);
 
-        // Update remaining messages
         if (data['remaining'] != null) {
           _remainingMessages = data['remaining'];
+          debugLog(
+              'ChatbotProvider', '📊 Updated remaining: $_remainingMessages');
         }
 
-        // If this is a new conversation, update the conversation list
+        loadUsageStats();
+
         if (conversationId == null && data['conversation_id'] != null) {
           await loadConversations(refresh: true);
         }
@@ -226,7 +250,6 @@ class ChatbotProvider extends ChangeNotifier {
         throw Exception(response.data['message'] ?? 'Failed to send message');
       }
     } catch (e) {
-      // Remove the user message we added
       _messages.remove(tempUserMessage);
 
       _error = 'Failed to send message: $e';
@@ -239,7 +262,6 @@ class ChatbotProvider extends ChangeNotifier {
     }
   }
 
-  // Rename conversation
   Future<bool> renameConversation(int conversationId, String title) async {
     try {
       final response = await apiService.dio.put(
@@ -248,7 +270,6 @@ class ChatbotProvider extends ChangeNotifier {
       );
 
       if (response.statusCode == 200 && response.data['success'] == true) {
-        // Update in list
         final index = _conversations.indexWhere((c) => c.id == conversationId);
         if (index != -1) {
           _conversations[index] = ChatbotConversation(
@@ -262,7 +283,6 @@ class ChatbotProvider extends ChangeNotifier {
           );
         }
 
-        // Update current conversation if applicable
         if (_currentConversation?.id == conversationId) {
           _currentConversation = ChatbotConversation(
             id: _currentConversation!.id,
@@ -285,7 +305,6 @@ class ChatbotProvider extends ChangeNotifier {
     }
   }
 
-  // Delete conversation
   Future<bool> deleteConversation(int conversationId) async {
     try {
       final response = await apiService.dio.delete(
@@ -310,20 +329,17 @@ class ChatbotProvider extends ChangeNotifier {
     }
   }
 
-  // Clear current conversation
   void clearCurrentConversation() {
     _messages.clear();
     _currentConversation = null;
     notifyListeners();
   }
 
-  // Load more conversations
   Future<void> loadMoreConversations() async {
     if (!_hasMoreConversations || _isLoadingMore) return;
     await loadConversations();
   }
 
-  // Clear error
   void clearError() {
     _error = null;
     notifyListeners();
@@ -332,13 +348,5 @@ class ChatbotProvider extends ChangeNotifier {
   @override
   void dispose() {
     super.dispose();
-  }
-}
-
-extension ListExtension<T> on List<T> {
-  List<T> takeLast(int n) {
-    if (isEmpty) return [];
-    if (length <= n) return this;
-    return sublist(length - n);
   }
 }

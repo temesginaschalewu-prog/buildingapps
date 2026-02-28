@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 import 'package:familyacademyclient/models/user_model.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -49,75 +50,41 @@ class _SplashScreenState extends State<SplashScreen>
   void initState() {
     super.initState();
 
-    // Logo animation controller
     _logoController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    );
-
+        vsync: this, duration: const Duration(milliseconds: 1500));
     _logoScaleAnimation = Tween<double>(begin: 0.6, end: 1.0).animate(
       CurvedAnimation(
-        parent: _logoController,
-        curve: const Interval(0.0, 0.8, curve: Curves.elasticOut),
-      ),
+          parent: _logoController,
+          curve: const Interval(0.0, 0.8, curve: Curves.elasticOut)),
     );
-
     _logoOpacityAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
-        parent: _logoController,
-        curve: const Interval(0.0, 0.6, curve: Curves.easeInOut),
-      ),
+          parent: _logoController,
+          curve: const Interval(0.0, 0.6, curve: Curves.easeInOut)),
     );
 
-    // Text animation controller
     _textController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1000),
-    );
-
+        vsync: this, duration: const Duration(milliseconds: 1000));
     _textOpacityAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _textController,
-        curve: Curves.easeInOut,
-      ),
+      CurvedAnimation(parent: _textController, curve: Curves.easeInOut),
+    );
+    _textSlideAnimation =
+        Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero).animate(
+      CurvedAnimation(parent: _textController, curve: Curves.easeOut),
     );
 
-    _textSlideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.3),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(
-        parent: _textController,
-        curve: Curves.easeOut,
-      ),
-    );
-
-    // Checkmark animation controller
     _checkmarkController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    );
-
+        vsync: this, duration: const Duration(milliseconds: 800));
     _checkmarkScaleAnimation = Tween<double>(begin: 0.0, end: 1.2).animate(
-      CurvedAnimation(
-        parent: _checkmarkController,
-        curve: Curves.elasticOut,
-      ),
+      CurvedAnimation(parent: _checkmarkController, curve: Curves.elasticOut),
     );
-
     _checkmarkOpacityAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _checkmarkController,
-        curve: Curves.easeInOut,
-      ),
+      CurvedAnimation(parent: _checkmarkController, curve: Curves.easeInOut),
     );
 
-    // Start animations
     _logoController.forward();
     Future.delayed(const Duration(milliseconds: 300), () {
-      if (mounted) {
-        _textController.forward();
-      }
+      if (mounted) _textController.forward();
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -126,48 +93,56 @@ class _SplashScreenState extends State<SplashScreen>
     });
   }
 
+  Widget _buildGlassContainer({required Widget child}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.getCard(context).withOpacity(0.4),
+                AppColors.getCard(context).withOpacity(0.2),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: AppColors.telegramBlue.withOpacity(0.2),
+              width: 1,
+            ),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
   void _checkRouterReady() {
     if (!mounted) return;
 
     try {
       final router = GoRouter.of(context);
-      setState(() {
-        _routerReady = true;
-      });
-      debugLog('SplashScreen', '✅ Router is ready, starting initialization');
+      setState(() => _routerReady = true);
       _initializeApp();
     } catch (e) {
       if (_retryCount < _maxRetries && mounted) {
         _retryCount++;
-        debugLog(
-          'SplashScreen',
-          '⚠️ Router not ready (attempt $_retryCount/$_maxRetries), retrying...',
-        );
-
         _retryTimer?.cancel();
         _retryTimer = Timer(const Duration(milliseconds: 300), () {
-          if (mounted) {
-            _checkRouterReady();
-          }
+          if (mounted) _checkRouterReady();
         });
       } else {
-        debugLog(
-          'SplashScreen',
-          '❌ Router not ready after $_maxRetries attempts',
-        );
-        if (mounted) {
-          _initializeAppWithFallback();
-        }
+        if (mounted) _initializeAppWithFallback();
       }
     }
   }
 
   void _initializeAppWithFallback() {
     if (!mounted) return;
-
-    setState(() {
-      _routerReady = false;
-    });
+    setState(() => _routerReady = false);
     _initializeApp();
   }
 
@@ -181,18 +156,15 @@ class _SplashScreenState extends State<SplashScreen>
 
       String newStatus = _currentStatus;
 
-      if (!_routerReady) {
+      if (!_routerReady)
         newStatus = 'Checking user status...';
-      } else if (_authCompleted) {
+      else if (_authCompleted) {
         newStatus = 'Ready!';
         timer.cancel();
       }
 
-      if (mounted && newStatus != _currentStatus) {
-        setState(() {
-          _currentStatus = newStatus;
-        });
-      }
+      if (mounted && newStatus != _currentStatus)
+        setState(() => _currentStatus = newStatus);
     });
   }
 
@@ -200,40 +172,27 @@ class _SplashScreenState extends State<SplashScreen>
     if (!mounted) return;
 
     try {
-      debugLog('SplashScreen', '🚀 Starting app initialization...');
-
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
       if (authProvider.isAuthenticated && authProvider.isInitialized) {
-        debugLog('SplashScreen', '✅ Already authenticated, skipping splash');
         final user = authProvider.currentUser;
-        if (user?.schoolId == null) {
+        if (user?.schoolId == null)
           context.go('/school-selection');
-        } else {
+        else
           context.go('/');
-        }
         return;
       }
 
-      if (mounted) {
-        setState(() {
-          _currentStatus = 'Initializing authentication...';
-        });
-      }
+      if (mounted)
+        setState(() => _currentStatus = 'Initializing authentication...');
 
       await authProvider.initialize();
 
-      if (mounted) {
+      if (mounted)
         setState(() {
           _authInitialized = true;
           _currentStatus = 'Authentication initialized';
         });
-      }
-
-      debugLog(
-        'SplashScreen',
-        '✅ Auth initialized: ${authProvider.isAuthenticated}',
-      );
 
       if (!mounted) return;
 
@@ -245,7 +204,6 @@ class _SplashScreenState extends State<SplashScreen>
           _authCompleted = true;
           _currentStatus = 'Authentication complete';
         });
-
         _checkmarkController.forward();
       }
 
@@ -255,7 +213,6 @@ class _SplashScreenState extends State<SplashScreen>
 
       _navigateBasedOnAuthState(isAuthenticated, user);
     } catch (e) {
-      debugLog('SplashScreen', '❌ Initialization error: $e');
       if (mounted) {
         setState(() {
           _hasError = true;
@@ -263,20 +220,12 @@ class _SplashScreenState extends State<SplashScreen>
           _isInitializing = false;
           _currentStatus = 'Error occurred';
         });
-
         _checkmarkController.forward();
-
         await Future.delayed(const Duration(seconds: 2));
-        if (mounted) {
-          context.go('/auth/login');
-        }
+        if (mounted) context.go('/auth/login');
       }
     } finally {
-      if (mounted && !_hasError) {
-        setState(() {
-          _isInitializing = false;
-        });
-      }
+      if (mounted && !_hasError) setState(() => _isInitializing = false);
     }
   }
 
@@ -284,25 +233,14 @@ class _SplashScreenState extends State<SplashScreen>
     if (!mounted) return;
 
     if (isAuthenticated) {
-      debugLog(
-        'SplashScreen',
-        '👤 User: ${user?.username}, School: ${user?.schoolId}',
-      );
-
       Future.delayed(const Duration(milliseconds: 500), () {
         if (!mounted) return;
-
-        if (user?.schoolId == null) {
-          debugLog('SplashScreen', '🏫 No school - going to school selection');
+        if (user?.schoolId == null)
           context.go('/school-selection');
-        } else {
-          debugLog('SplashScreen', '🏠 Going to home screen');
+        else
           context.go('/');
-        }
       });
     } else {
-      debugLog('SplashScreen', '🔐 Not authenticated - going to login');
-
       Future.delayed(const Duration(milliseconds: 500), () {
         if (!mounted) return;
         context.go('/auth/login');
@@ -310,67 +248,32 @@ class _SplashScreenState extends State<SplashScreen>
     }
   }
 
-  void _safeNavigate(String route) {
-    if (!mounted) return;
-
-    _navigationTimer?.cancel();
-    _navigationTimer = Timer(const Duration(milliseconds: 500), () {
-      if (!mounted) return;
-
-      try {
-        context.go(route);
-      } catch (e) {
-        debugLog('SplashScreen', 'Navigation error: $e');
-
-        _navigationTimer = Timer(const Duration(seconds: 1), () {
-          if (mounted) {
-            try {
-              context.go(route);
-            } catch (e2) {
-              debugLog('SplashScreen', 'Secondary navigation error: $e2');
-
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted) {
-                  Navigator.of(
-                    context,
-                  ).pushReplacementNamed(route == '/' ? '/home' : route);
-                }
-              });
-            }
-          }
-        });
-      }
-    });
-  }
-
-  // 🎨 Status Indicator
   Widget _buildStatusIndicator() {
     if (_hasError) {
       return Column(
         children: [
-          Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              color: AppColors.telegramRed.withOpacity(0.1),
-              shape: BoxShape.circle,
-              border: Border.all(color: AppColors.telegramRed, width: 2),
-            ),
-            child: Icon(
-              Icons.error_outline_rounded,
-              size: 32,
-              color: AppColors.telegramRed,
+          _buildGlassContainer(
+            child: Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    AppColors.telegramRed.withOpacity(0.2),
+                    AppColors.telegramRed.withOpacity(0.1),
+                  ],
+                ),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.error_outline_rounded,
+                  size: 32, color: AppColors.telegramRed),
             ),
           ).animate().shake(duration: 600.ms),
-          SizedBox(height: AppThemes.spacingM),
-          Text(
-            _errorMessage ?? 'Initialization Error',
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.telegramRed,
-              fontWeight: FontWeight.w500,
-            ),
-            textAlign: TextAlign.center,
-          ),
+          const SizedBox(height: 16),
+          Text(_errorMessage ?? 'Initialization Error',
+              style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.telegramRed, fontWeight: FontWeight.w500),
+              textAlign: TextAlign.center),
         ],
       );
     }
@@ -383,20 +286,22 @@ class _SplashScreenState extends State<SplashScreen>
             opacity: _checkmarkOpacityAnimation.value,
             child: Transform.scale(
               scale: _checkmarkScaleAnimation.value,
-              child: Container(
-                width: 60,
-                height: 60,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppColors.telegramGreen.withOpacity(0.1),
-                  border: Border.all(color: AppColors.telegramGreen, width: 2),
-                ),
-                child: Center(
-                  child: Icon(
-                    Icons.check_rounded,
-                    size: 32,
-                    color: AppColors.telegramGreen,
+              child: _buildGlassContainer(
+                child: Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        AppColors.telegramGreen.withOpacity(0.2),
+                        AppColors.telegramGreen.withOpacity(0.1),
+                      ],
+                    ),
+                    shape: BoxShape.circle,
                   ),
+                  child: Center(
+                      child: Icon(Icons.check_rounded,
+                          size: 32, color: AppColors.telegramGreen)),
                 ),
               ),
             ),
@@ -405,27 +310,32 @@ class _SplashScreenState extends State<SplashScreen>
       );
     }
 
-    return Container(
-      width: 60,
-      height: 60,
-      decoration: BoxDecoration(
-        color: AppColors.telegramBlue.withOpacity(0.1),
-        shape: BoxShape.circle,
-      ),
-      child: Center(
-        child: SizedBox(
-          width: 30,
-          height: 30,
-          child: CircularProgressIndicator(
-            strokeWidth: 3,
-            valueColor: AlwaysStoppedAnimation<Color>(AppColors.telegramBlue),
+    return _buildGlassContainer(
+      child: Container(
+        width: 60,
+        height: 60,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              AppColors.telegramBlue.withOpacity(0.2),
+              AppColors.telegramPurple.withOpacity(0.1),
+            ],
           ),
+          shape: BoxShape.circle,
+        ),
+        child: Center(
+          child: SizedBox(
+              width: 30,
+              height: 30,
+              child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  valueColor:
+                      AlwaysStoppedAnimation<Color>(AppColors.telegramBlue))),
         ),
       ),
     );
   }
 
-  // 📱 Mobile Splash
   Widget _buildMobileSplash() {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
@@ -434,7 +344,6 @@ class _SplashScreenState extends State<SplashScreen>
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Animated Logo
               AnimatedBuilder(
                 animation: _logoController,
                 builder: (context, child) {
@@ -442,43 +351,40 @@ class _SplashScreenState extends State<SplashScreen>
                     opacity: _logoOpacityAnimation.value,
                     child: Transform.scale(
                       scale: _logoScaleAnimation.value,
-                      child: Container(
-                        width: ScreenSize.responsiveValue(
-                          context: context,
-                          mobile: 120,
-                          tablet: 140,
-                          desktop: 160,
-                        ),
-                        height: ScreenSize.responsiveValue(
-                          context: context,
-                          mobile: 120,
-                          tablet: 140,
-                          desktop: 160,
-                        ),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: AppColors.blueGradient,
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
+                      child: _buildGlassContainer(
+                        child: Container(
+                          width: ScreenSize.responsiveValue(
+                              context: context,
+                              mobile: 120,
+                              tablet: 140,
+                              desktop: 160),
+                          height: ScreenSize.responsiveValue(
+                              context: context,
+                              mobile: 120,
+                              tablet: 140,
+                              desktop: 160),
+                          padding: const EdgeInsets.all(24),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                                colors: AppColors.blueGradient,
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight),
+                            borderRadius: BorderRadius.circular(24),
+                            boxShadow: [
+                              BoxShadow(
+                                  color:
+                                      AppColors.telegramBlue.withOpacity(0.3),
+                                  blurRadius: 24,
+                                  offset: const Offset(0, 12))
+                            ],
                           ),
-                          borderRadius: BorderRadius.circular(24),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.telegramBlue.withOpacity(0.3),
-                              blurRadius: 24,
-                              offset: const Offset(0, 12),
-                            ),
-                          ],
-                        ),
-                        child: Center(
                           child: Icon(
                             Icons.school_rounded,
                             size: ScreenSize.responsiveValue(
-                              context: context,
-                              mobile: 56,
-                              tablet: 64,
-                              desktop: 72,
-                            ),
+                                context: context,
+                                mobile: 56,
+                                tablet: 64,
+                                desktop: 72),
                             color: Colors.white,
                           ),
                         ),
@@ -487,111 +393,91 @@ class _SplashScreenState extends State<SplashScreen>
                   );
                 },
               ),
-
               SizedBox(
-                height: ScreenSize.responsiveValue(
-                  context: context,
-                  mobile: AppThemes.spacingXXL,
-                  tablet: AppThemes.spacingXXXL,
-                  desktop: AppThemes.spacingXXXL * 1.5,
-                ),
-              ),
-
-              // Title and Subtitle
+                  height: ScreenSize.responsiveValue(
+                      context: context,
+                      mobile: AppThemes.spacingXXL,
+                      tablet: AppThemes.spacingXXXL,
+                      desktop: AppThemes.spacingXXXL * 1.5)),
               SlideTransition(
                 position: _textSlideAnimation,
                 child: FadeTransition(
                   opacity: _textOpacityAnimation,
                   child: Column(
                     children: [
-                      Text(
-                        'Family Academy',
-                        style: AppTextStyles.displaySmall.copyWith(
-                          color: AppColors.getTextPrimary(context),
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      SizedBox(height: AppThemes.spacingM),
-                      Text(
-                        'Empowering Education',
-                        style: AppTextStyles.bodyLarge.copyWith(
-                          color: AppColors.getTextSecondary(context),
-                        ),
-                      ),
+                      Text('Family Academy',
+                          style: AppTextStyles.displaySmall.copyWith(
+                              color: AppColors.getTextPrimary(context),
+                              fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 16),
+                      Text('Empowering Education',
+                          style: AppTextStyles.bodyLarge.copyWith(
+                              color: AppColors.getTextSecondary(context))),
                     ],
                   ),
                 ),
               ),
-
               SizedBox(
-                height: ScreenSize.responsiveValue(
-                  context: context,
-                  mobile: AppThemes.spacingXXL,
-                  tablet: AppThemes.spacingXXXL,
-                  desktop: AppThemes.spacingXXXL * 1.5,
-                ),
-              ),
-
-              // Status Indicator
+                  height: ScreenSize.responsiveValue(
+                      context: context,
+                      mobile: AppThemes.spacingXXL,
+                      tablet: AppThemes.spacingXXXL,
+                      desktop: AppThemes.spacingXXXL * 1.5)),
               _buildStatusIndicator(),
-
-              SizedBox(height: AppThemes.spacingL),
-
-              // Status Text
+              const SizedBox(height: 16),
               FadeTransition(
                 opacity: _textOpacityAnimation,
                 child: Column(
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppThemes.spacingL,
-                        vertical: AppThemes.spacingS,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _hasError
-                            ? AppColors.telegramRed.withOpacity(0.1)
-                            : _authCompleted
-                                ? AppColors.telegramGreen.withOpacity(0.1)
-                                : AppColors.telegramBlue.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(
-                          AppThemes.borderRadiusFull,
+                    _buildGlassContainer(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: _hasError
+                                ? [
+                                    AppColors.telegramRed.withOpacity(0.2),
+                                    AppColors.telegramRed.withOpacity(0.1),
+                                  ]
+                                : (_authCompleted
+                                    ? [
+                                        AppColors.telegramGreen
+                                            .withOpacity(0.2),
+                                        AppColors.telegramGreen
+                                            .withOpacity(0.1),
+                                      ]
+                                    : [
+                                        AppColors.telegramBlue.withOpacity(0.2),
+                                        AppColors.telegramPurple
+                                            .withOpacity(0.1),
+                                      ]),
+                          ),
+                          borderRadius:
+                              BorderRadius.circular(AppThemes.borderRadiusFull),
                         ),
-                        border: Border.all(
-                          color: _hasError
-                              ? AppColors.telegramRed
-                              : _authCompleted
-                                  ? AppColors.telegramGreen
-                                  : AppColors.telegramBlue,
-                          width: 1,
-                        ),
-                      ),
-                      child: Text(
-                        _currentStatus,
-                        style: AppTextStyles.labelMedium.copyWith(
-                          color: _hasError
-                              ? AppColors.telegramRed
-                              : _authCompleted
-                                  ? AppColors.telegramGreen
-                                  : AppColors.telegramBlue,
-                          fontWeight: FontWeight.w600,
+                        child: Text(
+                          _currentStatus,
+                          style: AppTextStyles.labelMedium.copyWith(
+                            color: _hasError
+                                ? AppColors.telegramRed
+                                : (_authCompleted
+                                    ? AppColors.telegramGreen
+                                    : AppColors.telegramBlue),
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ),
-                    SizedBox(height: AppThemes.spacingS),
+                    const SizedBox(height: 8),
                     if (_isInitializing && !_hasError)
-                      Text(
-                        'Please wait...',
-                        style: AppTextStyles.caption.copyWith(
-                          color: AppColors.getTextSecondary(context),
-                        ),
-                      ),
+                      Text('Please wait...',
+                          style: AppTextStyles.caption.copyWith(
+                              color: AppColors.getTextSecondary(context))),
                     if (!_routerReady && !_hasError)
-                      Text(
-                        'Preparing navigation...',
-                        style: AppTextStyles.caption.copyWith(
-                          color: AppColors.getTextSecondary(context),
-                        ),
-                      ),
+                      Text('Preparing navigation...',
+                          style: AppTextStyles.caption.copyWith(
+                              color: AppColors.getTextSecondary(context))),
                   ],
                 ),
               ),
@@ -602,15 +488,13 @@ class _SplashScreenState extends State<SplashScreen>
     );
   }
 
-  // 💻 Desktop Splash (Optional - can be same as mobile for simplicity)
   Widget _buildDesktopSplash() {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       body: Center(
         child: Container(
-          constraints: const BoxConstraints(maxWidth: 600),
-          child: _buildMobileSplash(),
-        ),
+            constraints: const BoxConstraints(maxWidth: 600),
+            child: _buildMobileSplash()),
       ),
     );
   }
@@ -620,11 +504,9 @@ class _SplashScreenState extends State<SplashScreen>
     _statusTimer?.cancel();
     _navigationTimer?.cancel();
     _retryTimer?.cancel();
-
     _logoController.dispose();
     _textController.dispose();
     _checkmarkController.dispose();
-
     super.dispose();
   }
 

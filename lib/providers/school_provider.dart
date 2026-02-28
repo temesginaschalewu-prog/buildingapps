@@ -38,17 +38,19 @@ class SchoolProvider with ChangeNotifier {
     if (_isLoading && !forceRefresh) return;
 
     if (!forceRefresh) {
-      final cachedSchools =
-          await deviceService.getCacheItem<List<School>>('schools_list');
-      if (cachedSchools != null) {
-        _schools = cachedSchools;
-        _lastLoadTime = DateTime.now();
-        _hasError = false;
-
-        _schoolsUpdateController.add(_schools);
-
-        _notifySafely();
-        return;
+      try {
+        final cachedSchools =
+            await deviceService.getCacheItem<List<School>>('schools_list');
+        if (cachedSchools != null) {
+          _schools = cachedSchools;
+          _lastLoadTime = DateTime.now();
+          _hasError = false;
+          _schoolsUpdateController.add(_schools);
+          _notifySafely();
+          return;
+        }
+      } catch (e) {
+        debugLog('SchoolProvider', 'Cache read error: $e');
       }
     }
 
@@ -60,18 +62,23 @@ class SchoolProvider with ChangeNotifier {
     try {
       debugLog('SchoolProvider', 'Loading schools');
       final response = await apiService.getSchools();
-      _schools = response.data ?? [];
-      _lastLoadTime = DateTime.now();
 
-      await deviceService.saveCacheItem('schools_list', _schools,
-          ttl: _schoolsCacheTTL);
+      if (response.success && response.data != null) {
+        _schools = response.data ?? [];
+        _lastLoadTime = DateTime.now();
 
-      await _loadSelectedSchool();
+        await deviceService.saveCacheItem('schools_list', _schools,
+            ttl: _schoolsCacheTTL);
+        await _loadSelectedSchool();
 
-      debugLog('SchoolProvider', 'Loaded schools: ${_schools.length}');
-      _hasError = false;
-
-      _schoolsUpdateController.add(_schools);
+        debugLog('SchoolProvider', 'Loaded schools: ${_schools.length}');
+        _hasError = false;
+        _schoolsUpdateController.add(_schools);
+      } else {
+        _error = response.message ?? 'Failed to load schools';
+        _hasError = true;
+        debugLog('SchoolProvider', 'API error: $_error');
+      }
     } catch (e) {
       _error = e.toString();
       _hasError = true;
@@ -87,19 +94,14 @@ class SchoolProvider with ChangeNotifier {
 
     await deviceService.saveCacheItem('selected_school', schoolId,
         ttl: Duration(days: 365));
-
     _selectedSchoolController.add(schoolId);
-
     _notifySafely();
   }
 
   Future<void> clearSelectedSchool() async {
     _selectedSchoolId = null;
-
     await deviceService.removeCacheItem('selected_school');
-
     _selectedSchoolController.add(null);
-
     _notifySafely();
   }
 
@@ -113,7 +115,6 @@ class SchoolProvider with ChangeNotifier {
 
   Future<void> clearUserData() async {
     debugLog('SchoolProvider', 'Clearing school data');
-
     await deviceService.clearCacheByPrefix('schools');
     await deviceService.removeCacheItem('selected_school');
 
@@ -123,13 +124,11 @@ class SchoolProvider with ChangeNotifier {
 
     _schoolsUpdateController.close();
     _selectedSchoolController.close();
-
     _schoolsUpdateController = StreamController<List<School>>.broadcast();
     _selectedSchoolController = StreamController<int?>.broadcast();
 
     _schoolsUpdateController.add(_schools);
     _selectedSchoolController.add(null);
-
     _notifySafely();
   }
 
@@ -145,20 +144,22 @@ class SchoolProvider with ChangeNotifier {
   }
 
   Future<void> _loadSelectedSchool() async {
-    final selectedSchool =
-        await deviceService.getCacheItem<int>('selected_school');
-    if (selectedSchool != null) {
-      _selectedSchoolId = selectedSchool;
-      _selectedSchoolController.add(selectedSchool);
+    try {
+      final selectedSchool =
+          await deviceService.getCacheItem<int>('selected_school');
+      if (selectedSchool != null) {
+        _selectedSchoolId = selectedSchool;
+        _selectedSchoolController.add(selectedSchool);
+      }
+    } catch (e) {
+      debugLog('SchoolProvider', 'Error loading selected school: $e');
     }
   }
 
   void _notifySafely() {
     if (hasListeners) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (hasListeners) {
-          notifyListeners();
-        }
+        if (hasListeners) notifyListeners();
       });
     }
   }

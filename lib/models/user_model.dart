@@ -122,10 +122,9 @@ class User {
     };
   }
 
-  bool get isActive => accountStatus == AppConstants.activeStatus;
-  bool get isUnpaid => accountStatus == AppConstants.unpaidStatus;
-  bool get isExpired => accountStatus == AppConstants.expiredStatus;
-
+  bool get isActive => accountStatus == 'active';
+  bool get isUnpaid => accountStatus == 'unpaid';
+  bool get isExpired => accountStatus == 'expired';
   // Check if user has any active subscription
   bool get hasActiveSubscription {
     if (subscriptions == null || subscriptions!.isEmpty) return false;

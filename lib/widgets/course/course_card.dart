@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/themes/app_text_styles.dart';
 import 'package:flutter/material.dart';
@@ -14,7 +15,7 @@ class CourseCard extends StatelessWidget {
   final int categoryId;
   final VoidCallback onTap;
   final EdgeInsetsGeometry? margin;
-  final int index; // For staggered animations
+  final int index;
 
   const CourseCard({
     super.key,
@@ -25,53 +26,33 @@ class CourseCard extends StatelessWidget {
     this.index = 0,
   });
 
-  String _getAccessText(bool hasActiveSubscription) {
-    final hasFullAccess = course.hasFullAccess(hasActiveSubscription);
-
-    if (hasFullAccess) {
-      return 'FULL ACCESS';
-    } else if (course.hasPendingPayment) {
-      return 'PENDING';
-    } else {
-      return 'LIMITED';
-    }
-  }
-
   Color _getAccessColor(bool hasActiveSubscription, BuildContext context) {
     final hasFullAccess = course.hasFullAccess(hasActiveSubscription);
-
-    if (hasFullAccess) {
-      return AppColors.telegramGreen;
-    } else if (course.hasPendingPayment) {
-      return AppColors.statusPending;
-    } else {
-      return AppColors.telegramBlue;
-    }
+    if (hasFullAccess) return AppColors.telegramGreen;
+    if (course.hasPendingPayment) return AppColors.statusPending;
+    return AppColors.telegramBlue; // Changed from red to blue
   }
 
   Color _getAccessBackgroundColor(
       bool hasActiveSubscription, BuildContext context) {
     final hasFullAccess = course.hasFullAccess(hasActiveSubscription);
-
-    if (hasFullAccess) {
-      return AppColors.telegramGreen.withOpacity(0.1);
-    } else if (course.hasPendingPayment) {
-      return AppColors.statusPending.withOpacity(0.1);
-    } else {
-      return AppColors.telegramBlue.withOpacity(0.1);
-    }
+    if (hasFullAccess) return AppColors.greenFaded;
+    if (course.hasPendingPayment) return AppColors.orangeFaded;
+    return AppColors.blueFaded; // Changed from red to blue
   }
 
   IconData _getAccessIcon(bool hasActiveSubscription) {
     final hasFullAccess = course.hasFullAccess(hasActiveSubscription);
+    if (hasFullAccess) return Icons.check_circle_rounded;
+    if (course.hasPendingPayment) return Icons.schedule_rounded;
+    return Icons.lock_rounded;
+  }
 
-    if (hasFullAccess) {
-      return Icons.check_circle_rounded;
-    } else if (course.hasPendingPayment) {
-      return Icons.schedule_rounded;
-    } else {
-      return Icons.lock_rounded;
-    }
+  String _getAccessText(bool hasActiveSubscription) {
+    final hasFullAccess = course.hasFullAccess(hasActiveSubscription);
+    if (hasFullAccess) return 'FULL ACCESS';
+    if (course.hasPendingPayment) return 'PENDING';
+    return 'LOCKED';
   }
 
   @override
@@ -84,221 +65,228 @@ class CourseCard extends StatelessWidget {
         final accessBgColor =
             _getAccessBackgroundColor(hasActiveSubscription, context);
 
+        final screenWidth = MediaQuery.of(context).size.width;
+        final isMobile = screenWidth < 600;
+        final isTablet = screenWidth >= 600 && screenWidth < 1024;
+
+        final iconSize = isMobile ? 48.0 : (isTablet ? 56.0 : 64.0);
+        final titleSize = isMobile ? 16.0 : (isTablet ? 17.0 : 18.0);
+        final descSize = isMobile ? 13.0 : (isTablet ? 14.0 : 15.0);
+        final padding = isMobile
+            ? AppThemes.spacingL
+            : (isTablet ? AppThemes.spacingXL : AppThemes.spacingXXL);
+
         return Container(
           margin: margin ?? EdgeInsets.only(bottom: AppThemes.spacingL),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: onTap,
-              borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
-              splashColor: AppColors.telegramBlue.withOpacity(0.1),
-              highlightColor: Colors.transparent,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
               child: Container(
-                padding: EdgeInsets.all(ScreenSize.responsiveValue(
-                  context: context,
-                  mobile: AppThemes.spacingL,
-                  tablet: AppThemes.spacingXL,
-                  desktop: AppThemes.spacingXXL,
-                )),
                 decoration: BoxDecoration(
-                  color: AppColors.getCard(context),
-                  borderRadius:
-                      BorderRadius.circular(AppThemes.borderRadiusLarge),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      AppColors.getCard(context).withOpacity(0.4),
+                      AppColors.getCard(context).withOpacity(0.2),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(24),
                   border: Border.all(
-                    color: Theme.of(context).dividerTheme.color ??
-                        AppColors.lightDivider,
-                    width: 0.5,
+                    color: accessColor.withOpacity(0.3),
+                    width: 1.5,
                   ),
                 ),
-                child: Row(
-                  children: [
-                    // Left side - Status indicator
-                    Container(
-                      width: ScreenSize.responsiveValue(
-                        context: context,
-                        mobile: 48,
-                        tablet: 56,
-                        desktop: 64,
-                      ),
-                      height: ScreenSize.responsiveValue(
-                        context: context,
-                        mobile: 48,
-                        tablet: 56,
-                        desktop: 64,
-                      ),
-                      decoration: BoxDecoration(
-                        color: accessBgColor,
-                        borderRadius:
-                            BorderRadius.circular(AppThemes.borderRadiusMedium),
-                        border: Border.all(
-                          color: accessColor,
-                          width: 1.5,
-                        ),
-                      ),
-                      child: Icon(
-                        _getAccessIcon(hasActiveSubscription),
-                        color: accessColor,
-                        size: ScreenSize.responsiveValue(
-                          context: context,
-                          mobile: 24,
-                          tablet: 28,
-                          desktop: 32,
-                        ),
-                      ),
-                    ),
-
-                    SizedBox(width: AppThemes.spacingL),
-
-                    // Middle - Content
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: onTap,
+                    borderRadius: BorderRadius.circular(24),
+                    splashColor: accessColor.withOpacity(0.1),
+                    highlightColor: Colors.transparent,
+                    child: Padding(
+                      padding: EdgeInsets.all(padding),
+                      child: Row(
                         children: [
-                          // Title
-                          Text(
-                            course.name,
-                            style: AppTextStyles.titleMedium.copyWith(
-                              color: AppColors.getTextPrimary(context),
-                              fontSize: ScreenSize.responsiveFontSize(
-                                context: context,
-                                mobile: 16,
-                                tablet: 18,
-                                desktop: 20,
+                          // Icon with gradient background
+                          Container(
+                            width: iconSize,
+                            height: iconSize,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  accessColor.withOpacity(0.2),
+                                  accessColor.withOpacity(0.05),
+                                ],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: accessColor.withOpacity(0.3),
+                                width: 1.5,
                               ),
                             ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
+                            child: Icon(
+                              _getAccessIcon(hasActiveSubscription),
+                              color: accessColor,
+                              size: iconSize * 0.5,
+                            ),
                           ),
+                          const SizedBox(width: 16),
 
-                          SizedBox(height: AppThemes.spacingS),
-
-                          // Description if available
-                          if (course.description != null &&
-                              course.description!.isNotEmpty)
-                            Text(
-                              course.description!,
-                              style: AppTextStyles.bodySmall.copyWith(
-                                color: AppColors.getTextSecondary(context),
-                                fontSize: ScreenSize.responsiveFontSize(
-                                  context: context,
-                                  mobile: 13,
-                                  tablet: 14,
-                                  desktop: 15,
+                          // Content
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  course.name,
+                                  style: AppTextStyles.titleMedium.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: titleSize,
+                                    letterSpacing: -0.3,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-
-                          SizedBox(height: AppThemes.spacingM),
-
-                          // Bottom row - Chapter count and status badge
-                          Row(
-                            children: [
-                              // Chapter count
-                              Container(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: AppThemes.spacingS,
-                                  vertical: AppThemes.spacingXS,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .surfaceVariant,
-                                  borderRadius: BorderRadius.circular(
-                                      AppThemes.borderRadiusFull),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.menu_book_rounded,
-                                      size: 12,
+                                if (course.description != null &&
+                                    course.description!.isNotEmpty) ...[
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    course.description!,
+                                    style: AppTextStyles.bodySmall.copyWith(
                                       color:
                                           AppColors.getTextSecondary(context),
+                                      fontSize: descSize,
                                     ),
-                                    SizedBox(width: 4),
-                                    Text(
-                                      '${course.chapterCount} ${course.chapterCount == 1 ? 'chapter' : 'chapters'}',
-                                      style: AppTextStyles.caption.copyWith(
-                                        color:
-                                            AppColors.getTextSecondary(context),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                                const SizedBox(height: 12),
+
+                                // Stats Row
+                                Row(
+                                  children: [
+                                    // Chapter count
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.grayFaded,
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: Border.all(
+                                          color: AppColors.telegramGray
+                                              .withOpacity(0.2),
+                                          width: 1,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.menu_book_rounded,
+                                            size: 12,
+                                            color: AppColors.getTextSecondary(
+                                                context),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            '${course.chapterCount} ${course.chapterCount == 1 ? 'chapter' : 'chapters'}',
+                                            style:
+                                                AppTextStyles.caption.copyWith(
+                                              color: AppColors.getTextSecondary(
+                                                  context),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+
+                                    // Access status badge
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: accessBgColor,
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: Border.all(
+                                          color: accessColor.withOpacity(0.3),
+                                          width: 1,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            _getAccessIcon(
+                                                hasActiveSubscription),
+                                            size: 12,
+                                            color: accessColor,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            _getAccessText(
+                                                hasActiveSubscription),
+                                            style:
+                                                AppTextStyles.caption.copyWith(
+                                              color: accessColor,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ],
                                 ),
-                              ),
 
-                              SizedBox(width: AppThemes.spacingM),
-
-                              // Status badge
-                              Container(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: AppThemes.spacingS,
-                                  vertical: AppThemes.spacingXS,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: accessBgColor,
-                                  borderRadius: BorderRadius.circular(
-                                      AppThemes.borderRadiusFull),
-                                  border: Border.all(
-                                    color: accessColor,
-                                    width: 1,
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      _getAccessIcon(hasActiveSubscription),
-                                      size: 12,
-                                      color: accessColor,
-                                    ),
-                                    SizedBox(width: 4),
-                                    Text(
-                                      _getAccessText(hasActiveSubscription),
+                                // Message if any
+                                if (course.message != null &&
+                                    course.message!.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 8),
+                                    child: Text(
+                                      course.message!,
                                       style: AppTextStyles.caption.copyWith(
                                         color: accessColor,
-                                        fontWeight: FontWeight.w600,
+                                        fontStyle: FontStyle.italic,
                                       ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
-                                  ],
-                                ),
-                              ),
-                            ],
+                                  ),
+                              ],
+                            ),
                           ),
 
-                          // Access message if any
-                          if (course.message != null &&
-                              course.message!.isNotEmpty)
-                            Padding(
-                              padding: EdgeInsets.only(top: AppThemes.spacingM),
-                              child: Text(
-                                course.message!,
-                                style: AppTextStyles.caption.copyWith(
-                                  color: accessColor,
-                                  fontStyle: FontStyle.italic,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                          // Chevron icon
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: hasActiveSubscription
+                                  ? accessColor.withOpacity(0.1)
+                                  : Colors.transparent,
+                              shape: BoxShape.circle,
                             ),
+                            child: Icon(
+                              Icons.chevron_right_rounded,
+                              size: isMobile ? 20 : (isTablet ? 24 : 28),
+                              color: hasActiveSubscription
+                                  ? accessColor
+                                  : AppColors.getTextSecondary(context),
+                            ),
+                          ),
                         ],
                       ),
                     ),
-
-                    // Right arrow
-                    Icon(
-                      Icons.chevron_right_rounded,
-                      size: ScreenSize.responsiveValue(
-                        context: context,
-                        mobile: 20,
-                        tablet: 24,
-                        desktop: 28,
-                      ),
-                      color: AppColors.getTextSecondary(context),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -320,7 +308,6 @@ class CourseCard extends StatelessWidget {
   }
 }
 
-// Skeleton loader for CourseCard
 class CourseCardShimmer extends StatelessWidget {
   final int index;
 
@@ -328,141 +315,137 @@ class CourseCardShimmer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isMobile = screenWidth < 600;
+    final isTablet = screenWidth >= 600 && screenWidth < 1024;
+
+    final iconSize = isMobile ? 48.0 : (isTablet ? 56.0 : 64.0);
+    final padding = isMobile
+        ? AppThemes.spacingL
+        : (isTablet ? AppThemes.spacingXL : AppThemes.spacingXXL);
 
     return Container(
       margin: EdgeInsets.only(bottom: AppThemes.spacingL),
-      padding: EdgeInsets.all(ScreenSize.responsiveValue(
-        context: context,
-        mobile: AppThemes.spacingL,
-        tablet: AppThemes.spacingXL,
-        desktop: AppThemes.spacingXXL,
-      )),
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
-        borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
-        border: Border.all(
-          color: isDark
-              ? AppColors.darkDivider.withOpacity(0.3)
-              : AppColors.lightDivider.withOpacity(0.3),
-          width: 1,
-        ),
-      ),
-      child: Row(
-        children: [
-          // Status indicator shimmer
-          Shimmer.fromColors(
-            baseColor: isDark ? Colors.grey[800]! : Colors.grey[300]!,
-            highlightColor: isDark ? Colors.grey[700]! : Colors.grey[100]!,
-            child: Container(
-              width: ScreenSize.responsiveValue(
-                context: context,
-                mobile: 48,
-                tablet: 56,
-                desktop: 64,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
+          child: Container(
+            padding: EdgeInsets.all(padding),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  AppColors.getCard(context).withOpacity(0.4),
+                  AppColors.getCard(context).withOpacity(0.2),
+                ],
               ),
-              height: ScreenSize.responsiveValue(
-                context: context,
-                mobile: 48,
-                tablet: 56,
-                desktop: 64,
-              ),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius:
-                    BorderRadius.circular(AppThemes.borderRadiusMedium),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: Theme.of(context).dividerColor.withOpacity(0.1),
+                width: 1,
               ),
             ),
-          ),
-
-          SizedBox(width: AppThemes.spacingL),
-
-          // Content shimmer
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
               children: [
                 Shimmer.fromColors(
-                  baseColor: isDark ? Colors.grey[800]! : Colors.grey[300]!,
-                  highlightColor:
-                      isDark ? Colors.grey[700]! : Colors.grey[100]!,
+                  baseColor: Colors.grey[300]!.withOpacity(0.3),
+                  highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                  period: const Duration(milliseconds: 1500),
                   child: Container(
-                    width: double.infinity,
-                    height: 20,
+                    width: iconSize,
+                    height: iconSize,
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius:
-                          BorderRadius.circular(AppThemes.borderRadiusSmall),
+                      borderRadius: BorderRadius.circular(20),
                     ),
                   ),
                 ),
-                SizedBox(height: AppThemes.spacingS),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Shimmer.fromColors(
+                        baseColor: Colors.grey[300]!.withOpacity(0.3),
+                        highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                        period: const Duration(milliseconds: 1500),
+                        child: Container(
+                          width: double.infinity,
+                          height: 20,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Shimmer.fromColors(
+                        baseColor: Colors.grey[300]!.withOpacity(0.3),
+                        highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                        period: const Duration(milliseconds: 1500),
+                        child: Container(
+                          width: 200,
+                          height: 16,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Shimmer.fromColors(
+                            baseColor: Colors.grey[300]!.withOpacity(0.3),
+                            highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                            period: const Duration(milliseconds: 1500),
+                            child: Container(
+                              width: 80,
+                              height: 24,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Shimmer.fromColors(
+                            baseColor: Colors.grey[300]!.withOpacity(0.3),
+                            highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                            period: const Duration(milliseconds: 1500),
+                            child: Container(
+                              width: 70,
+                              height: 24,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
                 Shimmer.fromColors(
-                  baseColor: isDark ? Colors.grey[800]! : Colors.grey[300]!,
-                  highlightColor:
-                      isDark ? Colors.grey[700]! : Colors.grey[100]!,
+                  baseColor: Colors.grey[300]!.withOpacity(0.3),
+                  highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                  period: const Duration(milliseconds: 1500),
                   child: Container(
-                    width: 200,
-                    height: 16,
-                    decoration: BoxDecoration(
+                    width: 24,
+                    height: 24,
+                    decoration: const BoxDecoration(
                       color: Colors.white,
-                      borderRadius:
-                          BorderRadius.circular(AppThemes.borderRadiusSmall),
+                      shape: BoxShape.circle,
                     ),
                   ),
-                ),
-                SizedBox(height: AppThemes.spacingM),
-                Row(
-                  children: [
-                    Shimmer.fromColors(
-                      baseColor: isDark ? Colors.grey[800]! : Colors.grey[300]!,
-                      highlightColor:
-                          isDark ? Colors.grey[700]! : Colors.grey[100]!,
-                      child: Container(
-                        width: 80,
-                        height: 24,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius:
-                              BorderRadius.circular(AppThemes.borderRadiusFull),
-                        ),
-                      ),
-                    ),
-                    SizedBox(width: AppThemes.spacingM),
-                    Shimmer.fromColors(
-                      baseColor: isDark ? Colors.grey[800]! : Colors.grey[300]!,
-                      highlightColor:
-                          isDark ? Colors.grey[700]! : Colors.grey[100]!,
-                      child: Container(
-                        width: 60,
-                        height: 24,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius:
-                              BorderRadius.circular(AppThemes.borderRadiusFull),
-                        ),
-                      ),
-                    ),
-                  ],
                 ),
               ],
             ),
           ),
-
-          // Right arrow shimmer
-          Shimmer.fromColors(
-            baseColor: isDark ? Colors.grey[800]! : Colors.grey[300]!,
-            highlightColor: isDark ? Colors.grey[700]! : Colors.grey[100]!,
-            child: Container(
-              width: 24,
-              height: 24,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     ).animate().fadeIn(
           duration: AppThemes.animationDurationMedium,

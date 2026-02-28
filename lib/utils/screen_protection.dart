@@ -7,11 +7,11 @@ import '../utils/helpers.dart';
 class ScreenProtectionService {
   static bool _protectionEnabled = true;
   static bool _initialized = false;
+  static const MethodChannel _channel =
+      MethodChannel('com.familyacademy/screen_protection');
 
   static Future<void> initialize() async {
     if (_initialized) return;
-
-    debugLog('ScreenProtection', 'Initializing screen protection');
 
     if (Platform.isAndroid || Platform.isIOS) {
       await SystemChrome.setPreferredOrientations([
@@ -21,29 +21,39 @@ class ScreenProtectionService {
     }
 
     await enableSecureMode();
-
     _initialized = true;
-    debugLog('ScreenProtection', '✅ Screen protection initialized');
+    debugLog('ScreenProtection', '✅ Initialized with full protection');
   }
 
   static Future<void> enableSecureMode() async {
     try {
-      // Use safe system UI mode that works on all platforms
-      if (Platform.isAndroid || Platform.isIOS) {
-        try {
-          // Try edgeToEdge first (for newer devices)
-          await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-        } catch (e) {
-          debugLog('ScreenProtection', 'edgeToEdge not supported: $e');
-          // Fallback to manual flags
-          await _setSafeSystemUiFlags();
-        }
+      if (Platform.isAndroid) {
+        // Set FLAG_SECURE to prevent screenshots and screen recording
+        await _channel.invokeMethod('protectScreen');
+
+        // Set immersive mode for better protection
+        await SystemChrome.setEnabledSystemUIMode(
+          SystemUiMode.edgeToEdge,
+          overlays: [SystemUiOverlay.top],
+        );
 
         SystemChrome.setSystemUIOverlayStyle(
           const SystemUiOverlayStyle(
             statusBarColor: Colors.transparent,
-            systemNavigationBarColor: Colors.black,
+            systemNavigationBarColor: Colors.transparent,
+            systemNavigationBarDividerColor: Colors.transparent,
+            systemNavigationBarIconBrightness: Brightness.light,
+            statusBarIconBrightness: Brightness.light,
+            statusBarBrightness: Brightness.dark,
           ),
+        );
+      } else if (Platform.isIOS) {
+        // iOS specific protection
+        await _channel.invokeMethod('protectScreen');
+
+        await SystemChrome.setEnabledSystemUIMode(
+          SystemUiMode.edgeToEdge,
+          overlays: [],
         );
       }
     } catch (e) {
@@ -55,14 +65,13 @@ class ScreenProtectionService {
   static Future<void> _setSafeSystemUiFlags() async {
     try {
       if (Platform.isAndroid) {
-        // Use manual flags for compatibility
-        final methodChannel =
-            const MethodChannel('com.familyacademy/screen_protection');
-        await methodChannel.invokeMethod('setSystemUiMode', 'immersive');
+        await _channel.invokeMethod('setSystemUiMode', 'immersive');
+        await SystemChrome.setEnabledSystemUIMode(
+          SystemUiMode.immersiveSticky,
+          overlays: [],
+        );
       }
-    } catch (e) {
-      debugLog('ScreenProtection', 'Error setting manual flags: $e');
-    }
+    } catch (e) {}
   }
 
   static Future<void> disableSplitScreen() async {
@@ -79,9 +88,11 @@ class ScreenProtectionService {
             overlays: [],
           );
         } catch (e) {
-          debugLog('ScreenProtection', 'immersiveSticky not supported: $e');
           await _setSafeSystemUiFlags();
         }
+
+        // Additional protection against split screen
+        await _channel.invokeMethod('disableSplitScreen');
       }
     } catch (e) {
       debugLog('ScreenProtection', 'Error disabling split screen: $e');
@@ -90,9 +101,6 @@ class ScreenProtectionService {
 
   static void enableOnResume() {
     if (!_protectionEnabled) return;
-
-    debugLog('ScreenProtection', '🛡️ Enabling screen protection on resume');
-
     _setSecureFlags(true);
 
     if (Platform.isAndroid || Platform.isIOS) {
@@ -101,18 +109,16 @@ class ScreenProtectionService {
         DeviceOrientation.portraitDown,
       ]);
     }
+
+    debugLog('ScreenProtection', '🛡️ Protection enabled on resume');
   }
 
   static void disableOnPause() {
-    debugLog('ScreenProtection',
-        '🔓 Temporarily disabling screen protection on pause');
-
     _setSecureFlags(false);
+    debugLog('ScreenProtection', '⚠️ Protection disabled on pause');
   }
 
   static void disable() {
-    debugLog('ScreenProtection', '🔓 Permanently disabling screen protection');
-
     _protectionEnabled = false;
     _setSecureFlags(false);
 
@@ -124,11 +130,10 @@ class ScreenProtectionService {
         DeviceOrientation.landscapeRight,
       ]);
     }
+    debugLog('ScreenProtection', '🔓 Protection disabled');
   }
 
   static void enable() {
-    debugLog('ScreenProtection', '🛡️ Permanently enabling screen protection');
-
     _protectionEnabled = true;
     _setSecureFlags(true);
 
@@ -138,38 +143,34 @@ class ScreenProtectionService {
         DeviceOrientation.portraitDown,
       ]);
     }
+    debugLog('ScreenProtection', '🔒 Protection enabled');
   }
 
   static void _setSecureFlags(bool secure) {
     try {
       if (Platform.isAndroid) {
-        final methodChannel =
-            const MethodChannel('com.familyacademy/screen_protection');
-        methodChannel
-            .invokeMethod(secure ? 'protectScreen' : 'unprotectScreen');
+        _channel.invokeMethod(secure ? 'protectScreen' : 'unprotectScreen');
+      } else if (Platform.isIOS) {
+        _channel.invokeMethod(secure ? 'protectScreen' : 'unprotectScreen');
       }
     } catch (e) {
       debugLog('ScreenProtection', 'Error setting secure flags: $e');
     }
   }
 
-  static bool isEnabled() {
-    return _protectionEnabled;
-  }
+  static bool isEnabled() => _protectionEnabled;
 
   static Widget protectWidget(Widget child, {bool enableProtection = true}) {
-    if (!enableProtection || !_protectionEnabled) {
-      return child;
-    }
+    if (!enableProtection || !_protectionEnabled) return child;
 
     return NotificationListener<UserScrollNotification>(
       onNotification: (notification) {
-        if (notification.direction != ScrollDirection.idle) {
-          enableOnResume();
-        }
+        if (notification.direction != ScrollDirection.idle) enableOnResume();
         return false;
       },
-      child: child,
+      child: RepaintBoundary(
+        child: child,
+      ),
     );
   }
 
@@ -177,16 +178,16 @@ class ScreenProtectionService {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
-        systemNavigationBarColor: Colors.black,
+        systemNavigationBarColor: Colors.transparent,
         systemNavigationBarDividerColor: Colors.transparent,
       ),
-      child: child,
+      child: RepaintBoundary(
+        child: child,
+      ),
     );
   }
 
   static Future<void> clear() async {
-    debugLog('ScreenProtection', '🧹 Clearing screen protection settings');
-
     _protectionEnabled = true;
     _initialized = false;
 
@@ -198,5 +199,6 @@ class ScreenProtectionService {
         await SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual);
       }
     }
+    debugLog('ScreenProtection', '🧹 Protection cleared');
   }
 }

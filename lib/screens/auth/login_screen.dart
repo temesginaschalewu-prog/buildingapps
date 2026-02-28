@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui';
 import 'package:familyacademyclient/themes/app_themes.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -48,19 +49,14 @@ class _LoginScreenState extends State<LoginScreen>
     super.initState();
 
     _fadeInController = AnimationController(
-      vsync: this,
-      duration: AppThemes.animationDurationMedium,
-    )..forward();
-
+        vsync: this, duration: AppThemes.animationDurationMedium)
+      ..forward();
     _slideController = AnimationController(
-      vsync: this,
-      duration: AppThemes.animationDurationMedium,
-    )..forward();
+        vsync: this, duration: AppThemes.animationDurationMedium)
+      ..forward();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_mounted) {
-        _initializeServices();
-      }
+      if (_mounted) _initializeServices();
     });
   }
 
@@ -75,169 +71,89 @@ class _LoginScreenState extends State<LoginScreen>
     super.dispose();
   }
 
-  Future<void> _login() async {
-    if (_isLoading || _isNavigating) return;
-
-    if (!_formKey.currentState!.validate()) return;
-
-    if (!_servicesReady || _deviceId == null) {
-      showSnackBar(
-        context,
-        'Please wait for service initialization',
-        isError: true,
-      );
-      return;
-    }
-
-    setState(() => _isLoading = true);
-    _isNavigating = true;
-
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final subscriptionProvider = Provider.of<SubscriptionProvider>(
-      context,
-      listen: false,
+  Widget _buildGlassContainer({required Widget child}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.getCard(context).withOpacity(0.4),
+                AppColors.getCard(context).withOpacity(0.2),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: AppColors.telegramBlue.withOpacity(0.2),
+              width: 1,
+            ),
+          ),
+          child: child,
+        ),
+      ),
     );
-    final categoryProvider = Provider.of<CategoryProvider>(
-      context,
-      listen: false,
-    );
-    final deviceService = Provider.of<DeviceService>(context, listen: false);
-
-    final username = _usernameController.text.trim();
-    final password = _passwordController.text;
-
-    try {
-      debugLog('LoginScreen', '🔐 Attempting login for user: $username');
-
-      await deviceService.clearUserCache();
-      await deviceService.clearAllCache();
-
-      final loginResult = await authProvider.login(
-        username,
-        password,
-        _deviceId!,
-        _fcmToken,
-      );
-
-      if (!_mounted) return;
-
-      if (loginResult['success'] == true) {
-        debugLog('LoginScreen', '✅ Login successful');
-
-        await _loadCachedDataInBackground(
-          subscriptionProvider,
-          categoryProvider,
-        );
-
-        if (Platform.isAndroid || Platform.isIOS && _fcmToken != null) {
-          _sendFcmTokenInBackground();
-        }
-
-        FocusScope.of(context).unfocus();
-
-        await Future.delayed(const Duration(milliseconds: 100));
-
-        if (!_mounted) return;
-
-        final user = authProvider.currentUser;
-        if (user != null) {
-          debugLog('LoginScreen', '👤 User loaded, navigating...');
-
-          if (user.schoolId == null) {
-            debugLog('LoginScreen',
-                '🏫 No school selected, going to school selection');
-            appRouter.setNavigatingToSchoolSelection(true);
-            appRouter.setPendingDestination('/school-selection');
-
-            if (_mounted && context.mounted) {
-              context.go('/school-selection');
-            }
-          } else {
-            debugLog('LoginScreen', '🏠 Going to home screen');
-            appRouter.setNavigatingToHome(true);
-            appRouter.setPendingDestination('/');
-
-            if (_mounted && context.mounted) {
-              context.go('/');
-            }
-          }
-        }
-      } else if (loginResult['requiresDeviceChange'] == true) {
-        debugLog('LoginScreen',
-            '⚠️ Device change required, preparing navigation...');
-
-        _isNavigating = true;
-
-        await Future.delayed(const Duration(milliseconds: 100));
-
-        if (_mounted) {
-          _navigateToDeviceChange(username, password, loginResult);
-        }
-      } else {
-        showSnackBar(
-          context,
-          loginResult['message'] ?? 'Login failed',
-          isError: true,
-        );
-        _isNavigating = false;
-      }
-    } catch (e) {
-      debugLog('LoginScreen', '❌ Login error: $e');
-      showSimpleSnackBar(context, 'Login failed. Please try again.',
-          isError: true);
-      _isNavigating = false;
-    } finally {
-      if (_mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
   }
 
-  void _navigateToDeviceChange(
-    String username,
-    String password,
-    Map<String, dynamic> loginResult,
-  ) {
-    final deviceChangeData = loginResult['data'] as Map<String, dynamic>? ?? {};
-
-    debugLog('LoginScreen',
-        '🚗 Navigating to device change with data: $deviceChangeData');
-    debugLog('LoginScreen', '📱 Current device ID: $_deviceId');
-    debugLog('LoginScreen', '👤 Username: $username');
-
-    final extraData = {
-      'username': username,
-      'password': password,
-      'deviceId': _deviceId,
-      'fcmToken': _fcmToken,
-      'currentDeviceId': deviceChangeData['currentDeviceId'] ?? 'Unknown',
-      'newDeviceId': deviceChangeData['newDeviceId'] ?? _deviceId,
-      'changeCount': deviceChangeData['changeCount'] ?? 0,
-      'maxChanges': deviceChangeData['maxChanges'] ?? 2,
-      'remainingChanges': deviceChangeData['remainingChanges'] ?? 2,
-      'canChangeDevice': deviceChangeData['canChangeDevice'] ?? true,
-    };
-
-    debugLog('LoginScreen', '📦 Navigation extra: $extraData');
-
-    if (_mounted && context.mounted) {
-      try {
-        context.go('/device-change', extra: extraData);
-        debugLog('LoginScreen', '✅ Navigation to device-change completed');
-      } catch (e) {
-        debugLog('LoginScreen', '❌ Navigation error: $e');
-        Navigator.pushNamed(context, '/device-change', arguments: extraData);
-      }
-    } else {
-      debugLog('LoginScreen', '❌ Cannot navigate - context not mounted');
-    }
-
-    _isNavigating = false;
+  Widget _buildGlassButton({
+    required String label,
+    required VoidCallback onPressed,
+    required List<Color> gradient,
+    bool isLoading = false,
+    bool isEnabled = true,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: isEnabled ? LinearGradient(colors: gradient) : null,
+        color: isEnabled
+            ? null
+            : AppColors.getTextSecondary(context).withOpacity(0.2),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: isEnabled
+            ? [
+                BoxShadow(
+                  color: gradient.first.withOpacity(0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : null,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: isEnabled ? onPressed : null,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            alignment: Alignment.center,
+            child: isLoading
+                ? SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation(Colors.white)),
+                  )
+                : Text(
+                    label,
+                    style: AppTextStyles.buttonLarge.copyWith(
+                      color: isEnabled
+                          ? Colors.white
+                          : AppColors.getTextSecondary(context),
+                    ),
+                  ),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _initializeServices() async {
     if (_isInitializing || !_mounted) return;
-
     _isInitializing = true;
 
     try {
@@ -258,42 +174,131 @@ class _LoginScreenState extends State<LoginScreen>
           _isInitializing = false;
         });
       }
-
-      debugLog(
-        'LoginScreen',
-        '✅ Services ready. Device ID: ${_deviceId?.substring(0, 10)}...',
-      );
     } catch (e) {
-      debugLog('LoginScreen', '❌ Service initialization error: $e');
       if (_mounted) {
         setState(() {
           _isInitializing = false;
           _servicesReady = false;
         });
         if (Platform.isAndroid || Platform.isIOS) {
-          showSnackBar(
-            context,
-            'Service initialization failed. Please restart the app.',
-            isError: true,
-          );
+          showTopSnackBar(
+              context, 'Service initialization failed. Please restart the app.',
+              isError: true);
         }
       }
     }
   }
 
+  Future<void> _login() async {
+    if (_isLoading || _isNavigating) return;
+    if (!_formKey.currentState!.validate()) return;
+    if (!_servicesReady || _deviceId == null) {
+      showTopSnackBar(context, 'Please wait for service initialization',
+          isError: true);
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    _isNavigating = true;
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final subscriptionProvider =
+        Provider.of<SubscriptionProvider>(context, listen: false);
+    final categoryProvider =
+        Provider.of<CategoryProvider>(context, listen: false);
+    final deviceService = Provider.of<DeviceService>(context, listen: false);
+
+    final username = _usernameController.text.trim();
+    final password = _passwordController.text;
+
+    try {
+      await deviceService.clearUserCache();
+      await deviceService.clearAllCache();
+
+      final loginResult =
+          await authProvider.login(username, password, _deviceId!, _fcmToken);
+
+      if (!_mounted) return;
+
+      if (loginResult['success'] == true) {
+        await _loadCachedDataInBackground(
+            subscriptionProvider, categoryProvider);
+
+        if (Platform.isAndroid || Platform.isIOS && _fcmToken != null) {
+          _sendFcmTokenInBackground();
+        }
+
+        FocusScope.of(context).unfocus();
+        await Future.delayed(const Duration(milliseconds: 100));
+
+        if (!_mounted) return;
+
+        final user = authProvider.currentUser;
+        if (user != null) {
+          if (user.schoolId == null) {
+            appRouter.setNavigatingToSchoolSelection(true);
+            appRouter.setPendingDestination('/school-selection');
+            if (_mounted && context.mounted) context.go('/school-selection');
+          } else {
+            appRouter.setNavigatingToHome(true);
+            appRouter.setPendingDestination('/');
+            if (_mounted && context.mounted) context.go('/');
+          }
+        }
+      } else if (loginResult['requiresDeviceChange'] == true) {
+        _isNavigating = true;
+        await Future.delayed(const Duration(milliseconds: 100));
+        if (_mounted) _navigateToDeviceChange(username, password, loginResult);
+      } else {
+        showTopSnackBar(context, loginResult['message'] ?? 'Login failed',
+            isError: true);
+        _isNavigating = false;
+      }
+    } catch (e) {
+      showTopSnackBar(context, 'Login failed. Please try again.',
+          isError: true);
+      _isNavigating = false;
+    } finally {
+      if (_mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _navigateToDeviceChange(
+      String username, String password, Map<String, dynamic> loginResult) {
+    final deviceChangeData = loginResult['data'] as Map<String, dynamic>? ?? {};
+
+    final extraData = {
+      'username': username,
+      'password': password,
+      'deviceId': _deviceId,
+      'fcmToken': _fcmToken,
+      'currentDeviceId': deviceChangeData['currentDeviceId'] ?? 'Unknown',
+      'newDeviceId': deviceChangeData['newDeviceId'] ?? _deviceId,
+      'changeCount': deviceChangeData['changeCount'] ?? 0,
+      'maxChanges': deviceChangeData['maxChanges'] ?? 2,
+      'remainingChanges': deviceChangeData['remainingChanges'] ?? 2,
+      'canChangeDevice': deviceChangeData['canChangeDevice'] ?? true,
+    };
+
+    if (_mounted && context.mounted) {
+      try {
+        context.go('/device-change', extra: extraData);
+      } catch (e) {
+        Navigator.pushNamed(context, '/device-change', arguments: extraData);
+      }
+    }
+    _isNavigating = false;
+  }
+
   Future<void> _loadCachedDataInBackground(
-    SubscriptionProvider subscriptionProvider,
-    CategoryProvider categoryProvider,
-  ) async {
+      SubscriptionProvider subscriptionProvider,
+      CategoryProvider categoryProvider) async {
     try {
       await subscriptionProvider.loadSubscriptions();
       await categoryProvider.loadCategories();
-
       unawaited(subscriptionProvider.loadSubscriptions(forceRefresh: true));
       unawaited(categoryProvider.loadCategories(forceRefresh: true));
-    } catch (e) {
-      debugLog('LoginScreen', 'Error loading cached data: $e');
-    }
+    } catch (e) {}
   }
 
   void _sendFcmTokenInBackground() {
@@ -307,10 +312,7 @@ class _LoginScreenState extends State<LoginScreen>
         child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
           child: Container(
-            padding: EdgeInsets.symmetric(
-              horizontal: AppThemes.spacingL,
-              vertical: AppThemes.spacingXL,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
             child: _buildLoginContent(),
           ),
         ),
@@ -324,27 +326,15 @@ class _LoginScreenState extends State<LoginScreen>
       body: Center(
         child: ConstrainedBox(
           constraints: BoxConstraints(
-            maxWidth: ScreenSize.responsiveValue(
-              context: context,
-              mobile: 500,
-              tablet: 600,
-              desktop: 700,
-            ),
-          ),
+              maxWidth: ScreenSize.responsiveValue(
+                  context: context, mobile: 500, tablet: 600, desktop: 700)),
           child: SingleChildScrollView(
             physics: const BouncingScrollPhysics(),
-            child: Container(
-              padding: EdgeInsets.all(AppThemes.spacingXL),
-              decoration: BoxDecoration(
-                color: AppColors.getCard(context),
-                borderRadius:
-                    BorderRadius.circular(AppThemes.borderRadiusLarge),
-                border: Border.all(
-                  color: Theme.of(context).dividerColor,
-                  width: 0.5,
-                ),
+            child: _buildGlassContainer(
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                child: _buildLoginContent(showLogo: true),
               ),
-              child: _buildLoginContent(showLogo: true),
             ),
           ),
         ),
@@ -358,40 +348,22 @@ class _LoginScreenState extends State<LoginScreen>
       body: Center(
         child: Container(
           constraints: BoxConstraints(
-            maxWidth: ScreenSize.responsiveValue(
-              context: context,
-              mobile: 500,
-              tablet: 800,
-              desktop: 1000,
-            ),
-            maxHeight: 600,
-          ),
-          decoration: BoxDecoration(
-            color: AppColors.getCard(context),
-            borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 20,
-                spreadRadius: 5,
-              ),
-            ],
-          ),
+              maxWidth: ScreenSize.responsiveValue(
+                  context: context, mobile: 500, tablet: 800, desktop: 1000),
+              maxHeight: 600),
           child: Row(
             children: [
               Expanded(
                 child: Container(
-                  padding: EdgeInsets.all(AppThemes.spacingXXXL),
+                  padding: const EdgeInsets.all(48),
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: AppColors.blueGradient,
-                    ),
+                    gradient: const LinearGradient(
+                        colors: AppColors.blueGradient,
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight),
                     borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(AppThemes.borderRadiusLarge),
-                      bottomLeft: Radius.circular(AppThemes.borderRadiusLarge),
-                    ),
+                        topLeft: Radius.circular(24),
+                        bottomLeft: Radius.circular(24)),
                   ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -400,43 +372,29 @@ class _LoginScreenState extends State<LoginScreen>
                         width: 100,
                         height: 100,
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(
-                            AppThemes.borderRadiusXLarge,
-                          ),
-                        ),
-                        child: Icon(
-                          Icons.school_rounded,
-                          size: 48,
-                          color: Colors.white,
-                        ),
-                      ).animate().scale(
-                            duration: 600.ms,
-                            curve: Curves.elasticOut,
-                          ),
-                      SizedBox(height: AppThemes.spacingXXL),
-                      Text(
-                        'Family Academy',
-                        style: AppTextStyles.displaySmall.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      SizedBox(height: AppThemes.spacingL),
-                      Text(
-                        'Premium Education Platform',
-                        style: AppTextStyles.bodyLarge.copyWith(
-                          color: Colors.white.withOpacity(0.9),
-                          fontWeight: FontWeight.w500,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      SizedBox(height: AppThemes.spacingXXL),
+                            color: Colors.white.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(20)),
+                        child: const Icon(Icons.school_rounded,
+                            size: 48, color: Colors.white),
+                      )
+                          .animate()
+                          .scale(duration: 600.ms, curve: Curves.elasticOut),
+                      const SizedBox(height: 32),
+                      const Text('Family Academy',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 32,
+                              fontWeight: FontWeight.w800),
+                          textAlign: TextAlign.center),
+                      const SizedBox(height: 16),
+                      const Text('Premium Education Platform',
+                          style: TextStyle(color: Colors.white, fontSize: 16),
+                          textAlign: TextAlign.center),
+                      const SizedBox(height: 32),
                       _buildFeatureItem('Access all courses'),
-                      SizedBox(height: AppThemes.spacingM),
+                      const SizedBox(height: 12),
                       _buildFeatureItem('Track your progress'),
-                      SizedBox(height: AppThemes.spacingM),
+                      const SizedBox(height: 12),
                       _buildFeatureItem('Take exams online'),
                     ],
                   ),
@@ -447,7 +405,7 @@ class _LoginScreenState extends State<LoginScreen>
                 child: SingleChildScrollView(
                   physics: const BouncingScrollPhysics(),
                   child: Container(
-                    padding: EdgeInsets.all(AppThemes.spacingXXXL),
+                    padding: const EdgeInsets.all(48),
                     child: _buildLoginContent(showLogo: false),
                   ),
                 ),
@@ -463,18 +421,9 @@ class _LoginScreenState extends State<LoginScreen>
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(
-          Icons.check_circle_rounded,
-          color: Colors.white,
-          size: 20,
-        ),
-        SizedBox(width: AppThemes.spacingM),
-        Text(
-          text,
-          style: AppTextStyles.bodyMedium.copyWith(
-            color: Colors.white,
-          ),
-        ),
+        const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+        const SizedBox(width: 12),
+        Text(text, style: const TextStyle(color: Colors.white, fontSize: 16)),
       ],
     );
   }
@@ -484,302 +433,184 @@ class _LoginScreenState extends State<LoginScreen>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (showLogo) ...[
-          SizedBox(height: AppThemes.spacingXXL),
+          const SizedBox(height: 32),
           Align(
             alignment: Alignment.center,
             child: Container(
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                gradient: LinearGradient(colors: AppColors.blueGradient),
-                borderRadius: BorderRadius.circular(
-                  AppThemes.borderRadiusLarge,
-                ),
+                gradient: const LinearGradient(colors: AppColors.blueGradient),
+                borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
-                    color: AppColors.telegramBlue.withOpacity(0.3),
-                    blurRadius: 20,
-                    spreadRadius: 2,
-                  ),
+                      color: AppColors.telegramBlue.withOpacity(0.3),
+                      blurRadius: 20,
+                      spreadRadius: 2)
                 ],
               ),
-              child: Icon(
-                Icons.school_rounded,
-                size: 40,
-                color: Colors.white,
-              ),
-            ).animate().scale(
-                  duration: 600.ms,
-                  curve: Curves.elasticOut,
-                ),
+              child: const Icon(Icons.school_rounded,
+                  size: 40, color: Colors.white),
+            ).animate().scale(duration: 600.ms, curve: Curves.elasticOut),
           ),
-          SizedBox(height: AppThemes.spacingXL),
+          const SizedBox(height: 24),
         ],
-        Text(
-          'Welcome Back',
-          style: AppTextStyles.headlineLarge.copyWith(
-            color: AppColors.getTextPrimary(context),
-            fontWeight: FontWeight.w700,
-          ),
-        )
+        Text('Welcome Back',
+                style: AppTextStyles.headlineLarge.copyWith(
+                    color: AppColors.getTextPrimary(context),
+                    fontWeight: FontWeight.w700))
             .animate()
-            .fadeIn(
-              duration: AppThemes.animationDurationMedium,
-              delay: 100.ms,
-            )
-            .slideX(
-              begin: -0.1,
-              end: 0,
-              duration: AppThemes.animationDurationMedium,
-              delay: 100.ms,
-            ),
-        SizedBox(height: AppThemes.spacingS),
-        Text(
-          'Sign in to continue learning',
-          style: AppTextStyles.bodyMedium.copyWith(
-            color: AppColors.getTextSecondary(context),
-          ),
-        )
+            .fadeIn(duration: 300.ms, delay: 100.ms)
+            .slideX(begin: -0.1, end: 0, duration: 300.ms, delay: 100.ms),
+        const SizedBox(height: 8),
+        Text('Sign in to continue learning',
+                style: AppTextStyles.bodyMedium
+                    .copyWith(color: AppColors.getTextSecondary(context)))
             .animate()
-            .fadeIn(
-              duration: AppThemes.animationDurationMedium,
-              delay: 200.ms,
-            )
-            .slideX(
-              begin: -0.1,
-              end: 0,
-              duration: AppThemes.animationDurationMedium,
-              delay: 200.ms,
-            ),
-        SizedBox(height: AppThemes.spacingXXXL),
+            .fadeIn(duration: 300.ms, delay: 200.ms)
+            .slideX(begin: -0.1, end: 0, duration: 300.ms, delay: 200.ms),
+        const SizedBox(height: 48),
         if (_isInitializing) _buildInitializationIndicator(),
         Form(
           key: _formKey,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              AuthFormField(
-                controller: _usernameController,
-                label: 'Username',
-                hintText: 'Enter your username',
-                prefixIcon: Icons.person_outline_rounded,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Username is required';
-                  }
-                  if (value.length < 3) {
-                    return 'Username must be at least 3 characters';
-                  }
-                  return null;
-                },
-              )
-                  .animate()
-                  .fadeIn(
-                    duration: AppThemes.animationDurationMedium,
-                    delay: 300.ms,
-                  )
-                  .slideX(
-                    begin: -0.1,
-                    end: 0,
-                    duration: AppThemes.animationDurationMedium,
-                    delay: 300.ms,
-                  ),
-              SizedBox(height: AppThemes.spacingXL),
-              PasswordField(
-                controller: _passwordController,
-                label: 'Password',
-                hintText: 'Enter your password',
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Password is required';
-                  }
-                  return null;
-                },
-              )
-                  .animate()
-                  .fadeIn(
-                    duration: AppThemes.animationDurationMedium,
-                    delay: 400.ms,
-                  )
-                  .slideX(
-                    begin: -0.1,
-                    end: 0,
-                    duration: AppThemes.animationDurationMedium,
-                    delay: 400.ms,
-                  ),
-              SizedBox(height: AppThemes.spacingXL),
-              ElevatedButton(
-                onPressed: (_isLoading || !_servicesReady) ? null : _login,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.telegramBlue,
-                  foregroundColor: Colors.white,
-                  padding: EdgeInsets.symmetric(vertical: AppThemes.spacingL),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(
-                      AppThemes.borderRadiusMedium,
-                    ),
-                  ),
-                  elevation: 0,
+              _buildGlassContainer(
+                child: AuthFormField(
+                  controller: _usernameController,
+                  label: 'Username',
+                  hintText: 'Enter your username',
+                  prefixIcon: Icons.person_outline_rounded,
+                  validator: (value) {
+                    if (value == null || value.isEmpty)
+                      return 'Username is required';
+                    if (value.length < 3)
+                      return 'Username must be at least 3 characters';
+                    return null;
+                  },
                 ),
-                child: _isLoading
-                    ? SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            Colors.white,
-                          ),
-                        ),
-                      )
-                    : Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            'Sign In',
-                            style: AppTextStyles.buttonMedium.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          SizedBox(width: AppThemes.spacingS),
-                          Icon(
-                            Icons.arrow_forward_rounded,
-                            size: 20,
-                          ),
-                        ],
-                      ),
-              ).animate().scale(
-                    duration: 300.ms,
-                    delay: 500.ms,
-                  ),
-              SizedBox(height: AppThemes.spacingXXL),
+              )
+                  .animate()
+                  .fadeIn(duration: 300.ms, delay: 300.ms)
+                  .slideX(begin: -0.1, end: 0, duration: 300.ms, delay: 300.ms),
+              const SizedBox(height: 16),
+              _buildGlassContainer(
+                child: PasswordField(
+                  controller: _passwordController,
+                  label: 'Password',
+                  hintText: 'Enter your password',
+                  validator: (value) {
+                    if (value == null || value.isEmpty)
+                      return 'Password is required';
+                    return null;
+                  },
+                ),
+              )
+                  .animate()
+                  .fadeIn(duration: 300.ms, delay: 400.ms)
+                  .slideX(begin: -0.1, end: 0, duration: 300.ms, delay: 400.ms),
+              const SizedBox(height: 24),
+              _buildGlassButton(
+                label: _isLoading ? 'Signing In...' : 'Sign In',
+                onPressed: _login,
+                gradient: const [Color(0xFF2AABEE), Color(0xFF5856D6)],
+                isLoading: _isLoading,
+                isEnabled: !_isLoading && _servicesReady,
+              ).animate().scale(duration: 300.ms, delay: 500.ms),
+              const SizedBox(height: 24),
               Center(
                 child: TextButton(
-                  onPressed: () {
-                    context.go('/auth/register');
-                  },
+                  onPressed: () => context.go('/auth/register'),
                   child: RichText(
                     text: TextSpan(
                       text: 'Don\'t have an account? ',
-                      style: AppTextStyles.bodyMedium.copyWith(
-                        color: AppColors.getTextSecondary(context),
-                      ),
+                      style: AppTextStyles.bodyMedium
+                          .copyWith(color: AppColors.getTextSecondary(context)),
                       children: [
                         TextSpan(
-                          text: 'Sign up',
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            color: AppColors.telegramBlue,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                            text: 'Sign up',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                                color: AppColors.telegramBlue,
+                                fontWeight: FontWeight.w600)),
                       ],
                     ),
                   ),
                 ),
-              ).animate().fadeIn(
-                    duration: AppThemes.animationDurationMedium,
-                    delay: 600.ms,
-                  ),
+              ).animate().fadeIn(duration: 300.ms, delay: 600.ms),
             ],
           ),
         ),
         if (!_servicesReady && !_isInitializing) ...[
-          SizedBox(height: AppThemes.spacingXL),
-          Container(
-            padding: EdgeInsets.all(AppThemes.spacingM),
-            decoration: BoxDecoration(
-              color: AppColors.getStatusBackground('pending', context),
-              borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
-              border: Border.all(
-                color: AppColors.getStatusColor('pending', context),
+          const SizedBox(height: 16),
+          _buildGlassContainer(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline_rounded,
+                      size: 16,
+                      color: AppColors.getStatusColor('pending', context)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Initializing...',
+                            style: AppTextStyles.labelSmall.copyWith(
+                                color: AppColors.getStatusColor(
+                                    'pending', context),
+                                fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 4),
+                        Text('Preparing app services. This may take a moment.',
+                            style: AppTextStyles.caption.copyWith(
+                                color: AppColors.getTextSecondary(context))),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.info_outline_rounded,
-                  size: 16,
-                  color: AppColors.getStatusColor('pending', context),
-                ),
-                SizedBox(width: AppThemes.spacingM),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Initializing...',
-                        style: AppTextStyles.labelSmall.copyWith(
-                          color: AppColors.getStatusColor('pending', context),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      SizedBox(height: AppThemes.spacingXS),
-                      Text(
-                        'Preparing app services. This may take a moment.',
-                        style: AppTextStyles.caption.copyWith(
-                          color: AppColors.getTextSecondary(context),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ).animate().fadeIn(duration: AppThemes.animationDurationMedium),
+          ).animate().fadeIn(duration: 300.ms),
         ],
-        SizedBox(height: AppThemes.spacingXXL),
+        const SizedBox(height: 32),
       ],
     );
   }
 
   Widget _buildInitializationIndicator() {
-    return Container(
-      margin: EdgeInsets.only(bottom: AppThemes.spacingXL),
-      padding: EdgeInsets.all(AppThemes.spacingM),
-      decoration: BoxDecoration(
-        color: AppColors.telegramBlue.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
-        border: Border.all(
-          color: AppColors.telegramBlue,
-        ),
-      ),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation<Color>(
-                AppColors.telegramBlue,
+    return _buildGlassContainer(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor:
+                        AlwaysStoppedAnimation<Color>(AppColors.telegramBlue))),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Preparing app...',
+                      style: AppTextStyles.labelMedium.copyWith(
+                          color: AppColors.telegramBlue,
+                          fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  Text('Setting up services for the best experience',
+                      style: AppTextStyles.caption.copyWith(
+                          color: AppColors.getTextSecondary(context))),
+                ],
               ),
             ),
-          ),
-          SizedBox(width: AppThemes.spacingM),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Preparing app...',
-                  style: AppTextStyles.labelMedium.copyWith(
-                    color: AppColors.telegramBlue,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                SizedBox(height: AppThemes.spacingXS),
-                Text(
-                  'Setting up services for the best experience',
-                  style: AppTextStyles.caption.copyWith(
-                    color: AppColors.getTextSecondary(context),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ).animate().fadeIn(duration: AppThemes.animationDurationMedium);
+    ).animate().fadeIn(duration: 300.ms);
   }
 
   @override
@@ -788,6 +619,6 @@ class _LoginScreenState extends State<LoginScreen>
       mobile: _buildMobileLogin(),
       tablet: _buildTabletLogin(),
       desktop: _buildDesktopLogin(),
-    ).animate().fadeIn(duration: AppThemes.animationDurationMedium);
+    ).animate().fadeIn(duration: 600.ms);
   }
 }

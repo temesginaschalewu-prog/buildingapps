@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../models/streak_model.dart';
@@ -14,6 +15,7 @@ class StreakProvider with ChangeNotifier {
   String? _error;
   List<DateTime> _streakHistory = [];
   Timer? _refreshTimer;
+  String? _currentUserId;
 
   static const Duration _refreshInterval = Duration(minutes: 5);
   static const Duration _cacheDuration = Duration(hours: 1);
@@ -24,12 +26,15 @@ class StreakProvider with ChangeNotifier {
 
   Future<void> _init() async {
     _refreshTimer = Timer.periodic(_refreshInterval, (_) {
-      if (!_isLoading) {
-        loadStreak(forceRefresh: true);
-      }
+      if (!_isLoading) loadStreak(forceRefresh: true);
     });
-
+    await _getCurrentUserId();
     await loadStreak(forceRefresh: false);
+  }
+
+  Future<void> _getCurrentUserId() async {
+    final prefs = await SharedPreferences.getInstance();
+    _currentUserId = prefs.getString('current_user_id');
   }
 
   Streak? get streak => _streak;
@@ -79,17 +84,17 @@ class StreakProvider with ChangeNotifier {
     _notifySafely();
 
     try {
-      debugLog('StreakProvider', 'Loading streak');
-
-      if (!forceRefresh) {
-        final cachedStreak = await deviceService
-            .getCacheItem<Map<String, dynamic>>('streak', isUserSpecific: true);
+      if (!forceRefresh && _currentUserId != null) {
+        final cachedStreak =
+            await deviceService.getCacheItem<Map<String, dynamic>>(
+          'streak_$_currentUserId',
+          isUserSpecific: true,
+        );
         if (cachedStreak != null) {
           _streak = Streak.fromJson(cachedStreak);
           _streakHistory = _streak?.history ?? [];
           _isLoading = false;
           _notifySafely();
-          debugLog('StreakProvider', '✅ Loaded streak from cache');
           return;
         }
       }
@@ -99,14 +104,17 @@ class StreakProvider with ChangeNotifier {
         _streak = Streak.fromJson(response.data!);
         _streakHistory = _streak?.history ?? [];
 
-        await deviceService.saveCacheItem('streak', response.data!,
-            ttl: _cacheDuration, isUserSpecific: true);
-
-        debugLog('StreakProvider', 'Loaded streak: ${_streak?.currentStreak}');
+        if (_currentUserId != null) {
+          await deviceService.saveCacheItem(
+            'streak_$_currentUserId',
+            response.data!,
+            ttl: _cacheDuration,
+            isUserSpecific: true,
+          );
+        }
       }
     } catch (e) {
       _error = e.toString();
-      debugLog('StreakProvider', 'loadStreak error: $e');
     } finally {
       _isLoading = false;
       _notifySafely();
@@ -121,12 +129,10 @@ class StreakProvider with ChangeNotifier {
     _notifySafely();
 
     try {
-      debugLog('StreakProvider', 'Updating streak');
       await apiService.updateStreak();
       await loadStreak(forceRefresh: true);
     } catch (e) {
       _error = e.toString();
-      debugLog('StreakProvider', 'updateStreak error: $e');
     } finally {
       _isLoading = false;
       _notifySafely();
@@ -163,17 +169,13 @@ class StreakProvider with ChangeNotifier {
 
     for (final date in _streakHistory) {
       final diff = now.difference(date).inDays;
-      if (diff < 7) {
-        days[6 - diff] = true;
-      }
+      if (diff < 7) days[6 - diff] = true;
     }
-
     return days;
   }
 
   String getMotivationalMessage() {
     final count = currentStreak;
-
     if (count >= 365) return "ONE YEAR! You're a true legend! 🏆";
     if (count >= 100) return "100 days! You're in the elite club! 👑";
     if (count >= 50) return "50 days of dedication! You're a master! ⭐";
@@ -187,13 +189,12 @@ class StreakProvider with ChangeNotifier {
   }
 
   Future<void> clearUserData() async {
-    debugLog('StreakProvider', 'Clearing streak data');
-
-    await deviceService.removeCacheItem('streak', isUserSpecific: true);
-
+    if (_currentUserId != null) {
+      await deviceService.removeCacheItem('streak_$_currentUserId',
+          isUserSpecific: true);
+    }
     _streak = null;
     _streakHistory = [];
-
     _notifySafely();
   }
 
@@ -211,9 +212,7 @@ class StreakProvider with ChangeNotifier {
   void _notifySafely() {
     if (hasListeners) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (hasListeners) {
-          notifyListeners();
-        }
+        if (hasListeners) notifyListeners();
       });
     }
   }

@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:ui';
 import 'package:familyacademyclient/services/api_service.dart';
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/themes/app_text_styles.dart';
@@ -18,8 +20,7 @@ import '../../themes/app_themes.dart';
 import '../../widgets/auth/password_field.dart';
 import '../../utils/api_response.dart';
 import '../../widgets/common/loading_indicator.dart';
-import '../../widgets/common/error_widget.dart';
-import '../../utils/router.dart'; // Add this import
+import '../../utils/router.dart';
 
 class DeviceChangeScreen extends StatefulWidget {
   const DeviceChangeScreen({super.key});
@@ -74,6 +75,87 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     super.dispose();
   }
 
+  Widget _buildGlassContainer({required Widget child}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.getCard(context).withOpacity(0.4),
+                AppColors.getCard(context).withOpacity(0.2),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: AppColors.telegramBlue.withOpacity(0.2),
+              width: 1,
+            ),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGlassButton({
+    required String label,
+    required VoidCallback onPressed,
+    required List<Color> gradient,
+    bool isLoading = false,
+    bool isEnabled = true,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: isEnabled ? LinearGradient(colors: gradient) : null,
+        color: isEnabled
+            ? null
+            : AppColors.getTextSecondary(context).withOpacity(0.2),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: isEnabled
+            ? [
+                BoxShadow(
+                  color: gradient.first.withOpacity(0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : null,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: isEnabled ? onPressed : null,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            alignment: Alignment.center,
+            child: isLoading
+                ? SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation(Colors.white)),
+                  )
+                : Text(
+                    label,
+                    style: AppTextStyles.buttonLarge.copyWith(
+                      color: isEnabled
+                          ? Colors.white
+                          : AppColors.getTextSecondary(context),
+                    ),
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+
   void _initializeArgs() {
     Map<String, dynamic>? routeArgs;
 
@@ -86,9 +168,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
         debugLog(
             'DeviceChangeScreen', '✅ Received args from GoRouter: $routeArgs');
       }
-    } catch (e) {
-      debugLog('DeviceChangeScreen', '⚠️ Error getting GoRouter args: $e');
-    }
+    } catch (e) {}
 
     if (routeArgs == null || routeArgs.isEmpty) {
       try {
@@ -101,16 +181,12 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
                 '✅ Received args from ModalRoute: $routeArgs');
           }
         }
-      } catch (e) {
-        debugLog('DeviceChangeScreen', '⚠️ Error getting ModalRoute args: $e');
-      }
+      } catch (e) {}
     }
 
     if (routeArgs != null && routeArgs.isNotEmpty) {
       _args = routeArgs;
       _hasArgs = true;
-
-      debugLog('DeviceChangeScreen', '📦 Processing args: $_args');
 
       _username = _args['username']?.toString() ?? '';
       _currentDeviceId = _args['currentDeviceId']?.toString() ?? 'Unknown';
@@ -129,25 +205,13 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
 
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         await _initializeDeviceInfo();
-        if (_mounted) {
-          setState(() {
-            _isInitializing = false;
-          });
-        }
+        if (_mounted) setState(() => _isInitializing = false);
       });
-
-      debugLog('DeviceChangeScreen', '✅ Device change data loaded:');
-      debugLog('DeviceChangeScreen', '  - Username: $_username');
-      debugLog('DeviceChangeScreen', '  - Current Device: $_currentDeviceId');
-      debugLog('DeviceChangeScreen', '  - New Device: $_deviceId');
-      debugLog(
-          'DeviceChangeScreen', '  - Change Count: $_changeCount/$_maxChanges');
-      debugLog('DeviceChangeScreen', '  - Can Change: $_canChangeDevice');
     } else {
       debugLog('DeviceChangeScreen', '❌ No arguments provided');
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_mounted) {
-          showSimpleSnackBar(context, 'Invalid device change request',
+          showTopSnackBar(context, 'Invalid device change request',
               isError: true);
           context.go('/auth/login');
         }
@@ -162,36 +226,28 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
 
       final deviceId = await _deviceService!.getDeviceId();
 
-      if (_mounted) {
-        setState(() {
-          _newDeviceId = deviceId;
-        });
-      }
+      if (_mounted) setState(() => _newDeviceId = deviceId);
 
       debugLog('DeviceChangeScreen',
           'Device initialized. New Device ID: ${deviceId.substring(0, 10)}...');
     } catch (e) {
       debugLog('DeviceChangeScreen', 'Error initializing device: $e');
-      if (_mounted) {
-        showSimpleSnackBar(context, 'Failed to initialize device',
-            isError: true);
-      }
+      if (_mounted)
+        showTopSnackBar(context, 'Failed to initialize device', isError: true);
     }
   }
 
   Future<void> _approveDeviceChange() async {
     if (!_formKey.currentState!.validate()) return;
     if (!_confirmChange) {
-      showSimpleSnackBar(context, 'Please confirm the device change',
+      showTopSnackBar(context, 'Please confirm the device change',
           isError: true);
       return;
     }
     if (!_canChangeDevice) {
-      showSnackBar(
-        context,
-        'You have reached the maximum device changes ($_maxChanges per month)',
-        isError: true,
-      );
+      showTopSnackBar(context,
+          'You have reached the maximum device changes ($_maxChanges per month)',
+          isError: true);
       return;
     }
 
@@ -201,10 +257,10 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     });
 
     final authProvider = context.read<AuthProvider>();
-    final apiService = context.read<ApiService>();
     final subscriptionProvider = context.read<SubscriptionProvider>();
     final categoryProvider = context.read<CategoryProvider>();
     final deviceProvider = context.read<DeviceProvider>();
+    final apiService = context.read<ApiService>();
 
     final password = _passwordController.text;
 
@@ -212,74 +268,67 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
       debugLog(
           'DeviceChangeScreen', 'Approving device change for user: $_username');
 
+      // STEP 1: Call the backend to approve the device change
       debugLog('DeviceChangeScreen', 'Calling device change approval API...');
 
-      final response = await apiService.approveDeviceChange(
+      final approveResponse = await apiService.approveDeviceChange(
         username: _username,
         password: password,
         deviceId: _newDeviceId ?? _deviceId,
       );
 
-      if (response.success) {
-        debugLog('DeviceChangeScreen', '✅ Device change approved via API');
+      if (!approveResponse.success) {
+        throw ApiError(
+            message:
+                approveResponse.message ?? 'Device change approval failed');
+      }
 
-        if (_deviceService != null) {
-          await _deviceService!.clearUserCache();
-          await _deviceService!.clearAllCache();
-          debugLog('DeviceChangeScreen', '🧹 Cleared all cache after approval');
+      debugLog('DeviceChangeScreen', '✅ Device change approved by backend');
+
+      // STEP 2: Small delay to ensure backend processes
+      await Future.delayed(const Duration(seconds: 1));
+
+      // STEP 3: Now login with the new device
+      debugLog('DeviceChangeScreen', 'Logging in with new device...');
+
+      final loginResult = await authProvider.login(
+        _username,
+        password,
+        _newDeviceId ?? _deviceId,
+        null,
+      );
+
+      if (loginResult['success'] == true) {
+        await subscriptionProvider.loadSubscriptions(forceRefresh: true);
+        await categoryProvider.loadCategoriesWithSubscriptionCheck(
+            forceRefresh: true);
+        await deviceProvider.initialize();
+
+        showTopSnackBar(context, 'Device change approved successfully!');
+
+        // Set navigation flags BEFORE navigating
+        if (authProvider.currentUser?.schoolId == null) {
+          appRouter.setNavigatingToSchoolSelection(true);
+          appRouter.setPendingDestination('/school-selection');
+        } else {
+          appRouter.setNavigatingToHome(true);
+          appRouter.setPendingDestination('/');
         }
 
-        debugLog('DeviceChangeScreen', 'Logging in with new device...');
-        final loginResult = await authProvider.login(
-          _username,
-          password,
-          _newDeviceId ?? _deviceId,
-          null,
-        );
+        await Future.delayed(const Duration(milliseconds: 100));
 
-        if (loginResult['success'] == true) {
-          await subscriptionProvider.loadSubscriptions(forceRefresh: true);
-          await categoryProvider.loadCategoriesWithSubscriptionCheck(
-              forceRefresh: true);
+        if (!_mounted) return;
 
-          await deviceProvider.initialize();
-
-          showSimpleSnackBar(context, 'Device change approved successfully!');
-
-          // Set navigation flags BEFORE navigating
-          if (authProvider.currentUser?.schoolId == null) {
-            appRouter.setNavigatingToSchoolSelection(true);
-            appRouter.setPendingDestination('/school-selection');
-          } else {
-            appRouter.setNavigatingToHome(true);
-            appRouter.setPendingDestination('/');
-          }
-
-          // Small delay to ensure state updates
-          await Future.delayed(const Duration(milliseconds: 100));
-
-          if (!_mounted) return;
-
-          if (authProvider.currentUser?.schoolId == null) {
-            context.go('/school-selection');
-          } else {
-            context.go('/');
-          }
+        if (authProvider.currentUser?.schoolId == null) {
+          context.go('/school-selection');
         } else {
-          if (_mounted) {
-            setState(() {
-              _error =
-                  loginResult['message'] ?? 'Login after device change failed';
-            });
-            showSimpleSnackBar(context, _error!, isError: true);
-          }
+          context.go('/');
         }
       } else {
         if (_mounted) {
-          setState(() {
-            _error = response.message ?? 'Device change approval failed';
-          });
-          showSimpleSnackBar(context, _error!, isError: true);
+          setState(() => _error =
+              loginResult['message'] ?? 'Login after device change failed');
+          showTopSnackBar(context, _error!, isError: true);
         }
       }
     } catch (e) {
@@ -300,15 +349,11 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
       }
 
       if (_mounted) {
-        setState(() {
-          _error = errorMessage;
-        });
-        showSimpleSnackBar(context, errorMessage, isError: true);
+        setState(() => _error = errorMessage);
+        showTopSnackBar(context, errorMessage, isError: true);
       }
     } finally {
-      if (_mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (_mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -316,337 +361,204 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     showDialog(
       context: context,
       builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
-        ),
-        backgroundColor: AppColors.getCard(context),
-        child: Padding(
-          padding: EdgeInsets.all(AppThemes.spacingXL),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: EdgeInsets.all(AppThemes.spacingL),
-                decoration: BoxDecoration(
-                  color: AppColors.telegramYellow.withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.exit_to_app_rounded,
-                  color: AppColors.telegramYellow,
-                  size: 32,
-                ),
-              ),
-              SizedBox(height: AppThemes.spacingL),
-              Text(
-                'Cancel Device Change',
-                style: AppTextStyles.titleLarge.copyWith(
-                  color: AppColors.getTextPrimary(context),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              SizedBox(height: AppThemes.spacingM),
-              Text(
-                'Are you sure you want to cancel? You will not be able to login on this device.',
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: AppColors.getTextSecondary(context),
-                ),
-                textAlign: TextAlign.center,
-              ),
-              SizedBox(height: AppThemes.spacingXL),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: TextButton.styleFrom(
-                        foregroundColor: AppColors.getTextSecondary(context),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(
-                              AppThemes.borderRadiusMedium),
-                        ),
-                        padding:
-                            EdgeInsets.symmetric(vertical: AppThemes.spacingM),
-                      ),
-                      child:
-                          Text('No, Stay', style: AppTextStyles.buttonMedium),
-                    ),
-                  ),
-                  SizedBox(width: AppThemes.spacingM),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-
-                        context
-                            .read<AuthProvider>()
-                            .clearDeviceChangeRequirement();
-                        if (_mounted) context.go('/auth/login');
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.telegramRed,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(
-                              AppThemes.borderRadiusMedium),
-                        ),
-                        padding:
-                            EdgeInsets.symmetric(vertical: AppThemes.spacingM),
-                      ),
-                      child: Text('Yes, Cancel',
-                          style: AppTextStyles.buttonMedium),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showDeviceInfoDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
-        ),
-        backgroundColor: AppColors.getCard(context),
-        child: Padding(
-          padding: EdgeInsets.all(AppThemes.spacingXL),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: EdgeInsets.all(AppThemes.spacingM),
-                    decoration: BoxDecoration(
-                      color: AppColors.telegramBlue.withOpacity(0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      Icons.info_rounded,
-                      color: AppColors.telegramBlue,
-                      size: 24,
-                    ),
-                  ),
-                  SizedBox(width: AppThemes.spacingM),
-                  Text(
-                    'Device Information',
-                    style: AppTextStyles.titleLarge.copyWith(
-                      color: AppColors.getTextPrimary(context),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(height: AppThemes.spacingL),
-              _buildDialogInfoItem('Username', _username),
-              SizedBox(height: AppThemes.spacingM),
-              _buildDialogInfoItem('Current Device', _currentDeviceId),
-              SizedBox(height: AppThemes.spacingM),
-              _buildDialogInfoItem('New Device', _newDeviceId ?? _deviceId),
-              SizedBox(height: AppThemes.spacingM),
-              _buildDialogInfoItem(
-                  'Device Changes', '$_changeCount/$_maxChanges'),
-              SizedBox(height: AppThemes.spacingM),
-              _buildDialogInfoItem('Remaining Changes', '$_remainingChanges'),
-              SizedBox(height: AppThemes.spacingM),
-              _buildDialogInfoItem(
-                'Status',
-                _canChangeDevice ? 'Can Change' : 'Cannot Change',
-                valueColor: _canChangeDevice
-                    ? AppColors.telegramGreen
-                    : AppColors.telegramRed,
-              ),
-              SizedBox(height: AppThemes.spacingXL),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.telegramBlue,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius:
-                          BorderRadius.circular(AppThemes.borderRadiusMedium),
-                    ),
-                    padding: EdgeInsets.symmetric(vertical: AppThemes.spacingM),
-                  ),
-                  child: Text('Close', style: AppTextStyles.buttonMedium),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDialogInfoItem(String label, String value, {Color? valueColor}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: AppTextStyles.labelMedium.copyWith(
-            color: AppColors.getTextSecondary(context),
-          ),
-        ),
-        SizedBox(height: AppThemes.spacingXS),
-        Container(
-          padding: EdgeInsets.all(AppThemes.spacingM),
-          decoration: BoxDecoration(
-            color: AppColors.getSurface(context),
-            borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
-            border: Border.all(
-              color: Theme.of(context).dividerColor,
-              width: 0.5,
-            ),
-          ),
-          child: Text(
-            value.isEmpty ? 'Not available' : value,
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: valueColor ?? AppColors.getTextPrimary(context),
-              fontFamily: Platform.isIOS ? 'Courier' : 'monospace',
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildWarningBanner() {
-    return Container(
-      padding: EdgeInsets.all(AppThemes.spacingXL),
-      decoration: BoxDecoration(
-        color: AppColors.telegramYellow.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
-        border: Border.all(
-          color: AppColors.telegramYellow,
-          width: 2,
-        ),
-      ),
-      child: Row(
-        children: [
-          AnimatedBuilder(
-            animation: _pulseAnimationController,
-            builder: (context, child) {
-              return Transform.scale(
-                scale: 1 + _pulseAnimationController.value * 0.1,
-                child: Container(
-                  padding: EdgeInsets.all(AppThemes.spacingM),
+        backgroundColor: Colors.transparent,
+        child: _buildGlassContainer(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: AppColors.telegramYellow.withOpacity(0.2),
+                    gradient: LinearGradient(
+                      colors: [
+                        AppColors.telegramYellow.withOpacity(0.2),
+                        AppColors.telegramYellow.withOpacity(0.1),
+                      ],
+                    ),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(
-                    Icons.warning_rounded,
-                    color: AppColors.telegramYellow,
-                    size: 32,
-                  ),
+                  child: Icon(Icons.exit_to_app_rounded,
+                      color: AppColors.telegramYellow, size: 32),
                 ),
-              );
-            },
-          ),
-          SizedBox(width: AppThemes.spacingXL),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+                const SizedBox(height: 16),
+                Text('Cancel Device Change',
+                    style: AppTextStyles.titleLarge.copyWith(
+                        color: AppColors.getTextPrimary(context),
+                        fontWeight: FontWeight.w600)),
+                const SizedBox(height: 12),
                 Text(
-                  'New Device Detected',
-                  style: AppTextStyles.headlineSmall.copyWith(
-                    color: AppColors.telegramYellow,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                SizedBox(height: AppThemes.spacingS),
-                Text(
-                  'You are logging in from a new device. Your old device will be blocked after this change.',
-                  style: AppTextStyles.bodyLarge.copyWith(
-                    color: AppColors.telegramYellow,
-                  ),
+                    'Are you sure you want to cancel? You will not be able to login on this device.',
+                    style: AppTextStyles.bodyMedium
+                        .copyWith(color: AppColors.getTextSecondary(context)),
+                    textAlign: TextAlign.center),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppColors.getTextSecondary(context),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16)),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        child: const Text('No, Stay'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildGlassButton(
+                        label: 'Yes, Cancel',
+                        onPressed: () {
+                          Navigator.pop(context);
+                          context
+                              .read<AuthProvider>()
+                              .clearDeviceChangeRequirement();
+                          if (_mounted) context.go('/auth/login');
+                        },
+                        gradient: const [Color(0xFFFF3B30), Color(0xFFE6204A)],
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
-        ],
+        ),
       ),
-    ).animate().shake(
-          duration: 1.seconds,
-          delay: 500.ms,
-        );
+    );
   }
 
-  Widget _buildMobileLayout() {
+  @override
+  Widget build(BuildContext context) {
     if (_isInitializing) {
-      return _buildLoadingScreen();
+      return Scaffold(
+        backgroundColor: AppColors.getBackground(context),
+        appBar: AppBar(
+          title: Text('Device Change',
+              style: AppTextStyles.appBarTitle
+                  .copyWith(color: AppColors.getTextPrimary(context))),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+              icon: Icon(Icons.arrow_back_rounded,
+                  color: AppColors.getTextPrimary(context)),
+              onPressed: () => context.go('/auth/login')),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildGlassContainer(
+                child: Container(
+                  padding: const EdgeInsets.all(24),
+                  child: LoadingIndicator(
+                      type: LoadingType.circular,
+                      size: 48,
+                      color: AppColors.telegramBlue),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text('Initializing device information...',
+                  style: AppTextStyles.bodyMedium
+                      .copyWith(color: AppColors.getTextSecondary(context))),
+            ],
+          ),
+        ),
+      );
     }
 
     if (!_hasArgs) {
-      return _buildErrorScreen();
+      return Scaffold(
+        backgroundColor: AppColors.getBackground(context),
+        appBar: AppBar(
+          title: Text('Device Change',
+              style: AppTextStyles.appBarTitle
+                  .copyWith(color: AppColors.getTextPrimary(context))),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+              icon: Icon(Icons.arrow_back_rounded,
+                  color: AppColors.getTextPrimary(context)),
+              onPressed: () => context.go('/auth/login')),
+        ),
+        body: Center(
+          child: EmptyState(
+            icon: Icons.error_outline,
+            title: 'Invalid Request',
+            message: 'No device change data provided.',
+            type: EmptyStateType.error,
+            actionText: 'Back to Login',
+            onAction: () => context.go('/auth/login'),
+          ),
+        ),
+      );
     }
 
+    return ResponsiveLayout(
+      mobile: _buildMobileLayout(),
+      tablet: _buildDesktopLayout(),
+      desktop: _buildDesktopLayout(),
+    ).animate().fadeIn(duration: AppThemes.animationDurationMedium);
+  }
+
+  Widget _buildMobileLayout() {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: AppBar(
-        title: Text(
-          'Device Change',
-          style: AppTextStyles.appBarTitle.copyWith(
-            color: AppColors.getTextPrimary(context),
-          ),
-        ),
-        backgroundColor: AppColors.getBackground(context),
+        title: Text('Device Change',
+            style: AppTextStyles.appBarTitle
+                .copyWith(color: AppColors.getTextPrimary(context))),
+        backgroundColor: Colors.transparent,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
         automaticallyImplyLeading: false,
         actions: [
           IconButton(
-            icon: Icon(
-              Icons.info_outline_rounded,
-              color: AppColors.getTextSecondary(context),
-            ),
-            onPressed: _showDeviceInfoDialog,
+            icon: Icon(Icons.info_outline_rounded,
+                color: AppColors.getTextSecondary(context)),
+            onPressed: () => _showDeviceInfoDialog(),
             tooltip: 'Device Information',
           ),
         ],
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: EdgeInsets.all(AppThemes.spacingL),
+          padding: const EdgeInsets.all(16),
           child: Form(
             key: _formKey,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _buildWarningBanner(),
-                SizedBox(height: AppThemes.spacingXL),
+                const SizedBox(height: 24),
                 _buildDeviceInfoCard(),
-                SizedBox(height: AppThemes.spacingL),
+                const SizedBox(height: 16),
                 _buildDeviceLimitsCard(),
-                SizedBox(height: AppThemes.spacingXL),
-                PasswordField(
-                  controller: _passwordController,
-                  label: 'Verify Password',
-                  hintText: 'Enter your password to confirm device change',
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Password is required to confirm device change';
-                    }
-                    return null;
-                  },
+                const SizedBox(height: 24),
+                _buildGlassContainer(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: PasswordField(
+                      controller: _passwordController,
+                      label: 'Verify Password',
+                      hintText: 'Enter your password to confirm device change',
+                      validator: (value) {
+                        if (value == null || value.isEmpty)
+                          return 'Password is required to confirm device change';
+                        return null;
+                      },
+                    ),
+                  ),
                 ),
-                SizedBox(height: AppThemes.spacingL),
+                const SizedBox(height: 16),
                 _buildConfirmationCard(),
-                SizedBox(height: AppThemes.spacingXXL),
+                const SizedBox(height: 32),
                 _buildActionButtons(),
-                SizedBox(height: AppThemes.spacingL),
+                const SizedBox(height: 16),
                 _buildNote(),
               ],
             ),
@@ -657,34 +569,21 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
   }
 
   Widget _buildDesktopLayout() {
-    if (_isInitializing) {
-      return _buildLoadingScreen();
-    }
-
-    if (!_hasArgs) {
-      return _buildErrorScreen();
-    }
-
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: AppBar(
-        title: Text(
-          'Device Change Required',
-          style: AppTextStyles.appBarTitle.copyWith(
-            color: AppColors.getTextPrimary(context),
-          ),
-        ),
-        backgroundColor: AppColors.getBackground(context),
+        title: Text('Device Change Required',
+            style: AppTextStyles.appBarTitle
+                .copyWith(color: AppColors.getTextPrimary(context))),
+        backgroundColor: Colors.transparent,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
         automaticallyImplyLeading: false,
         actions: [
           IconButton(
-            icon: Icon(
-              Icons.info_outline_rounded,
-              color: AppColors.getTextSecondary(context),
-            ),
-            onPressed: _showDeviceInfoDialog,
+            icon: Icon(Icons.info_outline_rounded,
+                color: AppColors.getTextSecondary(context)),
+            onPressed: () => _showDeviceInfoDialog(),
             tooltip: 'Device Information',
           ),
         ],
@@ -696,64 +595,51 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SizedBox(height: AppThemes.spacingXXL),
+                const SizedBox(height: 32),
                 _buildWarningBanner(),
-                SizedBox(height: AppThemes.spacingXXXL),
+                const SizedBox(height: 48),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: _buildDeviceInfoCard(),
-                    ),
-                    SizedBox(width: AppThemes.spacingXXL),
-                    Expanded(
-                      child: _buildDeviceLimitsCard(),
-                    ),
+                    Expanded(child: _buildDeviceInfoCard()),
+                    const SizedBox(width: 32),
+                    Expanded(child: _buildDeviceLimitsCard()),
                   ],
                 ),
-                SizedBox(height: AppThemes.spacingXXXL),
-                Card(
-                  shape: RoundedRectangleBorder(
-                    borderRadius:
-                        BorderRadius.circular(AppThemes.borderRadiusLarge),
-                  ),
-                  color: AppColors.getCard(context),
+                const SizedBox(height: 48),
+                _buildGlassContainer(
                   child: Padding(
-                    padding: EdgeInsets.all(AppThemes.spacingXXL),
+                    padding: const EdgeInsets.all(32),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Verification',
-                          style: AppTextStyles.titleLarge.copyWith(
-                            color: AppColors.getTextPrimary(context),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        SizedBox(height: AppThemes.spacingXL),
+                        Text('Verification',
+                            style: AppTextStyles.titleLarge.copyWith(
+                                color: AppColors.getTextPrimary(context),
+                                fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 24),
                         PasswordField(
                           controller: _passwordController,
                           label: 'Verify Password',
                           hintText:
                               'Enter your password to confirm device change',
                           validator: (value) {
-                            if (value == null || value.isEmpty) {
+                            if (value == null || value.isEmpty)
                               return 'Password is required to confirm device change';
-                            }
                             return null;
                           },
                         ),
-                        SizedBox(height: AppThemes.spacingXL),
+                        const SizedBox(height: 24),
                         _buildConfirmationCard(),
                       ],
                     ),
                   ),
                 ),
-                SizedBox(height: AppThemes.spacingXXXL),
+                const SizedBox(height: 48),
                 _buildActionButtons(),
-                SizedBox(height: AppThemes.spacingXXL),
+                const SizedBox(height: 24),
                 _buildNote(),
-                SizedBox(height: AppThemes.spacingXXXL),
+                const SizedBox(height: 48),
               ],
             ),
           ),
@@ -763,78 +649,45 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
   }
 
   Widget _buildDeviceInfoCard() {
-    return Container(
-      padding: EdgeInsets.all(ScreenSize.responsiveValue(
-        context: context,
-        mobile: AppThemes.spacingL,
-        tablet: AppThemes.spacingXL,
-        desktop: AppThemes.spacingXXL,
-      )),
-      decoration: BoxDecoration(
-        color: AppColors.getCard(context),
-        borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
-        border: Border.all(
-          color: Theme.of(context).dividerColor,
-          width: 0.5,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: AppColors.telegramBlue.withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.devices_rounded,
-                  color: AppColors.telegramBlue,
-                  size: 20,
-                ),
-              ),
-              SizedBox(width: AppThemes.spacingM),
-              Text(
-                'Device Information',
-                style: AppTextStyles.titleMedium.copyWith(
-                  color: AppColors.getTextPrimary(context),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: AppThemes.spacingL),
-          _buildInfoRow('Username', _username),
-          SizedBox(height: AppThemes.spacingM),
-          _buildInfoRow('Current Device', _currentDeviceId),
-          SizedBox(height: AppThemes.spacingM),
-          _buildInfoRow('New Device', _newDeviceId ?? _deviceId),
-          if (_newDeviceId == null)
-            Padding(
-              padding: EdgeInsets.only(top: AppThemes.spacingM),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.warning_rounded,
-                    color: AppColors.telegramRed,
-                    size: 16,
-                  ),
-                  SizedBox(width: AppThemes.spacingS),
-                  Expanded(
-                    child: Text(
-                      'Could not detect new device ID',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.telegramRed,
-                      ),
+    return _buildGlassContainer(
+      child: Padding(
+        padding: EdgeInsets.all(ScreenSize.responsiveValue(
+            context: context, mobile: 16, tablet: 20, desktop: 24)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        AppColors.telegramBlue.withOpacity(0.2),
+                        AppColors.telegramPurple.withOpacity(0.1),
+                      ],
                     ),
+                    shape: BoxShape.circle,
                   ),
-                ],
-              ),
+                  child: Icon(Icons.devices_rounded,
+                      color: AppColors.telegramBlue, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Text('Device Information',
+                    style: AppTextStyles.titleMedium.copyWith(
+                        color: AppColors.getTextPrimary(context),
+                        fontWeight: FontWeight.w600)),
+              ],
             ),
-        ],
+            const SizedBox(height: 16),
+            _buildInfoRow('Username', _username),
+            const SizedBox(height: 12),
+            _buildInfoRow('Current Device', _currentDeviceId),
+            const SizedBox(height: 12),
+            _buildInfoRow('New Device', _newDeviceId ?? _deviceId),
+          ],
+        ),
       ),
     );
   }
@@ -844,34 +697,24 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(
-          width: 100,
-          child: Text(
-            '$label:',
-            style: AppTextStyles.labelMedium.copyWith(
-              color: AppColors.getTextSecondary(context),
-            ),
-          ),
-        ),
+            width: 100,
+            child: Text('$label:',
+                style: AppTextStyles.labelMedium
+                    .copyWith(color: AppColors.getTextSecondary(context)))),
         Expanded(
-          child: Container(
-            padding: EdgeInsets.all(AppThemes.spacingS),
-            decoration: BoxDecoration(
-              color: AppColors.getSurface(context),
-              borderRadius: BorderRadius.circular(AppThemes.borderRadiusSmall),
-              border: Border.all(
-                color: Theme.of(context).dividerColor,
-                width: 0.5,
-              ),
-            ),
-            child: Text(
-              value.isNotEmpty
-                  ? value.substring(0, value.length > 30 ? 30 : value.length) +
-                      (value.length > 30 ? '...' : '')
-                  : 'Not available',
-              style: AppTextStyles.bodySmall.copyWith(
-                color: AppColors.getTextPrimary(context),
-                fontFamily: Platform.isIOS ? 'Courier' : 'monospace',
-                fontWeight: FontWeight.w600,
+          child: _buildGlassContainer(
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              child: Text(
+                value.isNotEmpty
+                    ? value.substring(
+                            0, value.length > 30 ? 30 : value.length) +
+                        (value.length > 30 ? '...' : '')
+                    : 'Not available',
+                style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.getTextPrimary(context),
+                    fontFamily: Platform.isIOS ? 'Courier' : 'monospace',
+                    fontWeight: FontWeight.w600),
               ),
             ),
           ),
@@ -887,160 +730,96 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
             ? AppColors.telegramYellow
             : AppColors.telegramGreen;
 
-    return Container(
-      padding: EdgeInsets.all(ScreenSize.responsiveValue(
-        context: context,
-        mobile: AppThemes.spacingL,
-        tablet: AppThemes.spacingXL,
-        desktop: AppThemes.spacingXXL,
-      )),
-      decoration: BoxDecoration(
-        color: AppColors.getCard(context),
-        borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
-        border: Border.all(
-          color: Theme.of(context).dividerColor,
-          width: 0.5,
+    return _buildGlassContainer(
+      child: Padding(
+        padding: EdgeInsets.all(ScreenSize.responsiveValue(
+            context: context, mobile: 16, tablet: 20, desktop: 24)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        AppColors.telegramBlue.withOpacity(0.2),
+                        AppColors.telegramPurple.withOpacity(0.1),
+                      ],
+                    ),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.timer_rounded,
+                      color: AppColors.telegramBlue, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Text('Device Change Limits',
+                    style: AppTextStyles.titleMedium.copyWith(
+                        color: AppColors.getTextPrimary(context),
+                        fontWeight: FontWeight.w600)),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _buildLimitRow(
+                label: 'Changes this month',
+                value: '$_changeCount/$_maxChanges',
+                color: AppColors.telegramBlue),
+            const SizedBox(height: 12),
+            _buildLimitRow(
+                label: 'Remaining changes',
+                value: '$_remainingChanges',
+                color: remainingColor),
+            if (!_canChangeDevice)
+              Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        AppColors.telegramRed.withOpacity(0.2),
+                        AppColors.telegramRed.withOpacity(0.1),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.error_outline_rounded,
+                          color: AppColors.telegramRed, size: 20),
+                      const SizedBox(width: 12),
+                      Expanded(
+                          child: Text(
+                              'Maximum changes reached. Contact support.',
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                  color: AppColors.telegramRed,
+                                  fontWeight: FontWeight.w500))),
+                    ],
+                  ),
+                ),
+              ),
+          ],
         ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: AppColors.telegramBlue.withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.timer_rounded,
-                  color: AppColors.telegramBlue,
-                  size: 20,
-                ),
-              ),
-              SizedBox(width: AppThemes.spacingM),
-              Text(
-                'Device Change Limits',
-                style: AppTextStyles.titleMedium.copyWith(
-                  color: AppColors.getTextPrimary(context),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: AppThemes.spacingL),
-          _buildLimitRow(
-            label: 'Changes this month',
-            value: '$_changeCount/$_maxChanges',
-            color: AppColors.telegramBlue,
-          ),
-          SizedBox(height: AppThemes.spacingM),
-          _buildLimitRow(
-            label: 'Remaining changes',
-            value: '$_remainingChanges',
-            color: remainingColor,
-          ),
-          if (!_canChangeDevice)
-            Padding(
-              padding: EdgeInsets.only(top: AppThemes.spacingM),
-              child: Container(
-                padding: EdgeInsets.all(AppThemes.spacingM),
-                decoration: BoxDecoration(
-                  color: AppColors.telegramRed.withOpacity(0.1),
-                  borderRadius:
-                      BorderRadius.circular(AppThemes.borderRadiusMedium),
-                  border: Border.all(color: AppColors.telegramRed),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.error_outline_rounded,
-                      color: AppColors.telegramRed,
-                      size: 20,
-                    ),
-                    SizedBox(width: AppThemes.spacingM),
-                    Expanded(
-                      child: Text(
-                        'Maximum changes reached. Contact support.',
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          color: AppColors.telegramRed,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          if (_canChangeDevice && _remainingChanges == 1)
-            Padding(
-              padding: EdgeInsets.only(top: AppThemes.spacingM),
-              child: Container(
-                padding: EdgeInsets.all(AppThemes.spacingM),
-                decoration: BoxDecoration(
-                  color: AppColors.telegramYellow.withOpacity(0.1),
-                  borderRadius:
-                      BorderRadius.circular(AppThemes.borderRadiusMedium),
-                  border: Border.all(color: AppColors.telegramYellow),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.warning_rounded,
-                      color: AppColors.telegramYellow,
-                      size: 20,
-                    ),
-                    SizedBox(width: AppThemes.spacingM),
-                    Expanded(
-                      child: Text(
-                        'Last change available this month',
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          color: AppColors.telegramYellow,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
       ),
     );
   }
 
-  Widget _buildLimitRow({
-    required String label,
-    required String value,
-    required Color color,
-  }) {
+  Widget _buildLimitRow(
+      {required String label, required String value, required Color color}) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          label,
-          style: AppTextStyles.bodyMedium.copyWith(
-            color: AppColors.getTextPrimary(context),
-          ),
-        ),
-        Container(
-          padding: EdgeInsets.symmetric(
-            horizontal: AppThemes.spacingM,
-            vertical: AppThemes.spacingXS,
-          ),
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(AppThemes.borderRadiusFull),
-            border: Border.all(color: color),
-          ),
-          child: Text(
-            value,
-            style: AppTextStyles.labelMedium.copyWith(
-              color: color,
-              fontWeight: FontWeight.w600,
-            ),
+        Text(label,
+            style: AppTextStyles.bodyMedium
+                .copyWith(color: AppColors.getTextPrimary(context))),
+        _buildGlassContainer(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Text(value,
+                style: AppTextStyles.labelMedium
+                    .copyWith(color: color, fontWeight: FontWeight.w600)),
           ),
         ),
       ],
@@ -1048,213 +827,37 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
   }
 
   Widget _buildConfirmationCard() {
-    return Container(
-      padding: EdgeInsets.all(AppThemes.spacingL),
-      decoration: BoxDecoration(
-        color: AppColors.getSurface(context),
-        borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
-        border: Border.all(
-          color: Theme.of(context).dividerColor,
-          width: 0.5,
-        ),
-      ),
-      child: Row(
-        children: [
-          Checkbox(
-            value: _confirmChange,
-            onChanged: (value) {
-              if (_mounted) {
-                setState(() => _confirmChange = value ?? false);
-              }
-            },
-            activeColor: AppColors.telegramBlue,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppThemes.borderRadiusSmall),
-            ),
-          ),
-          SizedBox(width: AppThemes.spacingM),
-          Expanded(
-            child: RichText(
-              text: TextSpan(
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: AppColors.getTextPrimary(context),
-                ),
-                children: const [
-                  TextSpan(text: 'I understand that: '),
-                  TextSpan(
-                    text: 'my old device will be blocked, ',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  TextSpan(text: 'and I can only change devices '),
-                  TextSpan(
-                    text: '2 times per month.',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildActionButtons() {
-    return Row(
-      children: [
-        Expanded(
-          child: OutlinedButton(
-            onPressed: _isLoading ? null : _cancelDeviceChange,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.getTextSecondary(context),
-              side: BorderSide(
-                color: AppColors.getTextSecondary(context).withOpacity(0.5),
-              ),
-              padding: EdgeInsets.symmetric(vertical: AppThemes.spacingL),
-              shape: RoundedRectangleBorder(
-                borderRadius:
-                    BorderRadius.circular(AppThemes.borderRadiusMedium),
-              ),
-            ),
-            child: Text(
-              'Cancel',
-              style: AppTextStyles.buttonMedium.copyWith(
-                color: AppColors.getTextSecondary(context),
-              ),
-            ),
-          ),
-        ),
-        SizedBox(width: AppThemes.spacingM),
-        Expanded(
-          child: _canChangeDevice
-              ? ElevatedButton(
-                  onPressed: _isLoading ? null : _approveDeviceChange,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.telegramBlue,
-                    foregroundColor: Colors.white,
-                    padding: EdgeInsets.symmetric(vertical: AppThemes.spacingL),
-                    shape: RoundedRectangleBorder(
-                      borderRadius:
-                          BorderRadius.circular(AppThemes.borderRadiusMedium),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: _isLoading
-                      ? SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              Colors.white,
-                            ),
-                          ),
-                        )
-                      : Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.check_circle_rounded, size: 20),
-                            SizedBox(width: AppThemes.spacingS),
-                            Text(
-                              'Approve',
-                              style: AppTextStyles.buttonMedium.copyWith(
-                                color: Colors.white,
-                              ),
-                            ),
-                          ],
-                        ),
-                )
-              : ElevatedButton(
-                  onPressed: null,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.telegramRed.withOpacity(0.5),
-                    foregroundColor: Colors.white,
-                    padding: EdgeInsets.symmetric(vertical: AppThemes.spacingL),
-                    shape: RoundedRectangleBorder(
-                      borderRadius:
-                          BorderRadius.circular(AppThemes.borderRadiusMedium),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: Text(
-                    'Cannot Change',
-                    style: AppTextStyles.buttonMedium.copyWith(
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildNote() {
-    return Container(
-      padding: EdgeInsets.all(AppThemes.spacingL),
-      decoration: BoxDecoration(
-        color: AppColors.getSurface(context),
-        borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
-        border: Border.all(
-          color: Theme.of(context).dividerColor,
-          width: 0.5,
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            Icons.info_outline_rounded,
-            size: 20,
-            color: AppColors.getTextSecondary(context),
-          ),
-          SizedBox(width: AppThemes.spacingM),
-          Expanded(
-            child: Text(
-              'Device changes are limited to 2 per month for security reasons.',
-              style: AppTextStyles.bodySmall.copyWith(
-                color: AppColors.getTextSecondary(context),
-                fontStyle: FontStyle.italic,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLoadingScreen() {
-    return Scaffold(
-      backgroundColor: AppColors.getBackground(context),
-      appBar: AppBar(
-        title: Text(
-          'Device Change',
-          style: AppTextStyles.appBarTitle.copyWith(
-            color: AppColors.getTextPrimary(context),
-          ),
-        ),
-        backgroundColor: AppColors.getBackground(context),
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(
-            Icons.arrow_back_rounded,
-            color: AppColors.getTextPrimary(context),
-          ),
-          onPressed: () => context.go('/auth/login'),
-        ),
-      ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+    return _buildGlassContainer(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
           children: [
-            LoadingIndicator(
-              type: LoadingType.circular,
-              size: 48,
-              color: AppColors.telegramBlue,
+            Checkbox(
+              value: _confirmChange,
+              onChanged: (value) => _mounted
+                  ? setState(() => _confirmChange = value ?? false)
+                  : null,
+              activeColor: AppColors.telegramBlue,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4)),
             ),
-            SizedBox(height: AppThemes.spacingL),
-            Text(
-              'Initializing device information...',
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.getTextSecondary(context),
+            const SizedBox(width: 12),
+            Expanded(
+              child: RichText(
+                text: TextSpan(
+                  style: AppTextStyles.bodyMedium
+                      .copyWith(color: AppColors.getTextPrimary(context)),
+                  children: const [
+                    TextSpan(text: 'I understand that: '),
+                    TextSpan(
+                        text: 'my old device will be blocked, ',
+                        style: TextStyle(fontWeight: FontWeight.w600)),
+                    TextSpan(text: 'and I can only change devices '),
+                    TextSpan(
+                        text: '2 times per month.',
+                        style: TextStyle(fontWeight: FontWeight.w600)),
+                  ],
+                ),
               ),
             ),
           ],
@@ -1263,51 +866,209 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     );
   }
 
-  Widget _buildErrorScreen() {
-    return Scaffold(
-      backgroundColor: AppColors.getBackground(context),
-      appBar: AppBar(
-        title: Text(
-          'Device Change',
-          style: AppTextStyles.appBarTitle.copyWith(
-            color: AppColors.getTextPrimary(context),
+  Widget _buildActionButtons() {
+    return Row(
+      children: [
+        Expanded(
+          child: TextButton(
+            onPressed: _isLoading ? null : _cancelDeviceChange,
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.getTextSecondary(context),
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+            ),
+            child: Text('Cancel',
+                style: AppTextStyles.buttonMedium
+                    .copyWith(color: AppColors.getTextSecondary(context))),
           ),
         ),
-        backgroundColor: AppColors.getBackground(context),
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(
-            Icons.arrow_back_rounded,
-            color: AppColors.getTextPrimary(context),
-          ),
-          onPressed: () => context.go('/auth/login'),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _canChangeDevice
+              ? _buildGlassButton(
+                  label: _isLoading ? 'Approving...' : 'Approve',
+                  onPressed: _approveDeviceChange,
+                  gradient: const [Color(0xFF2AABEE), Color(0xFF5856D6)],
+                  isLoading: _isLoading,
+                  isEnabled: !_isLoading && _confirmChange,
+                )
+              : _buildGlassButton(
+                  label: 'Cannot Change',
+                  onPressed: () {},
+                  gradient: const [Color(0xFFFF3B30), Color(0xFFE6204A)],
+                  isEnabled: false,
+                ),
         ),
-      ),
-      body: Center(
-        child: ErrorState(
-          title: 'Invalid Request',
-          message: 'No device change data provided.',
-          actionText: 'Back to Login',
-          onAction: () => context.go('/auth/login'),
+      ],
+    );
+  }
+
+  Widget _buildNote() {
+    return _buildGlassContainer(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            Icon(Icons.info_outline_rounded,
+                size: 20, color: AppColors.getTextSecondary(context)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Device changes are limited to 2 per month for security reasons.',
+                style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.getTextSecondary(context),
+                    fontStyle: FontStyle.italic),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    if (_isInitializing) {
-      return _buildLoadingScreen();
-    }
+  void _showDeviceInfoDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: _buildGlassContainer(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            AppColors.telegramBlue.withOpacity(0.2),
+                            AppColors.telegramPurple.withOpacity(0.1),
+                          ],
+                        ),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.info_rounded,
+                          color: AppColors.telegramBlue, size: 24),
+                    ),
+                    const SizedBox(width: 16),
+                    Text('Device Information',
+                        style: AppTextStyles.titleLarge.copyWith(
+                            color: AppColors.getTextPrimary(context),
+                            fontWeight: FontWeight.w600)),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                _buildDialogInfoItem('Username', _username),
+                const SizedBox(height: 12),
+                _buildDialogInfoItem('Current Device', _currentDeviceId),
+                const SizedBox(height: 12),
+                _buildDialogInfoItem('New Device', _newDeviceId ?? _deviceId),
+                const SizedBox(height: 12),
+                _buildDialogInfoItem(
+                    'Device Changes', '$_changeCount/$_maxChanges'),
+                const SizedBox(height: 12),
+                _buildDialogInfoItem('Remaining Changes', '$_remainingChanges'),
+                const SizedBox(height: 12),
+                _buildDialogInfoItem(
+                    'Status', _canChangeDevice ? 'Can Change' : 'Cannot Change',
+                    valueColor: _canChangeDevice
+                        ? AppColors.telegramGreen
+                        : AppColors.telegramRed),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: _buildGlassButton(
+                    label: 'Close',
+                    onPressed: () => Navigator.pop(context),
+                    gradient: const [Color(0xFF2AABEE), Color(0xFF5856D6)],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
-    if (!_hasArgs) {
-      return _buildErrorScreen();
-    }
+  Widget _buildDialogInfoItem(String label, String value, {Color? valueColor}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            style: AppTextStyles.labelMedium
+                .copyWith(color: AppColors.getTextSecondary(context))),
+        const SizedBox(height: 4),
+        _buildGlassContainer(
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            child: Text(
+              value.isEmpty ? 'Not available' : value,
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: valueColor ?? AppColors.getTextPrimary(context),
+                fontFamily: Platform.isIOS ? 'Courier' : 'monospace',
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
-    return ResponsiveLayout(
-      mobile: _buildMobileLayout(),
-      tablet: _buildDesktopLayout(),
-      desktop: _buildDesktopLayout(),
-    ).animate().fadeIn(duration: AppThemes.animationDurationMedium);
+  Widget _buildWarningBanner() {
+    return _buildGlassContainer(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Row(
+          children: [
+            AnimatedBuilder(
+              animation: _pulseAnimationController,
+              builder: (context, child) {
+                return Transform.scale(
+                  scale: 1 + _pulseAnimationController.value * 0.1,
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          AppColors.telegramYellow.withOpacity(0.2),
+                          AppColors.telegramYellow.withOpacity(0.1),
+                        ],
+                      ),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(Icons.warning_rounded,
+                        color: AppColors.telegramYellow, size: 32),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(width: 24),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('New Device Detected',
+                      style: AppTextStyles.headlineSmall.copyWith(
+                          color: AppColors.telegramYellow,
+                          fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 8),
+                  Text(
+                      'You are logging in from a new device. Your old device will be blocked after this change.',
+                      style: AppTextStyles.bodyLarge
+                          .copyWith(color: AppColors.telegramYellow)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ).animate().shake(duration: 1.seconds, delay: 500.ms);
   }
 }

@@ -67,9 +67,9 @@ class Payment {
 
   String get paymentTypeText {
     switch (paymentType) {
-      case AppConstants.firstTimePayment:
+      case 'first_time':
         return 'First Time Payment';
-      case AppConstants.repayment:
+      case 'repayment':
         return 'Renewal Payment';
       default:
         return paymentType.replaceAll('_', ' ');

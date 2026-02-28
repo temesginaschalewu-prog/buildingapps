@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
@@ -33,9 +34,40 @@ class MenuItem extends StatelessWidget {
     this.badgeText,
   });
 
+  Widget _buildGlassContainer(BuildContext context, {required Widget child}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.getCard(context).withOpacity(0.4),
+                AppColors.getCard(context).withOpacity(0.2),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: AppColors.telegramBlue.withOpacity(0.2),
+              width: 1,
+            ),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isMobile = screenWidth < 600;
+    final isTablet = screenWidth >= 600 && screenWidth < 1024;
+
     final defaultIconColor = isDestructive
         ? AppColors.telegramRed
         : isPremium
@@ -45,6 +77,17 @@ class MenuItem extends StatelessWidget {
     final defaultBackgroundColor =
         isDark ? Colors.transparent : AppColors.lightSurface;
 
+    final iconSize = isMobile ? 36.0 : (isTablet ? 40.0 : 44.0);
+    final iconInnerSize = isMobile ? 18.0 : (isTablet ? 20.0 : 22.0);
+    final titleSize = isMobile ? 15.0 : (isTablet ? 16.0 : 17.0);
+    final badgeSize = isMobile ? 10.0 : (isTablet ? 11.0 : 12.0);
+    final horizontalPadding = isMobile
+        ? AppThemes.spacingL
+        : (isTablet ? AppThemes.spacingXL : AppThemes.spacingXXL);
+    final verticalPadding = isMobile
+        ? AppThemes.spacingM
+        : (isTablet ? AppThemes.spacingL : AppThemes.spacingXL);
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -53,86 +96,49 @@ class MenuItem extends StatelessWidget {
         highlightColor: Colors.transparent,
         borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
         child: Container(
-          margin: EdgeInsets.symmetric(
-            horizontal: ScreenSize.responsiveValue(
-              context: context,
-              mobile: AppThemes.spacingL,
-              tablet: AppThemes.spacingXL,
-              desktop: AppThemes.spacingXXL,
-            ),
-          ),
+          margin: EdgeInsets.symmetric(horizontal: horizontalPadding),
           padding: padding ??
               EdgeInsets.symmetric(
-                vertical: ScreenSize.responsiveValue(
-                  context: context,
-                  mobile: AppThemes.spacingM,
-                  tablet: AppThemes.spacingL,
-                  desktop: AppThemes.spacingXL,
-                ),
-                horizontal: ScreenSize.responsiveValue(
-                  context: context,
-                  mobile: AppThemes.spacingS,
-                  tablet: AppThemes.spacingM,
-                  desktop: AppThemes.spacingL,
-                ),
-              ),
+                  vertical: verticalPadding, horizontal: AppThemes.spacingS),
           decoration: BoxDecoration(
             border: showDivider
                 ? Border(
                     bottom: BorderSide(
-                      color: isDark
-                          ? AppColors.darkDivider
-                          : AppColors.lightDivider,
-                      width: 0.5,
-                    ),
+                        color: isDark
+                            ? AppColors.darkDivider
+                            : AppColors.lightDivider,
+                        width: 0.5),
                   )
                 : null,
           ),
           child: Row(
             children: [
-              Container(
-                width: ScreenSize.responsiveValue(
-                  context: context,
-                  mobile: 36,
-                  tablet: 40,
-                  desktop: 44,
-                ),
-                height: ScreenSize.responsiveValue(
-                  context: context,
-                  mobile: 36,
-                  tablet: 40,
-                  desktop: 44,
-                ),
-                decoration: BoxDecoration(
-                  color: backgroundColor ??
-                      (isPremium
-                          ? const Color(0xFFFF9500).withOpacity(0.1)
-                          : isDestructive
-                              ? AppColors.telegramRed.withOpacity(0.1)
-                              : AppColors.telegramBlue.withOpacity(0.1)),
-                  borderRadius: BorderRadius.circular(
-                    AppThemes.borderRadiusMedium,
+              _buildGlassContainer(
+                context,
+                child: Container(
+                  width: iconSize,
+                  height: iconSize,
+                  decoration: BoxDecoration(
+                    color: backgroundColor ??
+                        (isPremium
+                            ? const Color(0xFFFF9500).withOpacity(0.1)
+                            : isDestructive
+                                ? AppColors.telegramRed.withOpacity(0.1)
+                                : AppColors.telegramBlue.withOpacity(0.1)),
+                    borderRadius:
+                        BorderRadius.circular(AppThemes.borderRadiusMedium),
                   ),
-                ),
-                child: Icon(
-                  icon,
-                  size: ScreenSize.responsiveValue(
-                    context: context,
-                    mobile: 18,
-                    tablet: 20,
-                    desktop: 22,
-                  ),
-                  color: iconColor ?? defaultIconColor,
+                  child: Icon(icon,
+                      size: iconInnerSize,
+                      color: iconColor ?? defaultIconColor),
                 ),
               ),
               SizedBox(
-                width: ScreenSize.responsiveValue(
-                  context: context,
-                  mobile: AppThemes.spacingL,
-                  tablet: AppThemes.spacingXL,
-                  desktop: AppThemes.spacingXXL,
-                ),
-              ),
+                  width: isMobile
+                      ? AppThemes.spacingL
+                      : (isTablet
+                          ? AppThemes.spacingXL
+                          : AppThemes.spacingXXL)),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -143,12 +149,7 @@ class MenuItem extends StatelessWidget {
                         color: isDestructive
                             ? AppColors.telegramRed
                             : AppColors.getTextPrimary(context),
-                        fontSize: ScreenSize.responsiveFontSize(
-                          context: context,
-                          mobile: 15,
-                          tablet: 16,
-                          desktop: 17,
-                        ),
+                        fontSize: titleSize,
                       ),
                     ),
                     if (isPremium)
@@ -159,12 +160,7 @@ class MenuItem extends StatelessWidget {
                           style: AppTextStyles.caption.copyWith(
                             color: const Color(0xFFFF9500),
                             fontWeight: FontWeight.w600,
-                            fontSize: ScreenSize.responsiveFontSize(
-                              context: context,
-                              mobile: 10,
-                              tablet: 11,
-                              desktop: 12,
-                            ),
+                            fontSize: badgeSize,
                           ),
                         ),
                       ),
@@ -174,31 +170,19 @@ class MenuItem extends StatelessWidget {
               if (badgeText != null)
                 Container(
                   margin: const EdgeInsets.only(right: 8),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: AppColors.telegramBlue,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    badgeText!,
-                    style: AppTextStyles.labelSmall.copyWith(
-                      color: Colors.white,
-                      fontSize: 10,
-                    ),
-                  ),
+                      color: AppColors.telegramBlue,
+                      borderRadius: BorderRadius.circular(12)),
+                  child: Text(badgeText!,
+                      style: AppTextStyles.labelSmall
+                          .copyWith(color: Colors.white, fontSize: 10)),
                 ),
               trailing ??
                   Icon(
                     Icons.arrow_forward_ios,
-                    size: ScreenSize.responsiveValue(
-                      context: context,
-                      mobile: 16,
-                      tablet: 18,
-                      desktop: 20,
-                    ),
+                    size: isMobile ? 16 : (isTablet ? 18 : 20),
                     color: isDark
                         ? AppColors.darkTextSecondary
                         : AppColors.lightTextSecondary,
@@ -208,9 +192,8 @@ class MenuItem extends StatelessWidget {
         ),
       ),
     ).animate().fadeIn(
-          duration: AppThemes.animationDurationMedium,
-          delay: Duration(milliseconds: key.hashCode % 300),
-        );
+        duration: AppThemes.animationDurationMedium,
+        delay: Duration(milliseconds: key.hashCode % 300));
   }
 }
 
@@ -225,93 +208,104 @@ class MenuSection extends StatelessWidget {
     this.title,
     required this.items,
     this.padding = const EdgeInsets.only(
-      top: AppThemes.spacingL,
-      bottom: AppThemes.spacingM,
-    ),
+        top: AppThemes.spacingL, bottom: AppThemes.spacingM),
     this.showBackground = false,
   });
+
+  Widget _buildGlassContainer(BuildContext context, {required Widget child}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.getCard(context).withOpacity(0.4),
+                AppColors.getCard(context).withOpacity(0.2),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: AppColors.telegramBlue.withOpacity(0.2),
+              width: 1,
+            ),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isMobile = screenWidth < 600;
+    final isTablet = screenWidth >= 600 && screenWidth < 1024;
 
-    return Container(
-      padding: padding,
-      decoration: showBackground
-          ? BoxDecoration(
-              color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
-              borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
-            )
-          : null,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (title != null)
-            Padding(
-              padding: EdgeInsets.only(
-                left: ScreenSize.responsiveValue(
-                  context: context,
-                  mobile: AppThemes.spacingL,
-                  tablet: AppThemes.spacingXL,
-                  desktop: AppThemes.spacingXXL,
-                ),
-                bottom: AppThemes.spacingM,
-              ),
-              child: Text(
-                title!.toUpperCase(),
-                style: AppTextStyles.labelMedium.copyWith(
-                  color: AppColors.getTextSecondary(context),
-                  fontSize: ScreenSize.responsiveFontSize(
-                    context: context,
-                    mobile: 12,
-                    tablet: 13,
-                    desktop: 14,
-                  ),
-                  letterSpacing: 0.5,
-                ),
+    final horizontalPadding = isMobile
+        ? AppThemes.spacingL
+        : (isTablet ? AppThemes.spacingXL : AppThemes.spacingXXL);
+
+    Widget content = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (title != null)
+          Padding(
+            padding: EdgeInsets.only(
+                left: horizontalPadding, bottom: AppThemes.spacingM),
+            child: Text(
+              title!.toUpperCase(),
+              style: AppTextStyles.labelMedium.copyWith(
+                color: AppColors.getTextSecondary(context),
+                fontSize: isMobile ? 12 : (isTablet ? 13 : 14),
+                letterSpacing: 0.5,
               ),
             ),
-          ...items.asMap().entries.map((entry) {
-            final index = entry.key;
-            final item = entry.value;
-            return Column(
-              children: [
-                MenuItem(
-                  key: ValueKey('${item.title}_$index'),
-                  icon: item.icon,
-                  title: item.title,
-                  onTap: item.onTap,
-                  trailing: item.trailing,
-                  iconColor: item.iconColor,
-                  backgroundColor: item.backgroundColor,
-                  padding: item.padding,
-                  showDivider: index < items.length - 1,
-                  isDestructive: item.isDestructive,
-                  isPremium: item.isPremium,
-                  badgeText: item.badgeText,
+          ),
+        ...items.asMap().entries.map((entry) {
+          final index = entry.key;
+          final item = entry.value;
+          return Column(
+            children: [
+              MenuItem(
+                key: ValueKey('${item.title}_$index'),
+                icon: item.icon,
+                title: item.title,
+                onTap: item.onTap,
+                trailing: item.trailing,
+                iconColor: item.iconColor,
+                backgroundColor: item.backgroundColor,
+                padding: item.padding,
+                showDivider: index < items.length - 1,
+                isDestructive: item.isDestructive,
+                isPremium: item.isPremium,
+                badgeText: item.badgeText,
+              ),
+              if (index < items.length - 1 &&
+                  !item.showDivider &&
+                  showBackground)
+                Container(
+                  height: 0.5,
+                  margin: EdgeInsets.symmetric(horizontal: horizontalPadding),
+                  color:
+                      isDark ? AppColors.darkDivider : AppColors.lightDivider,
                 ),
-                if (index < items.length - 1 &&
-                    !item.showDivider &&
-                    showBackground)
-                  Container(
-                    height: 0.5,
-                    margin: EdgeInsets.symmetric(
-                      horizontal: ScreenSize.responsiveValue(
-                        context: context,
-                        mobile: AppThemes.spacingL,
-                        tablet: AppThemes.spacingXL,
-                        desktop: AppThemes.spacingXXL,
-                      ),
-                    ),
-                    color:
-                        isDark ? AppColors.darkDivider : AppColors.lightDivider,
-                  ),
-              ],
-            );
-          }),
-        ],
-      ),
+            ],
+          );
+        }),
+      ],
     );
+
+    if (showBackground) {
+      return _buildGlassContainer(context,
+          child: Padding(padding: padding, child: content));
+    }
+
+    return Padding(padding: padding, child: content);
   }
 }
 
@@ -333,124 +327,103 @@ class MenuHeader extends StatelessWidget {
     this.elevated = false,
   });
 
+  Widget _buildGlassContainer(BuildContext context, {required Widget child}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.getCard(context).withOpacity(0.4),
+                AppColors.getCard(context).withOpacity(0.2),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: AppColors.telegramBlue.withOpacity(0.2),
+              width: 1,
+            ),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isMobile = screenWidth < 600;
+    final isTablet = screenWidth >= 600 && screenWidth < 1024;
+
     final headerColor =
         color ?? (isDark ? AppColors.darkSurface : AppColors.telegramBlueLight);
+    final horizontalPadding = isMobile
+        ? AppThemes.spacingL
+        : (isTablet ? AppThemes.spacingXL : AppThemes.spacingXXL);
+    final iconSize = isMobile ? 48.0 : (isTablet ? 56.0 : 64.0);
+    final iconInnerSize = isMobile ? 24.0 : (isTablet ? 28.0 : 32.0);
+    final titleSize = isMobile ? 20.0 : (isTablet ? 22.0 : 24.0);
+    final subtitleSize = isMobile ? 14.0 : (isTablet ? 15.0 : 16.0);
 
     return Container(
       margin: EdgeInsets.symmetric(
-        horizontal: ScreenSize.responsiveValue(
-          context: context,
-          mobile: AppThemes.spacingL,
-          tablet: AppThemes.spacingXL,
-          desktop: AppThemes.spacingXXL,
-        ),
-        vertical: AppThemes.spacingM,
-      ),
-      padding: EdgeInsets.all(
-        ScreenSize.responsiveValue(
-          context: context,
-          mobile: AppThemes.spacingL,
-          tablet: AppThemes.spacingXL,
-          desktop: AppThemes.spacingXXL,
-        ),
-      ),
-      decoration: BoxDecoration(
-        color: headerColor,
-        borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
-        boxShadow: elevated
-            ? [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
+          horizontal: horizontalPadding, vertical: AppThemes.spacingM),
+      child: _buildGlassContainer(
+        context,
+        child: Padding(
+          padding: EdgeInsets.all(horizontalPadding),
+          child: Row(
+            children: [
+              if (icon != null)
+                Container(
+                  width: iconSize,
+                  height: iconSize,
+                  decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius:
+                          BorderRadius.circular(AppThemes.borderRadiusMedium)),
+                  child: Icon(icon, size: iconInnerSize, color: Colors.white),
                 ),
-              ]
-            : null,
-      ),
-      child: Row(
-        children: [
-          if (icon != null)
-            Container(
-              width: ScreenSize.responsiveValue(
-                context: context,
-                mobile: 48,
-                tablet: 56,
-                desktop: 64,
-              ),
-              height: ScreenSize.responsiveValue(
-                context: context,
-                mobile: 48,
-                tablet: 56,
-                desktop: 64,
-              ),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                borderRadius:
-                    BorderRadius.circular(AppThemes.borderRadiusMedium),
-              ),
-              child: Icon(
-                icon,
-                size: ScreenSize.responsiveValue(
-                  context: context,
-                  mobile: 24,
-                  tablet: 28,
-                  desktop: 32,
-                ),
-                color: Colors.white,
-              ),
-            ),
-          SizedBox(width: icon != null ? AppThemes.spacingL : 0),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: AppTextStyles.headlineMedium.copyWith(
-                    color: Colors.white,
-                    fontSize: ScreenSize.responsiveFontSize(
-                      context: context,
-                      mobile: 20,
-                      tablet: 22,
-                      desktop: 24,
-                    ),
-                  ),
-                ),
-                if (subtitle != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: AppThemes.spacingXS),
-                    child: Text(
-                      subtitle!,
-                      style: AppTextStyles.bodyMedium.copyWith(
-                        color: Colors.white.withOpacity(0.9),
-                        fontSize: ScreenSize.responsiveFontSize(
-                          context: context,
-                          mobile: 14,
-                          tablet: 15,
-                          desktop: 16,
-                        ),
+              SizedBox(width: icon != null ? AppThemes.spacingL : 0),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                        style: AppTextStyles.headlineMedium.copyWith(
+                            color: Colors.white, fontSize: titleSize)),
+                    if (subtitle != null)
+                      Padding(
+                        padding:
+                            const EdgeInsets.only(top: AppThemes.spacingXS),
+                        child: Text(subtitle!,
+                            style: AppTextStyles.bodyMedium.copyWith(
+                                color: Colors.white.withOpacity(0.9),
+                                fontSize: subtitleSize),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis),
                       ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
+                  ],
+                ),
+              ),
+              if (action != null) ...[
+                const SizedBox(width: AppThemes.spacingM),
+                action!,
               ],
-            ),
+            ],
           ),
-          if (action != null) ...[
-            const SizedBox(width: AppThemes.spacingM),
-            action!,
-          ],
-        ],
+        ),
       ),
-    ).animate().fadeIn().slideY(
-          begin: 0.1,
-          end: 0,
-          duration: AppThemes.animationDurationSlow,
-        );
+    )
+        .animate()
+        .fadeIn()
+        .slideY(begin: 0.1, end: 0, duration: AppThemes.animationDurationSlow);
   }
 }
 
@@ -468,54 +441,66 @@ class MenuCard extends StatelessWidget {
     this.elevated = true,
   });
 
+  Widget _buildGlassContainer(BuildContext context, {required Widget child}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.getCard(context).withOpacity(0.4),
+                AppColors.getCard(context).withOpacity(0.2),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: AppColors.telegramBlue.withOpacity(0.2),
+              width: 1,
+            ),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isMobile = screenWidth < 600;
+    final isTablet = screenWidth >= 600 && screenWidth < 1024;
+
+    final horizontalMargin = margin ??
+        EdgeInsets.symmetric(
+          horizontal: isMobile
+              ? AppThemes.spacingL
+              : (isTablet ? AppThemes.spacingXL : AppThemes.spacingXXL),
+          vertical: AppThemes.spacingM,
+        );
+
+    final internalPadding = padding ??
+        EdgeInsets.all(
+          isMobile
+              ? AppThemes.spacingL
+              : (isTablet ? AppThemes.spacingXL : AppThemes.spacingXXL),
+        );
 
     return Container(
-      margin: margin ??
-          EdgeInsets.symmetric(
-            horizontal: ScreenSize.responsiveValue(
-              context: context,
-              mobile: AppThemes.spacingL,
-              tablet: AppThemes.spacingXL,
-              desktop: AppThemes.spacingXXL,
-            ),
-            vertical: AppThemes.spacingM,
-          ),
-      padding: padding ??
-          EdgeInsets.all(
-            ScreenSize.responsiveValue(
-              context: context,
-              mobile: AppThemes.spacingL,
-              tablet: AppThemes.spacingXL,
-              desktop: AppThemes.spacingXXL,
-            ),
-          ),
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.darkCard : AppColors.lightCard,
-        borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
-        boxShadow: elevated
-            ? [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.08),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ]
-            : null,
-        border: !elevated
-            ? Border.all(
-                color: isDark ? AppColors.darkDivider : AppColors.lightDivider,
-                width: 0.5,
-              )
-            : null,
+      margin: horizontalMargin,
+      child: _buildGlassContainer(
+        context,
+        child: Padding(
+          padding: internalPadding,
+          child: child,
+        ),
       ),
-      child: child,
     ).animate().fadeIn().scale(
-          begin: const Offset(0.95, 0.95),
-          end: const Offset(1, 1),
-          duration: AppThemes.animationDurationMedium,
-        );
+        begin: const Offset(0.95, 0.95),
+        end: const Offset(1, 1),
+        duration: AppThemes.animationDurationMedium);
   }
 }

@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/themes/app_text_styles.dart';
 import 'package:flutter/material.dart';
@@ -24,11 +25,11 @@ class StreakWidget extends StatelessWidget {
 
   Color _getStreakColor(BuildContext context) {
     final count = streak?.currentStreak ?? 0;
-    if (count >= 30) return Color(0xFFFF9500);
-    if (count >= 20) return Color(0xFFAF52DE);
-    if (count >= 10) return Color(0xFF34C759);
-    if (count >= 5) return Color(0xFF5AC8FA);
-    return Color(0xFF2AABEE);
+    if (count >= 30) return const Color(0xFFFF9500);
+    if (count >= 20) return const Color(0xFFAF52DE);
+    if (count >= 10) return const Color(0xFF34C759);
+    if (count >= 5) return const Color(0xFF5AC8FA);
+    return const Color(0xFF2AABEE);
   }
 
   IconData _getStreakIcon(int count) {
@@ -48,214 +49,205 @@ class StreakWidget extends StatelessWidget {
     return '✨';
   }
 
+  // FIXED: Pass context as parameter
+  Widget _buildGlassContainer(BuildContext context, {required Widget child}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.getCard(context).withOpacity(0.4),
+                AppColors.getCard(context).withOpacity(0.2),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: AppColors.telegramBlue.withOpacity(0.2),
+              width: 1,
+            ),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
     final isDesktop = ScreenSize.isDesktop(context);
+    final isMobile = screenWidth < 600;
+    final isTablet = screenWidth >= 600 && screenWidth < 1024;
+
     final count = streak?.currentStreak ?? 0;
     final weekStreak = streak?.weekStreak ?? 0;
     final streakColor = _getStreakColor(context);
     final emoji = _getEmoji(count);
 
+    final horizontalPadding = isDesktop
+        ? AppThemes.spacingXXL
+        : (isTablet ? AppThemes.spacingXL : AppThemes.spacingL);
+    final padding = isDesktop
+        ? AppThemes.spacingXL
+        : (isTablet ? AppThemes.spacingXL : AppThemes.spacingL);
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
         margin: EdgeInsets.symmetric(
-          horizontal: isDesktop ? AppThemes.spacingXXL : AppThemes.spacingL,
-          vertical: AppThemes.spacingM,
-        ),
-        padding: EdgeInsets.all(
-            isDesktop ? AppThemes.spacingXL : AppThemes.spacingL),
-        decoration: BoxDecoration(
-          color: AppColors.getCard(context),
-          borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
-          border: Border.all(
-            color:
-                Theme.of(context).dividerTheme.color ?? AppColors.lightDivider,
-            width: 0.5,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: streakColor.withOpacity(0.1),
-                        borderRadius:
-                            BorderRadius.circular(AppThemes.borderRadiusMedium),
-                      ),
-                      child: Icon(
-                        _getStreakIcon(count),
-                        size: 24,
-                        color: streakColor,
-                      ),
-                    ),
-                    const SizedBox(width: AppThemes.spacingM),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Learning Streak',
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.getTextSecondary(context),
-                          ),
-                        ),
-                        Text(
-                          '$count days $emoji',
-                          style: AppTextStyles.titleMedium.copyWith(
-                            color: AppColors.getTextPrimary(context),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppThemes.spacingM,
-                    vertical: AppThemes.spacingXS,
-                  ),
-                  decoration: BoxDecoration(
-                    color: streakColor.withOpacity(0.1),
-                    borderRadius:
-                        BorderRadius.circular(AppThemes.borderRadiusFull),
-                    border: Border.all(
-                      color: streakColor,
-                      width: 1.0,
-                    ),
-                  ),
-                  child: Text(
-                    _streakLevel,
-                    style: AppTextStyles.labelSmall.copyWith(
-                      color: streakColor,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppThemes.spacingL),
-            Column(
+            horizontal: horizontalPadding, vertical: AppThemes.spacingM),
+        child: _buildGlassContainer(
+          context, // FIXED: Pass context
+          child: Padding(
+            padding: EdgeInsets.all(padding),
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      'This Week',
-                      style: AppTextStyles.bodyMedium.copyWith(
-                        color: AppColors.getTextPrimary(context),
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    Text(
-                      '$weekStreak/7 days',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.getTextSecondary(context),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppThemes.spacingS),
-                Stack(
-                  children: [
-                    Container(
-                      height: 6,
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? Colors.white.withOpacity(0.1)
-                            : Colors.black.withOpacity(0.06),
-                        borderRadius: BorderRadius.circular(3),
-                      ),
-                    ),
-                    AnimatedFractionallySizedBox(
-                      widthFactor: weekStreak / 7,
-                      duration: const Duration(milliseconds: 500),
-                      curve: Curves.easeOut,
-                      child: Container(
-                        height: 6,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              streakColor,
-                              streakColor.withOpacity(0.8),
-                            ],
-                          ),
-                          borderRadius: BorderRadius.circular(3),
+                    Row(
+                      children: [
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                              color: streakColor.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(
+                                  AppThemes.borderRadiusMedium)),
+                          child: Icon(_getStreakIcon(count),
+                              size: 24, color: streakColor),
                         ),
-                      ),
+                        const SizedBox(width: AppThemes.spacingM),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Learning Streak',
+                                style: AppTextStyles.bodySmall.copyWith(
+                                    color:
+                                        AppColors.getTextSecondary(context))),
+                            Text('$count days $emoji',
+                                style: AppTextStyles.titleMedium.copyWith(
+                                    color: AppColors.getTextPrimary(context),
+                                    fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ],
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: AppThemes.spacingM,
+                          vertical: AppThemes.spacingXS),
+                      decoration: BoxDecoration(
+                          color: streakColor.withOpacity(0.1),
+                          borderRadius:
+                              BorderRadius.circular(AppThemes.borderRadiusFull),
+                          border: Border.all(color: streakColor, width: 1.0)),
+                      child: Text(_streakLevel,
+                          style: AppTextStyles.labelSmall.copyWith(
+                              color: streakColor, fontWeight: FontWeight.w600)),
                     ),
                   ],
                 ),
-                const SizedBox(height: AppThemes.spacingS),
-                if (!isDesktop) ...[
+                const SizedBox(height: AppThemes.spacingL),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('This Week',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                                color: AppColors.getTextPrimary(context),
+                                fontWeight: FontWeight.w500)),
+                        Text('$weekStreak/7 days',
+                            style: AppTextStyles.bodySmall.copyWith(
+                                color: AppColors.getTextSecondary(context))),
+                      ],
+                    ),
+                    const SizedBox(height: AppThemes.spacingS),
+                    Stack(
+                      children: [
+                        Container(
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color:
+                                Theme.of(context).brightness == Brightness.dark
+                                    ? Colors.white.withOpacity(0.1)
+                                    : Colors.black.withOpacity(0.06),
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                        ),
+                        AnimatedFractionallySizedBox(
+                          widthFactor: weekStreak / 7,
+                          duration: const Duration(milliseconds: 500),
+                          curve: Curves.easeOut,
+                          child: Container(
+                            height: 6,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(colors: [
+                                streakColor,
+                                streakColor.withOpacity(0.8)
+                              ]),
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppThemes.spacingS),
+                    if (!isDesktop) _buildWeekDays(context, weekStreak),
+                  ],
+                ),
+                if (count > 0)
+                  Container(
+                    margin: const EdgeInsets.only(top: AppThemes.spacingL),
+                    padding: const EdgeInsets.all(AppThemes.spacingM),
+                    decoration: BoxDecoration(
+                        color: streakColor.withOpacity(0.05),
+                        borderRadius: BorderRadius.circular(
+                            AppThemes.borderRadiusMedium)),
+                    child: Row(
+                      children: [
+                        Icon(Icons.psychology_outlined,
+                            size: 18, color: streakColor),
+                        const SizedBox(width: AppThemes.spacingS),
+                        Expanded(
+                            child: Text(_getMotivationalTip(count),
+                                style: AppTextStyles.caption.copyWith(
+                                    color: AppColors.getTextSecondary(context)),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis)),
+                      ],
+                    ),
+                  ),
+                if (isDesktop) ...[
+                  const SizedBox(height: AppThemes.spacingL),
                   _buildWeekDays(context, weekStreak),
-                  const SizedBox(height: AppThemes.spacingM),
                 ],
               ],
             ),
-            if (count > 0)
-              Container(
-                margin: const EdgeInsets.only(top: AppThemes.spacingL),
-                padding: const EdgeInsets.all(AppThemes.spacingM),
-                decoration: BoxDecoration(
-                  color: streakColor.withOpacity(0.05),
-                  borderRadius:
-                      BorderRadius.circular(AppThemes.borderRadiusMedium),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.psychology_outlined,
-                      size: 18,
-                      color: streakColor,
-                    ),
-                    const SizedBox(width: AppThemes.spacingS),
-                    Expanded(
-                      child: Text(
-                        _getMotivationalTip(count),
-                        style: AppTextStyles.caption.copyWith(
-                          color: AppColors.getTextSecondary(context),
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            if (isDesktop) ...[
-              const SizedBox(height: AppThemes.spacingL),
-              _buildWeekDays(context, weekStreak),
-            ],
-          ],
+          ),
         ),
       ).animate().fadeIn().slideY(
-            begin: 0.05,
-            end: 0,
-            duration: AppThemes.animationDurationMedium,
-          ),
+          begin: 0.05, end: 0, duration: AppThemes.animationDurationMedium),
     );
   }
 
   Widget _buildWeekDays(BuildContext context, int weekStreak) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isMobile = screenWidth < 600;
+
     final days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
     final now = DateTime.now();
     final todayIndex = now.weekday - 1;
+    final streakColor = _getStreakColor(context);
+    final boxSize = isMobile ? 32.0 : 36.0;
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -264,27 +256,25 @@ class StreakWidget extends StatelessWidget {
         final isToday = index == todayIndex;
 
         return Container(
-          width: 32,
-          height: 32,
+          width: boxSize,
+          height: boxSize,
           decoration: BoxDecoration(
             color: isToday
-                ? _getStreakColor(context).withOpacity(0.2)
+                ? streakColor.withOpacity(0.2)
                 : isActive
-                    ? _getStreakColor(context).withOpacity(0.1)
+                    ? streakColor.withOpacity(0.1)
                     : Theme.of(context).brightness == Brightness.dark
                         ? Colors.white.withOpacity(0.05)
                         : Colors.black.withOpacity(0.04),
             borderRadius: BorderRadius.circular(AppThemes.borderRadiusSmall),
-            border: isToday
-                ? Border.all(color: _getStreakColor(context), width: 1.5)
-                : null,
+            border: isToday ? Border.all(color: streakColor, width: 1.5) : null,
           ),
           child: Center(
             child: Text(
               days[index],
               style: AppTextStyles.labelSmall.copyWith(
                 color: isActive || isToday
-                    ? _getStreakColor(context)
+                    ? streakColor
                     : AppColors.getTextSecondary(context),
                 fontWeight: isToday ? FontWeight.w600 : FontWeight.w400,
               ),
@@ -325,12 +315,8 @@ class AnimatedFractionallySizedBox extends StatelessWidget {
       tween: Tween<double>(begin: 0, end: widthFactor),
       duration: duration,
       curve: curve,
-      builder: (context, value, child) {
-        return FractionallySizedBox(
-          widthFactor: value,
-          child: child,
-        );
-      },
+      builder: (context, value, child) =>
+          FractionallySizedBox(widthFactor: value, child: child),
       child: child,
     );
   }
