@@ -6,7 +6,6 @@ import 'package:familyacademyclient/themes/app_text_styles.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:familyacademyclient/themes/app_themes.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
 import 'package:familyacademyclient/providers/auth_provider.dart';
@@ -19,7 +18,6 @@ import 'package:familyacademyclient/widgets/common/loading_indicator.dart';
 import 'package:familyacademyclient/widgets/exam/question_widget.dart';
 import '../../utils/helpers.dart';
 import '../../utils/api_response.dart';
-import '../../widgets/common/error_widget.dart' as custom;
 
 class ExamScreen extends StatefulWidget {
   final int examId;
@@ -41,7 +39,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
   late Exam _exam;
   int _currentQuestionIndex = 0;
   Map<int, String?> _answers = {};
-  bool _isLoading = false;
+  final bool _isLoading = false;
   bool _isSubmitting = false;
   bool _showInstructions = true;
   Duration _remainingTime = Duration.zero;
@@ -52,7 +50,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
   bool _hasLoadedQuestions = false;
 
   ExamResult? _submittedResult;
-  Map<int, Map<String, dynamic>> _answerDetails = {};
+  final Map<int, Map<String, dynamic>> _answerDetails = {};
   bool _showResults = false;
   bool _hasReachedMaxAttempts = false;
 
@@ -163,13 +161,14 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
         orElse: () => null as ExamResult,
       );
 
-      if (existingResult != null && _exam.attemptsTaken >= _exam.maxAttempts) {
+      if (_exam.attemptsTaken >= _exam.maxAttempts) {
         _hasReachedMaxAttempts = true;
         _submittedResult = existingResult;
         if (existingResult.answerDetails != null) {
           for (var detail in existingResult.answerDetails!) {
-            if (detail is Map<String, dynamic>)
+            if (detail is Map<String, dynamic>) {
               _answerDetails[detail['question_id']] = detail;
+            }
           }
         }
       }
@@ -209,7 +208,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
         _checkExamAccess();
       } else {
         await examProvider.loadAvailableExams(
-            courseId: widget.courseId, forceRefresh: false);
+            courseId: widget.courseId);
         final loadedExam = examProvider.getExamById(widget.examId);
         if (loadedExam != null && mounted) {
           setState(() {
@@ -236,7 +235,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
   Future<void> _loadExamQuestions() async {
     final provider = Provider.of<ExamQuestionProvider>(context, listen: false);
     try {
-      await provider.loadExamQuestions(_exam.id, forceRefresh: false);
+      await provider.loadExamQuestions(_exam.id);
     } catch (e) {
       setState(() => _isOffline = true);
     }
@@ -290,10 +289,10 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: AppColors.telegramRed.withOpacity(0.1),
+                color: AppColors.telegramRed.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
-              child: Icon(Icons.timer_off_rounded,
+              child: const Icon(Icons.timer_off_rounded,
                   color: AppColors.telegramRed, size: 32),
             ),
             const SizedBox(height: 16),
@@ -403,8 +402,9 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     final provider = Provider.of<ExamQuestionProvider>(context, listen: false);
     final questions = provider.getQuestionsByExam(_exam.id);
     for (var question in questions) {
-      if (_answers[question.id] == null || _answers[question.id]!.isEmpty)
+      if (_answers[question.id] == null || _answers[question.id]!.isEmpty) {
         return false;
+      }
     }
     return true;
   }
@@ -428,10 +428,10 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: AppColors.telegramBlue.withOpacity(0.1),
+                color: AppColors.telegramBlue.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
-              child: Icon(Icons.send_rounded,
+              child: const Icon(Icons.send_rounded,
                   color: AppColors.telegramBlue, size: 32),
             ),
             const SizedBox(height: 16),
@@ -489,7 +489,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            SizedBox(
+            const SizedBox(
                 width: 40,
                 height: 40,
                 child: CircularProgressIndicator(
@@ -536,8 +536,9 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
             (data['data'] is Map ? data['data']['exam_result_id'] : 0);
       }
 
-      if (examResultId == 0)
+      if (examResultId == 0) {
         throw ApiError(message: 'Failed to start exam session');
+      }
 
       final submitResponse =
           await provider.apiService.submitExam(examResultId, answerList);
@@ -548,8 +549,9 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
           if (resultData.containsKey('details')) {
             final details = resultData['details'] as List;
             for (var detail in details) {
-              if (detail is Map<String, dynamic>)
+              if (detail is Map<String, dynamic>) {
                 _answerDetails[detail['question_id']] = detail;
+              }
             }
           }
 
@@ -582,11 +584,12 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
         final examProvider = Provider.of<ExamProvider>(context, listen: false);
         await examProvider.loadMyExamResults(forceRefresh: true);
 
-        if (mounted)
+        if (mounted) {
           setState(() {
             _showResults = true;
             _hasReachedMaxAttempts = true;
           });
+        }
       } else {
         throw ApiError.fromResponse(submitResponse);
       }
@@ -594,13 +597,15 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       if (e.isUnauthorized) {
         _handleUnauthorizedError();
       } else {
-        if (mounted)
+        if (mounted) {
           showTopSnackBar(context, e.userFriendlyMessage, isError: true);
+        }
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         showTopSnackBar(context, 'Failed to submit exam. Please try again.',
             isError: true);
+      }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -658,14 +663,13 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  AppColors.getCard(context).withOpacity(0.4),
-                  AppColors.getCard(context).withOpacity(0.2),
+                  AppColors.getCard(context).withValues(alpha: 0.4),
+                  AppColors.getCard(context).withValues(alpha: 0.2),
                 ],
               ),
               borderRadius: BorderRadius.circular(24),
               border: Border.all(
-                color: AppColors.telegramBlue.withOpacity(0.2),
-                width: 1,
+                color: AppColors.telegramBlue.withValues(alpha: 0.2),
               ),
             ),
             padding: const EdgeInsets.all(24),
@@ -688,7 +692,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
         boxShadow: onPressed != null
             ? [
                 BoxShadow(
-                  color: gradient.first.withOpacity(0.3),
+                  color: gradient.first.withValues(alpha: 0.3),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
@@ -698,7 +702,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       child: Material(
         color: onPressed != null
             ? Colors.transparent
-            : AppColors.getSurface(context).withOpacity(0.1),
+            : AppColors.getSurface(context).withValues(alpha: 0.1),
         child: InkWell(
           onTap: onPressed,
           borderRadius: BorderRadius.circular(16),
@@ -710,7 +714,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
               style: AppTextStyles.labelLarge.copyWith(
                 color: onPressed != null
                     ? Colors.white
-                    : AppColors.getTextSecondary(context).withOpacity(0.5),
+                    : AppColors.getTextSecondary(context).withValues(alpha: 0.5),
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -752,20 +756,19 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                 filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
                 child: Container(
                   width: double.infinity,
-                  padding: EdgeInsets.all(AppThemes.spacingXL),
+                  padding: const EdgeInsets.all(AppThemes.spacingXL),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
-                        AppColors.telegramBlue.withOpacity(0.3),
-                        AppColors.telegramBlue.withOpacity(0.1),
+                        AppColors.telegramBlue.withValues(alpha: 0.3),
+                        AppColors.telegramBlue.withValues(alpha: 0.1),
                       ],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
                     borderRadius: BorderRadius.circular(24),
                     border: Border.all(
-                      color: AppColors.telegramBlue.withOpacity(0.3),
-                      width: 1,
+                      color: AppColors.telegramBlue.withValues(alpha: 0.3),
                     ),
                   ),
                   child: Column(
@@ -773,16 +776,16 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                       Text('Your Score',
                           style: AppTextStyles.titleMedium
                               .copyWith(color: Colors.white)),
-                      SizedBox(height: AppThemes.spacingM),
+                      const SizedBox(height: AppThemes.spacingM),
                       Text(
                           '${_submittedResult?.score.toStringAsFixed(1) ?? '0'}%',
                           style: AppTextStyles.displayLarge.copyWith(
                               color: Colors.white,
                               fontWeight: FontWeight.w800,
                               letterSpacing: -1)),
-                      SizedBox(height: AppThemes.spacingS),
+                      const SizedBox(height: AppThemes.spacingS),
                       Container(
-                        padding: EdgeInsets.symmetric(
+                        padding: const EdgeInsets.symmetric(
                             horizontal: AppThemes.spacingL,
                             vertical: AppThemes.spacingS),
                         decoration: BoxDecoration(
@@ -800,7 +803,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                                 color: Colors.white,
                                 fontWeight: FontWeight.w700)),
                       ),
-                      SizedBox(height: AppThemes.spacingL),
+                      const SizedBox(height: AppThemes.spacingL),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceAround,
                         children: [
@@ -823,13 +826,13 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                 ),
               ),
             ),
-            SizedBox(height: AppThemes.spacingXL),
+            const SizedBox(height: AppThemes.spacingXL),
             Text('Answer Review',
                 style: AppTextStyles.titleLarge.copyWith(
                     color: AppColors.getTextPrimary(context),
                     fontWeight: FontWeight.w700,
                     letterSpacing: -0.5)),
-            SizedBox(height: AppThemes.spacingL),
+            const SizedBox(height: AppThemes.spacingL),
             ...List.generate(questions.length, (index) {
               final question = questions[index];
               final answerDetail = _answerDetails[question.id];
@@ -844,27 +847,27 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                   'No explanation provided';
 
               return Container(
-                margin: EdgeInsets.only(bottom: AppThemes.spacingL),
+                margin: const EdgeInsets.only(bottom: AppThemes.spacingL),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(24),
                   child: BackdropFilter(
                     filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
                     child: Container(
-                      padding: EdgeInsets.all(AppThemes.spacingL),
+                      padding: const EdgeInsets.all(AppThemes.spacingL),
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                           colors: [
-                            AppColors.getCard(context).withOpacity(0.4),
-                            AppColors.getCard(context).withOpacity(0.2),
+                            AppColors.getCard(context).withValues(alpha: 0.4),
+                            AppColors.getCard(context).withValues(alpha: 0.2),
                           ],
                         ),
                         borderRadius: BorderRadius.circular(24),
                         border: Border.all(
                           color: isCorrect
-                              ? AppColors.telegramGreen.withOpacity(0.3)
-                              : AppColors.telegramRed.withOpacity(0.3),
+                              ? AppColors.telegramGreen.withValues(alpha: 0.3)
+                              : AppColors.telegramRed.withValues(alpha: 0.3),
                           width: 1.5,
                         ),
                       ),
@@ -884,7 +887,6 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                                     color: isCorrect
                                         ? AppColors.telegramGreen
                                         : AppColors.telegramRed,
-                                    width: 1,
                                   ),
                                 ),
                                 child: Icon(
@@ -896,7 +898,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                                         : AppColors.telegramRed,
                                     size: 20),
                               ),
-                              SizedBox(width: AppThemes.spacingM),
+                              const SizedBox(width: AppThemes.spacingM),
                               Expanded(
                                   child: Text('Question ${index + 1}',
                                       style: AppTextStyles.titleSmall.copyWith(
@@ -904,7 +906,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                                               AppColors.getTextPrimary(context),
                                           fontWeight: FontWeight.w600))),
                               Container(
-                                padding: EdgeInsets.symmetric(
+                                padding: const EdgeInsets.symmetric(
                                     horizontal: AppThemes.spacingM,
                                     vertical: 4),
                                 decoration: BoxDecoration(
@@ -913,7 +915,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                                         AppThemes.borderRadiusFull),
                                     border: Border.all(
                                         color: AppColors.telegramBlue
-                                            .withOpacity(0.3))),
+                                            .withValues(alpha: 0.3))),
                                 child: Text(
                                     '${question.marks} mark${question.marks > 1 ? 's' : ''}',
                                     style: AppTextStyles.caption.copyWith(
@@ -922,50 +924,49 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                               ),
                             ],
                           ),
-                          SizedBox(height: AppThemes.spacingM),
+                          const SizedBox(height: AppThemes.spacingM),
                           Text(question.questionText,
                               style: AppTextStyles.bodyLarge.copyWith(
                                   color: AppColors.getTextPrimary(context),
                                   fontWeight: FontWeight.w500,
                                   height: 1.5)),
-                          SizedBox(height: AppThemes.spacingL),
+                          const SizedBox(height: AppThemes.spacingL),
                           _buildAnswerRow(
                               'Your answer:',
                               _getOptionLetter(question, userAnswer),
                               isCorrect),
                           if (!isCorrect) ...[
-                            SizedBox(height: AppThemes.spacingM),
+                            const SizedBox(height: AppThemes.spacingM),
                             _buildAnswerRow('Correct answer:',
                                 _getOptionLetter(question, correctAnswer), true,
                                 showIcon: false),
                           ],
                           if (explanation.isNotEmpty) ...[
-                            SizedBox(height: AppThemes.spacingL),
+                            const SizedBox(height: AppThemes.spacingL),
                             ClipRRect(
                               borderRadius: BorderRadius.circular(16),
                               child: BackdropFilter(
                                 filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
                                 child: Container(
-                                  padding: EdgeInsets.all(AppThemes.spacingM),
+                                  padding: const EdgeInsets.all(AppThemes.spacingM),
                                   decoration: BoxDecoration(
                                     gradient: LinearGradient(
                                       begin: Alignment.topLeft,
                                       end: Alignment.bottomRight,
                                       colors: [
                                         AppColors.getCard(context)
-                                            .withOpacity(0.2),
+                                            .withValues(alpha: 0.2),
                                         AppColors.getCard(context)
-                                            .withOpacity(0.1),
+                                            .withValues(alpha: 0.1),
                                       ],
                                     ),
                                     borderRadius: BorderRadius.circular(16),
                                     border: Border.all(
                                       color: isCorrect
                                           ? AppColors.telegramGreen
-                                              .withOpacity(0.2)
+                                              .withValues(alpha: 0.2)
                                           : AppColors.telegramBlue
-                                              .withOpacity(0.2),
-                                      width: 1,
+                                              .withValues(alpha: 0.2),
                                     ),
                                   ),
                                   child: Column(
@@ -979,7 +980,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                                                       ? AppColors.telegramGreen
                                                       : AppColors
                                                           .telegramBlue)),
-                                      SizedBox(height: 4),
+                                      const SizedBox(height: 4),
                                       Text(explanation,
                                           style: AppTextStyles.bodyMedium
                                               .copyWith(
@@ -999,7 +1000,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                 ),
               );
             }),
-            SizedBox(height: AppThemes.spacingXXL),
+            const SizedBox(height: AppThemes.spacingXXL),
             _buildGradientButton(
               label: 'Done',
               onPressed: () => GoRouter.of(context).pop(),
@@ -1036,7 +1037,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                     ? AppColors.telegramGreen
                     : AppColors.telegramRed),
           ),
-        if (showIcon) SizedBox(width: AppThemes.spacingS),
+        if (showIcon) const SizedBox(width: AppThemes.spacingS),
         Expanded(
           child: RichText(
             text: TextSpan(
@@ -1066,8 +1067,9 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     final options = question.options;
     final optionLetters = ['A', 'B', 'C', 'D', 'E', 'F'];
     for (int i = 0; i < options.length; i++) {
-      if (optionLetters[i] == answer.toUpperCase())
+      if (optionLetters[i] == answer.toUpperCase()) {
         return '$answer. ${options[i]}';
+      }
     }
     return answer;
   }
@@ -1092,8 +1094,9 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     final authProvider = Provider.of<AuthProvider>(context);
     final questionProvider = Provider.of<ExamQuestionProvider>(context);
 
-    if (_showResults && _submittedResult != null)
+    if (_showResults && _submittedResult != null) {
       return _buildResultsScreen(context);
+    }
 
     if (_hasReachedMaxAttempts && _submittedResult == null) {
       return Scaffold(
@@ -1113,7 +1116,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
         ),
         body: Center(
           child: Padding(
-            padding: EdgeInsets.all(AppThemes.spacingXL),
+            padding: const EdgeInsets.all(AppThemes.spacingXL),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(30),
               child: BackdropFilter(
@@ -1121,11 +1124,10 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                 child: Container(
                   padding: const EdgeInsets.all(32),
                   decoration: BoxDecoration(
-                    color: AppColors.getCard(context).withOpacity(0.2),
+                    color: AppColors.getCard(context).withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(30),
                     border: Border.all(
-                      color: AppColors.telegramRed.withOpacity(0.2),
-                      width: 1,
+                      color: AppColors.telegramRed.withValues(alpha: 0.2),
                     ),
                   ),
                   child: Column(
@@ -1137,7 +1139,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                           color: AppColors.redFaded,
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(Icons.block_rounded,
+                        child: const Icon(Icons.block_rounded,
                             size: 48, color: AppColors.telegramRed),
                       ),
                       const SizedBox(height: 24),
@@ -1187,7 +1189,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
         ),
         body: Center(
           child: Padding(
-            padding: EdgeInsets.all(AppThemes.spacingXL),
+            padding: const EdgeInsets.all(AppThemes.spacingXL),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(30),
               child: BackdropFilter(
@@ -1195,11 +1197,10 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                 child: Container(
                   padding: const EdgeInsets.all(32),
                   decoration: BoxDecoration(
-                    color: AppColors.getCard(context).withOpacity(0.2),
+                    color: AppColors.getCard(context).withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(30),
                     border: Border.all(
-                      color: AppColors.telegramBlue.withOpacity(0.2),
-                      width: 1,
+                      color: AppColors.telegramBlue.withValues(alpha: 0.2),
                     ),
                   ),
                   child: Column(
@@ -1211,7 +1212,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                           color: AppColors.blueFaded,
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(Icons.lock_rounded,
+                        child: const Icon(Icons.lock_rounded,
                             size: 48, color: AppColors.telegramBlue),
                       ),
                       const SizedBox(height: 24),
@@ -1257,7 +1258,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
               onPressed: () => GoRouter.of(context).pop()),
         ),
         body: const LoadingIndicator(
-            message: 'Checking access...', type: LoadingType.circular),
+            message: 'Checking access...'),
       );
     }
 
@@ -1291,11 +1292,10 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                 child: Container(
                   padding: const EdgeInsets.all(32),
                   decoration: BoxDecoration(
-                    color: AppColors.getCard(context).withOpacity(0.2),
+                    color: AppColors.getCard(context).withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(30),
                     border: Border.all(
-                      color: AppColors.telegramBlue.withOpacity(0.2),
-                      width: 1,
+                      color: AppColors.telegramBlue.withValues(alpha: 0.2),
                     ),
                   ),
                   child: Column(
@@ -1307,7 +1307,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                           color: AppColors.blueFaded,
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(Icons.lock_rounded,
+                        child: const Icon(Icons.lock_rounded,
                             size: 48, color: AppColors.telegramBlue),
                       ),
                       const SizedBox(height: 24),
@@ -1402,11 +1402,10 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                 child: Container(
                   padding: const EdgeInsets.all(32),
                   decoration: BoxDecoration(
-                    color: AppColors.getCard(context).withOpacity(0.2),
+                    color: AppColors.getCard(context).withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(30),
                     border: Border.all(
-                      color: AppColors.telegramBlue.withOpacity(0.2),
-                      width: 1,
+                      color: AppColors.telegramBlue.withValues(alpha: 0.2),
                     ),
                   ),
                   child: Column(
@@ -1418,7 +1417,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                           color: AppColors.blueFaded,
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(Icons.quiz_outlined,
+                        child: const Icon(Icons.quiz_outlined,
                             size: 48, color: AppColors.telegramBlue),
                       ),
                       const SizedBox(height: 24),
@@ -1482,20 +1481,19 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
                 child: Container(
-                  padding: EdgeInsets.all(AppThemes.spacingL),
+                  padding: const EdgeInsets.all(AppThemes.spacingL),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                       colors: [
-                        AppColors.telegramBlue.withOpacity(0.15),
-                        AppColors.telegramBlue.withOpacity(0.05),
+                        AppColors.telegramBlue.withValues(alpha: 0.15),
+                        AppColors.telegramBlue.withValues(alpha: 0.05),
                       ],
                     ),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                      color: AppColors.telegramBlue.withOpacity(0.3),
-                      width: 1,
+                      color: AppColors.telegramBlue.withValues(alpha: 0.3),
                     ),
                   ),
                   child: Row(
@@ -1506,10 +1504,10 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                           color: AppColors.blueFaded,
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(Icons.info_rounded,
+                        child: const Icon(Icons.info_rounded,
                             color: AppColors.telegramBlue, size: 24),
                       ),
-                      SizedBox(width: AppThemes.spacingL),
+                      const SizedBox(width: AppThemes.spacingL),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1519,7 +1517,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                                     color: AppColors.telegramBlue,
                                     fontWeight: FontWeight.w600,
                                     letterSpacing: -0.3)),
-                            SizedBox(height: 4),
+                            const SizedBox(height: 4),
                             Text('Please read carefully before starting',
                                 style: AppTextStyles.bodySmall.copyWith(
                                     color:
@@ -1532,13 +1530,13 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                 ),
               ),
             ),
-            SizedBox(height: AppThemes.spacingXL),
+            const SizedBox(height: AppThemes.spacingXL),
             Text('Exam Details',
                 style: AppTextStyles.titleLarge.copyWith(
                     color: AppColors.getTextPrimary(context),
                     fontWeight: FontWeight.w700,
                     letterSpacing: -0.5)),
-            SizedBox(height: AppThemes.spacingL),
+            const SizedBox(height: AppThemes.spacingL),
             _buildDetailItem(
                 icon: Icons.description_rounded,
                 label: 'Title:',
@@ -1575,7 +1573,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                 icon: Icons.history_rounded,
                 label: 'Your Attempts:',
                 value: '${_exam.attemptsTaken}/${_exam.maxAttempts}'),
-            SizedBox(height: AppThemes.spacingXXL),
+            const SizedBox(height: AppThemes.spacingXXL),
             if (!_hasReachedMaxAttempts)
               SizedBox(
                 width: double.infinity,
@@ -1588,7 +1586,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                   gradient: const [Color(0xFF2AABEE), Color(0xFF5856D6)],
                 ),
               ),
-            SizedBox(height: AppThemes.spacingL),
+            const SizedBox(height: AppThemes.spacingL),
             SizedBox(
               width: double.infinity,
               child: TextButton(
@@ -1612,7 +1610,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
   Widget _buildDetailItem(
       {required IconData icon, required String label, required String value}) {
     return Padding(
-      padding: EdgeInsets.only(bottom: AppThemes.spacingM),
+      padding: const EdgeInsets.only(bottom: AppThemes.spacingM),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1622,7 +1620,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
               decoration: BoxDecoration(
                   color: AppColors.blueFaded, shape: BoxShape.circle),
               child: Icon(icon, size: 16, color: AppColors.telegramBlue)),
-          SizedBox(width: AppThemes.spacingM),
+          const SizedBox(width: AppThemes.spacingM),
           Expanded(
             child: Row(
               children: [
@@ -1680,10 +1678,10 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                           Container(
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
-                              color: AppColors.telegramYellow.withOpacity(0.1),
+                              color: AppColors.telegramYellow.withValues(alpha: 0.1),
                               shape: BoxShape.circle,
                             ),
-                            child: Icon(Icons.exit_to_app_rounded,
+                            child: const Icon(Icons.exit_to_app_rounded,
                                 color: AppColors.telegramYellow, size: 32),
                           ),
                           const SizedBox(height: 16),
@@ -1743,19 +1741,19 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
         ),
         actions: [
           Container(
-            margin: EdgeInsets.only(right: AppThemes.spacingM),
-            padding: EdgeInsets.symmetric(
+            margin: const EdgeInsets.only(right: AppThemes.spacingM),
+            padding: const EdgeInsets.symmetric(
                 horizontal: AppThemes.spacingM, vertical: AppThemes.spacingXS),
             decoration: BoxDecoration(
-              color: timeColor.withOpacity(0.1),
+              color: timeColor.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(AppThemes.borderRadiusFull),
-              border: Border.all(color: timeColor.withOpacity(0.3)),
+              border: Border.all(color: timeColor.withValues(alpha: 0.3)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(Icons.timer_rounded, size: 16, color: timeColor),
-                SizedBox(width: 4),
+                const SizedBox(width: 4),
                 Text(_getTimeString(),
                     style: AppTextStyles.labelMedium.copyWith(
                         color: timeColor, fontWeight: FontWeight.w600)),
@@ -1770,19 +1768,19 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
               child: Container(
-                padding: EdgeInsets.all(AppThemes.spacingL),
+                padding: const EdgeInsets.all(AppThemes.spacingL),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      AppColors.getSurface(context).withOpacity(0.4),
-                      AppColors.getSurface(context).withOpacity(0.2),
+                      AppColors.getSurface(context).withValues(alpha: 0.4),
+                      AppColors.getSurface(context).withValues(alpha: 0.2),
                     ],
                   ),
                   border: Border(
                     bottom: BorderSide(
-                        color: Theme.of(context).dividerColor.withOpacity(0.5),
+                        color: Theme.of(context).dividerColor.withValues(alpha: 0.5),
                         width: 0.5),
                   ),
                 ),
@@ -1797,7 +1795,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                             style: AppTextStyles.bodyMedium.copyWith(
                                 color: AppColors.getTextPrimary(context))),
                         Container(
-                          padding: EdgeInsets.symmetric(
+                          padding: const EdgeInsets.symmetric(
                               horizontal: AppThemes.spacingM,
                               vertical: AppThemes.spacingXS),
                           decoration: BoxDecoration(
@@ -1806,7 +1804,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                                   AppThemes.borderRadiusFull),
                               border: Border.all(
                                   color:
-                                      AppColors.telegramBlue.withOpacity(0.3))),
+                                      AppColors.telegramBlue.withValues(alpha: 0.3))),
                           child: Text(
                               '$answeredQuestions/$totalQuestions answered',
                               style: AppTextStyles.labelSmall.copyWith(
@@ -1815,7 +1813,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                         ),
                       ],
                     ),
-                    SizedBox(height: AppThemes.spacingS),
+                    const SizedBox(height: AppThemes.spacingS),
                     ClipRRect(
                       borderRadius:
                           BorderRadius.circular(AppThemes.borderRadiusFull),
@@ -1825,7 +1823,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                             height: 6,
                             decoration: BoxDecoration(
                               color: AppColors.getSurface(context)
-                                  .withOpacity(0.3),
+                                  .withValues(alpha: 0.3),
                               borderRadius: BorderRadius.circular(
                                   AppThemes.borderRadiusFull),
                             ),
@@ -1846,7 +1844,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                                 boxShadow: [
                                   BoxShadow(
                                     color:
-                                        AppColors.telegramBlue.withOpacity(0.5),
+                                        AppColors.telegramBlue.withValues(alpha: 0.5),
                                     blurRadius: 4,
                                   ),
                                 ],
@@ -1879,19 +1877,19 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
               child: Container(
-                padding: EdgeInsets.all(AppThemes.spacingL),
+                padding: const EdgeInsets.all(AppThemes.spacingL),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      AppColors.getCard(context).withOpacity(0.4),
-                      AppColors.getCard(context).withOpacity(0.2),
+                      AppColors.getCard(context).withValues(alpha: 0.4),
+                      AppColors.getCard(context).withValues(alpha: 0.2),
                     ],
                   ),
                   border: Border(
                     top: BorderSide(
-                        color: Theme.of(context).dividerColor.withOpacity(0.5),
+                        color: Theme.of(context).dividerColor.withValues(alpha: 0.5),
                         width: 0.5),
                   ),
                 ),
@@ -1908,7 +1906,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                                 : null,
                           ),
                         ),
-                        SizedBox(width: AppThemes.spacingM),
+                        const SizedBox(width: AppThemes.spacingM),
                         Expanded(
                           child: _buildNavButton(
                             label: 'Next',
@@ -1922,12 +1920,12 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                         ),
                       ],
                     ),
-                    SizedBox(height: AppThemes.spacingM),
+                    const SizedBox(height: AppThemes.spacingM),
                     SizedBox(
                       width: double.infinity,
                       child: _buildGradientButton(
                         label: 'Submit Exam',
-                        onPressed: _isSubmitting ? null : () => _submitExam(),
+                        onPressed: _isSubmitting ? null : _submitExam,
                         gradient: const [Color(0xFF2AABEE), Color(0xFF5856D6)],
                       ),
                     ),
@@ -1960,17 +1958,16 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
               gradient: onPressed != null
                   ? LinearGradient(
                       colors: [
-                        AppColors.getSurface(context).withOpacity(0.2),
-                        AppColors.getSurface(context).withOpacity(0.1),
+                        AppColors.getSurface(context).withValues(alpha: 0.2),
+                        AppColors.getSurface(context).withValues(alpha: 0.1),
                       ],
                     )
                   : null,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
                 color: onPressed != null
-                    ? AppColors.telegramBlue.withOpacity(0.3)
-                    : AppColors.getTextSecondary(context).withOpacity(0.1),
-                width: 1,
+                    ? AppColors.telegramBlue.withValues(alpha: 0.3)
+                    : AppColors.getTextSecondary(context).withValues(alpha: 0.1),
               ),
             ),
             child: Row(
@@ -1982,7 +1979,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                     size: 16,
                     color: onPressed != null
                         ? AppColors.telegramBlue
-                        : AppColors.getTextSecondary(context).withOpacity(0.3),
+                        : AppColors.getTextSecondary(context).withValues(alpha: 0.3),
                   ),
                   const SizedBox(width: 8),
                 ],
@@ -1991,7 +1988,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                   style: AppTextStyles.labelMedium.copyWith(
                     color: onPressed != null
                         ? AppColors.telegramBlue
-                        : AppColors.getTextSecondary(context).withOpacity(0.3),
+                        : AppColors.getTextSecondary(context).withValues(alpha: 0.3),
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -2002,7 +1999,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                     size: 16,
                     color: onPressed != null
                         ? AppColors.telegramBlue
-                        : AppColors.getTextSecondary(context).withOpacity(0.3),
+                        : AppColors.getTextSecondary(context).withValues(alpha: 0.3),
                   ),
                 ],
               ],

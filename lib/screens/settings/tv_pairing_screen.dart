@@ -7,9 +7,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../providers/device_provider.dart';
-import '../../providers/auth_provider.dart';
 import '../../themes/app_themes.dart';
-import '../../widgets/common/loading_indicator.dart';
 import '../../utils/helpers.dart';
 
 class TvPairingScreen extends StatefulWidget {
@@ -60,14 +58,13 @@ class _TvPairingScreenState extends State<TvPairingScreen>
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                AppColors.getCard(context).withOpacity(0.4),
-                AppColors.getCard(context).withOpacity(0.2),
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: AppColors.telegramBlue.withOpacity(0.2),
-              width: 1,
+              color: AppColors.telegramBlue.withValues(alpha: 0.2),
             ),
           ),
           child: child,
@@ -81,8 +78,8 @@ class _TvPairingScreenState extends State<TvPairingScreen>
       backgroundColor: AppColors.getBackground(context),
       appBar: AppBar(
         title: Shimmer.fromColors(
-          baseColor: Colors.grey[300]!.withOpacity(0.3),
-          highlightColor: Colors.grey[100]!.withOpacity(0.6),
+          baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+          highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
           child: Container(
             width: 150,
             height: 24,
@@ -104,8 +101,8 @@ class _TvPairingScreenState extends State<TvPairingScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Shimmer.fromColors(
-                  baseColor: Colors.grey[300]!.withOpacity(0.3),
-                  highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                  baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                  highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                   child: Container(
                     width: 80,
                     height: 80,
@@ -117,8 +114,8 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                 ),
                 const SizedBox(height: 24),
                 Shimmer.fromColors(
-                  baseColor: Colors.grey[300]!.withOpacity(0.3),
-                  highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                  baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                  highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                   child: Container(
                     width: 200,
                     height: 24,
@@ -130,8 +127,8 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                 ),
                 const SizedBox(height: 16),
                 Shimmer.fromColors(
-                  baseColor: Colors.grey[300]!.withOpacity(0.3),
-                  highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                  baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                  highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                   child: Container(
                     width: 300,
                     height: 16,
@@ -155,7 +152,6 @@ class _TvPairingScreenState extends State<TvPairingScreen>
 
     try {
       await Future.delayed(const Duration(milliseconds: 300));
-    } catch (e) {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -253,8 +249,8 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           gradient: RadialGradient(colors: [
-                            AppColors.telegramBlue.withOpacity(0.3),
-                            AppColors.telegramBlue.withOpacity(0.1),
+                            AppColors.telegramBlue.withValues(alpha: 0.3),
+                            AppColors.telegramBlue.withValues(alpha: 0.1),
                             Colors.transparent
                           ], stops: const [
                             0.2,
@@ -275,15 +271,15 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
-                            AppColors.telegramBlue.withOpacity(0.2),
-                            AppColors.telegramPurple.withOpacity(0.1),
+                            AppColors.telegramBlue.withValues(alpha: 0.2),
+                            AppColors.telegramPurple.withValues(alpha: 0.1),
                           ],
                         ),
                         shape: BoxShape.circle,
                         border:
                             Border.all(color: AppColors.telegramBlue, width: 3),
                       ),
-                      child: Icon(Icons.tv_rounded,
+                      child: const Icon(Icons.tv_rounded,
                           size: 40, color: AppColors.telegramBlue),
                     );
                   },
@@ -326,7 +322,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                       BorderRadius.circular(AppThemes.borderRadiusMedium),
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.telegramRed.withOpacity(0.3),
+                      color: AppColors.telegramRed.withValues(alpha: 0.3),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -346,7 +342,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.link_off_rounded, size: 20),
+                      const Icon(Icons.link_off_rounded, size: 20),
                       const SizedBox(width: 8),
                       Text('Unpair Device',
                           style: AppTextStyles.buttonMedium
@@ -381,12 +377,12 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                     decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
-                            AppColors.telegramBlue.withOpacity(0.2),
-                            AppColors.telegramPurple.withOpacity(0.1),
+                            AppColors.telegramBlue.withValues(alpha: 0.2),
+                            AppColors.telegramPurple.withValues(alpha: 0.1),
                           ],
                         ),
                         shape: BoxShape.circle),
-                    child: Icon(Icons.tv_rounded,
+                    child: const Icon(Icons.tv_rounded,
                         color: AppColors.telegramBlue, size: 20)),
                 const SizedBox(width: 12),
                 Text('Enter Pairing Code',
@@ -405,11 +401,11 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                 hintText: 'Enter code from your TV',
                 hintStyle: AppTextStyles.bodyMedium.copyWith(
                     color:
-                        AppColors.getTextSecondary(context).withOpacity(0.5)),
+                        AppColors.getTextSecondary(context).withValues(alpha: 0.5)),
                 prefixIcon: Icon(Icons.confirmation_number_rounded,
                     color: AppColors.getTextSecondary(context), size: 20),
                 filled: true,
-                fillColor: AppColors.getSurface(context).withOpacity(0.3),
+                fillColor: AppColors.getSurface(context).withValues(alpha: 0.3),
                 border: OutlineInputBorder(
                     borderRadius:
                         BorderRadius.circular(AppThemes.borderRadiusMedium),
@@ -422,7 +418,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                   borderRadius:
                       BorderRadius.circular(AppThemes.borderRadiusMedium),
                   borderSide:
-                      BorderSide(color: AppColors.telegramBlue, width: 2),
+                      const BorderSide(color: AppColors.telegramBlue, width: 2),
                 ),
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -448,7 +444,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                       BorderRadius.circular(AppThemes.borderRadiusMedium),
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.telegramBlue.withOpacity(0.3),
+                      color: AppColors.telegramBlue.withValues(alpha: 0.3),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -470,7 +466,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                       ? Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            SizedBox(
+                            const SizedBox(
                                 width: 20,
                                 height: 20,
                                 child: CircularProgressIndicator(
@@ -486,7 +482,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                       : Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.link_rounded, size: 20),
+                            const Icon(Icons.link_rounded, size: 20),
                             const SizedBox(width: 8),
                             Text('Pair Device',
                                 style: AppTextStyles.buttonMedium
@@ -519,12 +515,12 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                     decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
-                            AppColors.telegramBlue.withOpacity(0.2),
-                            AppColors.telegramPurple.withOpacity(0.1),
+                            AppColors.telegramBlue.withValues(alpha: 0.2),
+                            AppColors.telegramPurple.withValues(alpha: 0.1),
                           ],
                         ),
                         shape: BoxShape.circle),
-                    child: Icon(Icons.info_rounded,
+                    child: const Icon(Icons.info_rounded,
                         color: AppColors.telegramBlue, size: 18)),
                 const SizedBox(width: 12),
                 Text('How to Pair',
@@ -548,7 +544,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                 padding: const EdgeInsets.all(12),
                 child: Row(
                   children: [
-                    Icon(Icons.lightbulb_rounded,
+                    const Icon(Icons.lightbulb_rounded,
                         color: AppColors.telegramYellow, size: 20),
                     const SizedBox(width: 12),
                     Expanded(
@@ -587,7 +583,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: AppColors.telegramBlue.withOpacity(0.3),
+                    color: AppColors.telegramBlue.withValues(alpha: 0.3),
                     blurRadius: 4,
                     offset: const Offset(0, 2),
                   ),
@@ -633,7 +629,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
         actions: [
           IconButton(
             icon: _isLoading
-                ? SizedBox(
+                ? const SizedBox(
                     width: 20,
                     height: 20,
                     child: CircularProgressIndicator(
@@ -688,7 +684,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
         actions: [
           IconButton(
             icon: _isLoading
-                ? SizedBox(
+                ? const SizedBox(
                     width: 24,
                     height: 24,
                     child: CircularProgressIndicator(
@@ -722,7 +718,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                                   : _buildPairingForm(context)),
                           const SizedBox(width: 32),
                           Expanded(
-                              flex: 1, child: _buildInstructionsCard(context)),
+                              child: _buildInstructionsCard(context)),
                         ],
                       ),
                       const SizedBox(height: 48),
@@ -744,7 +740,6 @@ class _TvPairingScreenState extends State<TvPairingScreen>
       mobile: _buildMobileLayout(),
       tablet: _buildDesktopLayout(),
       desktop: _buildDesktopLayout(),
-      animateTransition: true,
     );
   }
 }

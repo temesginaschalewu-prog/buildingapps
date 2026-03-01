@@ -12,9 +12,9 @@ class CategoryProvider with ChangeNotifier {
   List<Category> _categories = [];
   List<Category> _activeCategories = [];
   List<Category> _comingSoonCategories = [];
-  Map<int, bool> _categorySubscriptionStatus = {};
-  Map<int, bool> _categoryStatusLoaded = {};
-  Map<int, DateTime> _lastSubscriptionCheck = {};
+  final Map<int, bool> _categorySubscriptionStatus = {};
+  final Map<int, bool> _categoryStatusLoaded = {};
+  final Map<int, DateTime> _lastSubscriptionCheck = {};
 
   bool _isLoading = false;
   bool _hasLoaded = false;
@@ -62,7 +62,7 @@ class CategoryProvider with ChangeNotifier {
               .toList();
         }
 
-        bool hasChanges = _hasCategoryChanges(loadedCategories);
+        final bool hasChanges = _hasCategoryChanges(loadedCategories);
 
         if (hasChanges) {
           debugLog('CategoryProvider', '📦 Changes detected, updating cache');
@@ -393,7 +393,7 @@ class CategoryProvider with ChangeNotifier {
       }
     });
 
-    return await _waitForCheckCompleters[categoryId]!.future;
+    return _waitForCheckCompleters[categoryId]!.future;
   }
 
   Future<bool> verifyCategoryAccess(int categoryId,
@@ -407,7 +407,7 @@ class CategoryProvider with ChangeNotifier {
     _categoryStatusLoaded[categoryId] = false;
     _notifySafely();
 
-    return await waitForSubscriptionCheck(categoryId);
+    return waitForSubscriptionCheck(categoryId);
   }
 
   void clearError() {

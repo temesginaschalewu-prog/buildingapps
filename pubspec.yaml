@@ -78,6 +78,10 @@ dependencies:
   http: ^1.6.0
   media_kit_libs_linux: ^1.2.1
 
+  timezone: any
+  video_player: any
+  chewie: any
+  path: any
 dev_dependencies:
   flutter_test:
     sdk: flutter

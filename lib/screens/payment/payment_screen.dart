@@ -10,7 +10,6 @@ import 'package:familyacademyclient/utils/responsive.dart';
 import 'package:familyacademyclient/themes/app_themes.dart';
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/themes/app_text_styles.dart';
-import 'package:familyacademyclient/widgets/common/loading_indicator.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../models/category_model.dart';
 import '../../providers/payment_provider.dart';
@@ -38,7 +37,7 @@ class _PaymentScreenState extends State<PaymentScreen>
   late AnimationController _animationController;
 
   PaymentMethod? _selectedPaymentMethod;
-  bool _showMethodDetails = false;
+  final bool _showMethodDetails = false;
   File? _proofImageFile;
   bool _confirmAccuracy = false;
   bool _isLoading = false;
@@ -55,7 +54,7 @@ class _PaymentScreenState extends State<PaymentScreen>
   bool _initialized = false;
   bool _settingsLoadAttempted = false;
   List<PaymentMethod> _cachedMethods = [];
-  bool _isOffline = false;
+  final bool _isOffline = false;
   String? _currentUserId;
 
   @override
@@ -103,7 +102,7 @@ class _PaymentScreenState extends State<PaymentScreen>
           Provider.of<CategoryProvider>(context, listen: false);
 
       Category? category;
-      dynamic categoryData = args['category'];
+      final dynamic categoryData = args['category'];
 
       if (categoryData is Category) {
         category = categoryData;
@@ -218,14 +217,13 @@ class _PaymentScreenState extends State<PaymentScreen>
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                AppColors.getCard(context).withOpacity(0.4),
-                AppColors.getCard(context).withOpacity(0.2),
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: AppColors.telegramBlue.withOpacity(0.2),
-              width: 1,
+              color: AppColors.telegramBlue.withValues(alpha: 0.2),
             ),
           ),
           child: child,
@@ -257,7 +255,7 @@ class _PaymentScreenState extends State<PaymentScreen>
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: DropdownButtonFormField<PaymentMethod>(
-              value: _selectedPaymentMethod,
+              initialValue: _selectedPaymentMethod,
               hint: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Text('Select a payment method',
@@ -282,8 +280,8 @@ class _PaymentScreenState extends State<PaymentScreen>
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
-                              AppColors.telegramBlue.withOpacity(0.2),
-                              AppColors.telegramPurple.withOpacity(0.1),
+                              AppColors.telegramBlue.withValues(alpha: 0.2),
+                              AppColors.telegramPurple.withValues(alpha: 0.1),
                             ],
                           ),
                           borderRadius: BorderRadius.circular(
@@ -333,7 +331,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.info_rounded,
+                      const Icon(Icons.info_rounded,
                           size: 16, color: AppColors.telegramBlue),
                       const SizedBox(width: 8),
                       Text('Account Details',
@@ -348,8 +346,8 @@ class _PaymentScreenState extends State<PaymentScreen>
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
-                          AppColors.getCard(context).withOpacity(0.3),
-                          AppColors.getCard(context).withOpacity(0.1),
+                          AppColors.getCard(context).withValues(alpha: 0.3),
+                          AppColors.getCard(context).withValues(alpha: 0.1),
                         ],
                       ),
                       borderRadius:
@@ -372,13 +370,13 @@ class _PaymentScreenState extends State<PaymentScreen>
                             decoration: BoxDecoration(
                                 gradient: LinearGradient(
                                   colors: [
-                                    AppColors.telegramBlue.withOpacity(0.2),
-                                    AppColors.telegramBlue.withOpacity(0.1),
+                                    AppColors.telegramBlue.withValues(alpha: 0.2),
+                                    AppColors.telegramBlue.withValues(alpha: 0.1),
                                   ],
                                 ),
                                 borderRadius: BorderRadius.circular(
                                     AppThemes.borderRadiusSmall)),
-                            child: Icon(Icons.copy_rounded,
+                            child: const Icon(Icons.copy_rounded,
                                 size: 16, color: AppColors.telegramBlue),
                           ),
                         ),
@@ -425,9 +423,9 @@ class _PaymentScreenState extends State<PaymentScreen>
                                 children: [
                                   Shimmer.fromColors(
                                     baseColor:
-                                        Colors.grey[300]!.withOpacity(0.3),
+                                        Colors.grey[300]!.withValues(alpha: 0.3),
                                     highlightColor:
-                                        Colors.grey[100]!.withOpacity(0.6),
+                                        Colors.grey[100]!.withValues(alpha: 0.6),
                                     child: Container(
                                       width: 32,
                                       height: 32,
@@ -443,9 +441,9 @@ class _PaymentScreenState extends State<PaymentScreen>
                                       children: [
                                         Shimmer.fromColors(
                                           baseColor: Colors.grey[300]!
-                                              .withOpacity(0.3),
+                                              .withValues(alpha: 0.3),
                                           highlightColor: Colors.grey[100]!
-                                              .withOpacity(0.6),
+                                              .withValues(alpha: 0.6),
                                           child: Container(
                                             height: 16,
                                             decoration: BoxDecoration(
@@ -475,9 +473,9 @@ class _PaymentScreenState extends State<PaymentScreen>
                         (index) => Padding(
                               padding: const EdgeInsets.only(bottom: 16),
                               child: Shimmer.fromColors(
-                                baseColor: Colors.grey[300]!.withOpacity(0.3),
+                                baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
                                 highlightColor:
-                                    Colors.grey[100]!.withOpacity(0.6),
+                                    Colors.grey[100]!.withValues(alpha: 0.6),
                                 child: Container(
                                   height: 50,
                                   decoration: BoxDecoration(
@@ -542,7 +540,7 @@ class _PaymentScreenState extends State<PaymentScreen>
         final uploadResponse =
             await apiService.uploadPaymentProof(_proofImageFile!);
         if (uploadResponse.success && uploadResponse.data != null) {
-          proofImageUrl = uploadResponse.data!;
+          proofImageUrl = uploadResponse.data;
         } else {
           showTopSnackBar(context, 'Failed to upload payment proof',
               isError: true);
@@ -595,20 +593,22 @@ class _PaymentScreenState extends State<PaymentScreen>
         final action = result['action'];
 
         if (action == 'device_change_required') {
-          if (mounted)
+          if (mounted) {
             context.push('/device-change', extra: {
               'message': message,
               'action': action,
               'data': result['data']
             });
+          }
         } else {
           if (mounted) showTopSnackBar(context, message, isError: true);
         }
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         showTopSnackBar(context, 'Payment failed: ${e.toString()}',
             isError: true);
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -683,7 +683,6 @@ class _PaymentScreenState extends State<PaymentScreen>
                                         child: _buildPaymentForm(methods)),
                                     const SizedBox(width: 48),
                                     Expanded(
-                                        flex: 1,
                                         child: _buildPaymentInstructions()),
                                   ],
                                 ),
@@ -704,7 +703,7 @@ class _PaymentScreenState extends State<PaymentScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            SizedBox(
+            const SizedBox(
                 width: 40,
                 height: 40,
                 child: CircularProgressIndicator(
@@ -742,9 +741,9 @@ class _PaymentScreenState extends State<PaymentScreen>
             Container(
               padding: const EdgeInsets.all(32),
               decoration: BoxDecoration(
-                  color: AppColors.telegramYellow.withOpacity(0.1),
+                  color: AppColors.telegramYellow.withValues(alpha: 0.1),
                   shape: BoxShape.circle),
-              child: Icon(Icons.payment_outlined,
+              child: const Icon(Icons.payment_outlined,
                   size: 64, color: AppColors.telegramYellow),
             ),
             const SizedBox(height: 32),
@@ -796,7 +795,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                         borderRadius: BorderRadius.circular(
                             AppThemes.borderRadiusMedium)),
                   ),
-                  child: Text('Go Back', style: AppTextStyles.buttonMedium),
+                  child: const Text('Go Back', style: AppTextStyles.buttonMedium),
                 ),
               ],
             ),
@@ -836,14 +835,14 @@ class _PaymentScreenState extends State<PaymentScreen>
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
-                        AppColors.telegramBlue.withOpacity(0.2),
-                        AppColors.telegramPurple.withOpacity(0.1),
+                        AppColors.telegramBlue.withValues(alpha: 0.2),
+                        AppColors.telegramPurple.withValues(alpha: 0.1),
                       ],
                     ),
                     borderRadius:
                         BorderRadius.circular(AppThemes.borderRadiusMedium),
                   ),
-                  child: Icon(Icons.payment_rounded,
+                  child: const Icon(Icons.payment_rounded,
                       color: AppColors.telegramBlue, size: 24),
                 ),
                 const SizedBox(width: 16),
@@ -864,7 +863,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text('${_amount.toStringAsFixed(0)}',
+                    Text(_amount.toStringAsFixed(0),
                         style: AppTextStyles.displaySmall.copyWith(
                             color: AppColors.telegramBlue,
                             fontWeight: FontWeight.w700)),
@@ -877,7 +876,7 @@ class _PaymentScreenState extends State<PaymentScreen>
             ),
             const SizedBox(height: 16),
             Divider(
-                color: Theme.of(context).dividerColor.withOpacity(0.2),
+                color: Theme.of(context).dividerColor.withValues(alpha: 0.2),
                 height: 1),
             const SizedBox(height: 16),
             _buildSummaryRow(
@@ -919,8 +918,8 @@ class _PaymentScreenState extends State<PaymentScreen>
             decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    AppColors.telegramBlue.withOpacity(0.2),
-                    AppColors.telegramPurple.withOpacity(0.1),
+                    AppColors.telegramBlue.withValues(alpha: 0.2),
+                    AppColors.telegramPurple.withValues(alpha: 0.1),
                   ],
                 ),
                 shape: BoxShape.circle),
@@ -970,7 +969,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                   hintStyle: AppTextStyles.bodyMedium
                       .copyWith(color: AppColors.getTextSecondary(context)),
                   filled: true,
-                  fillColor: AppColors.getSurface(context).withOpacity(0.3),
+                  fillColor: AppColors.getSurface(context).withValues(alpha: 0.3),
                   border: OutlineInputBorder(
                       borderRadius:
                           BorderRadius.circular(AppThemes.borderRadiusMedium),
@@ -983,10 +982,12 @@ class _PaymentScreenState extends State<PaymentScreen>
                 style: AppTextStyles.bodyMedium
                     .copyWith(color: AppColors.getTextPrimary(context)),
                 validator: (value) {
-                  if (value == null || value.trim().isEmpty)
+                  if (value == null || value.trim().isEmpty) {
                     return 'Account holder name is required';
-                  if (value.trim().length < 3)
+                  }
+                  if (value.trim().length < 3) {
                     return 'Account holder name must be at least 3 characters';
+                  }
                   return null;
                 },
               ),
@@ -1002,7 +1003,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                   hintStyle: AppTextStyles.bodyMedium
                       .copyWith(color: AppColors.getTextSecondary(context)),
                   filled: true,
-                  fillColor: AppColors.getSurface(context).withOpacity(0.3),
+                  fillColor: AppColors.getSurface(context).withValues(alpha: 0.3),
                   border: OutlineInputBorder(
                       borderRadius:
                           BorderRadius.circular(AppThemes.borderRadiusMedium),
@@ -1016,10 +1017,12 @@ class _PaymentScreenState extends State<PaymentScreen>
                 style: AppTextStyles.bodyMedium
                     .copyWith(color: AppColors.getTextPrimary(context)),
                 validator: (value) {
-                  if (value == null || value.isEmpty)
+                  if (value == null || value.isEmpty) {
                     return 'Password is required';
-                  if (value.length < 6)
+                  }
+                  if (value.length < 6) {
                     return 'Password must be at least 6 characters';
+                  }
                   return null;
                 },
               ),
@@ -1069,7 +1072,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                     elevation: 0,
                   ),
                   child: _isLoading
-                      ? SizedBox(
+                      ? const SizedBox(
                           width: 20,
                           height: 20,
                           child: CircularProgressIndicator(
@@ -1079,7 +1082,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                       : Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.send_rounded,
+                            const Icon(Icons.send_rounded,
                                 size: 20, color: Colors.white),
                             const SizedBox(width: 8),
                             Text('Submit Payment',
@@ -1109,14 +1112,14 @@ class _PaymentScreenState extends State<PaymentScreen>
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: [
-              AppColors.getSurface(context).withOpacity(0.3),
-              AppColors.getSurface(context).withOpacity(0.1),
+              AppColors.getSurface(context).withValues(alpha: 0.3),
+              AppColors.getSurface(context).withValues(alpha: 0.1),
             ],
           ),
           borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
           border: Border.all(
               color: _proofImageFile == null
-                  ? AppColors.getTextSecondary(context).withOpacity(0.2)
+                  ? AppColors.getTextSecondary(context).withValues(alpha: 0.2)
                   : AppColors.telegramBlue,
               width: _proofImageFile == null ? 1.0 : 2.0),
         ),
@@ -1136,7 +1139,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                               end: Alignment.bottomCenter,
                               colors: [
                             Colors.transparent,
-                            Colors.black.withOpacity(0.7)
+                            Colors.black.withValues(alpha: 0.7)
                           ])),
                     ),
                   ),
@@ -1152,7 +1155,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                             gradient: LinearGradient(
                               colors: [
                                 AppColors.telegramRed,
-                                AppColors.telegramRed.withOpacity(0.8),
+                                AppColors.telegramRed.withValues(alpha: 0.8),
                               ],
                             ),
                             borderRadius: BorderRadius.circular(
@@ -1160,7 +1163,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.delete_rounded,
+                            const Icon(Icons.delete_rounded,
                                 size: 16, color: Colors.white),
                             const SizedBox(width: 4),
                             Text('Remove',
@@ -1182,7 +1185,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                           gradient: LinearGradient(
                             colors: [
                               AppColors.telegramGreen,
-                              AppColors.telegramGreen.withOpacity(0.8),
+                              AppColors.telegramGreen.withValues(alpha: 0.8),
                             ],
                           ),
                           borderRadius: BorderRadius.circular(
@@ -1190,7 +1193,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.check_circle_rounded,
+                          const Icon(Icons.check_circle_rounded,
                               size: 14, color: Colors.white),
                           const SizedBox(width: 4),
                           Text('Uploaded',
@@ -1240,14 +1243,14 @@ class _PaymentScreenState extends State<PaymentScreen>
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
-                        AppColors.telegramBlue.withOpacity(0.2),
-                        AppColors.telegramPurple.withOpacity(0.1),
+                        AppColors.telegramBlue.withValues(alpha: 0.2),
+                        AppColors.telegramPurple.withValues(alpha: 0.1),
                       ],
                     ),
                     borderRadius:
                         BorderRadius.circular(AppThemes.borderRadiusMedium),
                   ),
-                  child: Icon(Icons.info_rounded,
+                  child: const Icon(Icons.info_rounded,
                       color: AppColors.telegramBlue, size: 20),
                 ),
                 const SizedBox(width: 12),
@@ -1258,7 +1261,7 @@ class _PaymentScreenState extends State<PaymentScreen>
             ),
             const SizedBox(height: 16),
             Divider(
-                color: Theme.of(context).dividerColor.withOpacity(0.2),
+                color: Theme.of(context).dividerColor.withValues(alpha: 0.2),
                 height: 1),
             const SizedBox(height: 16),
             Text(instructions,
@@ -1266,7 +1269,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                     color: AppColors.getTextSecondary(context), height: 1.6)),
             const SizedBox(height: 16),
             Divider(
-                color: Theme.of(context).dividerColor.withOpacity(0.2),
+                color: Theme.of(context).dividerColor.withValues(alpha: 0.2),
                 height: 1),
             const SizedBox(height: 16),
             Text('Important Notes:',
@@ -1296,7 +1299,7 @@ class _PaymentScreenState extends State<PaymentScreen>
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.circle_rounded, size: 6, color: AppColors.telegramBlue),
+          const Icon(Icons.circle_rounded, size: 6, color: AppColors.telegramBlue),
           const SizedBox(width: 8),
           Expanded(
               child: Text(text,
@@ -1320,9 +1323,9 @@ class _PaymentScreenState extends State<PaymentScreen>
               Container(
                 padding: const EdgeInsets.all(32),
                 decoration: BoxDecoration(
-                    color: AppColors.telegramRed.withOpacity(0.1),
+                    color: AppColors.telegramRed.withValues(alpha: 0.1),
                     shape: BoxShape.circle),
-                child: Icon(Icons.error_outline_rounded,
+                child: const Icon(Icons.error_outline_rounded,
                     size: 64, color: AppColors.telegramRed),
               ),
               const SizedBox(height: 32),
@@ -1381,7 +1384,7 @@ class _PaymentScreenState extends State<PaymentScreen>
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              SizedBox(
+              const SizedBox(
                   width: 40,
                   height: 40,
                   child: CircularProgressIndicator(

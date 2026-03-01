@@ -4,7 +4,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../models/streak_model.dart';
-import '../utils/helpers.dart';
 
 class StreakProvider with ChangeNotifier {
   final ApiService apiService;
@@ -29,7 +28,7 @@ class StreakProvider with ChangeNotifier {
       if (!_isLoading) loadStreak(forceRefresh: true);
     });
     await _getCurrentUserId();
-    await loadStreak(forceRefresh: false);
+    await loadStreak();
   }
 
   Future<void> _getCurrentUserId() async {
@@ -180,12 +179,12 @@ class StreakProvider with ChangeNotifier {
     if (count >= 100) return "100 days! You're in the elite club! 👑";
     if (count >= 50) return "50 days of dedication! You're a master! ⭐";
     if (count >= 30) return "30 days! You've built an incredible habit! 📚";
-    if (count >= 14) return "Two weeks strong! Keep going! 💪";
-    if (count >= 7) return "One week! Consistency is your superpower! 🚀";
+    if (count >= 14) return 'Two weeks strong! Keep going! 💪';
+    if (count >= 7) return 'One week! Consistency is your superpower! 🚀';
     if (count >= 3) return "3 days in a row! You're building momentum! 🌱";
-    if (count == 2) return "Two days! Come back tomorrow! 🔥";
-    if (count == 1) return "Great start! Make it two tomorrow! ✨";
-    return "Start your streak today! 📅";
+    if (count == 2) return 'Two days! Come back tomorrow! 🔥';
+    if (count == 1) return 'Great start! Make it two tomorrow! ✨';
+    return 'Start your streak today! 📅';
   }
 
   Future<void> clearUserData() async {

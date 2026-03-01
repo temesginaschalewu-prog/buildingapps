@@ -155,7 +155,7 @@ class User {
       return profileImage;
     }
 
-    String cleanPath = profileImage!.startsWith('/')
+    final String cleanPath = profileImage!.startsWith('/')
         ? profileImage!.substring(1)
         : profileImage!;
 

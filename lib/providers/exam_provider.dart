@@ -4,7 +4,6 @@ import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../models/exam_model.dart';
 import '../models/exam_result_model.dart';
-import '../models/payment_model.dart';
 import '../utils/helpers.dart';
 
 class ExamProvider with ChangeNotifier {
@@ -21,7 +20,7 @@ class ExamProvider with ChangeNotifier {
   Timer? _cacheCleanupTimer;
 
   // NEW: Track pending payments per category
-  Map<int, bool> _pendingPaymentsByCategory = {};
+  final Map<int, bool> _pendingPaymentsByCategory = {};
 
   StreamController<List<Exam>> _examsUpdateController =
       StreamController<List<Exam>>.broadcast();
@@ -215,7 +214,7 @@ class ExamProvider with ChangeNotifier {
         _availableExams = [];
         _error = response.message;
       }
-    } catch (e, stackTrace) {
+    } catch (e) {
       _error = 'Failed to load exams: ${e.toString()}';
       debugLog('ExamProvider', 'loadAvailableExams error: $e');
       _availableExams = [];
@@ -375,7 +374,7 @@ class ExamProvider with ChangeNotifier {
         _error = response.message;
         _myExamResults = [];
       }
-    } catch (e, stackTrace) {
+    } catch (e) {
       _error = 'Failed to load exam results: ${e.toString()}';
       debugLog('ExamProvider', '❌ loadMyExamResults error: $e');
       _myExamResults = [];
@@ -510,7 +509,7 @@ class ExamProvider with ChangeNotifier {
     _notifySafely();
   }
 
-  void clearExamsForCourse(int courseId) async {
+  Future<void> clearExamsForCourse(int courseId) async {
     await deviceService.removeCacheItem('exams_course_$courseId');
 
     final courseExams = _examsByCourse[courseId] ?? [];

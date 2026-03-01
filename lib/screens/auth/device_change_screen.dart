@@ -86,14 +86,13 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                AppColors.getCard(context).withOpacity(0.4),
-                AppColors.getCard(context).withOpacity(0.2),
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: AppColors.telegramBlue.withOpacity(0.2),
-              width: 1,
+              color: AppColors.telegramBlue.withValues(alpha: 0.2),
             ),
           ),
           child: child,
@@ -114,12 +113,12 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
         gradient: isEnabled ? LinearGradient(colors: gradient) : null,
         color: isEnabled
             ? null
-            : AppColors.getTextSecondary(context).withOpacity(0.2),
+            : AppColors.getTextSecondary(context).withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(16),
         boxShadow: isEnabled
             ? [
                 BoxShadow(
-                  color: gradient.first.withOpacity(0.3),
+                  color: gradient.first.withValues(alpha: 0.3),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
@@ -135,7 +134,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
             padding: const EdgeInsets.symmetric(vertical: 16),
             alignment: Alignment.center,
             child: isLoading
-                ? SizedBox(
+                ? const SizedBox(
                     width: 24,
                     height: 24,
                     child: CircularProgressIndicator(
@@ -163,7 +162,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
       final goRouter = GoRouter.of(context);
       final state = goRouter.routerDelegate.currentConfiguration;
 
-      if (state?.extra != null && state!.extra is Map<String, dynamic>) {
+      if (state.extra != null && state.extra is Map<String, dynamic>) {
         routeArgs = state.extra as Map<String, dynamic>;
         debugLog(
             'DeviceChangeScreen', '✅ Received args from GoRouter: $routeArgs');
@@ -232,8 +231,9 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
           'Device initialized. New Device ID: ${deviceId.substring(0, 10)}...');
     } catch (e) {
       debugLog('DeviceChangeScreen', 'Error initializing device: $e');
-      if (_mounted)
+      if (_mounted) {
         showTopSnackBar(context, 'Failed to initialize device', isError: true);
+      }
     }
   }
 
@@ -373,13 +373,13 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
-                        AppColors.telegramYellow.withOpacity(0.2),
-                        AppColors.telegramYellow.withOpacity(0.1),
+                        AppColors.telegramYellow.withValues(alpha: 0.2),
+                        AppColors.telegramYellow.withValues(alpha: 0.1),
                       ],
                     ),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(Icons.exit_to_app_rounded,
+                  child: const Icon(Icons.exit_to_app_rounded,
                       color: AppColors.telegramYellow, size: 32),
                 ),
                 const SizedBox(height: 16),
@@ -455,8 +455,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
               _buildGlassContainer(
                 child: Container(
                   padding: const EdgeInsets.all(24),
-                  child: LoadingIndicator(
-                      type: LoadingType.circular,
+                  child: const LoadingIndicator(
                       size: 48,
                       color: AppColors.telegramBlue),
                 ),
@@ -520,7 +519,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
           IconButton(
             icon: Icon(Icons.info_outline_rounded,
                 color: AppColors.getTextSecondary(context)),
-            onPressed: () => _showDeviceInfoDialog(),
+            onPressed: _showDeviceInfoDialog,
             tooltip: 'Device Information',
           ),
         ],
@@ -547,8 +546,9 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
                       label: 'Verify Password',
                       hintText: 'Enter your password to confirm device change',
                       validator: (value) {
-                        if (value == null || value.isEmpty)
+                        if (value == null || value.isEmpty) {
                           return 'Password is required to confirm device change';
+                        }
                         return null;
                       },
                     ),
@@ -583,7 +583,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
           IconButton(
             icon: Icon(Icons.info_outline_rounded,
                 color: AppColors.getTextSecondary(context)),
-            onPressed: () => _showDeviceInfoDialog(),
+            onPressed: _showDeviceInfoDialog,
             tooltip: 'Device Information',
           ),
         ],
@@ -624,8 +624,9 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
                           hintText:
                               'Enter your password to confirm device change',
                           validator: (value) {
-                            if (value == null || value.isEmpty)
+                            if (value == null || value.isEmpty) {
                               return 'Password is required to confirm device change';
+                            }
                             return null;
                           },
                         ),
@@ -664,13 +665,13 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
-                        AppColors.telegramBlue.withOpacity(0.2),
-                        AppColors.telegramPurple.withOpacity(0.1),
+                        AppColors.telegramBlue.withValues(alpha: 0.2),
+                        AppColors.telegramPurple.withValues(alpha: 0.1),
                       ],
                     ),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(Icons.devices_rounded,
+                  child: const Icon(Icons.devices_rounded,
                       color: AppColors.telegramBlue, size: 20),
                 ),
                 const SizedBox(width: 12),
@@ -745,13 +746,13 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
-                        AppColors.telegramBlue.withOpacity(0.2),
-                        AppColors.telegramPurple.withOpacity(0.1),
+                        AppColors.telegramBlue.withValues(alpha: 0.2),
+                        AppColors.telegramPurple.withValues(alpha: 0.1),
                       ],
                     ),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(Icons.timer_rounded,
+                  child: const Icon(Icons.timer_rounded,
                       color: AppColors.telegramBlue, size: 20),
                 ),
                 const SizedBox(width: 12),
@@ -779,15 +780,15 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
-                        AppColors.telegramRed.withOpacity(0.2),
-                        AppColors.telegramRed.withOpacity(0.1),
+                        AppColors.telegramRed.withValues(alpha: 0.2),
+                        AppColors.telegramRed.withValues(alpha: 0.1),
                       ],
                     ),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.error_outline_rounded,
+                      const Icon(Icons.error_outline_rounded,
                           color: AppColors.telegramRed, size: 20),
                       const SizedBox(width: 12),
                       Expanded(
@@ -946,13 +947,13 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
-                            AppColors.telegramBlue.withOpacity(0.2),
-                            AppColors.telegramPurple.withOpacity(0.1),
+                            AppColors.telegramBlue.withValues(alpha: 0.2),
+                            AppColors.telegramPurple.withValues(alpha: 0.1),
                           ],
                         ),
                         shape: BoxShape.circle,
                       ),
-                      child: Icon(Icons.info_rounded,
+                      child: const Icon(Icons.info_rounded,
                           color: AppColors.telegramBlue, size: 24),
                     ),
                     const SizedBox(width: 16),
@@ -1037,13 +1038,13 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
-                          AppColors.telegramYellow.withOpacity(0.2),
-                          AppColors.telegramYellow.withOpacity(0.1),
+                          AppColors.telegramYellow.withValues(alpha: 0.2),
+                          AppColors.telegramYellow.withValues(alpha: 0.1),
                         ],
                       ),
                       shape: BoxShape.circle,
                     ),
-                    child: Icon(Icons.warning_rounded,
+                    child: const Icon(Icons.warning_rounded,
                         color: AppColors.telegramYellow, size: 32),
                   ),
                 );

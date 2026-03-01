@@ -82,14 +82,13 @@ class _LoginScreenState extends State<LoginScreen>
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                AppColors.getCard(context).withOpacity(0.4),
-                AppColors.getCard(context).withOpacity(0.2),
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: AppColors.telegramBlue.withOpacity(0.2),
-              width: 1,
+              color: AppColors.telegramBlue.withValues(alpha: 0.2),
             ),
           ),
           child: child,
@@ -110,12 +109,12 @@ class _LoginScreenState extends State<LoginScreen>
         gradient: isEnabled ? LinearGradient(colors: gradient) : null,
         color: isEnabled
             ? null
-            : AppColors.getTextSecondary(context).withOpacity(0.2),
+            : AppColors.getTextSecondary(context).withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(16),
         boxShadow: isEnabled
             ? [
                 BoxShadow(
-                  color: gradient.first.withOpacity(0.3),
+                  color: gradient.first.withValues(alpha: 0.3),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
@@ -131,7 +130,7 @@ class _LoginScreenState extends State<LoginScreen>
             padding: const EdgeInsets.symmetric(vertical: 16),
             alignment: Alignment.center,
             child: isLoading
-                ? SizedBox(
+                ? const SizedBox(
                     width: 24,
                     height: 24,
                     child: CircularProgressIndicator(
@@ -333,7 +332,7 @@ class _LoginScreenState extends State<LoginScreen>
             child: _buildGlassContainer(
               child: Container(
                 padding: const EdgeInsets.all(24),
-                child: _buildLoginContent(showLogo: true),
+                child: _buildLoginContent(),
               ),
             ),
           ),
@@ -356,12 +355,12 @@ class _LoginScreenState extends State<LoginScreen>
               Expanded(
                 child: Container(
                   padding: const EdgeInsets.all(48),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
                         colors: AppColors.blueGradient,
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight),
-                    borderRadius: const BorderRadius.only(
+                    borderRadius: BorderRadius.only(
                         topLeft: Radius.circular(24),
                         bottomLeft: Radius.circular(24)),
                   ),
@@ -372,7 +371,7 @@ class _LoginScreenState extends State<LoginScreen>
                         width: 100,
                         height: 100,
                         decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.2),
+                            color: Colors.white.withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(20)),
                         child: const Icon(Icons.school_rounded,
                             size: 48, color: Colors.white),
@@ -435,7 +434,6 @@ class _LoginScreenState extends State<LoginScreen>
         if (showLogo) ...[
           const SizedBox(height: 32),
           Align(
-            alignment: Alignment.center,
             child: Container(
               width: 80,
               height: 80,
@@ -444,7 +442,7 @@ class _LoginScreenState extends State<LoginScreen>
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
-                      color: AppColors.telegramBlue.withOpacity(0.3),
+                      color: AppColors.telegramBlue.withValues(alpha: 0.3),
                       blurRadius: 20,
                       spreadRadius: 2)
                 ],
@@ -483,10 +481,12 @@ class _LoginScreenState extends State<LoginScreen>
                   hintText: 'Enter your username',
                   prefixIcon: Icons.person_outline_rounded,
                   validator: (value) {
-                    if (value == null || value.isEmpty)
+                    if (value == null || value.isEmpty) {
                       return 'Username is required';
-                    if (value.length < 3)
+                    }
+                    if (value.length < 3) {
                       return 'Username must be at least 3 characters';
+                    }
                     return null;
                   },
                 ),
@@ -501,8 +501,9 @@ class _LoginScreenState extends State<LoginScreen>
                   label: 'Password',
                   hintText: 'Enter your password',
                   validator: (value) {
-                    if (value == null || value.isEmpty)
+                    if (value == null || value.isEmpty) {
                       return 'Password is required';
+                    }
                     return null;
                   },
                 ),
@@ -584,7 +585,7 @@ class _LoginScreenState extends State<LoginScreen>
         padding: const EdgeInsets.all(12),
         child: Row(
           children: [
-            SizedBox(
+            const SizedBox(
                 width: 20,
                 height: 20,
                 child: CircularProgressIndicator(

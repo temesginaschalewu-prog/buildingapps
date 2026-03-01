@@ -10,7 +10,6 @@ import 'package:familyacademyclient/themes/app_themes.dart';
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/themes/app_text_styles.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
-import '../../utils/helpers.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -104,14 +103,13 @@ class _SplashScreenState extends State<SplashScreen>
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                AppColors.getCard(context).withOpacity(0.4),
-                AppColors.getCard(context).withOpacity(0.2),
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: AppColors.telegramBlue.withOpacity(0.2),
-              width: 1,
+              color: AppColors.telegramBlue.withValues(alpha: 0.2),
             ),
           ),
           child: child,
@@ -156,15 +154,16 @@ class _SplashScreenState extends State<SplashScreen>
 
       String newStatus = _currentStatus;
 
-      if (!_routerReady)
+      if (!_routerReady) {
         newStatus = 'Checking user status...';
-      else if (_authCompleted) {
+      } else if (_authCompleted) {
         newStatus = 'Ready!';
         timer.cancel();
       }
 
-      if (mounted && newStatus != _currentStatus)
+      if (mounted && newStatus != _currentStatus) {
         setState(() => _currentStatus = newStatus);
+      }
     });
   }
 
@@ -176,23 +175,26 @@ class _SplashScreenState extends State<SplashScreen>
 
       if (authProvider.isAuthenticated && authProvider.isInitialized) {
         final user = authProvider.currentUser;
-        if (user?.schoolId == null)
+        if (user?.schoolId == null) {
           context.go('/school-selection');
-        else
+        } else {
           context.go('/');
+        }
         return;
       }
 
-      if (mounted)
+      if (mounted) {
         setState(() => _currentStatus = 'Initializing authentication...');
+      }
 
       await authProvider.initialize();
 
-      if (mounted)
+      if (mounted) {
         setState(() {
           _authInitialized = true;
           _currentStatus = 'Authentication initialized';
         });
+      }
 
       if (!mounted) return;
 
@@ -235,10 +237,11 @@ class _SplashScreenState extends State<SplashScreen>
     if (isAuthenticated) {
       Future.delayed(const Duration(milliseconds: 500), () {
         if (!mounted) return;
-        if (user?.schoolId == null)
+        if (user?.schoolId == null) {
           context.go('/school-selection');
-        else
+        } else {
           context.go('/');
+        }
       });
     } else {
       Future.delayed(const Duration(milliseconds: 500), () {
@@ -259,13 +262,13 @@ class _SplashScreenState extends State<SplashScreen>
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    AppColors.telegramRed.withOpacity(0.2),
-                    AppColors.telegramRed.withOpacity(0.1),
+                    AppColors.telegramRed.withValues(alpha: 0.2),
+                    AppColors.telegramRed.withValues(alpha: 0.1),
                   ],
                 ),
                 shape: BoxShape.circle,
               ),
-              child: Icon(Icons.error_outline_rounded,
+              child: const Icon(Icons.error_outline_rounded,
                   size: 32, color: AppColors.telegramRed),
             ),
           ).animate().shake(duration: 600.ms),
@@ -293,13 +296,13 @@ class _SplashScreenState extends State<SplashScreen>
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
-                        AppColors.telegramGreen.withOpacity(0.2),
-                        AppColors.telegramGreen.withOpacity(0.1),
+                        AppColors.telegramGreen.withValues(alpha: 0.2),
+                        AppColors.telegramGreen.withValues(alpha: 0.1),
                       ],
                     ),
                     shape: BoxShape.circle,
                   ),
-                  child: Center(
+                  child: const Center(
                       child: Icon(Icons.check_rounded,
                           size: 32, color: AppColors.telegramGreen)),
                 ),
@@ -317,13 +320,13 @@ class _SplashScreenState extends State<SplashScreen>
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: [
-              AppColors.telegramBlue.withOpacity(0.2),
-              AppColors.telegramPurple.withOpacity(0.1),
+              AppColors.telegramBlue.withValues(alpha: 0.2),
+              AppColors.telegramPurple.withValues(alpha: 0.1),
             ],
           ),
           shape: BoxShape.circle,
         ),
-        child: Center(
+        child: const Center(
           child: SizedBox(
               width: 30,
               height: 30,
@@ -365,7 +368,7 @@ class _SplashScreenState extends State<SplashScreen>
                               desktop: 160),
                           padding: const EdgeInsets.all(24),
                           decoration: BoxDecoration(
-                            gradient: LinearGradient(
+                            gradient: const LinearGradient(
                                 colors: AppColors.blueGradient,
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight),
@@ -373,7 +376,7 @@ class _SplashScreenState extends State<SplashScreen>
                             boxShadow: [
                               BoxShadow(
                                   color:
-                                      AppColors.telegramBlue.withOpacity(0.3),
+                                      AppColors.telegramBlue.withValues(alpha: 0.3),
                                   blurRadius: 24,
                                   offset: const Offset(0, 12))
                             ],
@@ -437,20 +440,20 @@ class _SplashScreenState extends State<SplashScreen>
                           gradient: LinearGradient(
                             colors: _hasError
                                 ? [
-                                    AppColors.telegramRed.withOpacity(0.2),
-                                    AppColors.telegramRed.withOpacity(0.1),
+                                    AppColors.telegramRed.withValues(alpha: 0.2),
+                                    AppColors.telegramRed.withValues(alpha: 0.1),
                                   ]
                                 : (_authCompleted
                                     ? [
                                         AppColors.telegramGreen
-                                            .withOpacity(0.2),
+                                            .withValues(alpha: 0.2),
                                         AppColors.telegramGreen
-                                            .withOpacity(0.1),
+                                            .withValues(alpha: 0.1),
                                       ]
                                     : [
-                                        AppColors.telegramBlue.withOpacity(0.2),
+                                        AppColors.telegramBlue.withValues(alpha: 0.2),
                                         AppColors.telegramPurple
-                                            .withOpacity(0.1),
+                                            .withValues(alpha: 0.1),
                                       ]),
                           ),
                           borderRadius:

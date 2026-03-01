@@ -174,8 +174,9 @@ class ApiError {
   bool get isServerError => statusCode != null && statusCode! >= 500;
 
   String get userFriendlyMessage {
-    if (isNetworkError)
+    if (isNetworkError) {
       return 'Network error. Please check your internet connection.';
+    }
     if (isTimeout) return 'Request took too long. Please try again.';
     if (isUnauthorized) return 'Your session has expired. Please login again.';
     if (isNotFound) return 'The requested resource was not found.';

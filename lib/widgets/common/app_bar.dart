@@ -1,12 +1,10 @@
 import 'dart:ui';
-import 'package:familyacademyclient/themes/app_themes.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:familyacademyclient/providers/theme_provider.dart';
 import 'package:familyacademyclient/widgets/common/notification_button.dart';
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/themes/app_text_styles.dart';
-import 'package:familyacademyclient/utils/responsive.dart';
 
 class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String title;
@@ -52,14 +50,13 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                AppColors.getCard(context).withOpacity(0.4),
-                AppColors.getCard(context).withOpacity(0.2),
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: AppColors.telegramBlue.withOpacity(0.2),
-              width: 1,
+              color: AppColors.telegramBlue.withValues(alpha: 0.2),
             ),
           ),
           child: child,
@@ -119,8 +116,8 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
                 children: [
                   if (showRefresh)
                     if (isLoading)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 8.0),
+                      const Padding(
+                        padding: EdgeInsets.only(right: 8.0),
                         child: SizedBox(
                           width: 20,
                           height: 20,
@@ -136,7 +133,7 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
                         onTap: onRefresh,
                         child: _buildGlassContainer(
                           context,
-                          child: Container(
+                          child: const SizedBox(
                             width: 40,
                             height: 40,
                             child: Center(
@@ -155,7 +152,7 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
                       onTap: themeProvider.toggleTheme,
                       child: _buildGlassContainer(
                         context,
-                        child: Container(
+                        child: SizedBox(
                           width: 40,
                           height: 40,
                           child: Center(

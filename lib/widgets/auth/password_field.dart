@@ -153,14 +153,12 @@ class _PasswordFieldState extends State<PasswordField> {
               borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
               borderSide: BorderSide(
                 color: Theme.of(context).colorScheme.outline,
-                width: 1.0,
               ),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
               borderSide: BorderSide(
                 color: Theme.of(context).colorScheme.outline,
-                width: 1.0,
               ),
             ),
             focusedBorder: OutlineInputBorder(
@@ -173,8 +171,7 @@ class _PasswordFieldState extends State<PasswordField> {
             disabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
               borderSide: BorderSide(
-                color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
-                width: 1.0,
+                color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
               ),
             ),
             errorBorder: OutlineInputBorder(
@@ -206,7 +203,7 @@ class _PasswordFieldState extends State<PasswordField> {
                     child: LinearProgressIndicator(
                       value: strength,
                       backgroundColor:
-                          Theme.of(context).colorScheme.surfaceVariant,
+                          Theme.of(context).colorScheme.surfaceContainerHighest,
                       valueColor: AlwaysStoppedAnimation<Color>(
                         _getStrengthColor(strength, context),
                       ),
@@ -254,7 +251,7 @@ class ConfirmPasswordField extends StatefulWidget {
 }
 
 class _ConfirmPasswordFieldState extends State<ConfirmPasswordField> {
-  bool _obscureText = true;
+  final bool _obscureText = true;
 
   String? _validateConfirmPassword(String? value) {
     if (value == null || value.isEmpty) {

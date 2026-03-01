@@ -100,14 +100,12 @@ class AuthFormField extends StatelessWidget {
               borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
               borderSide: BorderSide(
                 color: Theme.of(context).colorScheme.outline,
-                width: 1.0,
               ),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
               borderSide: BorderSide(
                 color: Theme.of(context).colorScheme.outline,
-                width: 1.0,
               ),
             ),
             focusedBorder: OutlineInputBorder(
@@ -120,8 +118,7 @@ class AuthFormField extends StatelessWidget {
             disabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
               borderSide: BorderSide(
-                color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
-                width: 1.0,
+                color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
               ),
             ),
             errorBorder: OutlineInputBorder(
@@ -225,14 +222,12 @@ class AuthFormFieldWithIcon extends StatelessWidget {
               borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
               borderSide: BorderSide(
                 color: Theme.of(context).colorScheme.outline,
-                width: 1.0,
               ),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
               borderSide: BorderSide(
                 color: Theme.of(context).colorScheme.outline,
-                width: 1.0,
               ),
             ),
             focusedBorder: OutlineInputBorder(
@@ -245,8 +240,7 @@ class AuthFormFieldWithIcon extends StatelessWidget {
             disabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
               borderSide: BorderSide(
-                color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
-                width: 1.0,
+                color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
               ),
             ),
             errorBorder: OutlineInputBorder(

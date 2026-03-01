@@ -9,13 +9,13 @@ class QuestionProvider with ChangeNotifier {
   final ApiService apiService;
   final DeviceService deviceService;
 
-  List<Question> _questions = [];
-  Map<int, List<Question>> _questionsByChapter = {};
-  Map<int, bool> _hasLoadedForChapter = {};
-  Map<int, bool> _isLoadingForChapter = {};
-  Map<int, DateTime> _lastLoadedTime = {};
-  Map<int, Map<int, bool>> _answerResults = {};
-  Map<int, Map<int, String>> _selectedAnswers = {};
+  final List<Question> _questions = [];
+  final Map<int, List<Question>> _questionsByChapter = {};
+  final Map<int, bool> _hasLoadedForChapter = {};
+  final Map<int, bool> _isLoadingForChapter = {};
+  final Map<int, DateTime> _lastLoadedTime = {};
+  final Map<int, Map<int, bool>> _answerResults = {};
+  final Map<int, Map<int, String>> _selectedAnswers = {};
   bool _isLoading = false;
   String? _error;
 

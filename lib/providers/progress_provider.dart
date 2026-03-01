@@ -570,7 +570,7 @@ class ProgressProvider with ChangeNotifier {
       await deviceService.saveCacheItem(cacheKey, progress.toJson(),
           ttl: _cacheDuration, isUserSpecific: true);
 
-      final allProgressKey = 'all_user_progress';
+      const allProgressKey = 'all_user_progress';
       final allProgressData = {
         'progress': _userProgress.map((p) => p.toJson()).toList(),
         'last_updated': DateTime.now().toIso8601String(),
@@ -584,7 +584,7 @@ class ProgressProvider with ChangeNotifier {
 
   Future<void> _markAsPendingSync(int chapterId, UserProgress progress) async {
     try {
-      final pendingKey = 'pending_progress';
+      const pendingKey = 'pending_progress';
       final existing = await deviceService
               .getCacheItem<List<dynamic>>(pendingKey, isUserSpecific: true) ??
           [];
@@ -607,7 +607,7 @@ class ProgressProvider with ChangeNotifier {
 
   Future<void> _syncPendingProgress() async {
     try {
-      final pendingKey = 'pending_progress';
+      const pendingKey = 'pending_progress';
       final pendingItems = await deviceService
           .getCacheItem<List<dynamic>>(pendingKey, isUserSpecific: true);
 

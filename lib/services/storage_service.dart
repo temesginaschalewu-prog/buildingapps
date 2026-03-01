@@ -59,7 +59,7 @@ class StorageService {
 
   Future<String?> getToken() async {
     await ensureInitialized();
-    return await _secureStorage.read(key: AppConstants.tokenKey);
+    return _secureStorage.read(key: AppConstants.tokenKey);
   }
 
   Future<void> saveRefreshToken(String refreshToken) async {
@@ -71,7 +71,7 @@ class StorageService {
 
   Future<String?> getRefreshToken() async {
     await ensureInitialized();
-    return await _secureStorage.read(key: AppConstants.refreshTokenKey);
+    return _secureStorage.read(key: AppConstants.refreshTokenKey);
   }
 
   Future<void> clearTokens() async {
@@ -193,7 +193,7 @@ class StorageService {
     final cacheData = {
       'value': data,
       'timestamp': DateTime.now().toIso8601String(),
-      'ttl': (ttl ?? Duration(days: 30)).inSeconds,
+      'ttl': (ttl ?? const Duration(days: 30)).inSeconds,
       'synced':
           !syncWithBackend, // If syncWithBackend is true, mark as not synced
     };

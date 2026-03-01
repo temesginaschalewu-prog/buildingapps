@@ -115,7 +115,7 @@ class SubscriptionProvider with ChangeNotifier {
       if (response.success && response.data != null) {
         final newSubscriptions = response.data!;
 
-        bool hasChanges = _hasSubscriptionChanges(newSubscriptions);
+        final bool hasChanges = _hasSubscriptionChanges(newSubscriptions);
 
         if (hasChanges) {
           debugLog(
@@ -234,7 +234,7 @@ class SubscriptionProvider with ChangeNotifier {
         debugLog('SubscriptionProvider',
             '❌ Failed to load subscriptions: ${response.message}');
       }
-    } catch (e, stackTrace) {
+    } catch (e) {
       _error = e.toString();
       debugLog('SubscriptionProvider', '❌ Error loading subscriptions: $e');
 
@@ -441,7 +441,7 @@ class SubscriptionProvider with ChangeNotifier {
 
     if (missingIds.isNotEmpty) {
       final futures =
-          missingIds.map((id) => checkHasActiveSubscriptionForCategory(id));
+          missingIds.map(checkHasActiveSubscriptionForCategory);
       final newResults = await Future.wait(futures);
 
       for (int i = 0; i < missingIds.length; i++) {

@@ -4,14 +4,11 @@ import 'package:familyacademyclient/widgets/common/app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_animate/flutter_animate.dart';
-import 'package:badges/badges.dart' as badges;
 
 import '../../models/chatbot_model.dart';
 import '../../providers/chatbot_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/notification_provider.dart';
-import '../../providers/theme_provider.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../themes/app_themes.dart';
@@ -84,14 +81,13 @@ class _ChatbotScreenState extends State<ChatbotScreen>
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                AppColors.getCard(context).withOpacity(0.4),
-                AppColors.getCard(context).withOpacity(0.2),
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: AppColors.telegramBlue.withOpacity(0.2),
-              width: 1,
+              color: AppColors.telegramBlue.withValues(alpha: 0.2),
             ),
           ),
           child: child,
@@ -243,13 +239,13 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
-                        AppColors.telegramYellow.withOpacity(0.2),
-                        AppColors.telegramYellow.withOpacity(0.1),
+                        AppColors.telegramYellow.withValues(alpha: 0.2),
+                        AppColors.telegramYellow.withValues(alpha: 0.1),
                       ],
                     ),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(Icons.lock_outline_rounded,
+                  child: const Icon(Icons.lock_outline_rounded,
                       color: AppColors.telegramYellow, size: 32),
                 ),
                 const SizedBox(height: 16),
@@ -326,13 +322,13 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
-                        AppColors.telegramBlue.withOpacity(0.2),
-                        AppColors.telegramPurple.withOpacity(0.1),
+                        AppColors.telegramBlue.withValues(alpha: 0.2),
+                        AppColors.telegramPurple.withValues(alpha: 0.1),
                       ],
                     ),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(Icons.chat_rounded,
+                  child: const Icon(Icons.chat_rounded,
                       color: AppColors.telegramBlue, size: 32),
                 ),
                 const SizedBox(height: 16),
@@ -450,8 +446,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
               child: Container(
                 width: 32,
                 height: 32,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
                     colors: AppColors.blueGradient,
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
@@ -474,12 +470,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                 color: isUser
                     ? AppColors.telegramBlue
                     : (isDark
-                        ? AppColors.darkCard.withOpacity(0.6)
+                        ? AppColors.darkCard.withValues(alpha: 0.6)
                         : AppColors.lightCard),
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withValues(alpha: 0.05),
                     blurRadius: 4,
                     offset: const Offset(0, 2),
                   ),
@@ -503,7 +499,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                       timeStr,
                       style: AppTextStyles.labelSmall.copyWith(
                         color: isUser
-                            ? Colors.white.withOpacity(0.7)
+                            ? Colors.white.withValues(alpha: 0.7)
                             : AppColors.getTextSecondary(context),
                       ),
                     ),
@@ -518,8 +514,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
               child: Container(
                 width: 32,
                 height: 32,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
                     colors: AppColors.purpleGradient,
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
@@ -545,7 +541,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       builder: (context, provider, child) {
         if (provider.isLoadingConversations && provider.conversations.isEmpty) {
           return const Center(
-            child: LoadingIndicator(type: LoadingType.circular),
+            child: LoadingIndicator(),
           );
         }
 
@@ -570,7 +566,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                     ),
                     const Spacer(),
                     IconButton(
-                      icon: Icon(Icons.add_comment_outlined,
+                      icon: const Icon(Icons.add_comment_outlined,
                           color: AppColors.telegramBlue),
                       onPressed: _showNewChatDialog,
                       tooltip: 'New Chat',
@@ -593,7 +589,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
             ),
             Expanded(
               child: provider.conversations.isEmpty
-                  ? EmptyState(
+                  ? const EmptyState(
                       icon: Icons.chat_outlined,
                       title: 'No Conversations',
                       message: 'Start a new chat to begin learning!',
@@ -643,10 +639,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                                                   colors: [
                                                     AppColors.getSurface(
                                                             context)
-                                                        .withOpacity(0.3),
+                                                        .withValues(alpha: 0.3),
                                                     AppColors.getSurface(
                                                             context)
-                                                        .withOpacity(0.1),
+                                                        .withValues(alpha: 0.1),
                                                   ],
                                                 ),
                                           borderRadius:
@@ -690,7 +686,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                                                     .copyWith(
                                                   color: isSelected
                                                       ? AppColors.telegramBlue
-                                                          .withOpacity(0.8)
+                                                          .withValues(alpha: 0.8)
                                                       : AppColors
                                                           .getTextSecondary(
                                                               context),
@@ -705,7 +701,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                                                     .copyWith(
                                                   color: isSelected
                                                       ? AppColors.telegramBlue
-                                                          .withOpacity(0.8)
+                                                          .withValues(alpha: 0.8)
                                                       : AppColors
                                                           .getTextSecondary(
                                                               context),
@@ -729,11 +725,11 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                                               AppThemes.borderRadiusMedium),
                                         ),
                                         itemBuilder: (context) => [
-                                          PopupMenuItem(
+                                          const PopupMenuItem(
                                             value: 'rename',
-                                            child: const Text('Rename'),
+                                            child: Text('Rename'),
                                           ),
-                                          PopupMenuItem(
+                                          const PopupMenuItem(
                                             value: 'delete',
                                             child: Text(
                                               'Delete',
@@ -795,7 +791,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                       hintText: 'Enter new title',
                       hintStyle: AppTextStyles.bodyMedium.copyWith(
                         color: AppColors.getTextSecondary(context)
-                            .withOpacity(0.5),
+                            .withValues(alpha: 0.5),
                       ),
                       border: InputBorder.none,
                       contentPadding: const EdgeInsets.all(16),
@@ -890,13 +886,13 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
-                        AppColors.telegramRed.withOpacity(0.2),
-                        AppColors.telegramRed.withOpacity(0.1),
+                        AppColors.telegramRed.withValues(alpha: 0.2),
+                        AppColors.telegramRed.withValues(alpha: 0.1),
                       ],
                     ),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(Icons.delete_outline_rounded,
+                  child: const Icon(Icons.delete_outline_rounded,
                       color: AppColors.telegramRed, size: 32),
                 ),
                 const SizedBox(height: 16),
@@ -1104,7 +1100,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                           color: isEnabled
                               ? AppColors.getTextSecondary(context)
                               : AppColors.getTextSecondary(context)
-                                  .withOpacity(0.4),
+                                  .withValues(alpha: 0.4),
                         ),
                         border: InputBorder.none,
                         contentPadding: const EdgeInsets.symmetric(
@@ -1122,10 +1118,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                 ),
                 const SizedBox(width: 8),
                 if (_isSending)
-                  Container(
+                  const SizedBox(
                     width: 48,
                     height: 48,
-                    child: const Center(
+                    child: Center(
                       child: SizedBox(
                         width: 24,
                         height: 24,
@@ -1137,7 +1133,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                   GestureDetector(
                     onTap: isEnabled ? _sendMessage : null,
                     child: _buildGlassContainer(
-                      child: Container(
+                      child: SizedBox(
                         width: 48,
                         height: 48,
                         child: Center(
@@ -1146,7 +1142,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                             color: isEnabled
                                 ? AppColors.telegramBlue
                                 : AppColors.getTextSecondary(context)
-                                    .withOpacity(0.4),
+                                    .withValues(alpha: 0.4),
                             size: 20,
                           ),
                         ),
@@ -1166,7 +1162,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       builder: (context, provider, child) {
         if (provider.isLoadingMessages && provider.messages.isEmpty) {
           return const Center(
-            child: LoadingIndicator(type: LoadingType.circular),
+            child: LoadingIndicator(),
           );
         }
 
@@ -1188,7 +1184,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
               title: 'AI Learning Assistant',
               message:
                   'Ask me about mathematics, sciences, Amharic, Ethiopian history, or get study tips. You have ${provider.remainingMessages}/${provider.dailyLimit} messages left today.',
-              centerContent: true,
             ),
           );
         }
@@ -1197,7 +1192,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           controller: _scrollController,
           padding: const EdgeInsets.all(12),
           itemCount: provider.messages.length,
-          reverse: false,
           itemBuilder: (context, index) {
             return _buildMessageBubble(provider.messages[index]);
           },
@@ -1238,9 +1232,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                     constraints: const BoxConstraints(),
                   )
                 : null,
-            showThemeToggle: true,
-            showNotification: true,
-            showRefresh: false,
             customTrailing: _buildMessageCounter(chatbotProvider),
           ),
           Expanded(

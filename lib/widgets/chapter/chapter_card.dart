@@ -13,7 +13,6 @@ import 'package:familyacademyclient/providers/payment_provider.dart';
 import 'package:familyacademyclient/providers/subscription_provider.dart';
 import 'package:familyacademyclient/themes/app_themes.dart';
 import 'package:familyacademyclient/utils/helpers.dart';
-import 'package:familyacademyclient/utils/responsive.dart';
 import 'package:shimmer/shimmer.dart';
 
 class ChapterCard extends StatelessWidget {
@@ -180,13 +179,12 @@ class ChapterCard extends StatelessWidget {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                AppColors.getCard(context).withOpacity(0.4),
-                AppColors.getCard(context).withOpacity(0.2),
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
             border: Border.all(
-              color: AppColors.telegramBlue.withOpacity(0.2),
-              width: 1,
+              color: AppColors.telegramBlue.withValues(alpha: 0.2),
             ),
           ),
           child: Padding(
@@ -204,7 +202,7 @@ class ChapterCard extends StatelessWidget {
         width: 40,
         height: 4,
         decoration: BoxDecoration(
-          color: AppColors.getTextSecondary(context).withOpacity(0.3),
+          color: AppColors.getTextSecondary(context).withValues(alpha: 0.3),
           borderRadius: BorderRadius.circular(2),
         ),
       ),
@@ -227,7 +225,7 @@ class ChapterCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: iconColor.withOpacity(0.1),
+                color: iconColor.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: Icon(icon, color: iconColor, size: 28),
@@ -301,7 +299,7 @@ class ChapterCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: gradient.first.withOpacity(0.3),
+            color: gradient.first.withValues(alpha: 0.3),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -353,7 +351,7 @@ class ChapterCard extends StatelessWidget {
             : (isTablet ? AppThemes.spacingXL : AppThemes.spacingXXL);
 
         return Container(
-          margin: margin ?? EdgeInsets.only(bottom: AppThemes.spacingL),
+          margin: margin ?? const EdgeInsets.only(bottom: AppThemes.spacingL),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(24),
             child: BackdropFilter(
@@ -364,18 +362,18 @@ class ChapterCard extends StatelessWidget {
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      AppColors.getCard(context).withOpacity(0.4),
-                      AppColors.getCard(context).withOpacity(0.2),
+                      AppColors.getCard(context).withValues(alpha: 0.4),
+                      AppColors.getCard(context).withValues(alpha: 0.2),
                     ],
                   ),
                   borderRadius: BorderRadius.circular(24),
                   border: Border.all(
                     color: hasAccess
-                        ? AppColors.telegramGreen.withOpacity(0.3)
+                        ? AppColors.telegramGreen.withValues(alpha: 0.3)
                         : chapter.isFree
-                            ? AppColors.telegramBlue.withOpacity(0.3)
+                            ? AppColors.telegramBlue.withValues(alpha: 0.3)
                             : AppColors.getTextSecondary(context)
-                                .withOpacity(0.1),
+                                .withValues(alpha: 0.1),
                     width: 1.5,
                   ),
                 ),
@@ -394,15 +392,15 @@ class ChapterCard extends StatelessWidget {
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: [
-                                  statusColor.withOpacity(0.2),
-                                  statusColor.withOpacity(0.05),
+                                  statusColor.withValues(alpha: 0.2),
+                                  statusColor.withValues(alpha: 0.05),
                                 ],
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                               ),
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(
-                                color: statusColor.withOpacity(0.3),
+                                color: statusColor.withValues(alpha: 0.3),
                                 width: 1.5,
                               ),
                             ),
@@ -437,8 +435,7 @@ class ChapterCard extends StatelessWidget {
                                     color: statusBgColor,
                                     borderRadius: BorderRadius.circular(20),
                                     border: Border.all(
-                                      color: statusColor.withOpacity(0.3),
-                                      width: 1,
+                                      color: statusColor.withValues(alpha: 0.3),
                                     ),
                                   ),
                                   child: Row(
@@ -478,7 +475,7 @@ class ChapterCard extends StatelessWidget {
                             padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
                               color: hasAccess
-                                  ? AppColors.telegramBlue.withOpacity(0.1)
+                                  ? AppColors.telegramBlue.withValues(alpha: 0.1)
                                   : Colors.transparent,
                               shape: BoxShape.circle,
                             ),
@@ -534,7 +531,7 @@ class ChapterCardShimmer extends StatelessWidget {
         : (isTablet ? AppThemes.spacingXL : AppThemes.spacingXXL);
 
     return Container(
-      margin: EdgeInsets.only(bottom: AppThemes.spacingL),
+      margin: const EdgeInsets.only(bottom: AppThemes.spacingL),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
         child: BackdropFilter(
@@ -546,14 +543,13 @@ class ChapterCardShimmer extends StatelessWidget {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  AppColors.getCard(context).withOpacity(0.4),
-                  AppColors.getCard(context).withOpacity(0.2),
+                  AppColors.getCard(context).withValues(alpha: 0.4),
+                  AppColors.getCard(context).withValues(alpha: 0.2),
                 ],
               ),
               borderRadius: BorderRadius.circular(24),
               border: Border.all(
-                color: Theme.of(context).dividerColor.withOpacity(0.1),
-                width: 1,
+                color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
               ),
             ),
             child: Row(

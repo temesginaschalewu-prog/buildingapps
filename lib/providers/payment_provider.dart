@@ -3,9 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../models/payment_model.dart';
-import '../models/setting_model.dart';
 import '../utils/helpers.dart';
-import '../utils/constants.dart';
 
 class PaymentProvider with ChangeNotifier {
   final ApiService apiService;

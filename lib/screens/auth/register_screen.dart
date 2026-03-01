@@ -7,7 +7,6 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/responsive.dart';
-import '../../themes/app_themes.dart';
 import '../../utils/helpers.dart';
 import '../../services/device_service.dart';
 import '../../services/notification_service.dart';
@@ -76,14 +75,13 @@ class _RegisterScreenState extends State<RegisterScreen>
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                AppColors.getCard(context).withOpacity(0.4),
-                AppColors.getCard(context).withOpacity(0.2),
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: AppColors.telegramBlue.withOpacity(0.2),
-              width: 1,
+              color: AppColors.telegramBlue.withValues(alpha: 0.2),
             ),
           ),
           child: child,
@@ -104,12 +102,12 @@ class _RegisterScreenState extends State<RegisterScreen>
         gradient: isEnabled ? LinearGradient(colors: gradient) : null,
         color: isEnabled
             ? null
-            : AppColors.getTextSecondary(context).withOpacity(0.2),
+            : AppColors.getTextSecondary(context).withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(16),
         boxShadow: isEnabled
             ? [
                 BoxShadow(
-                  color: gradient.first.withOpacity(0.3),
+                  color: gradient.first.withValues(alpha: 0.3),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
@@ -125,7 +123,7 @@ class _RegisterScreenState extends State<RegisterScreen>
             padding: const EdgeInsets.symmetric(vertical: 16),
             alignment: Alignment.center,
             child: isLoading
-                ? SizedBox(
+                ? const SizedBox(
                     width: 24,
                     height: 24,
                     child: CircularProgressIndicator(
@@ -232,9 +230,10 @@ class _RegisterScreenState extends State<RegisterScreen>
             isError: true);
       }
     } catch (e) {
-      if (_mounted)
+      if (_mounted) {
         showTopSnackBar(context, 'Registration failed: ${e.toString()}',
             isError: true);
+      }
     } finally {
       if (_mounted) setState(() => _isLoading = false);
     }
@@ -257,7 +256,7 @@ class _RegisterScreenState extends State<RegisterScreen>
               borderRadius: BorderRadius.circular(20),
               boxShadow: [
                 BoxShadow(
-                    color: AppColors.telegramBlue.withOpacity(0.3),
+                    color: AppColors.telegramBlue.withValues(alpha: 0.3),
                     blurRadius: 20,
                     spreadRadius: 2)
               ],
@@ -308,8 +307,9 @@ class _RegisterScreenState extends State<RegisterScreen>
         validator: (value) {
           if (value == null || value.isEmpty) return 'Username is required';
           if (value.length < 3) return 'Username must be at least 3 characters';
-          if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(value))
+          if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(value)) {
             return 'Only letters, numbers and underscore allowed';
+          }
           return null;
         },
         onChanged: (value) => setState(() {}),
@@ -321,14 +321,14 @@ class _RegisterScreenState extends State<RegisterScreen>
   }
 
   Widget _buildPasswordField() {
-    bool _obscureText = true;
+    bool obscureText = true;
 
     return StatefulBuilder(
       builder: (context, setState) {
         return _buildGlassContainer(
           child: TextFormField(
             controller: _passwordController,
-            obscureText: _obscureText,
+            obscureText: obscureText,
             decoration: InputDecoration(
               hintText: 'Password',
               hintStyle: AppTextStyles.bodyMedium
@@ -340,20 +340,21 @@ class _RegisterScreenState extends State<RegisterScreen>
                   color: AppColors.getTextSecondary(context), size: 20),
               suffixIcon: IconButton(
                 icon: Icon(
-                    _obscureText
+                    obscureText
                         ? Icons.visibility_off_rounded
                         : Icons.visibility_rounded,
                     color: AppColors.getTextSecondary(context),
                     size: 20),
-                onPressed: () => setState(() => _obscureText = !_obscureText),
+                onPressed: () => setState(() => obscureText = !obscureText),
               ),
             ),
             style: AppTextStyles.bodyLarge
                 .copyWith(color: AppColors.getTextPrimary(context)),
             validator: (value) {
               if (value == null || value.isEmpty) return 'Password is required';
-              if (value.length < 8)
+              if (value.length < 8) {
                 return 'Password must be at least 8 characters';
+              }
               return null;
             },
           ),
@@ -366,14 +367,14 @@ class _RegisterScreenState extends State<RegisterScreen>
   }
 
   Widget _buildConfirmPasswordField() {
-    bool _obscureText = true;
+    bool obscureText = true;
 
     return StatefulBuilder(
       builder: (context, setState) {
         return _buildGlassContainer(
           child: TextFormField(
             controller: _confirmPasswordController,
-            obscureText: _obscureText,
+            obscureText: obscureText,
             decoration: InputDecoration(
               hintText: 'Confirm Password',
               hintStyle: AppTextStyles.bodyMedium
@@ -385,21 +386,23 @@ class _RegisterScreenState extends State<RegisterScreen>
                   color: AppColors.getTextSecondary(context), size: 20),
               suffixIcon: IconButton(
                 icon: Icon(
-                    _obscureText
+                    obscureText
                         ? Icons.visibility_off_rounded
                         : Icons.visibility_rounded,
                     color: AppColors.getTextSecondary(context),
                     size: 20),
-                onPressed: () => setState(() => _obscureText = !_obscureText),
+                onPressed: () => setState(() => obscureText = !obscureText),
               ),
             ),
             style: AppTextStyles.bodyLarge
                 .copyWith(color: AppColors.getTextPrimary(context)),
             validator: (value) {
-              if (value == null || value.isEmpty)
+              if (value == null || value.isEmpty) {
                 return 'Please confirm your password';
-              if (value != _passwordController.text)
+              }
+              if (value != _passwordController.text) {
                 return 'Passwords do not match';
+              }
               return null;
             },
           ),
@@ -520,7 +523,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                           width: 120,
                           height: 120,
                           decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.2),
+                              color: Colors.white.withValues(alpha: 0.2),
                               borderRadius: BorderRadius.circular(20)),
                           child: const Icon(Icons.school_rounded,
                               size: 60, color: Colors.white),

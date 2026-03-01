@@ -9,11 +9,11 @@ class ChapterProvider with ChangeNotifier {
   final ApiService apiService;
   final DeviceService deviceService;
 
-  List<Chapter> _chapters = [];
-  Map<int, List<Chapter>> _chaptersByCourse = {};
-  Map<int, bool> _hasLoadedForCourse = {};
-  Map<int, bool> _isLoadingForCourse = {};
-  Map<int, DateTime> _lastLoadedTime = {};
+  final List<Chapter> _chapters = [];
+  final Map<int, List<Chapter>> _chaptersByCourse = {};
+  final Map<int, bool> _hasLoadedForCourse = {};
+  final Map<int, bool> _isLoadingForCourse = {};
+  final Map<int, DateTime> _lastLoadedTime = {};
   bool _isLoading = false;
   String? _error;
 

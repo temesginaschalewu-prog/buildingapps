@@ -93,7 +93,7 @@ class SchoolProvider with ChangeNotifier {
     _selectedSchoolId = schoolId;
 
     await deviceService.saveCacheItem('selected_school', schoolId,
-        ttl: Duration(days: 365));
+        ttl: const Duration(days: 365));
     _selectedSchoolController.add(schoolId);
     _notifySafely();
   }

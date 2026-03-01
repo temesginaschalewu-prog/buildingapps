@@ -228,7 +228,7 @@ class AppColors {
 
   // Get faded color by opacity
   static Color withOpacity(Color color, double opacity) {
-    return color.withOpacity(opacity);
+    return color.withValues(alpha: opacity);
   }
 
   // Get status color with proper context awareness
@@ -281,7 +281,7 @@ class AppColors {
 
   // Get faded version of any color
   static Color getFaded(Color color, {double opacity = 0.1}) {
-    return color.withOpacity(opacity);
+    return color.withValues(alpha: opacity);
   }
 
   // Predefined faded colors for common use cases

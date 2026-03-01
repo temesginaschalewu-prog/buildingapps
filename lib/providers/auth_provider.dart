@@ -5,8 +5,6 @@ import '../services/api_service.dart';
 import '../services/storage_service.dart';
 import '../services/device_service.dart';
 import '../models/user_model.dart';
-import '../utils/helpers.dart';
-import '../utils/constants.dart';
 import '../utils/api_response.dart';
 
 class AuthProvider with ChangeNotifier {
@@ -29,16 +27,16 @@ class AuthProvider with ChangeNotifier {
   Timer? _tokenRefreshTimer;
   static const Duration _tokenRefreshInterval = Duration(minutes: 30);
 
-  StreamController<bool> _authStateController =
+  final StreamController<bool> _authStateController =
       StreamController<bool>.broadcast();
-  StreamController<User?> _userController = StreamController<User?>.broadcast();
-  StreamController<bool> _deviceChangeController =
+  final StreamController<User?> _userController = StreamController<User?>.broadcast();
+  final StreamController<bool> _deviceChangeController =
       StreamController<bool>.broadcast();
-  StreamController<String?> _deviceDeactivatedController =
+  final StreamController<String?> _deviceDeactivatedController =
       StreamController<String?>.broadcast();
 
-  List<VoidCallback> _onLogoutCallbacks = [];
-  List<VoidCallback> _onLoginCallbacks = [];
+  final List<VoidCallback> _onLogoutCallbacks = [];
+  final List<VoidCallback> _onLoginCallbacks = [];
   StreamSubscription? _deviceDeactivationSubscription;
 
   AuthProvider(
@@ -210,12 +208,13 @@ class AuthProvider with ChangeNotifier {
 
   Future<Map<String, dynamic>> login(String username, String password,
       String deviceId, String? fcmToken) async {
-    if (_isLoading)
+    if (_isLoading) {
       return {
         'success': false,
         'message': 'Already processing',
         'requiresDeviceChange': false
       };
+    }
 
     _isLoading = true;
     _error = null;
@@ -327,7 +326,7 @@ class AuthProvider with ChangeNotifier {
           await apiService.register(username, password, deviceId, fcmToken);
 
       if (response.success && response.data != null) {
-        Map<String, dynamic> responseData = response.data!;
+        final Map<String, dynamic> responseData = response.data!;
         Map<String, dynamic> userData;
         String token;
 
@@ -433,13 +432,13 @@ class AuthProvider with ChangeNotifier {
   void _startAutoLogoutTimer() {
     _autoLogoutTimer?.cancel();
     _autoLogoutTimer =
-        Timer(_sessionDuration, () async => await logout(manual: false));
+        Timer(_sessionDuration, () async => logout(manual: false));
   }
 
   void _startTokenRefreshTimer() {
     _tokenRefreshTimer?.cancel();
     _tokenRefreshTimer = Timer.periodic(
-        _tokenRefreshInterval, (timer) async => await refreshToken());
+        _tokenRefreshInterval, (timer) async => refreshToken());
   }
 
   Future<void> refreshToken() async {

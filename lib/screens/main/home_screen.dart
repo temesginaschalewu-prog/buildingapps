@@ -1,26 +1,20 @@
 import 'dart:async';
 import 'dart:ui';
-import 'package:familyacademyclient/models/category_model.dart';
 import 'package:familyacademyclient/utils/api_response.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:badges/badges.dart' as badges;
 import 'package:pull_to_refresh/pull_to_refresh.dart' hide RefreshIndicator;
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
-import 'package:familyacademyclient/themes/app_themes.dart';
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/themes/app_text_styles.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../providers/category_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../providers/notification_provider.dart';
-import '../../providers/theme_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/category/category_card.dart';
 import '../../widgets/common/empty_state.dart';
-import '../../widgets/common/notification_button.dart';
 import '../../widgets/common/app_bar.dart';
 import '../../utils/helpers.dart';
 
@@ -55,7 +49,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _refreshController = RefreshController(initialRefresh: false);
+    _refreshController = RefreshController();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeProviders();
@@ -82,14 +76,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                AppColors.getCard(context).withOpacity(0.4),
-                AppColors.getCard(context).withOpacity(0.2),
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: AppColors.telegramBlue.withOpacity(0.2),
-              width: 1,
+              color: AppColors.telegramBlue.withValues(alpha: 0.2),
             ),
           ),
           child: child,
@@ -118,9 +111,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         child: Row(
                           children: [
                             Shimmer.fromColors(
-                              baseColor: Colors.grey[300]!.withOpacity(0.3),
+                              baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
                               highlightColor:
-                                  Colors.grey[100]!.withOpacity(0.6),
+                                  Colors.grey[100]!.withValues(alpha: 0.6),
                               child: Container(
                                   width: 18,
                                   height: 18,
@@ -130,9 +123,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             ),
                             const SizedBox(width: 4),
                             Shimmer.fromColors(
-                              baseColor: Colors.grey[300]!.withOpacity(0.3),
+                              baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
                               highlightColor:
-                                  Colors.grey[100]!.withOpacity(0.6),
+                                  Colors.grey[100]!.withValues(alpha: 0.6),
                               child: Container(
                                   width: 100,
                                   height: 16,
@@ -149,8 +142,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 4),
                         child: Shimmer.fromColors(
-                          baseColor: Colors.grey[300]!.withOpacity(0.3),
-                          highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                          baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                          highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                           child: Container(
                               width: 30,
                               height: 16,
@@ -271,8 +264,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     setState(() => _isFirstLoad = true);
 
     try {
-      await _categoryProvider.loadCategories(forceRefresh: false);
-      await _subscriptionProvider.loadSubscriptions(forceRefresh: false);
+      await _categoryProvider.loadCategories();
+      await _subscriptionProvider.loadSubscriptions();
       await _loadNotifications();
 
       final activeCategories = _categoryProvider.activeCategories;
@@ -313,7 +306,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             .checkSubscriptionsForCategories(categoryIds);
         if (mounted) setState(() => _categorySubscriptionCache.addAll(results));
       }
-    } catch (e) {
     } finally {
       _isRefreshing = false;
       _refreshController.refreshCompleted();
@@ -375,9 +367,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _loadNotifications() async {
     try {
       await _notificationProvider.loadNotifications();
-      if (mounted)
+      if (mounted) {
         setState(
             () => _unreadNotifications = _notificationProvider.unreadCount);
+      }
     } catch (e) {}
   }
 
@@ -408,10 +401,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           child: CustomAppBar(
             title: _greeting,
             subtitle: _ethiopianTime,
-            showThemeToggle: true,
-            showNotification: true,
-            showRefresh: false,
-            useSliver: false,
           ),
         ),
         if (activeCategories.isNotEmpty) ...[
@@ -427,7 +416,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           horizontal: 12, vertical: 4),
                       child: Row(
                         children: [
-                          Icon(Icons.star_rounded,
+                          const Icon(Icons.star_rounded,
                               color: AppColors.telegramBlue, size: 18),
                           const SizedBox(width: 4),
                           Text(
@@ -478,7 +467,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   return CategoryCard(
                     category: category,
                     hasSubscription: hasSubscription,
-                    isCheckingSubscription: false,
                     hasCachedData: _hasCachedCategories,
                     isRefreshInProgress: _isRefreshing,
                     onTap: () {
@@ -508,7 +496,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.timer_rounded,
+                          const Icon(Icons.timer_rounded,
                               color: AppColors.telegramOrange, size: 18),
                           const SizedBox(width: 4),
                           Text('Coming Soon',
@@ -546,8 +534,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   return CategoryCard(
                     category: category,
                     hasSubscription: false,
-                    isCheckingSubscription: false,
-                    onTap: null,
                     index: index + activeCategories.length,
                   );
                 },

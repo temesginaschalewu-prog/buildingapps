@@ -8,19 +8,18 @@ import '../services/device_service.dart';
 import '../models/exam_question_model.dart';
 import '../utils/helpers.dart';
 import '../utils/api_response.dart';
-import '../utils/constants.dart';
 
 class ExamQuestionProvider with ChangeNotifier {
   final ApiService apiService;
   final DeviceService deviceService;
   BuildContext? _context;
 
-  List<ExamQuestion> _examQuestions = [];
-  Map<int, List<ExamQuestion>> _questionsByExam = {};
-  Map<int, DateTime> _lastLoadedTime = {};
-  Map<int, bool> _isLoadingExam = {};
-  Map<int, bool> _examAccessChecked = {};
-  Map<int, bool> _examHasAccess = {};
+  final List<ExamQuestion> _examQuestions = [];
+  final Map<int, List<ExamQuestion>> _questionsByExam = {};
+  final Map<int, DateTime> _lastLoadedTime = {};
+  final Map<int, bool> _isLoadingExam = {};
+  final Map<int, bool> _examAccessChecked = {};
+  final Map<int, bool> _examHasAccess = {};
   bool _isLoading = false;
   String? _error;
   Timer? _cacheCleanupTimer;
@@ -32,7 +31,6 @@ class ExamQuestionProvider with ChangeNotifier {
 
   static const Duration _cacheDuration = Duration(minutes: 30);
   static const Duration _cacheCleanupInterval = Duration(minutes: 15);
-  static const Duration _accessCheckTTL = Duration(minutes: 5);
 
   ExamQuestionProvider({
     required this.apiService,
@@ -80,7 +78,7 @@ class ExamQuestionProvider with ChangeNotifier {
     try {
       debugLog('ExamQuestionProvider', 'Checking access for exam: $examId');
 
-      BuildContext? checkContext = _context;
+      final BuildContext? checkContext = _context;
 
       if (checkContext == null || !checkContext.mounted) {
         debugLog('ExamQuestionProvider',
@@ -303,7 +301,7 @@ class ExamQuestionProvider with ChangeNotifier {
           .getCacheItem<List<Map<String, dynamic>>>('exam_questions_$examId',
               isUserSpecific: true);
       if (cached != null) {
-        return cached.map((item) => ExamQuestion.fromJson(item)).toList();
+        return cached.map(ExamQuestion.fromJson).toList();
       }
     } catch (e) {
       debugLog('ExamQuestionProvider', 'Error reading cached questions: $e');
@@ -448,7 +446,7 @@ class ExamQuestionProvider with ChangeNotifier {
     _notifySafely();
   }
 
-  void clearExamQuestionsForExam(int examId) async {
+  Future<void> clearExamQuestionsForExam(int examId) async {
     await deviceService.removeCacheItem('exam_questions_$examId',
         isUserSpecific: true);
     await deviceService.removeCacheItem('exam_access_$examId',

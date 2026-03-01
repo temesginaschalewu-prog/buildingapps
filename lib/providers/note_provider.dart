@@ -9,12 +9,12 @@ class NoteProvider with ChangeNotifier {
   final ApiService apiService;
   final DeviceService deviceService;
 
-  List<Note> _notes = [];
-  Map<int, List<Note>> _notesByChapter = {};
-  Map<int, bool> _hasLoadedForChapter = {};
-  Map<int, bool> _isLoadingForChapter = {};
-  Map<int, DateTime> _lastLoadedTime = {};
-  Map<int, bool> _noteViewedStatus = {};
+  final List<Note> _notes = [];
+  final Map<int, List<Note>> _notesByChapter = {};
+  final Map<int, bool> _hasLoadedForChapter = {};
+  final Map<int, bool> _isLoadingForChapter = {};
+  final Map<int, DateTime> _lastLoadedTime = {};
+  final Map<int, bool> _noteViewedStatus = {};
   bool _isLoading = false;
   String? _error;
 

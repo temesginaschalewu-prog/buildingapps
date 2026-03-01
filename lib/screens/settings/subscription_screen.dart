@@ -81,14 +81,13 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                AppColors.getCard(context).withOpacity(0.4),
-                AppColors.getCard(context).withOpacity(0.2),
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: AppColors.telegramBlue.withOpacity(0.2),
-              width: 1,
+              color: AppColors.telegramBlue.withValues(alpha: 0.2),
             ),
           ),
           child: child,
@@ -139,7 +138,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                   }
                 : null,
             borderRadius: BorderRadius.circular(24),
-            splashColor: AppColors.telegramBlue.withOpacity(0.1),
+            splashColor: AppColors.telegramBlue.withValues(alpha: 0.1),
             highlightColor: Colors.transparent,
             child: Padding(
               padding: EdgeInsets.all(ScreenSize.responsiveValue(
@@ -155,8 +154,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
-                              statusColor.withOpacity(0.2),
-                              statusColor.withOpacity(0.05),
+                              statusColor.withValues(alpha: 0.2),
+                              statusColor.withValues(alpha: 0.05),
                             ],
                           ),
                           borderRadius: BorderRadius.circular(16),
@@ -203,12 +202,12 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
-                              statusColor.withOpacity(0.2),
-                              statusColor.withOpacity(0.05),
+                              statusColor.withValues(alpha: 0.2),
+                              statusColor.withValues(alpha: 0.05),
                             ],
                           ),
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: statusColor, width: 1),
+                          border: Border.all(color: statusColor),
                         ),
                         child: Text(
                           _getStatusText(status),
@@ -248,7 +247,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                           child: LinearProgressIndicator(
                             value: progressValue.clamp(0.0, 1.0),
                             backgroundColor:
-                                AppColors.getSurface(context).withOpacity(0.3),
+                                AppColors.getSurface(context).withValues(alpha: 0.3),
                             color: statusColor,
                             minHeight: 6,
                           ),
@@ -323,7 +322,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                               AppThemes.borderRadiusMedium),
                           boxShadow: [
                             BoxShadow(
-                              color: statusColor.withOpacity(0.3),
+                              color: statusColor.withValues(alpha: 0.3),
                               blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),
@@ -406,8 +405,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
             decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    AppColors.telegramBlue.withOpacity(0.2),
-                    AppColors.telegramPurple.withOpacity(0.1),
+                    AppColors.telegramBlue.withValues(alpha: 0.2),
+                    AppColors.telegramPurple.withValues(alpha: 0.1),
                   ],
                 ),
                 shape: BoxShape.circle),
@@ -451,13 +450,13 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
-                            AppColors.statusPending.withOpacity(0.2),
-                            AppColors.statusPending.withOpacity(0.1),
+                            AppColors.statusPending.withValues(alpha: 0.2),
+                            AppColors.statusPending.withValues(alpha: 0.1),
                           ],
                         ),
                         shape: BoxShape.circle,
                       ),
-                      child: Icon(Icons.warning_amber_rounded,
+                      child: const Icon(Icons.warning_amber_rounded,
                           color: AppColors.statusPending, size: 24),
                     ),
                   );
@@ -482,7 +481,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                   ],
                 ),
               ),
-              Icon(Icons.arrow_forward_rounded, color: AppColors.statusPending),
+              const Icon(Icons.arrow_forward_rounded, color: AppColors.statusPending),
             ],
           ),
         ),
@@ -504,8 +503,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                       child: Row(
                         children: [
                           Shimmer.fromColors(
-                            baseColor: Colors.grey[300]!.withOpacity(0.3),
-                            highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                            baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                            highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                             child: Container(
                               width: 48,
                               height: 48,
@@ -521,9 +520,9 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Shimmer.fromColors(
-                                  baseColor: Colors.grey[300]!.withOpacity(0.3),
+                                  baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
                                   highlightColor:
-                                      Colors.grey[100]!.withOpacity(0.6),
+                                      Colors.grey[100]!.withValues(alpha: 0.6),
                                   child: Container(
                                     height: 20,
                                     decoration: BoxDecoration(
@@ -534,9 +533,9 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                                 ),
                                 const SizedBox(height: 8),
                                 Shimmer.fromColors(
-                                  baseColor: Colors.grey[300]!.withOpacity(0.3),
+                                  baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
                                   highlightColor:
-                                      Colors.grey[100]!.withOpacity(0.6),
+                                      Colors.grey[100]!.withValues(alpha: 0.6),
                                   child: Container(
                                     height: 16,
                                     width: 100,
@@ -625,8 +624,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                       decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
-                              AppColors.telegramGreen.withOpacity(0.2),
-                              AppColors.telegramGreen.withOpacity(0.1),
+                              AppColors.telegramGreen.withValues(alpha: 0.2),
+                              AppColors.telegramGreen.withValues(alpha: 0.1),
                             ],
                           ),
                           borderRadius: BorderRadius.circular(20)),
@@ -671,8 +670,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                       decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
-                              AppColors.telegramRed.withOpacity(0.2),
-                              AppColors.telegramRed.withOpacity(0.1),
+                              AppColors.telegramRed.withValues(alpha: 0.2),
+                              AppColors.telegramRed.withValues(alpha: 0.1),
                             ],
                           ),
                           borderRadius: BorderRadius.circular(20)),
@@ -704,17 +703,15 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                   actionText: 'Browse Categories',
                   onAction: () => context.go('/'),
                   type: EmptyStateType.noData,
-                  showAnimation: true,
                 ),
               ),
             ),
           if (subscriptionProvider.isLoading && allSubscriptions.isNotEmpty)
-            SliverToBoxAdapter(
+            const SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.all(24),
+                padding: EdgeInsets.all(24),
                 child: Center(
                     child: LoadingIndicator(
-                        type: LoadingType.circular,
                         size: 32,
                         color: AppColors.telegramBlue)),
               ),
@@ -746,7 +743,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
       actions: [
         IconButton(
           icon: _isRefreshing
-              ? SizedBox(
+              ? const SizedBox(
                   width: 20,
                   height: 20,
                   child: CircularProgressIndicator(
@@ -837,8 +834,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                         decoration: BoxDecoration(
                             gradient: LinearGradient(
                               colors: [
-                                AppColors.telegramGreen.withOpacity(0.2),
-                                AppColors.telegramGreen.withOpacity(0.1),
+                                AppColors.telegramGreen.withValues(alpha: 0.2),
+                                AppColors.telegramGreen.withValues(alpha: 0.1),
                               ],
                             ),
                             borderRadius: BorderRadius.circular(20)),
@@ -890,8 +887,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                         decoration: BoxDecoration(
                             gradient: LinearGradient(
                               colors: [
-                                AppColors.telegramRed.withOpacity(0.2),
-                                AppColors.telegramRed.withOpacity(0.1),
+                                AppColors.telegramRed.withValues(alpha: 0.2),
+                                AppColors.telegramRed.withValues(alpha: 0.1),
                               ],
                             ),
                             borderRadius: BorderRadius.circular(20)),
@@ -933,18 +930,15 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                           'You don\'t have any active subscriptions.\nBrowse categories to start learning.',
                       actionText: 'Browse Categories',
                       onAction: () => context.go('/'),
-                      centerContent: true,
                       type: EmptyStateType.noData,
-                      showAnimation: true,
                     ),
                   ),
                 ),
               if (subscriptionProvider.isLoading && allSubscriptions.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 32),
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 32),
                   child: Center(
                       child: LoadingIndicator(
-                          type: LoadingType.circular,
                           size: 40,
                           color: AppColors.telegramBlue)),
                 ),
@@ -956,7 +950,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
       floatingActionButton: allSubscriptions.isEmpty
           ? FloatingActionButton.extended(
               onPressed: () => context.go('/'),
-              icon: Icon(Icons.explore_rounded, color: Colors.white),
+              icon: const Icon(Icons.explore_rounded, color: Colors.white),
               label: Text('Browse Categories',
                   style:
                       AppTextStyles.buttonMedium.copyWith(color: Colors.white)),

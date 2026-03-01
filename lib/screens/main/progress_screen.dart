@@ -1,29 +1,21 @@
 import 'dart:async';
 import 'dart:ui';
-import 'package:familyacademyclient/models/progress_model.dart';
 import 'package:familyacademyclient/providers/subscription_provider.dart';
-import 'package:familyacademyclient/providers/theme_provider.dart';
 import 'package:familyacademyclient/widgets/common/app_bar.dart';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shimmer/shimmer.dart';
-import 'package:badges/badges.dart' as badges;
 import 'package:familyacademyclient/providers/auth_provider.dart';
 import 'package:familyacademyclient/providers/streak_provider.dart';
 import 'package:familyacademyclient/providers/exam_provider.dart';
 import 'package:familyacademyclient/providers/progress_provider.dart';
 import 'package:familyacademyclient/providers/category_provider.dart';
 import 'package:familyacademyclient/providers/notification_provider.dart';
-import 'package:familyacademyclient/themes/app_themes.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/themes/app_text_styles.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import '../../utils/helpers.dart';
-import '../../widgets/progress/streak_widget.dart';
 import '../../widgets/progress/achievement_badge.dart';
-import '../../widgets/progress/progress_chart.dart';
 
 class ProgressScreen extends StatefulWidget {
   const ProgressScreen({super.key});
@@ -87,14 +79,13 @@ class _ProgressScreenState extends State<ProgressScreen>
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                AppColors.getCard(context).withOpacity(0.4),
-                AppColors.getCard(context).withOpacity(0.2),
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: AppColors.telegramBlue.withOpacity(0.2),
-              width: 1,
+              color: AppColors.telegramBlue.withValues(alpha: 0.2),
             ),
           ),
           child: child,
@@ -111,8 +102,8 @@ class _ProgressScreenState extends State<ProgressScreen>
         height: 80,
         padding: const EdgeInsets.all(8),
         child: Shimmer.fromColors(
-          baseColor: Colors.grey[300]!.withOpacity(0.3),
-          highlightColor: Colors.grey[100]!.withOpacity(0.6),
+          baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+          highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
           child: Container(
             decoration: const BoxDecoration(
               color: Colors.white,
@@ -128,7 +119,7 @@ class _ProgressScreenState extends State<ProgressScreen>
     try {
       final notificationProvider =
           Provider.of<NotificationProvider>(context, listen: false);
-      await notificationProvider.loadNotifications(forceRefresh: false);
+      await notificationProvider.loadNotifications();
       if (mounted) {
         setState(() => _unreadNotifications = notificationProvider.unreadCount);
       }
@@ -143,7 +134,7 @@ class _ProgressScreenState extends State<ProgressScreen>
       if (user != null && user.accountStatus != 'active') {
         final subscriptionProvider =
             Provider.of<SubscriptionProvider>(context, listen: false);
-        await subscriptionProvider.loadSubscriptions(forceRefresh: false);
+        await subscriptionProvider.loadSubscriptions();
 
         if (subscriptionProvider.activeSubscriptions.isNotEmpty) {
           final updatedUser = user.copyWith(accountStatus: 'active');
@@ -224,10 +215,10 @@ class _ProgressScreenState extends State<ProgressScreen>
 
       // Load data in parallel
       await Future.wait([
-        streakProvider.loadStreak(forceRefresh: false),
-        examProvider.loadMyExamResults(forceRefresh: false),
-        categoryProvider.loadCategories(forceRefresh: false),
-        progressProvider.loadOverallProgress(forceRefresh: false),
+        streakProvider.loadStreak(),
+        examProvider.loadMyExamResults(),
+        categoryProvider.loadCategories(),
+        progressProvider.loadOverallProgress(),
       ]);
 
       await _loadNotifications();
@@ -450,8 +441,8 @@ class _ProgressScreenState extends State<ProgressScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Shimmer.fromColors(
-                baseColor: Colors.grey[300]!.withOpacity(0.3),
-                highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                 child: Container(
                   width: 150,
                   height: 20,
@@ -469,8 +460,8 @@ class _ProgressScreenState extends State<ProgressScreen>
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Shimmer.fromColors(
-                            baseColor: Colors.grey[300]!.withOpacity(0.3),
-                            highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                            baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                            highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                             child: Container(
                               width: 100,
                               height: 16,
@@ -478,8 +469,8 @@ class _ProgressScreenState extends State<ProgressScreen>
                             ),
                           ),
                           Shimmer.fromColors(
-                            baseColor: Colors.grey[300]!.withOpacity(0.3),
-                            highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                            baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                            highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                             child: Container(
                               width: 50,
                               height: 16,
@@ -490,8 +481,8 @@ class _ProgressScreenState extends State<ProgressScreen>
                       ),
                       const SizedBox(height: 8),
                       Shimmer.fromColors(
-                        baseColor: Colors.grey[300]!.withOpacity(0.3),
-                        highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                        baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                        highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                         child: Container(
                           width: double.infinity,
                           height: 6,
@@ -581,7 +572,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                         ),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Center(
+                      child: const Center(
                         child: Icon(
                           Icons.timer_rounded,
                           color: Colors.white,
@@ -647,7 +638,7 @@ class _ProgressScreenState extends State<ProgressScreen>
           borderRadius: BorderRadius.circular(8),
           child: LinearProgressIndicator(
             value: percentage / 100,
-            backgroundColor: AppColors.getSurface(context).withOpacity(0.3),
+            backgroundColor: AppColors.getSurface(context).withValues(alpha: 0.3),
             valueColor: AlwaysStoppedAnimation<Color>(color),
             minHeight: 8,
           ),
@@ -665,8 +656,8 @@ class _ProgressScreenState extends State<ProgressScreen>
           child: Column(
             children: [
               Shimmer.fromColors(
-                baseColor: Colors.grey[300]!.withOpacity(0.3),
-                highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                 child: Container(
                   width: 150,
                   height: 20,
@@ -680,8 +671,8 @@ class _ProgressScreenState extends State<ProgressScreen>
                   margin: const EdgeInsets.only(bottom: 12),
                   height: 60,
                   child: Shimmer.fromColors(
-                    baseColor: Colors.grey[300]!.withOpacity(0.3),
-                    highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                    baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                    highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                     child: Container(
                       decoration: BoxDecoration(
                         color: Colors.white,
@@ -739,7 +730,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                           Icons.quiz_outlined,
                           size: 48,
                           color: AppColors.getTextSecondary(context)
-                              .withOpacity(0.3),
+                              .withValues(alpha: 0.3),
                         ),
                         const SizedBox(height: 12),
                         Text(
@@ -753,7 +744,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                           'Take your first exam to see results here',
                           style: AppTextStyles.labelSmall.copyWith(
                             color: AppColors.getTextSecondary(context)
-                                .withOpacity(0.7),
+                                .withValues(alpha: 0.7),
                           ),
                         ),
                       ],
@@ -834,7 +825,7 @@ class _ProgressScreenState extends State<ProgressScreen>
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
+              color: color.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Center(
@@ -880,12 +871,12 @@ class _ProgressScreenState extends State<ProgressScreen>
                 gradient: LinearGradient(
                   colors: passed
                       ? [
-                          AppColors.telegramGreen.withOpacity(0.2),
-                          AppColors.telegramGreen.withOpacity(0.1)
+                          AppColors.telegramGreen.withValues(alpha: 0.2),
+                          AppColors.telegramGreen.withValues(alpha: 0.1)
                         ]
                       : [
-                          AppColors.telegramRed.withOpacity(0.2),
-                          AppColors.telegramRed.withOpacity(0.1)
+                          AppColors.telegramRed.withValues(alpha: 0.2),
+                          AppColors.telegramRed.withValues(alpha: 0.1)
                         ],
                 ),
                 borderRadius: BorderRadius.circular(8),
@@ -935,12 +926,12 @@ class _ProgressScreenState extends State<ProgressScreen>
                           gradient: LinearGradient(
                             colors: passed
                                 ? [
-                                    AppColors.telegramGreen.withOpacity(0.2),
-                                    AppColors.telegramGreen.withOpacity(0.1)
+                                    AppColors.telegramGreen.withValues(alpha: 0.2),
+                                    AppColors.telegramGreen.withValues(alpha: 0.1)
                                   ]
                                 : [
-                                    AppColors.telegramRed.withOpacity(0.2),
-                                    AppColors.telegramRed.withOpacity(0.1)
+                                    AppColors.telegramRed.withValues(alpha: 0.2),
+                                    AppColors.telegramRed.withValues(alpha: 0.1)
                                   ],
                           ),
                           borderRadius: BorderRadius.circular(12),
@@ -995,8 +986,8 @@ class _ProgressScreenState extends State<ProgressScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Shimmer.fromColors(
-                baseColor: Colors.grey[300]!.withOpacity(0.3),
-                highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                 child: Container(
                   width: 150,
                   height: 20,
@@ -1015,8 +1006,8 @@ class _ProgressScreenState extends State<ProgressScreen>
                 ),
                 itemCount: 6,
                 itemBuilder: (context, index) => Shimmer.fromColors(
-                  baseColor: Colors.grey[300]!.withOpacity(0.3),
-                  highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                  baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                  highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                   child: Container(
                     decoration: BoxDecoration(
                       color: Colors.white,
@@ -1149,12 +1140,9 @@ class _ProgressScreenState extends State<ProgressScreen>
                     subtitle: _isRefreshing && !_isInitialLoad
                         ? 'Refreshing...'
                         : 'Track your learning journey',
-                    showThemeToggle: true,
-                    showNotification: true,
                     showRefresh: true,
                     isLoading: _isRefreshing,
                     onRefresh: _manualRefresh,
-                    useSliver: false,
                   ),
                 ),
                 SliverPadding(

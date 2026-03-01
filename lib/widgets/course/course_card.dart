@@ -8,7 +8,6 @@ import 'package:shimmer/shimmer.dart';
 import '../../models/course_model.dart';
 import '../../providers/subscription_provider.dart';
 import '../../themes/app_themes.dart';
-import '../../utils/responsive.dart';
 
 class CourseCard extends StatelessWidget {
   final Course course;
@@ -77,7 +76,7 @@ class CourseCard extends StatelessWidget {
             : (isTablet ? AppThemes.spacingXL : AppThemes.spacingXXL);
 
         return Container(
-          margin: margin ?? EdgeInsets.only(bottom: AppThemes.spacingL),
+          margin: margin ?? const EdgeInsets.only(bottom: AppThemes.spacingL),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(24),
             child: BackdropFilter(
@@ -88,13 +87,13 @@ class CourseCard extends StatelessWidget {
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      AppColors.getCard(context).withOpacity(0.4),
-                      AppColors.getCard(context).withOpacity(0.2),
+                      AppColors.getCard(context).withValues(alpha: 0.4),
+                      AppColors.getCard(context).withValues(alpha: 0.2),
                     ],
                   ),
                   borderRadius: BorderRadius.circular(24),
                   border: Border.all(
-                    color: accessColor.withOpacity(0.3),
+                    color: accessColor.withValues(alpha: 0.3),
                     width: 1.5,
                   ),
                 ),
@@ -103,7 +102,7 @@ class CourseCard extends StatelessWidget {
                   child: InkWell(
                     onTap: onTap,
                     borderRadius: BorderRadius.circular(24),
-                    splashColor: accessColor.withOpacity(0.1),
+                    splashColor: accessColor.withValues(alpha: 0.1),
                     highlightColor: Colors.transparent,
                     child: Padding(
                       padding: EdgeInsets.all(padding),
@@ -116,15 +115,15 @@ class CourseCard extends StatelessWidget {
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: [
-                                  accessColor.withOpacity(0.2),
-                                  accessColor.withOpacity(0.05),
+                                  accessColor.withValues(alpha: 0.2),
+                                  accessColor.withValues(alpha: 0.05),
                                 ],
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                               ),
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(
-                                color: accessColor.withOpacity(0.3),
+                                color: accessColor.withValues(alpha: 0.3),
                                 width: 1.5,
                               ),
                             ),
@@ -181,8 +180,7 @@ class CourseCard extends StatelessWidget {
                                         borderRadius: BorderRadius.circular(20),
                                         border: Border.all(
                                           color: AppColors.telegramGray
-                                              .withOpacity(0.2),
-                                          width: 1,
+                                              .withValues(alpha: 0.2),
                                         ),
                                       ),
                                       child: Row(
@@ -218,8 +216,7 @@ class CourseCard extends StatelessWidget {
                                         color: accessBgColor,
                                         borderRadius: BorderRadius.circular(20),
                                         border: Border.all(
-                                          color: accessColor.withOpacity(0.3),
-                                          width: 1,
+                                          color: accessColor.withValues(alpha: 0.3),
                                         ),
                                       ),
                                       child: Row(
@@ -271,7 +268,7 @@ class CourseCard extends StatelessWidget {
                             padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
                               color: hasActiveSubscription
-                                  ? accessColor.withOpacity(0.1)
+                                  ? accessColor.withValues(alpha: 0.1)
                                   : Colors.transparent,
                               shape: BoxShape.circle,
                             ),
@@ -325,7 +322,7 @@ class CourseCardShimmer extends StatelessWidget {
         : (isTablet ? AppThemes.spacingXL : AppThemes.spacingXXL);
 
     return Container(
-      margin: EdgeInsets.only(bottom: AppThemes.spacingL),
+      margin: const EdgeInsets.only(bottom: AppThemes.spacingL),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
         child: BackdropFilter(
@@ -337,22 +334,20 @@ class CourseCardShimmer extends StatelessWidget {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  AppColors.getCard(context).withOpacity(0.4),
-                  AppColors.getCard(context).withOpacity(0.2),
+                  AppColors.getCard(context).withValues(alpha: 0.4),
+                  AppColors.getCard(context).withValues(alpha: 0.2),
                 ],
               ),
               borderRadius: BorderRadius.circular(24),
               border: Border.all(
-                color: Theme.of(context).dividerColor.withOpacity(0.1),
-                width: 1,
+                color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
               ),
             ),
             child: Row(
               children: [
                 Shimmer.fromColors(
-                  baseColor: Colors.grey[300]!.withOpacity(0.3),
-                  highlightColor: Colors.grey[100]!.withOpacity(0.6),
-                  period: const Duration(milliseconds: 1500),
+                  baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                  highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                   child: Container(
                     width: iconSize,
                     height: iconSize,
@@ -368,9 +363,8 @@ class CourseCardShimmer extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Shimmer.fromColors(
-                        baseColor: Colors.grey[300]!.withOpacity(0.3),
-                        highlightColor: Colors.grey[100]!.withOpacity(0.6),
-                        period: const Duration(milliseconds: 1500),
+                        baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                        highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                         child: Container(
                           width: double.infinity,
                           height: 20,
@@ -382,9 +376,8 @@ class CourseCardShimmer extends StatelessWidget {
                       ),
                       const SizedBox(height: 8),
                       Shimmer.fromColors(
-                        baseColor: Colors.grey[300]!.withOpacity(0.3),
-                        highlightColor: Colors.grey[100]!.withOpacity(0.6),
-                        period: const Duration(milliseconds: 1500),
+                        baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                        highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                         child: Container(
                           width: 200,
                           height: 16,
@@ -398,9 +391,8 @@ class CourseCardShimmer extends StatelessWidget {
                       Row(
                         children: [
                           Shimmer.fromColors(
-                            baseColor: Colors.grey[300]!.withOpacity(0.3),
-                            highlightColor: Colors.grey[100]!.withOpacity(0.6),
-                            period: const Duration(milliseconds: 1500),
+                            baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                            highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                             child: Container(
                               width: 80,
                               height: 24,
@@ -412,9 +404,8 @@ class CourseCardShimmer extends StatelessWidget {
                           ),
                           const SizedBox(width: 8),
                           Shimmer.fromColors(
-                            baseColor: Colors.grey[300]!.withOpacity(0.3),
-                            highlightColor: Colors.grey[100]!.withOpacity(0.6),
-                            period: const Duration(milliseconds: 1500),
+                            baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                            highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                             child: Container(
                               width: 70,
                               height: 24,
@@ -430,9 +421,8 @@ class CourseCardShimmer extends StatelessWidget {
                   ),
                 ),
                 Shimmer.fromColors(
-                  baseColor: Colors.grey[300]!.withOpacity(0.3),
-                  highlightColor: Colors.grey[100]!.withOpacity(0.6),
-                  period: const Duration(milliseconds: 1500),
+                  baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                  highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                   child: Container(
                     width: 24,
                     height: 24,

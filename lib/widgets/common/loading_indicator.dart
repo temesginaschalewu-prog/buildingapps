@@ -39,14 +39,13 @@ class LoadingIndicator extends StatelessWidget {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                AppColors.getCard(context).withOpacity(0.4),
-                AppColors.getCard(context).withOpacity(0.2),
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: AppColors.telegramBlue.withOpacity(0.2),
-              width: 1,
+              color: AppColors.telegramBlue.withValues(alpha: 0.2),
             ),
           ),
           child: child,
@@ -82,7 +81,7 @@ class LoadingIndicator extends StatelessWidget {
           children: [
             if (showAnimation) _buildLoader(context),
             if (message != null) ...[
-              SizedBox(height: AppThemes.spacingL),
+              const SizedBox(height: AppThemes.spacingL),
               _buildMessage(context),
             ],
           ],
@@ -122,8 +121,8 @@ class LoadingIndicator extends StatelessWidget {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            (color ?? AppColors.telegramBlue).withOpacity(0.2),
-            (color ?? AppColors.telegramBlue).withOpacity(0.05),
+            (color ?? AppColors.telegramBlue).withValues(alpha: 0.2),
+            (color ?? AppColors.telegramBlue).withValues(alpha: 0.05),
           ],
         ),
         shape: BoxShape.circle,
@@ -164,7 +163,7 @@ class LoadingIndicator extends StatelessWidget {
                 gradient: LinearGradient(
                   colors: [
                     color ?? AppColors.telegramBlue,
-                    (color ?? AppColors.telegramBlue).withOpacity(0.7),
+                    (color ?? AppColors.telegramBlue).withValues(alpha: 0.7),
                   ],
                 ),
               ),
@@ -215,8 +214,8 @@ class LoadingIndicator extends StatelessWidget {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            (color ?? AppColors.telegramBlue).withOpacity(0.2),
-            (color ?? AppColors.telegramBlue).withOpacity(0.05),
+            (color ?? AppColors.telegramBlue).withValues(alpha: 0.2),
+            (color ?? AppColors.telegramBlue).withValues(alpha: 0.05),
           ],
         ),
         shape: BoxShape.circle,
@@ -248,8 +247,8 @@ class LoadingIndicator extends StatelessWidget {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            (color ?? AppColors.telegramBlue).withOpacity(0.2),
-            (color ?? AppColors.telegramBlue).withOpacity(0.05),
+            (color ?? AppColors.telegramBlue).withValues(alpha: 0.2),
+            (color ?? AppColors.telegramBlue).withValues(alpha: 0.05),
           ],
         ),
         shape: BoxShape.circle,
@@ -281,14 +280,14 @@ class LoadingIndicator extends StatelessWidget {
       width: effectiveSize,
       height: effectiveSize,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
+        gradient: const LinearGradient(
             colors: AppColors.blueGradient,
             begin: Alignment.topLeft,
             end: Alignment.bottomRight),
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
-              color: AppColors.telegramBlue.withOpacity(0.3),
+              color: AppColors.telegramBlue.withValues(alpha: 0.3),
               blurRadius: 16.0,
               offset: const Offset(0, 8))
         ],
@@ -351,7 +350,6 @@ class ShimmerLoading extends StatelessWidget {
               ? const Color(0xFF3C3C3E)
               : const Color(0xFFF2F2F7)),
       period: const Duration(seconds: 2),
-      direction: ShimmerDirection.ltr,
       child: Container(
         width: width,
         height: height,

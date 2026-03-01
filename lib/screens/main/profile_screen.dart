@@ -6,7 +6,6 @@ import 'package:familyacademyclient/providers/subscription_provider.dart';
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/themes/app_text_styles.dart';
 import 'package:familyacademyclient/widgets/common/app_bar.dart';
-import 'package:familyacademyclient/widgets/common/loading_indicator.dart';
 import 'package:familyacademyclient/widgets/common/empty_state.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:familyacademyclient/utils/helpers.dart';
@@ -47,7 +46,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isSaving = false;
   String? _schoolName;
   bool _notificationsEnabled = true;
-  int _unreadNotifications = 0;
+  final int _unreadNotifications = 0;
 
   User? _cachedUser;
   bool _hasCachedData = false;
@@ -90,14 +89,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                AppColors.getCard(context).withOpacity(0.4),
-                AppColors.getCard(context).withOpacity(0.2),
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: AppColors.telegramBlue.withOpacity(0.2),
-              width: 1,
+              color: AppColors.telegramBlue.withValues(alpha: 0.2),
             ),
           ),
           child: child,
@@ -107,9 +105,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _openTelegramGroup() async {
-    final username = 's_upport_familyacademy';
+    const username = 's_upport_familyacademy';
     try {
-      final telegramUrl = 'https://t.me/$username';
+      const telegramUrl = 'https://t.me/$username';
       final uri = Uri.parse(telegramUrl);
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -181,8 +179,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _emailController.text = user.email ?? '';
             _phoneController.text = user.phone ?? '';
           });
-          if (user.schoolId != null)
+          if (user.schoolId != null) {
             await _loadSchoolName(user.schoolId, forceRefresh: true);
+          }
         }
         await _saveToCache(user);
       }
@@ -241,8 +240,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _phoneController.text = user.phone ?? '';
           _isOffline = false;
         });
-        if (user.schoolId != null)
+        if (user.schoolId != null) {
           await _loadSchoolName(user.schoolId, forceRefresh: true);
+        }
         await _saveToCache(user);
       }
 
@@ -260,7 +260,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final deviceService = Provider.of<DeviceService>(context, listen: false);
       await deviceService.saveCacheItem('user_profile', user,
-          ttl: Duration(hours: 24), isUserSpecific: true);
+          ttl: const Duration(hours: 24), isUserSpecific: true);
     } catch (e) {}
   }
 
@@ -304,8 +304,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final schoolProvider =
           Provider.of<SchoolProvider>(context, listen: false);
-      if (forceRefresh || schoolProvider.schools.isEmpty)
+      if (forceRefresh || schoolProvider.schools.isEmpty) {
         await schoolProvider.loadSchools(forceRefresh: forceRefresh);
+      }
       final school = schoolProvider.getSchoolById(schoolId);
       if (mounted) setState(() => _schoolName = school?.name);
     } catch (e) {}
@@ -388,8 +389,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
         try {
           final compressedFile = await _compressImage(imageFile);
-          if (compressedFile != imageFile)
+          if (compressedFile != imageFile) {
             setState(() => _profileImageFile = compressedFile);
+          }
           await _uploadProfileImage(compressedFile!);
         } catch (e) {
           showTopSnackBar(context, 'Failed to process image', isError: true);
@@ -452,7 +454,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       await userProvider.loadUserProfile(forceRefresh: true);
     } catch (e) {
-      String errorMessage = e.toString().replaceFirst('Exception: ', '');
+      final String errorMessage = e.toString().replaceFirst('Exception: ', '');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(errorMessage),
@@ -485,7 +487,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       },
       child: _buildGlassContainer(
         context,
-        child: Container(
+        child: SizedBox(
           width: 40,
           height: 40,
           child: Center(
@@ -525,7 +527,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           onTap: themeProvider.toggleTheme,
           child: _buildGlassContainer(
             context,
-            child: Container(
+            child: SizedBox(
               width: 40,
               height: 40,
               child: Center(
@@ -549,7 +551,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       onTap: _isEditing ? null : () => setState(() => _isEditing = true),
       child: _buildGlassContainer(
         context,
-        child: Container(
+        child: const SizedBox(
           width: 40,
           height: 40,
           child: Center(
@@ -569,12 +571,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
       onTap: _isSaving ? null : _saveProfile,
       child: _buildGlassContainer(
         context,
-        child: Container(
+        child: SizedBox(
           width: 40,
           height: 40,
           child: Center(
             child: _isSaving
-                ? SizedBox(
+                ? const SizedBox(
                     width: 20,
                     height: 20,
                     child: CircularProgressIndicator(
@@ -582,7 +584,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       color: AppColors.telegramBlue,
                     ),
                   )
-                : Icon(
+                : const Icon(
                     Icons.save_rounded,
                     color: AppColors.telegramBlue,
                     size: 22,
@@ -607,7 +609,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               behavior: HitTestBehavior.opaque,
               child: _buildGlassContainer(
                 context,
-                child: Container(
+                child: SizedBox(
                   width: avatarSize,
                   height: avatarSize,
                   child: ClipRRect(
@@ -669,7 +671,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               width: 3),
                           boxShadow: [
                             BoxShadow(
-                                color: Colors.black.withOpacity(0.2),
+                                color: Colors.black.withValues(alpha: 0.2),
                                 blurRadius: 4,
                                 offset: const Offset(0, 2))
                           ],
@@ -685,11 +687,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Positioned.fill(
                 child: Container(
                   decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.5),
+                      color: Colors.black.withValues(alpha: 0.5),
                       borderRadius: BorderRadius.circular(avatarSize / 2)),
-                  child: Center(
+                  child: const Center(
                       child: CircularProgressIndicator(
-                          valueColor: const AlwaysStoppedAnimation<Color>(
+                          valueColor: AlwaysStoppedAnimation<Color>(
                               Colors.white))),
                 ),
               ),
@@ -728,8 +730,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildInitialsAvatar(String username, double size) {
     return Container(
-      decoration: BoxDecoration(
-          gradient: const LinearGradient(
+      decoration: const BoxDecoration(
+          gradient: LinearGradient(
               colors: AppColors.purpleGradient,
               begin: Alignment.topLeft,
               end: Alignment.bottomRight),
@@ -778,8 +780,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 validator: (value) {
                   if (value != null &&
                       value.isNotEmpty &&
-                      !_isValidEmail(value))
+                      !_isValidEmail(value)) {
                     return 'Please enter a valid email';
+                  }
                   return null;
                 },
               ),
@@ -803,8 +806,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 validator: (value) {
                   if (value != null &&
                       value.isNotEmpty &&
-                      !_isValidPhone(value))
+                      !_isValidPhone(value)) {
                     return 'Please enter a valid phone number';
+                  }
                   return null;
                 },
               ),
@@ -838,7 +842,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             BorderRadius.circular(AppThemes.borderRadiusMedium),
                         boxShadow: [
                           BoxShadow(
-                            color: AppColors.telegramBlue.withOpacity(0.3),
+                            color: AppColors.telegramBlue.withValues(alpha: 0.3),
                             blurRadius: 8,
                             offset: const Offset(0, 2),
                           ),
@@ -857,13 +861,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   AppThemes.borderRadiusMedium)),
                         ),
                         child: _isSaving
-                            ? SizedBox(
+                            ? const SizedBox(
                                 width: 20,
                                 height: 20,
                                 child: CircularProgressIndicator(
                                     strokeWidth: 2,
                                     valueColor:
-                                        const AlwaysStoppedAnimation<Color>(
+                                        AlwaysStoppedAnimation<Color>(
                                             Colors.white)))
                             : const Text('Save'),
                       ),
@@ -914,8 +918,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [
-                      AppColors.telegramBlue.withOpacity(0.2),
-                      AppColors.telegramPurple.withOpacity(0.1),
+                      AppColors.telegramBlue.withValues(alpha: 0.2),
+                      AppColors.telegramPurple.withValues(alpha: 0.1),
                     ],
                   ),
                   shape: BoxShape.circle),
@@ -967,9 +971,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         gradient: LinearGradient(
                           colors: [
                             (iconColor ?? AppColors.getTextSecondary(context))
-                                .withOpacity(0.2),
+                                .withValues(alpha: 0.2),
                             (iconColor ?? AppColors.getTextSecondary(context))
-                                .withOpacity(0.1),
+                                .withValues(alpha: 0.1),
                           ],
                         ),
                         shape: BoxShape.circle),
@@ -1092,8 +1096,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
-                          AppColors.telegramBlue.withOpacity(0.2),
-                          AppColors.telegramPurple.withOpacity(0.1),
+                          AppColors.telegramBlue.withValues(alpha: 0.2),
+                          AppColors.telegramPurple.withValues(alpha: 0.1),
                         ],
                       ),
                       shape: BoxShape.circle),
@@ -1178,7 +1182,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           BorderRadius.circular(AppThemes.borderRadiusMedium),
                       boxShadow: [
                         BoxShadow(
-                          color: AppColors.telegramBlue.withOpacity(0.3),
+                          color: AppColors.telegramBlue.withValues(alpha: 0.3),
                           blurRadius: 8,
                           offset: const Offset(0, 2),
                         ),
@@ -1223,7 +1227,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () => _showLogoutConfirmation(),
+          onTap: _showLogoutConfirmation,
           borderRadius: BorderRadius.circular(16),
           child: Container(
             decoration: BoxDecoration(
@@ -1233,7 +1237,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.telegramRed.withOpacity(0.3),
+                  color: AppColors.telegramRed.withValues(alpha: 0.3),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
@@ -1270,13 +1274,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
-                        AppColors.telegramRed.withOpacity(0.2),
-                        AppColors.telegramRed.withOpacity(0.1),
+                        AppColors.telegramRed.withValues(alpha: 0.2),
+                        AppColors.telegramRed.withValues(alpha: 0.1),
                       ],
                     ),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(Icons.logout_rounded,
+                  child: const Icon(Icons.logout_rounded,
                       size: 32, color: AppColors.telegramRed),
                 ),
                 const SizedBox(height: 16),
@@ -1318,7 +1322,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               AppThemes.borderRadiusMedium),
                           boxShadow: [
                             BoxShadow(
-                              color: AppColors.telegramRed.withOpacity(0.3),
+                              color: AppColors.telegramRed.withValues(alpha: 0.3),
                               blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),
@@ -1361,14 +1365,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
-          SliverToBoxAdapter(
+          const SliverToBoxAdapter(
             child: CustomAppBar(
               title: 'Profile',
               subtitle: 'Loading profile...',
-              showThemeToggle: true,
-              showNotification: true,
-              showRefresh: false,
-              useSliver: false,
             ),
           ),
           SliverList(
@@ -1385,8 +1385,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 child: Column(
                   children: [
                     Shimmer.fromColors(
-                      baseColor: Colors.grey[300]!.withOpacity(0.3),
-                      highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                      baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                      highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                       child: _buildGlassContainer(
                         context,
                         child: Container(
@@ -1407,8 +1407,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     const SizedBox(height: AppThemes.spacingL),
                     Shimmer.fromColors(
-                      baseColor: Colors.grey[300]!.withOpacity(0.3),
-                      highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                      baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                      highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                       child: Container(
                           width: 150, height: 24, color: Colors.white),
                     ),
@@ -1440,9 +1440,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 children: [
                                   Shimmer.fromColors(
                                     baseColor:
-                                        Colors.grey[300]!.withOpacity(0.3),
+                                        Colors.grey[300]!.withValues(alpha: 0.3),
                                     highlightColor:
-                                        Colors.grey[100]!.withOpacity(0.6),
+                                        Colors.grey[100]!.withValues(alpha: 0.6),
                                     child: Container(
                                         width: 40,
                                         height: 40,
@@ -1458,9 +1458,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       children: [
                                         Shimmer.fromColors(
                                           baseColor: Colors.grey[300]!
-                                              .withOpacity(0.3),
+                                              .withValues(alpha: 0.3),
                                           highlightColor: Colors.grey[100]!
-                                              .withOpacity(0.6),
+                                              .withValues(alpha: 0.6),
                                           child: Container(
                                               width: 100,
                                               height: 16,
@@ -1469,9 +1469,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                         const SizedBox(height: 4),
                                         Shimmer.fromColors(
                                           baseColor: Colors.grey[300]!
-                                              .withOpacity(0.3),
+                                              .withValues(alpha: 0.3),
                                           highlightColor: Colors.grey[100]!
-                                              .withOpacity(0.6),
+                                              .withValues(alpha: 0.6),
                                           child: Container(
                                               width: double.infinity,
                                               height: 20,
@@ -1501,14 +1501,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
           child: CustomAppBar(
             title: 'Profile',
             subtitle: _isOffline ? 'Offline mode' : 'Manage your account',
-            showThemeToggle: true,
-            showNotification: true,
             showRefresh: true,
             isLoading: _isRefreshing,
             onRefresh: _manualRefresh,
             customTrailing:
                 _isEditing ? _buildSaveButton() : _buildEditButton(),
-            useSliver: false,
           ),
         ),
         SliverList(
@@ -1516,7 +1513,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             Container(
                 alignment: Alignment.center, child: _buildProfileHeader(user)),
             const SizedBox(height: AppThemes.spacingXXL),
-            _isEditing ? _buildEditProfileForm() : _buildInfoSection(user),
+            if (_isEditing) _buildEditProfileForm() else _buildInfoSection(user),
             const SizedBox(height: AppThemes.spacingXXL),
             _buildMenuSection(),
             const SizedBox(height: AppThemes.spacingXXL),
@@ -1549,7 +1546,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             message: _isOffline
                 ? 'No cached profile available. Please check your connection.'
                 : 'Please try again later',
-            centerContent: true,
             actionText: 'Retry',
             onAction: _manualRefresh,
           ),

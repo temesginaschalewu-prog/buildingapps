@@ -656,7 +656,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                 height: 40,
                 decoration: BoxDecoration(
                   color: isSelected
-                      ? AppColors.telegramBlue.withOpacity(0.1)
+                      ? AppColors.telegramBlue.withValues(alpha: 0.1)
                       : Colors.transparent,
                   shape: BoxShape.circle,
                 ),
@@ -701,7 +701,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                 Container(
                   width: 24,
                   height: 24,
-                  decoration: BoxDecoration(
+                  decoration: const BoxDecoration(
                     color: AppColors.telegramBlue,
                     shape: BoxShape.circle,
                   ),
@@ -838,7 +838,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                 right: 16,
                 child: Container(
                   decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.5),
+                      color: Colors.black.withValues(alpha: 0.5),
                       shape: BoxShape.circle),
                   child: IconButton(
                     icon: const Icon(Icons.close, color: Colors.white),
@@ -898,7 +898,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                CircularProgressIndicator(
+                const CircularProgressIndicator(
                     valueColor:
                         AlwaysStoppedAnimation<Color>(AppColors.telegramBlue)),
                 const SizedBox(height: 16),
@@ -913,7 +913,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.error_outline_rounded,
+              const Icon(Icons.error_outline_rounded,
                   color: AppColors.telegramRed, size: 48),
               const SizedBox(height: 16),
               Text('Error loading video: $errorMessage',
@@ -950,7 +950,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   right: 16,
                   child: Container(
                     decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.5),
+                        color: Colors.black.withValues(alpha: 0.5),
                         shape: BoxShape.circle),
                     child: IconButton(
                       icon: const Icon(Icons.close, color: Colors.white),
@@ -1397,11 +1397,11 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                padding: EdgeInsets.all(AppThemes.spacingXL),
+                padding: const EdgeInsets.all(AppThemes.spacingXL),
                 decoration: BoxDecoration(
                   color: isFree
-                      ? AppColors.telegramYellow.withOpacity(0.1)
-                      : AppColors.telegramRed.withOpacity(0.1),
+                      ? AppColors.telegramYellow.withValues(alpha: 0.1)
+                      : AppColors.telegramRed.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
@@ -1411,12 +1411,12 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                         ? AppColors.telegramYellow
                         : AppColors.telegramRed),
               ),
-              SizedBox(height: AppThemes.spacingXXL),
+              const SizedBox(height: AppThemes.spacingXXL),
               Text(isFree ? 'Coming Soon' : 'Chapter Locked',
                   style: AppTextStyles.headlineMedium.copyWith(
                       color: AppColors.getTextPrimary(context),
                       fontWeight: FontWeight.w700)),
-              SizedBox(height: AppThemes.spacingL),
+              const SizedBox(height: AppThemes.spacingL),
               Padding(
                 padding: EdgeInsets.symmetric(
                     horizontal: ScreenSize.responsiveValue(
@@ -1431,7 +1431,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                 ),
               ),
               if (!isFree) ...[
-                SizedBox(height: AppThemes.spacingXXXL),
+                const SizedBox(height: AppThemes.spacingXXXL),
                 ElevatedButton(
                   onPressed: () => context.push('/payment', extra: {
                     'category': _category,
@@ -1452,7 +1452,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                             BorderRadius.circular(AppThemes.borderRadiusLarge)),
                   ),
                   child: Padding(
-                    padding: EdgeInsets.symmetric(
+                    padding: const EdgeInsets.symmetric(
                         vertical: AppThemes.spacingM,
                         horizontal: AppThemes.spacingXL),
                     child: Text('Purchase Access',
@@ -1461,7 +1461,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   ),
                 ),
               ],
-              SizedBox(height: AppThemes.spacingXL),
+              const SizedBox(height: AppThemes.spacingXL),
               OutlinedButton(
                 onPressed: () => context.pop(),
                 style: OutlinedButton.styleFrom(
@@ -1480,7 +1480,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                       AppThemes.buttonHeightMedium),
                 ),
                 child: Padding(
-                  padding: EdgeInsets.symmetric(
+                  padding: const EdgeInsets.symmetric(
                       vertical: AppThemes.spacingM,
                       horizontal: AppThemes.spacingXL),
                   child: Text('Go Back',
@@ -1514,7 +1514,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            AppColors.getBackground(context).withOpacity(0.95),
+            AppColors.getBackground(context).withValues(alpha: 0.95),
             AppColors.getBackground(context),
           ],
         ),
@@ -1566,10 +1566,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
               child: Container(
                 padding: const EdgeInsets.all(32),
                 decoration: BoxDecoration(
-                  color: AppColors.getCard(context).withOpacity(0.2),
+                  color: AppColors.getCard(context).withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(30),
                   border: Border.all(
-                    color: AppColors.telegramBlue.withOpacity(0.2),
+                    color: AppColors.telegramBlue.withValues(alpha: 0.2),
                     width: 1,
                   ),
                 ),
@@ -1578,7 +1578,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                     Icon(
                       Icons.videocam_off_rounded,
                       size: 80,
-                      color: AppColors.telegramBlue.withOpacity(0.5),
+                      color: AppColors.telegramBlue.withValues(alpha: 0.5),
                     ),
                     const SizedBox(height: 24),
                     Text(
@@ -1636,15 +1636,15 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  AppColors.getCard(context).withOpacity(0.4),
-                  AppColors.getCard(context).withOpacity(0.2),
+                  AppColors.getCard(context).withValues(alpha: 0.4),
+                  AppColors.getCard(context).withValues(alpha: 0.2),
                 ],
               ),
               borderRadius: BorderRadius.circular(24),
               border: Border.all(
                 color: isDownloaded
-                    ? AppColors.telegramGreen.withOpacity(0.3)
-                    : AppColors.getTextSecondary(context).withOpacity(0.1),
+                    ? AppColors.telegramGreen.withValues(alpha: 0.3)
+                    : AppColors.getTextSecondary(context).withValues(alpha: 0.1),
                 width: 1.5,
               ),
             ),
@@ -1668,9 +1668,9 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                                     gradient: LinearGradient(
                                       colors: [
                                         AppColors.getSurface(context)
-                                            .withOpacity(0.5),
+                                            .withValues(alpha: 0.5),
                                         AppColors.getSurface(context)
-                                            .withOpacity(0.3),
+                                            .withValues(alpha: 0.3),
                                       ],
                                     ),
                                   ),
@@ -1678,7 +1678,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                                     child: Icon(
                                       Icons.movie,
                                       size: 40,
-                                      color: Colors.white.withOpacity(0.3),
+                                      color: Colors.white.withValues(alpha: 0.3),
                                     ),
                                   ),
                                 ),
@@ -1687,9 +1687,9 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                                     gradient: LinearGradient(
                                       colors: [
                                         AppColors.getSurface(context)
-                                            .withOpacity(0.5),
+                                            .withValues(alpha: 0.5),
                                         AppColors.getSurface(context)
-                                            .withOpacity(0.3),
+                                            .withValues(alpha: 0.3),
                                       ],
                                     ),
                                   ),
@@ -1697,7 +1697,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                                     child: Icon(
                                       Icons.broken_image,
                                       size: 40,
-                                      color: Colors.white.withOpacity(0.3),
+                                      color: Colors.white.withValues(alpha: 0.3),
                                     ),
                                   ),
                                 ),
@@ -1707,9 +1707,9 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                                   gradient: LinearGradient(
                                     colors: [
                                       AppColors.getSurface(context)
-                                          .withOpacity(0.5),
+                                          .withValues(alpha: 0.5),
                                       AppColors.getSurface(context)
-                                          .withOpacity(0.3),
+                                          .withValues(alpha: 0.3),
                                     ],
                                   ),
                                 ),
@@ -1717,7 +1717,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                                   child: Icon(
                                     Icons.play_circle_outline,
                                     size: 60,
-                                    color: Colors.white.withOpacity(0.3),
+                                    color: Colors.white.withValues(alpha: 0.3),
                                   ),
                                 ),
                               ),
@@ -1734,7 +1734,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                             end: Alignment.bottomCenter,
                             colors: [
                               Colors.transparent,
-                              Colors.black.withOpacity(0.7),
+                              Colors.black.withValues(alpha: 0.7),
                             ],
                             stops: const [0.6, 1.0],
                           ),
@@ -1749,7 +1749,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                         icon: Icons.access_time,
                         label: video.formattedDuration,
                         color: Colors.white,
-                        backgroundColor: Colors.black.withOpacity(0.8),
+                        backgroundColor: Colors.black.withValues(alpha: 0.8),
                       ),
                     ),
                     if (hasMultipleQualities)
@@ -1807,7 +1807,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                                 boxShadow: [
                                   BoxShadow(
                                     color:
-                                        AppColors.telegramBlue.withOpacity(0.5),
+                                        AppColors.telegramBlue.withValues(alpha: 0.5),
                                     blurRadius: 20,
                                     spreadRadius: 2,
                                   ),
@@ -1869,7 +1869,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                 Divider(
                   height: 1,
                   thickness: 1,
-                  color: Theme.of(context).dividerColor.withOpacity(0.2),
+                  color: Theme.of(context).dividerColor.withValues(alpha: 0.2),
                 ),
                 Padding(
                   padding:
@@ -1892,7 +1892,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                       Container(
                         width: 1,
                         height: 32,
-                        color: Theme.of(context).dividerColor.withOpacity(0.2),
+                        color: Theme.of(context).dividerColor.withValues(alpha: 0.2),
                       ),
                       Expanded(
                         child: _buildVideoActionButton(
@@ -1959,7 +1959,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.2),
+            color: Colors.black.withValues(alpha: 0.2),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -2010,15 +2010,15 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   ? LinearGradient(colors: gradient)
                   : LinearGradient(
                       colors: [
-                        AppColors.getSurface(context).withOpacity(0.3),
-                        AppColors.getSurface(context).withOpacity(0.3),
+                        AppColors.getSurface(context).withValues(alpha: 0.3),
+                        AppColors.getSurface(context).withValues(alpha: 0.3),
                       ],
                     ),
               borderRadius: BorderRadius.circular(12),
               boxShadow: isEnabled
                   ? [
                       BoxShadow(
-                        color: gradient.first.withOpacity(0.3),
+                        color: gradient.first.withValues(alpha: 0.3),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -2033,7 +2033,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   size: 18,
                   color: isEnabled
                       ? Colors.white
-                      : AppColors.getTextSecondary(context).withOpacity(0.5),
+                      : AppColors.getTextSecondary(context).withValues(alpha: 0.5),
                 ),
                 const SizedBox(width: 6),
                 Text(
@@ -2041,7 +2041,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   style: AppTextStyles.labelMedium.copyWith(
                     color: isEnabled
                         ? Colors.white
-                        : AppColors.getTextSecondary(context).withOpacity(0.5),
+                        : AppColors.getTextSecondary(context).withValues(alpha: 0.5),
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -2068,13 +2068,13 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    AppColors.getCard(context).withOpacity(0.4),
-                    AppColors.getCard(context).withOpacity(0.2),
+                    AppColors.getCard(context).withValues(alpha: 0.4),
+                    AppColors.getCard(context).withValues(alpha: 0.2),
                   ],
                 ),
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(
-                  color: AppColors.telegramRed.withOpacity(0.3),
+                  color: AppColors.telegramRed.withValues(alpha: 0.3),
                   width: 1,
                 ),
               ),
@@ -2085,10 +2085,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: AppColors.telegramRed.withOpacity(0.1),
+                      color: AppColors.telegramRed.withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                     ),
-                    child: Icon(
+                    child: const Icon(
                       Icons.delete_outline_rounded,
                       color: AppColors.telegramRed,
                       size: 32,
@@ -2183,7 +2183,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            AppColors.getBackground(context).withOpacity(0.95),
+            AppColors.getBackground(context).withValues(alpha: 0.95),
             AppColors.getBackground(context),
           ],
         ),
@@ -2235,10 +2235,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
               child: Container(
                 padding: const EdgeInsets.all(32),
                 decoration: BoxDecoration(
-                  color: AppColors.getCard(context).withOpacity(0.2),
+                  color: AppColors.getCard(context).withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(30),
                   border: Border.all(
-                    color: AppColors.telegramBlue.withOpacity(0.2),
+                    color: AppColors.telegramBlue.withValues(alpha: 0.2),
                     width: 1,
                   ),
                 ),
@@ -2247,7 +2247,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                     Icon(
                       Icons.note_alt_outlined,
                       size: 80,
-                      color: AppColors.telegramBlue.withOpacity(0.5),
+                      color: AppColors.telegramBlue.withValues(alpha: 0.5),
                     ),
                     const SizedBox(height: 24),
                     Text(
@@ -2304,15 +2304,15 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  AppColors.getCard(context).withOpacity(0.4),
-                  AppColors.getCard(context).withOpacity(0.2),
+                  AppColors.getCard(context).withValues(alpha: 0.4),
+                  AppColors.getCard(context).withValues(alpha: 0.2),
                 ],
               ),
               borderRadius: BorderRadius.circular(24),
               border: Border.all(
                 color: isDownloaded
-                    ? AppColors.telegramGreen.withOpacity(0.3)
-                    : AppColors.getTextSecondary(context).withOpacity(0.1),
+                    ? AppColors.telegramGreen.withValues(alpha: 0.3)
+                    : AppColors.getTextSecondary(context).withValues(alpha: 0.1),
                 width: 1.5,
               ),
             ),
@@ -2364,7 +2364,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                               color: (isPdf
                                       ? AppColors.telegramRed
                                       : AppColors.telegramBlue)
-                                  .withOpacity(0.3),
+                                  .withValues(alpha: 0.3),
                               blurRadius: 12,
                               offset: const Offset(0, 4),
                             ),
@@ -2467,10 +2467,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: effectiveColor.withOpacity(0.1),
+        color: effectiveColor.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: effectiveColor.withOpacity(0.2),
+          color: effectiveColor.withValues(alpha: 0.2),
           width: 1,
         ),
       ),
@@ -2526,7 +2526,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
               Container(
                 height: 6,
                 decoration: BoxDecoration(
-                  color: AppColors.getSurface(context).withOpacity(0.3),
+                  color: AppColors.getSurface(context).withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(4),
                 ),
               ),
@@ -2541,7 +2541,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                     borderRadius: BorderRadius.circular(4),
                     boxShadow: [
                       BoxShadow(
-                        color: AppColors.telegramBlue.withOpacity(0.5),
+                        color: AppColors.telegramBlue.withValues(alpha: 0.5),
                         blurRadius: 4,
                       ),
                     ],
@@ -2561,20 +2561,20 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            AppColors.telegramGreen.withOpacity(0.2),
-            AppColors.telegramGreen.withOpacity(0.05),
+            AppColors.telegramGreen.withValues(alpha: 0.2),
+            AppColors.telegramGreen.withValues(alpha: 0.05),
           ],
         ),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: AppColors.telegramGreen.withOpacity(0.3),
+          color: AppColors.telegramGreen.withValues(alpha: 0.3),
           width: 1,
         ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
+          const Icon(
             Icons.check_circle_rounded,
             size: 14,
             color: AppColors.telegramGreen,
@@ -2613,17 +2613,17 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: isDownloaded
-                ? AppColors.telegramGreen.withOpacity(0.1)
+                ? AppColors.telegramGreen.withValues(alpha: 0.1)
                 : isDownloading
-                    ? AppColors.telegramBlue.withOpacity(0.1)
-                    : AppColors.getSurface(context).withOpacity(0.1),
+                    ? AppColors.telegramBlue.withValues(alpha: 0.1)
+                    : AppColors.getSurface(context).withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: isDownloaded
-                  ? AppColors.telegramGreen.withOpacity(0.3)
+                  ? AppColors.telegramGreen.withValues(alpha: 0.3)
                   : isDownloading
-                      ? AppColors.telegramBlue.withOpacity(0.3)
-                      : AppColors.getTextSecondary(context).withOpacity(0.1),
+                      ? AppColors.telegramBlue.withValues(alpha: 0.3)
+                      : AppColors.getTextSecondary(context).withValues(alpha: 0.1),
               width: 1,
             ),
           ),
@@ -2660,13 +2660,13 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    AppColors.getCard(context).withOpacity(0.4),
-                    AppColors.getCard(context).withOpacity(0.2),
+                    AppColors.getCard(context).withValues(alpha: 0.4),
+                    AppColors.getCard(context).withValues(alpha: 0.2),
                   ],
                 ),
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(
-                  color: AppColors.telegramRed.withOpacity(0.3),
+                  color: AppColors.telegramRed.withValues(alpha: 0.3),
                   width: 1,
                 ),
               ),
@@ -2677,10 +2677,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: AppColors.telegramRed.withOpacity(0.1),
+                      color: AppColors.telegramRed.withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                     ),
-                    child: Icon(
+                    child: const Icon(
                       Icons.delete_outline_rounded,
                       color: AppColors.telegramRed,
                       size: 32,
@@ -2767,14 +2767,14 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: Material(
-          color: AppColors.getCard(context).withOpacity(0.2),
+          color: AppColors.getCard(context).withValues(alpha: 0.2),
           child: InkWell(
             onTap: onPressed,
             child: Container(
               padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
               decoration: BoxDecoration(
                 border: Border.all(
-                  color: AppColors.telegramBlue.withOpacity(0.2),
+                  color: AppColors.telegramBlue.withValues(alpha: 0.2),
                   width: 1,
                 ),
                 borderRadius: BorderRadius.circular(16),
@@ -2839,7 +2839,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            AppColors.getBackground(context).withOpacity(0.95),
+            AppColors.getBackground(context).withValues(alpha: 0.95),
             AppColors.getBackground(context),
           ],
         ),
@@ -2860,10 +2860,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                   child: Container(
                     decoration: BoxDecoration(
-                      color: AppColors.getCard(context).withOpacity(0.3),
+                      color: AppColors.getCard(context).withValues(alpha: 0.3),
                       borderRadius: BorderRadius.circular(24),
                       border: Border.all(
-                        color: AppColors.telegramBlue.withOpacity(0.1),
+                        color: AppColors.telegramBlue.withValues(alpha: 0.1),
                         width: 1,
                       ),
                     ),
@@ -2887,7 +2887,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                                   vertical: 6,
                                 ),
                                 decoration: BoxDecoration(
-                                  gradient: LinearGradient(
+                                  gradient: const LinearGradient(
                                     colors: [
                                       AppColors.telegramBlue,
                                       AppColors.telegramPurple,
@@ -2897,7 +2897,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                                   boxShadow: [
                                     BoxShadow(
                                       color: AppColors.telegramBlue
-                                          .withOpacity(0.3),
+                                          .withValues(alpha: 0.3),
                                       blurRadius: 8,
                                       offset: const Offset(0, 2),
                                     ),
@@ -2920,7 +2920,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                                 height: 8,
                                 decoration: BoxDecoration(
                                   color: AppColors.getSurface(context)
-                                      .withOpacity(0.3),
+                                      .withValues(alpha: 0.3),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                               ),
@@ -2929,7 +2929,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                                 child: Container(
                                   height: 8,
                                   decoration: BoxDecoration(
-                                    gradient: LinearGradient(
+                                    gradient: const LinearGradient(
                                       colors: [
                                         AppColors.telegramBlue,
                                         AppColors.telegramPurple,
@@ -2939,7 +2939,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                                     boxShadow: [
                                       BoxShadow(
                                         color: AppColors.telegramBlue
-                                            .withOpacity(0.5),
+                                            .withValues(alpha: 0.5),
                                         blurRadius: 4,
                                       ),
                                     ],
@@ -3068,21 +3068,21 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   ? LinearGradient(colors: gradient)
                   : LinearGradient(
                       colors: [
-                        AppColors.getSurface(context).withOpacity(0.3),
-                        AppColors.getSurface(context).withOpacity(0.3),
+                        AppColors.getSurface(context).withValues(alpha: 0.3),
+                        AppColors.getSurface(context).withValues(alpha: 0.3),
                       ],
                     ),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
                 color: isEnabled
                     ? Colors.transparent
-                    : AppColors.getTextSecondary(context).withOpacity(0.2),
+                    : AppColors.getTextSecondary(context).withValues(alpha: 0.2),
                 width: 1,
               ),
               boxShadow: isEnabled
                   ? [
                       BoxShadow(
-                        color: gradient.first.withOpacity(0.3),
+                        color: gradient.first.withValues(alpha: 0.3),
                         blurRadius: 12,
                         offset: const Offset(0, 4),
                       ),
@@ -3096,7 +3096,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   icon,
                   color: isEnabled
                       ? Colors.white
-                      : AppColors.getTextSecondary(context).withOpacity(0.5),
+                      : AppColors.getTextSecondary(context).withValues(alpha: 0.5),
                   size: 20,
                 ),
                 const SizedBox(width: 8),
@@ -3105,7 +3105,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   style: AppTextStyles.labelLarge.copyWith(
                     color: isEnabled
                         ? Colors.white
-                        : AppColors.getTextSecondary(context).withOpacity(0.5),
+                        : AppColors.getTextSecondary(context).withValues(alpha: 0.5),
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -3140,17 +3140,17 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  AppColors.getCard(context).withOpacity(0.4),
-                  AppColors.getCard(context).withOpacity(0.2),
+                  AppColors.getCard(context).withValues(alpha: 0.4),
+                  AppColors.getCard(context).withValues(alpha: 0.2),
                 ],
               ),
               borderRadius: BorderRadius.circular(24),
               border: Border.all(
                 color: isAnswered
                     ? (isCorrect
-                        ? AppColors.telegramGreen.withOpacity(0.3)
-                        : AppColors.telegramRed.withOpacity(0.3))
-                    : AppColors.getTextSecondary(context).withOpacity(0.1),
+                        ? AppColors.telegramGreen.withValues(alpha: 0.3)
+                        : AppColors.telegramRed.withValues(alpha: 0.3))
+                    : AppColors.getTextSecondary(context).withValues(alpha: 0.1),
                 width: 1.5,
               ),
             ),
@@ -3172,7 +3172,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                     shaderCallback: (bounds) => LinearGradient(
                       colors: [
                         AppColors.getTextPrimary(context),
-                        AppColors.getTextPrimary(context).withOpacity(0.8),
+                        AppColors.getTextPrimary(context).withValues(alpha: 0.8),
                       ],
                       begin: Alignment.centerLeft,
                       end: Alignment.centerRight,
@@ -3222,15 +3222,15 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            color.withOpacity(0.2),
-            color.withOpacity(0.05),
+            color.withValues(alpha: 0.2),
+            color.withValues(alpha: 0.05),
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(30),
         border: Border.all(
-          color: color.withOpacity(0.3),
+          color: color.withValues(alpha: 0.3),
           width: 1,
         ),
       ),
@@ -3245,7 +3245,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                  color: color.withOpacity(0.5),
+                  color: color.withValues(alpha: 0.5),
                   blurRadius: 4,
                 ),
               ],
@@ -3273,17 +3273,17 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
     if (isAnswered) {
       if (isCorrect) {
-        backgroundColor = AppColors.telegramGreen.withOpacity(0.15);
-        borderColor = AppColors.telegramGreen.withOpacity(0.3);
+        backgroundColor = AppColors.telegramGreen.withValues(alpha: 0.15);
+        borderColor = AppColors.telegramGreen.withValues(alpha: 0.3);
         icon = Icons.check_circle_rounded;
       } else {
-        backgroundColor = AppColors.telegramRed.withOpacity(0.15);
-        borderColor = AppColors.telegramRed.withOpacity(0.3);
+        backgroundColor = AppColors.telegramRed.withValues(alpha: 0.15);
+        borderColor = AppColors.telegramRed.withValues(alpha: 0.3);
         icon = Icons.cancel_rounded;
       }
     } else {
       backgroundColor = Colors.transparent;
-      borderColor = AppColors.getTextSecondary(context).withOpacity(0.2);
+      borderColor = AppColors.getTextSecondary(context).withValues(alpha: 0.2);
       icon = null;
     }
 
@@ -3342,26 +3342,26 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
       if (showExplanation) {
         if (isCorrectAnswer) {
-          optionColor = AppColors.telegramGreen.withOpacity(0.1);
-          borderColor = AppColors.telegramGreen.withOpacity(0.5);
+          optionColor = AppColors.telegramGreen.withValues(alpha: 0.1);
+          borderColor = AppColors.telegramGreen.withValues(alpha: 0.5);
           icon = Icons.check_circle_rounded;
         } else if (isUserSelection) {
-          optionColor = AppColors.telegramRed.withOpacity(0.1);
-          borderColor = AppColors.telegramRed.withOpacity(0.5);
+          optionColor = AppColors.telegramRed.withValues(alpha: 0.1);
+          borderColor = AppColors.telegramRed.withValues(alpha: 0.5);
           icon = Icons.cancel_rounded;
         } else {
           optionColor = Colors.transparent;
-          borderColor = AppColors.getTextSecondary(context).withOpacity(0.1);
+          borderColor = AppColors.getTextSecondary(context).withValues(alpha: 0.1);
           icon = null;
         }
       } else {
         if (isSelected) {
-          optionColor = AppColors.telegramBlue.withOpacity(0.1);
+          optionColor = AppColors.telegramBlue.withValues(alpha: 0.1);
           borderColor = AppColors.telegramBlue;
           icon = null;
         } else {
           optionColor = Colors.transparent;
-          borderColor = AppColors.getTextSecondary(context).withOpacity(0.1);
+          borderColor = AppColors.getTextSecondary(context).withValues(alpha: 0.1);
           icon = null;
         }
       }
@@ -3395,7 +3395,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       gradient: isSelected && !showExplanation
-                          ? LinearGradient(
+                          ? const LinearGradient(
                               colors: [
                                 AppColors.telegramBlue,
                                 AppColors.telegramPurple,
@@ -3413,7 +3413,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                                 : showExplanation && isUserSelection
                                     ? AppColors.telegramRed
                                     : AppColors.getTextSecondary(context)
-                                        .withOpacity(0.3),
+                                        .withValues(alpha: 0.3),
                         width: 2,
                       ),
                     ),
@@ -3482,19 +3482,19 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           gradient: LinearGradient(
             colors: isCorrect
                 ? [
-                    AppColors.telegramGreen.withOpacity(0.1),
-                    AppColors.telegramGreen.withOpacity(0.05),
+                    AppColors.telegramGreen.withValues(alpha: 0.1),
+                    AppColors.telegramGreen.withValues(alpha: 0.05),
                   ]
                 : [
-                    AppColors.telegramRed.withOpacity(0.1),
-                    AppColors.telegramRed.withOpacity(0.05),
+                    AppColors.telegramRed.withValues(alpha: 0.1),
+                    AppColors.telegramRed.withValues(alpha: 0.05),
                   ],
           ),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: isCorrect
-                ? AppColors.telegramGreen.withOpacity(0.3)
-                : AppColors.telegramRed.withOpacity(0.3),
+                ? AppColors.telegramGreen.withValues(alpha: 0.3)
+                : AppColors.telegramRed.withValues(alpha: 0.3),
             width: 1,
           ),
         ),
@@ -3504,8 +3504,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: isCorrect
-                    ? AppColors.telegramGreen.withOpacity(0.2)
-                    : AppColors.telegramRed.withOpacity(0.2),
+                    ? AppColors.telegramGreen.withValues(alpha: 0.2)
+                    : AppColors.telegramRed.withValues(alpha: 0.2),
                 shape: BoxShape.circle,
               ),
               child: Icon(
@@ -3557,7 +3557,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
             padding: const EdgeInsets.symmetric(vertical: 16),
             decoration: BoxDecoration(
               gradient: isSelected
-                  ? LinearGradient(
+                  ? const LinearGradient(
                       colors: [
                         AppColors.telegramBlue,
                         AppColors.telegramPurple,
@@ -3565,21 +3565,21 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                     )
                   : LinearGradient(
                       colors: [
-                        AppColors.getSurface(context).withOpacity(0.3),
-                        AppColors.getSurface(context).withOpacity(0.3),
+                        AppColors.getSurface(context).withValues(alpha: 0.3),
+                        AppColors.getSurface(context).withValues(alpha: 0.3),
                       ],
                     ),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
                 color: isSelected
                     ? Colors.transparent
-                    : AppColors.getTextSecondary(context).withOpacity(0.2),
+                    : AppColors.getTextSecondary(context).withValues(alpha: 0.2),
                 width: 1,
               ),
               boxShadow: isSelected
                   ? [
                       BoxShadow(
-                        color: AppColors.telegramBlue.withOpacity(0.3),
+                        color: AppColors.telegramBlue.withValues(alpha: 0.3),
                         blurRadius: 12,
                         offset: const Offset(0, 4),
                       ),
@@ -3621,15 +3621,15 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  AppColors.getCard(context).withOpacity(0.3),
-                  AppColors.getCard(context).withOpacity(0.1),
+                  AppColors.getCard(context).withValues(alpha: 0.3),
+                  AppColors.getCard(context).withValues(alpha: 0.1),
                 ],
               ),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
                 color: isCorrect
-                    ? AppColors.telegramGreen.withOpacity(0.3)
-                    : AppColors.telegramBlue.withOpacity(0.3),
+                    ? AppColors.telegramGreen.withValues(alpha: 0.3)
+                    : AppColors.telegramBlue.withValues(alpha: 0.3),
                 width: 1,
               ),
             ),
@@ -3643,8 +3643,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                       padding: const EdgeInsets.all(6),
                       decoration: BoxDecoration(
                         color: isCorrect
-                            ? AppColors.telegramGreen.withOpacity(0.2)
-                            : AppColors.telegramBlue.withOpacity(0.2),
+                            ? AppColors.telegramGreen.withValues(alpha: 0.2)
+                            : AppColors.telegramBlue.withValues(alpha: 0.2),
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
@@ -3680,15 +3680,15 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: AppColors.telegramGreen.withOpacity(0.1),
+                      color: AppColors.telegramGreen.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: AppColors.telegramGreen.withOpacity(0.2),
+                        color: AppColors.telegramGreen.withValues(alpha: 0.2),
                       ),
                     ),
                     child: Row(
                       children: [
-                        Icon(
+                        const Icon(
                           Icons.check_circle_rounded,
                           color: AppColors.telegramGreen,
                           size: 20,
@@ -3726,10 +3726,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       itemCount: itemCount,
       itemBuilder: (context, index) {
         return Padding(
-          padding: EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.only(bottom: 16),
           child: Shimmer.fromColors(
-            baseColor: Colors.grey[300]!.withOpacity(0.3),
-            highlightColor: Colors.grey[100]!.withOpacity(0.5),
+            baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+            highlightColor: Colors.grey[100]!.withValues(alpha: 0.5),
             period: const Duration(milliseconds: 1500),
             child: Container(
               decoration: BoxDecoration(
@@ -3737,7 +3737,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                 borderRadius: BorderRadius.circular(24),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withValues(alpha: 0.05),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
@@ -3754,8 +3754,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                         colors: [
-                          Colors.white.withOpacity(0.4),
-                          Colors.white.withOpacity(0.2),
+                          Colors.white.withValues(alpha: 0.4),
+                          Colors.white.withValues(alpha: 0.2),
                         ],
                       ),
                     ),
@@ -3765,7 +3765,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                           width: type == 'video' ? 100 : 64,
                           height: type == 'video' ? 70 : 64,
                           decoration: BoxDecoration(
-                            color: Colors.grey[300]!.withOpacity(0.5),
+                            color: Colors.grey[300]!.withValues(alpha: 0.5),
                             borderRadius: BorderRadius.circular(
                               type == 'video' ? 16 : 20,
                             ),
@@ -3780,7 +3780,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                                 width: double.infinity,
                                 height: 20,
                                 decoration: BoxDecoration(
-                                  color: Colors.grey[300]!.withOpacity(0.5),
+                                  color: Colors.grey[300]!.withValues(alpha: 0.5),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                               ),
@@ -3791,7 +3791,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                                     width: 80,
                                     height: 16,
                                     decoration: BoxDecoration(
-                                      color: Colors.grey[300]!.withOpacity(0.5),
+                                      color: Colors.grey[300]!.withValues(alpha: 0.5),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                   ),
@@ -3800,7 +3800,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                                     width: 60,
                                     height: 16,
                                     decoration: BoxDecoration(
-                                      color: Colors.grey[300]!.withOpacity(0.5),
+                                      color: Colors.grey[300]!.withValues(alpha: 0.5),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                   ),
@@ -3848,12 +3848,12 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   Color _getOptionColor(BuildContext context, bool isSelected,
       bool showExplanation, bool isCorrectAnswer, bool isUserSelection) {
     if (showExplanation) {
-      if (isCorrectAnswer) return AppColors.telegramGreen.withOpacity(0.1);
-      if (isUserSelection) return AppColors.telegramRed.withOpacity(0.1);
+      if (isCorrectAnswer) return AppColors.telegramGreen.withValues(alpha: 0.1);
+      if (isUserSelection) return AppColors.telegramRed.withValues(alpha: 0.1);
       return Colors.transparent;
     }
     return isSelected
-        ? AppColors.telegramBlue.withOpacity(0.1)
+        ? AppColors.telegramBlue.withValues(alpha: 0.1)
         : Colors.transparent;
   }
 
@@ -3893,8 +3893,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         backgroundColor: AppColors.getBackground(context),
         appBar: AppBar(
           title: Shimmer.fromColors(
-            baseColor: Colors.grey[300]!.withOpacity(0.3),
-            highlightColor: Colors.grey[100]!.withOpacity(0.6),
+            baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+            highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
             child: Container(
               width: 200,
               height: 24,
@@ -3992,8 +3992,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
             ],
           ),
           if (_isRefreshing)
-            Padding(
-              padding: const EdgeInsets.all(16),
+            const Padding(
+              padding: EdgeInsets.all(16),
               child: SizedBox(
                   width: 20,
                   height: 20,
@@ -4115,7 +4115,7 @@ class NoteDetailScreen extends StatelessWidget {
         actions: [
           if (hasFile && cachedPath != null)
             IconButton(
-                icon: Icon(Icons.open_in_new_rounded,
+                icon: const Icon(Icons.open_in_new_rounded,
                     color: AppColors.telegramBlue),
                 onPressed: () => _openFile(context, cachedPath!),
                 tooltip: 'Open File'),
@@ -4141,7 +4141,7 @@ class NoteDetailScreen extends StatelessWidget {
                     width: 48,
                     height: 48,
                     decoration: BoxDecoration(
-                        color: AppColors.telegramBlue.withOpacity(0.1),
+                        color: AppColors.telegramBlue.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(
                             AppThemes.borderRadiusMedium)),
                     child: Icon(
@@ -4151,7 +4151,7 @@ class NoteDetailScreen extends StatelessWidget {
                         color: AppColors.telegramBlue,
                         size: 24),
                   ),
-                  SizedBox(width: AppThemes.spacingL),
+                  const SizedBox(width: AppThemes.spacingL),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -4162,9 +4162,9 @@ class NoteDetailScreen extends StatelessWidget {
                         if (cachedPath != null)
                           Row(
                             children: [
-                              Icon(Icons.check_circle_rounded,
+                              const Icon(Icons.check_circle_rounded,
                                   size: 14, color: AppColors.telegramGreen),
-                              SizedBox(width: AppThemes.spacingXS),
+                              const SizedBox(width: AppThemes.spacingXS),
                               Text('Available Offline',
                                   style: AppTextStyles.caption.copyWith(
                                       color: AppColors.telegramGreen,

@@ -8,7 +8,6 @@ import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
 import 'package:flutter/foundation.dart' show kReleaseMode, kDebugMode;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:http/http.dart' show MediaType;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:familyacademyclient/models/category_model.dart';

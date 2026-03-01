@@ -7,8 +7,6 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../themes/app_themes.dart';
-import '../../utils/responsive.dart';
-import '../../utils/helpers.dart';
 
 class CategoryCard extends StatelessWidget {
   final Category category;
@@ -41,14 +39,13 @@ class CategoryCard extends StatelessWidget {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                AppColors.getCard(context).withOpacity(0.4),
-                AppColors.getCard(context).withOpacity(0.2),
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: AppColors.telegramBlue.withOpacity(0.2),
-              width: 1,
+              color: AppColors.telegramBlue.withValues(alpha: 0.2),
             ),
           ),
           child: child,
@@ -60,7 +57,7 @@ class CategoryCard extends StatelessWidget {
   Widget _buildImage() {
     if (category.imageUrl == null || category.imageUrl!.isEmpty) {
       return Container(
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           gradient: LinearGradient(
             colors: [AppColors.telegramBlue, AppColors.telegramPurple],
             begin: Alignment.topLeft,
@@ -84,7 +81,7 @@ class CategoryCard extends StatelessWidget {
       imageUrl: category.imageUrl!,
       fit: BoxFit.cover,
       placeholder: (context, url) => Container(
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           gradient: LinearGradient(
             colors: [AppColors.telegramBlue, AppColors.telegramPurple],
             begin: Alignment.topLeft,
@@ -103,7 +100,7 @@ class CategoryCard extends StatelessWidget {
         ),
       ),
       errorWidget: (context, url, error) => Container(
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           gradient: LinearGradient(
             colors: [AppColors.telegramBlue, AppColors.telegramPurple],
             begin: Alignment.topLeft,
@@ -139,7 +136,7 @@ class CategoryCard extends StatelessWidget {
       onTap: onTap,
       child: _buildGlassContainer(
         context,
-        child: Container(
+        child: SizedBox(
           height: cardHeight, // FIXED: Fixed height to prevent overflow
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -210,18 +207,17 @@ class CategoryCard extends StatelessWidget {
                                 vertical: 4,
                               ),
                               decoration: BoxDecoration(
-                                color: AppColors.telegramGreen.withOpacity(0.1),
+                                color: AppColors.telegramGreen.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(12),
                                 border: Border.all(
                                   color:
-                                      AppColors.telegramGreen.withOpacity(0.3),
-                                  width: 1,
+                                      AppColors.telegramGreen.withValues(alpha: 0.3),
                                 ),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(
+                                  const Icon(
                                     Icons.lock_open_rounded,
                                     size: 12,
                                     color: AppColors.telegramGreen,
@@ -245,18 +241,17 @@ class CategoryCard extends StatelessWidget {
                                 vertical: 4,
                               ),
                               decoration: BoxDecoration(
-                                color: AppColors.telegramBlue.withOpacity(0.1),
+                                color: AppColors.telegramBlue.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(12),
                                 border: Border.all(
                                   color:
-                                      AppColors.telegramBlue.withOpacity(0.3),
-                                  width: 1,
+                                      AppColors.telegramBlue.withValues(alpha: 0.3),
                                 ),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(
+                                  const Icon(
                                     Icons.attach_money_rounded,
                                     size: 12,
                                     color: AppColors.telegramBlue,
@@ -292,18 +287,17 @@ class CategoryCard extends StatelessWidget {
                                 ),
                                 decoration: BoxDecoration(
                                   color:
-                                      AppColors.telegramGreen.withOpacity(0.1),
+                                      AppColors.telegramGreen.withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(12),
                                   border: Border.all(
                                     color: AppColors.telegramGreen
-                                        .withOpacity(0.3),
-                                    width: 1,
+                                        .withValues(alpha: 0.3),
                                   ),
                                 ),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(
+                                    const Icon(
                                       Icons.check_circle_rounded,
                                       size: 12,
                                       color: AppColors.telegramGreen,
@@ -327,18 +321,17 @@ class CategoryCard extends StatelessWidget {
                                 ),
                                 decoration: BoxDecoration(
                                   color:
-                                      AppColors.telegramYellow.withOpacity(0.1),
+                                      AppColors.telegramYellow.withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(12),
                                   border: Border.all(
                                     color: AppColors.telegramYellow
-                                        .withOpacity(0.3),
-                                    width: 1,
+                                        .withValues(alpha: 0.3),
                                   ),
                                 ),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(
+                                    const Icon(
                                       Icons.schedule_rounded,
                                       size: 12,
                                       color: AppColors.telegramYellow,
@@ -362,18 +355,17 @@ class CategoryCard extends StatelessWidget {
                                 ),
                                 decoration: BoxDecoration(
                                   color:
-                                      AppColors.telegramBlue.withOpacity(0.1),
+                                      AppColors.telegramBlue.withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(12),
                                   border: Border.all(
                                     color:
-                                        AppColors.telegramBlue.withOpacity(0.3),
-                                    width: 1,
+                                        AppColors.telegramBlue.withValues(alpha: 0.3),
                                   ),
                                 ),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(
+                                    const Icon(
                                       Icons.lock_rounded,
                                       size: 12,
                                       color: AppColors.telegramBlue,
@@ -440,15 +432,13 @@ class CategoryCardShimmer extends StatelessWidget {
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
           color: Theme.of(context).brightness == Brightness.dark
-              ? AppColors.darkDivider.withOpacity(0.3)
-              : AppColors.lightDivider.withOpacity(0.3),
-          width: 1,
+              ? AppColors.darkDivider.withValues(alpha: 0.3)
+              : AppColors.lightDivider.withValues(alpha: 0.3),
         ),
       ),
       child: Shimmer.fromColors(
-        baseColor: Colors.grey[300]!.withOpacity(0.3),
-        highlightColor: Colors.grey[100]!.withOpacity(0.6),
-        period: const Duration(milliseconds: 1500),
+        baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+        highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

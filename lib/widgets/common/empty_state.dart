@@ -49,14 +49,13 @@ class EmptyState extends StatelessWidget {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                AppColors.getCard(context).withOpacity(0.4),
-                AppColors.getCard(context).withOpacity(0.2),
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: _getBorderColor(context).withOpacity(0.2),
-              width: 1,
+              color: _getBorderColor(context).withValues(alpha: 0.2),
             ),
           ),
           child: child,
@@ -77,7 +76,7 @@ class EmptyState extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: _getIconColor(context).withOpacity(0.3),
+            color: _getIconColor(context).withValues(alpha: 0.3),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -138,15 +137,15 @@ class EmptyState extends StatelessWidget {
                           : CrossAxisAlignment.start,
                       children: [
                         if (showAnimation) _buildAnimatedIcon(context),
-                        SizedBox(height: AppThemes.spacingL),
+                        const SizedBox(height: AppThemes.spacingL),
                         _buildTitle(context),
-                        SizedBox(height: AppThemes.spacingM),
+                        const SizedBox(height: AppThemes.spacingM),
                         _buildMessage(context),
                         if (actionText != null && onAction != null) ...[
-                          SizedBox(height: AppThemes.spacingXL),
+                          const SizedBox(height: AppThemes.spacingXL),
                           _buildActionButton(context),
                         ],
-                        SizedBox(height: AppThemes.spacingS),
+                        const SizedBox(height: AppThemes.spacingS),
                       ],
                     ),
                   ),
@@ -230,13 +229,13 @@ class EmptyState extends StatelessWidget {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            _getIconColor(context).withOpacity(0.2),
-            _getIconColor(context).withOpacity(0.05),
+            _getIconColor(context).withValues(alpha: 0.2),
+            _getIconColor(context).withValues(alpha: 0.05),
           ],
         ),
         shape: BoxShape.circle,
         border: Border.all(
-            color: _getIconColor(context).withOpacity(0.3), width: 2),
+            color: _getIconColor(context).withValues(alpha: 0.3), width: 2),
       ),
       child: Icon(icon, size: iconSize * 0.5, color: _getIconColor(context)),
     );
@@ -261,7 +260,7 @@ class EmptyState extends StatelessWidget {
 
   Widget _buildTitle(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: AppThemes.spacingL),
+      padding: const EdgeInsets.symmetric(horizontal: AppThemes.spacingL),
       child: Text(
         title,
         style: AppTextStyles.titleLarge.copyWith(
@@ -276,7 +275,7 @@ class EmptyState extends StatelessWidget {
 
   Widget _buildMessage(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: AppThemes.spacingL),
+      padding: const EdgeInsets.symmetric(horizontal: AppThemes.spacingL),
       child: Text(
         message,
         style: AppTextStyles.bodyMedium

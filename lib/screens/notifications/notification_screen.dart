@@ -12,10 +12,7 @@ import '../../providers/notification_provider.dart';
 import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
-import '../../widgets/common/loading_indicator.dart';
-import '../../widgets/common/empty_state.dart';
 import '../../utils/helpers.dart';
-import '../../widgets/common/error_widget.dart' as custom;
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -55,10 +52,11 @@ class _NotificationsScreenState extends State<NotificationsScreen>
           final show = _scrollController.offset <= 100;
           if (_showFAB != show) {
             setState(() => _showFAB = show);
-            if (show)
+            if (show) {
               _fabAnimationController.forward();
-            else
+            } else {
               _fabAnimationController.reverse();
+            }
           }
         }
       });
@@ -93,14 +91,13 @@ class _NotificationsScreenState extends State<NotificationsScreen>
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                AppColors.getCard(context).withOpacity(0.4),
-                AppColors.getCard(context).withOpacity(0.2),
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: AppColors.telegramBlue.withOpacity(0.2),
-              width: 1,
+              color: AppColors.telegramBlue.withValues(alpha: 0.2),
             ),
           ),
           child: child,
@@ -114,8 +111,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       backgroundColor: AppColors.getBackground(context),
       appBar: AppBar(
         title: Shimmer.fromColors(
-          baseColor: Colors.grey[300]!.withOpacity(0.3),
-          highlightColor: Colors.grey[100]!.withOpacity(0.6),
+          baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+          highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
           child: Container(
             width: 150,
             height: 24,
@@ -136,8 +133,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
               child: Row(
                 children: [
                   Shimmer.fromColors(
-                    baseColor: Colors.grey[300]!.withOpacity(0.3),
-                    highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                    baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                    highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                     child: Container(
                       width: 48,
                       height: 48,
@@ -153,8 +150,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Shimmer.fromColors(
-                          baseColor: Colors.grey[300]!.withOpacity(0.3),
-                          highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                          baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                          highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                           child: Container(
                             height: 20,
                             width: double.infinity,
@@ -166,8 +163,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                         ),
                         const SizedBox(height: 8),
                         Shimmer.fromColors(
-                          baseColor: Colors.grey[300]!.withOpacity(0.3),
-                          highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                          baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                          highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                           child: Container(
                             height: 16,
                             width: 200,
@@ -205,11 +202,12 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         _page = 1;
         _hasMore = provider.notifications.length >= _pageSize;
       } finally {
-        if (mounted)
+        if (mounted) {
           setState(() {
             _isInitialLoad = false;
             _isRefreshing = false;
           });
+        }
       }
     }
   }
@@ -303,7 +301,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
             Container(
               margin: const EdgeInsets.only(right: 4),
               child: IconButton(
-                icon: Icon(Icons.mark_email_read_rounded,
+                icon: const Icon(Icons.mark_email_read_rounded,
                     color: AppColors.telegramBlue),
                 onPressed: () => _showMarkAllAsReadDialog(context, provider),
                 tooltip: 'Mark all as read',
@@ -311,14 +309,14 @@ class _NotificationsScreenState extends State<NotificationsScreen>
             ),
           IconButton(
             icon: _isRefreshing
-                ? SizedBox(
+                ? const SizedBox(
                     width: 20,
                     height: 20,
                     child: CircularProgressIndicator(
                         strokeWidth: 2,
                         valueColor: AlwaysStoppedAnimation<Color>(
                             AppColors.telegramBlue)))
-                : Icon(Icons.refresh_rounded, color: AppColors.telegramBlue),
+                : const Icon(Icons.refresh_rounded, color: AppColors.telegramBlue),
             onPressed: _isRefreshing ? null : _refreshNotifications,
             tooltip: 'Refresh',
           ),
@@ -337,7 +335,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                       BorderRadius.circular(AppThemes.borderRadiusLarge),
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.telegramBlue.withOpacity(0.3),
+                      color: AppColors.telegramBlue.withValues(alpha: 0.3),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -373,13 +371,13 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
-                        AppColors.telegramRed.withOpacity(0.2),
-                        AppColors.telegramRed.withOpacity(0.1),
+                        AppColors.telegramRed.withValues(alpha: 0.2),
+                        AppColors.telegramRed.withValues(alpha: 0.1),
                       ],
                     ),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(Icons.error_outline_rounded,
+                  child: const Icon(Icons.error_outline_rounded,
                       size: 48, color: AppColors.telegramRed),
                 ),
               ),
@@ -402,7 +400,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                       BorderRadius.circular(AppThemes.borderRadiusMedium),
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.telegramBlue.withOpacity(0.3),
+                      color: AppColors.telegramBlue.withValues(alpha: 0.3),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -440,13 +438,13 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [
-                      AppColors.telegramGray.withOpacity(0.2),
-                      AppColors.telegramGray.withOpacity(0.1),
+                      AppColors.telegramGray.withValues(alpha: 0.2),
+                      AppColors.telegramGray.withValues(alpha: 0.1),
                     ],
                   ),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(Icons.notifications_off_rounded,
+                child: const Icon(Icons.notifications_off_rounded,
                     size: 48, color: AppColors.telegramGray),
               ),
             ),
@@ -469,7 +467,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                     BorderRadius.circular(AppThemes.borderRadiusMedium),
                 boxShadow: [
                   BoxShadow(
-                    color: AppColors.telegramBlue.withOpacity(0.3),
+                    color: AppColors.telegramBlue.withValues(alpha: 0.3),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -598,7 +596,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         child: const Icon(Icons.delete, color: Colors.white),
       ),
       confirmDismiss: (direction) async {
-        return await _showDeleteConfirmation(context, notification, provider);
+        return _showDeleteConfirmation(context, notification, provider);
       },
       onDismissed: (direction) {
         // Already handled by confirmDismiss
@@ -624,8 +622,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
-                            iconColor.withOpacity(0.2),
-                            iconColor.withOpacity(0.05),
+                            iconColor.withValues(alpha: 0.2),
+                            iconColor.withValues(alpha: 0.05),
                           ],
                         ),
                         borderRadius: BorderRadius.circular(12),
@@ -657,7 +655,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                                     width: 8,
                                     height: 8,
                                     margin: const EdgeInsets.only(left: 4),
-                                    decoration: BoxDecoration(
+                                    decoration: const BoxDecoration(
                                         color: AppColors.telegramBlue,
                                         shape: BoxShape.circle)),
                             ],
@@ -675,12 +673,12 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                               Icon(Icons.access_time_rounded,
                                   size: 12,
                                   color: AppColors.getTextSecondary(context)
-                                      .withOpacity(0.5)),
+                                      .withValues(alpha: 0.5)),
                               const SizedBox(width: 4),
                               Text(timeText,
                                   style: AppTextStyles.caption.copyWith(
                                       color: AppColors.getTextSecondary(context)
-                                          .withOpacity(0.5))),
+                                          .withValues(alpha: 0.5))),
                               const Spacer(),
                               if (!notification.isRead)
                                 _buildGlassContainer(
@@ -721,14 +719,18 @@ class _NotificationsScreenState extends State<NotificationsScreen>
   Color _getNotificationColor(AppNotification.Notification notification) {
     final title = notification.title.toLowerCase();
     if (title.contains('payment')) return AppColors.telegramGreen;
-    if (title.contains('exam') || title.contains('result'))
+    if (title.contains('exam') || title.contains('result')) {
       return AppColors.telegramYellow;
-    if (title.contains('streak') || title.contains('progress'))
+    }
+    if (title.contains('streak') || title.contains('progress')) {
       return AppColors.telegramGreen;
-    if (title.contains('expiring') || title.contains('expired'))
+    }
+    if (title.contains('expiring') || title.contains('expired')) {
       return AppColors.telegramRed;
-    if (title.contains('system') || title.contains('announcement'))
+    }
+    if (title.contains('system') || title.contains('announcement')) {
       return AppColors.telegramBlue;
+    }
     return AppColors.telegramBlue;
   }
 
@@ -784,7 +786,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                   margin: const EdgeInsets.symmetric(vertical: 16),
                   decoration: BoxDecoration(
                       color:
-                          AppColors.getTextSecondary(context).withOpacity(0.2),
+                          AppColors.getTextSecondary(context).withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(2))),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -796,8 +798,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                         decoration: BoxDecoration(
                             gradient: LinearGradient(
                               colors: [
-                                iconColor.withOpacity(0.2),
-                                iconColor.withOpacity(0.05),
+                                iconColor.withValues(alpha: 0.2),
+                                iconColor.withValues(alpha: 0.05),
                               ],
                             ),
                             borderRadius: BorderRadius.circular(16)),
@@ -820,7 +822,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                     ),
                     if (!notification.isRead)
                       IconButton(
-                        icon: Icon(Icons.mark_email_read_rounded,
+                        icon: const Icon(Icons.mark_email_read_rounded,
                             color: AppColors.telegramBlue),
                         onPressed: () {
                           provider.markAsRead(notification.logId);
@@ -871,7 +873,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                               AppThemes.borderRadiusMedium),
                           boxShadow: [
                             BoxShadow(
-                              color: AppColors.telegramRed.withOpacity(0.3),
+                              color: AppColors.telegramRed.withValues(alpha: 0.3),
                               blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),
@@ -923,7 +925,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                 height: 4,
                 margin: const EdgeInsets.symmetric(vertical: 16),
                 decoration: BoxDecoration(
-                    color: AppColors.getTextSecondary(context).withOpacity(0.2),
+                    color: AppColors.getTextSecondary(context).withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(2))),
             ListTile(
               leading: _buildGlassContainer(
@@ -931,7 +933,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                     width: 40,
                     height: 40,
                     padding: const EdgeInsets.all(8),
-                    child: Icon(Icons.delete_rounded,
+                    child: const Icon(Icons.delete_rounded,
                         color: AppColors.telegramRed)),
               ),
               title: Text('Delete',
@@ -949,7 +951,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                       width: 40,
                       height: 40,
                       padding: const EdgeInsets.all(8),
-                      child: Icon(Icons.mark_email_read_rounded,
+                      child: const Icon(Icons.mark_email_read_rounded,
                           color: AppColors.telegramBlue)),
                 ),
                 title: Text('Mark as read',
@@ -1002,12 +1004,12 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                     decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
-                            AppColors.telegramRed.withOpacity(0.2),
-                            AppColors.telegramRed.withOpacity(0.1),
+                            AppColors.telegramRed.withValues(alpha: 0.2),
+                            AppColors.telegramRed.withValues(alpha: 0.1),
                           ],
                         ),
                         shape: BoxShape.circle),
-                    child: Icon(Icons.delete_rounded,
+                    child: const Icon(Icons.delete_rounded,
                         color: AppColors.telegramRed, size: 24)),
                 const SizedBox(height: 16),
                 Text('Delete notification',
@@ -1046,7 +1048,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                               AppThemes.borderRadiusMedium),
                           boxShadow: [
                             BoxShadow(
-                              color: AppColors.telegramRed.withOpacity(0.3),
+                              color: AppColors.telegramRed.withValues(alpha: 0.3),
                               blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),
@@ -1101,12 +1103,12 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                     decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
-                            AppColors.telegramBlue.withOpacity(0.2),
-                            AppColors.telegramPurple.withOpacity(0.1),
+                            AppColors.telegramBlue.withValues(alpha: 0.2),
+                            AppColors.telegramPurple.withValues(alpha: 0.1),
                           ],
                         ),
                         shape: BoxShape.circle),
-                    child: Icon(Icons.mark_email_read_rounded,
+                    child: const Icon(Icons.mark_email_read_rounded,
                         color: AppColors.telegramBlue, size: 24)),
                 const SizedBox(height: 16),
                 Text('Mark all as read',
@@ -1145,7 +1147,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                               AppThemes.borderRadiusMedium),
                           boxShadow: [
                             BoxShadow(
-                              color: AppColors.telegramBlue.withOpacity(0.3),
+                              color: AppColors.telegramBlue.withValues(alpha: 0.3),
                               blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),
@@ -1187,7 +1189,6 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       mobile: _buildMobileNotifications(),
       tablet: _buildMobileNotifications(),
       desktop: _buildMobileNotifications(),
-      animateTransition: true,
     );
   }
 }

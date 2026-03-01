@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:ui';
-import 'package:familyacademyclient/providers/auth_provider.dart';
 import 'package:familyacademyclient/services/device_service.dart';
 import 'package:familyacademyclient/themes/app_text_styles.dart';
 import 'package:flutter/material.dart';
@@ -9,13 +8,9 @@ import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
 import 'package:familyacademyclient/themes/app_themes.dart';
-import 'package:familyacademyclient/widgets/common/loading_indicator.dart';
-import 'package:familyacademyclient/providers/subscription_provider.dart';
 import 'package:familyacademyclient/providers/category_provider.dart';
-import 'package:familyacademyclient/providers/settings_provider.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../models/category_model.dart';
-import '../../utils/helpers.dart';
 import '../../themes/app_colors.dart';
 
 class PaymentSuccessScreen extends StatefulWidget {
@@ -205,14 +200,13 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                AppColors.getCard(context).withOpacity(0.4),
-                AppColors.getCard(context).withOpacity(0.2),
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: AppColors.telegramBlue.withOpacity(0.2),
-              width: 1,
+              color: AppColors.telegramBlue.withValues(alpha: 0.2),
             ),
           ),
           child: child,
@@ -232,8 +226,8 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Shimmer.fromColors(
-                  baseColor: Colors.grey[300]!.withOpacity(0.3),
-                  highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                  baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                  highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                   child: Container(
                     width: 100,
                     height: 100,
@@ -245,8 +239,8 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                 ),
                 const SizedBox(height: 24),
                 Shimmer.fromColors(
-                  baseColor: Colors.grey[300]!.withOpacity(0.3),
-                  highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                  baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                  highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                   child: Container(
                     width: 200,
                     height: 24,
@@ -258,8 +252,8 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                 ),
                 const SizedBox(height: 16),
                 Shimmer.fromColors(
-                  baseColor: Colors.grey[300]!.withOpacity(0.3),
-                  highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                  baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                  highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                   child: Container(
                     width: 300,
                     height: 16,
@@ -282,29 +276,29 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
       backgroundColor: AppColors.getBackground(context),
       body: SafeArea(
         child: Padding(
-          padding: EdgeInsets.all(AppThemes.spacingXXL),
+          padding: const EdgeInsets.all(AppThemes.spacingXXL),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                padding: EdgeInsets.all(AppThemes.spacingXL),
+                padding: const EdgeInsets.all(AppThemes.spacingXL),
                 decoration: BoxDecoration(
-                    color: AppColors.telegramRed.withOpacity(0.1),
+                    color: AppColors.telegramRed.withValues(alpha: 0.1),
                     shape: BoxShape.circle),
-                child: Icon(Icons.error_outline_rounded,
+                child: const Icon(Icons.error_outline_rounded,
                     size: 64, color: AppColors.telegramRed),
               ).animate().shake(duration: 1.seconds),
-              SizedBox(height: AppThemes.spacingXL),
+              const SizedBox(height: AppThemes.spacingXL),
               Text('Payment Error',
                   style: AppTextStyles.headlineLarge.copyWith(
                       color: AppColors.getTextPrimary(context),
                       fontWeight: FontWeight.w700)),
-              SizedBox(height: AppThemes.spacingL),
+              const SizedBox(height: AppThemes.spacingL),
               Text(_errorMessage,
                   textAlign: TextAlign.center,
                   style: AppTextStyles.bodyLarge.copyWith(
                       color: AppColors.getTextSecondary(context), height: 1.6)),
-              SizedBox(height: AppThemes.spacingXXL),
+              const SizedBox(height: AppThemes.spacingXXL),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -312,7 +306,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.telegramBlue,
                     foregroundColor: Colors.white,
-                    padding: EdgeInsets.symmetric(vertical: AppThemes.spacingL),
+                    padding: const EdgeInsets.symmetric(vertical: AppThemes.spacingL),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(
                             AppThemes.borderRadiusMedium)),
@@ -322,12 +316,12 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                           .copyWith(color: Colors.white)),
                 ),
               ),
-              SizedBox(height: AppThemes.spacingM),
+              const SizedBox(height: AppThemes.spacingM),
               TextButton(
                 onPressed: () => context.push('/notifications'),
                 style: TextButton.styleFrom(
                     foregroundColor: AppColors.telegramBlue),
-                child: Text('Check Notifications',
+                child: const Text('Check Notifications',
                     style: AppTextStyles.buttonMedium),
               ),
             ],
@@ -350,8 +344,8 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: RadialGradient(colors: [
-                  AppColors.telegramGreen.withOpacity(0.3),
-                  AppColors.telegramGreen.withOpacity(0.1),
+                  AppColors.telegramGreen.withValues(alpha: 0.3),
+                  AppColors.telegramGreen.withValues(alpha: 0.1),
                   Colors.transparent
                 ], stops: const [
                   0.1,
@@ -375,18 +369,18 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                   gradient: LinearGradient(
                     colors: [
                       AppColors.telegramGreen,
-                      AppColors.telegramGreen.withOpacity(0.8),
+                      AppColors.telegramGreen.withValues(alpha: 0.8),
                     ],
                   ),
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                        color: AppColors.telegramGreen.withOpacity(0.3),
+                        color: AppColors.telegramGreen.withValues(alpha: 0.3),
                         blurRadius: 20,
                         spreadRadius: 5)
                   ],
                 ),
-                child: Icon(Icons.check_rounded, size: 60, color: Colors.white),
+                child: const Icon(Icons.check_rounded, size: 60, color: Colors.white),
               ),
             );
           },
@@ -410,32 +404,32 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                 color: AppColors.getTextPrimary(context),
                 fontWeight: FontWeight.w700),
             textAlign: TextAlign.center),
-        SizedBox(height: AppThemes.spacingM),
+        const SizedBox(height: AppThemes.spacingM),
         Text(message,
             style: AppTextStyles.bodyLarge.copyWith(
                 color: AppColors.getTextSecondary(context), height: 1.5),
             textAlign: TextAlign.center),
-        SizedBox(height: AppThemes.spacingM),
+        const SizedBox(height: AppThemes.spacingM),
         Container(
-          padding: EdgeInsets.symmetric(
+          padding: const EdgeInsets.symmetric(
               horizontal: AppThemes.spacingL, vertical: AppThemes.spacingS),
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
-                AppColors.statusPending.withOpacity(0.2),
-                AppColors.statusPending.withOpacity(0.1),
+                AppColors.statusPending.withValues(alpha: 0.2),
+                AppColors.statusPending.withValues(alpha: 0.1),
               ],
             ),
             borderRadius: BorderRadius.circular(AppThemes.borderRadiusFull),
             border: Border.all(
-                color: AppColors.statusPending.withOpacity(0.3), width: 1),
+                color: AppColors.statusPending.withValues(alpha: 0.3)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.schedule_rounded,
+              const Icon(Icons.schedule_rounded,
                   size: 16, color: AppColors.statusPending),
-              SizedBox(width: 4),
+              const SizedBox(width: 4),
               Text('Pending Verification',
                   style: AppTextStyles.labelSmall.copyWith(
                       color: AppColors.statusPending,
@@ -443,7 +437,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
             ],
           ),
         ),
-        SizedBox(height: AppThemes.spacingXL),
+        const SizedBox(height: AppThemes.spacingXL),
         _buildPaymentDetails(),
       ],
     );
@@ -461,13 +455,13 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                 value: _categoryName.isNotEmpty
                     ? _categoryName
                     : (_category?.name ?? 'N/A')),
-            SizedBox(height: AppThemes.spacingM),
+            const SizedBox(height: AppThemes.spacingM),
             _buildDetailRow(
                 icon: Icons.attach_money_rounded,
                 label: 'Amount',
                 value: '${_amount.toStringAsFixed(0)} ETB'),
             if (_paymentMethodName.isNotEmpty) ...[
-              SizedBox(height: AppThemes.spacingM),
+              const SizedBox(height: AppThemes.spacingM),
               _buildDetailRow(
                   icon: Icons.payment_rounded,
                   label: 'Method',
@@ -475,32 +469,32 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
             ],
             if (_accountHolderName != null &&
                 _accountHolderName!.isNotEmpty) ...[
-              SizedBox(height: AppThemes.spacingM),
+              const SizedBox(height: AppThemes.spacingM),
               _buildDetailRow(
                   icon: Icons.person_rounded,
                   label: 'Account Holder',
                   value: _accountHolderName!),
             ],
             if (_username.isNotEmpty) ...[
-              SizedBox(height: AppThemes.spacingM),
+              const SizedBox(height: AppThemes.spacingM),
               _buildDetailRow(
                   icon: Icons.person_rounded,
                   label: 'Username',
                   value: _username),
             ],
-            SizedBox(height: AppThemes.spacingM),
+            const SizedBox(height: AppThemes.spacingM),
             _buildDetailRow(
                 icon: Icons.calendar_today_rounded,
                 label: 'Billing Cycle',
                 value: _billingCycle == 'semester'
                     ? 'Semester (4 months)'
                     : 'Monthly (1 month)'),
-            SizedBox(height: AppThemes.spacingM),
+            const SizedBox(height: AppThemes.spacingM),
             _buildDetailRow(
                 icon: Icons.timer_rounded,
                 label: 'Access Duration',
                 value: _durationText),
-            SizedBox(height: AppThemes.spacingM),
+            const SizedBox(height: AppThemes.spacingM),
             _buildDetailRow(
                 icon: Icons.info_rounded,
                 label: 'Status',
@@ -525,13 +519,13 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
             decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    AppColors.telegramBlue.withOpacity(0.2),
-                    AppColors.telegramPurple.withOpacity(0.1),
+                    AppColors.telegramBlue.withValues(alpha: 0.2),
+                    AppColors.telegramPurple.withValues(alpha: 0.1),
                   ],
                 ),
                 shape: BoxShape.circle),
             child: Icon(icon, size: 16, color: AppColors.telegramBlue)),
-        SizedBox(width: AppThemes.spacingM),
+        const SizedBox(width: AppThemes.spacingM),
         Expanded(
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -560,7 +554,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.telegramBlue,
               foregroundColor: Colors.white,
-              padding: EdgeInsets.symmetric(vertical: AppThemes.spacingL),
+              padding: const EdgeInsets.symmetric(vertical: AppThemes.spacingL),
               shape: RoundedRectangleBorder(
                   borderRadius:
                       BorderRadius.circular(AppThemes.borderRadiusMedium)),
@@ -570,7 +564,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                     AppTextStyles.buttonMedium.copyWith(color: Colors.white)),
           ),
         ),
-        SizedBox(height: AppThemes.spacingL),
+        const SizedBox(height: AppThemes.spacingL),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -578,7 +572,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                 icon: Icons.subscriptions_rounded,
                 label: 'Subscriptions',
                 onTap: () => context.push('/subscriptions')),
-            SizedBox(width: AppThemes.spacingM),
+            const SizedBox(width: AppThemes.spacingM),
             _buildActionChip(
                 icon: Icons.notifications_rounded,
                 label: 'Notifications',
@@ -586,15 +580,15 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
           ],
         ),
         if (_animationComplete) ...[
-          SizedBox(height: AppThemes.spacingXL),
+          const SizedBox(height: AppThemes.spacingXL),
           Container(
-            padding: EdgeInsets.symmetric(
+            padding: const EdgeInsets.symmetric(
                 horizontal: AppThemes.spacingL, vertical: AppThemes.spacingM),
             decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    AppColors.getSurface(context).withOpacity(0.3),
-                    AppColors.getSurface(context).withOpacity(0.1),
+                    AppColors.getSurface(context).withValues(alpha: 0.3),
+                    AppColors.getSurface(context).withValues(alpha: 0.1),
                   ],
                 ),
                 borderRadius:
@@ -602,14 +596,14 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                SizedBox(
+                const SizedBox(
                     width: 20,
                     height: 20,
                     child: CircularProgressIndicator(
                         strokeWidth: 2,
                         valueColor: AlwaysStoppedAnimation<Color>(
                             AppColors.telegramBlue))),
-                SizedBox(width: AppThemes.spacingM),
+                const SizedBox(width: AppThemes.spacingM),
                 Text('Redirecting in $_secondsRemaining seconds...',
                     style: AppTextStyles.bodySmall
                         .copyWith(color: AppColors.getTextSecondary(context))),
@@ -631,25 +625,24 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
         onTap: onTap,
         borderRadius: BorderRadius.circular(AppThemes.borderRadiusFull),
         child: Container(
-          padding: EdgeInsets.symmetric(
+          padding: const EdgeInsets.symmetric(
               horizontal: AppThemes.spacingL, vertical: AppThemes.spacingS),
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
-                AppColors.getSurface(context).withOpacity(0.3),
-                AppColors.getSurface(context).withOpacity(0.1),
+                AppColors.getSurface(context).withValues(alpha: 0.3),
+                AppColors.getSurface(context).withValues(alpha: 0.1),
               ],
             ),
             borderRadius: BorderRadius.circular(AppThemes.borderRadiusFull),
             border: Border.all(
-                color: Theme.of(context).dividerColor.withOpacity(0.2),
-                width: 1),
+                color: Theme.of(context).dividerColor.withValues(alpha: 0.2)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(icon, size: 16, color: AppColors.telegramBlue),
-              SizedBox(width: 4),
+              const SizedBox(width: 4),
               Text(label,
                   style: AppTextStyles.labelSmall.copyWith(
                       color: AppColors.telegramBlue,
@@ -666,16 +659,16 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
       backgroundColor: AppColors.getBackground(context),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: EdgeInsets.all(AppThemes.spacingXL),
+          padding: const EdgeInsets.all(AppThemes.spacingXL),
           child: Column(
             children: [
-              SizedBox(height: AppThemes.spacingXXL),
+              const SizedBox(height: AppThemes.spacingXXL),
               _buildSuccessIcon(context),
-              SizedBox(height: AppThemes.spacingXXL),
+              const SizedBox(height: AppThemes.spacingXXL),
               _buildSuccessContent(context),
-              SizedBox(height: AppThemes.spacingXXL),
+              const SizedBox(height: AppThemes.spacingXXL),
               _buildActionButtons(context),
-              SizedBox(height: AppThemes.spacingXXL),
+              const SizedBox(height: AppThemes.spacingXXL),
             ],
           ),
         ),
@@ -689,17 +682,17 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
       body: Center(
         child: Container(
           constraints: const BoxConstraints(maxWidth: 500),
-          margin: EdgeInsets.all(AppThemes.spacingXXL),
+          margin: const EdgeInsets.all(AppThemes.spacingXXL),
           child: _buildGlassContainer(
             child: Padding(
-              padding: EdgeInsets.all(AppThemes.spacingXXXL),
+              padding: const EdgeInsets.all(AppThemes.spacingXXXL),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   _buildSuccessIcon(context),
-                  SizedBox(height: AppThemes.spacingXXL),
+                  const SizedBox(height: AppThemes.spacingXXL),
                   _buildSuccessContent(context),
-                  SizedBox(height: AppThemes.spacingXXL),
+                  const SizedBox(height: AppThemes.spacingXXL),
                   _buildActionButtons(context),
                 ],
               ),
@@ -722,7 +715,6 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
       mobile: _buildMobileLayout(context),
       tablet: _buildDesktopLayout(context),
       desktop: _buildDesktopLayout(context),
-      animateTransition: true,
     );
   }
 }

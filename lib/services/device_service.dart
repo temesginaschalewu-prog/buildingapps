@@ -13,7 +13,6 @@ import 'package:familyacademyclient/models/course_model.dart';
 import 'package:familyacademyclient/models/chapter_model.dart';
 import 'package:familyacademyclient/models/exam_model.dart';
 import 'package:familyacademyclient/models/exam_result_model.dart';
-import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/constants.dart';
 import '../utils/helpers.dart';
@@ -122,9 +121,8 @@ class DeviceService {
       if (Platform.isAndroid) {
         final androidInfo = await _deviceInfo.androidInfo;
         final androidId = androidInfo.id;
-        if (androidId != null &&
-            androidId.isNotEmpty &&
-            androidId != "unknown") {
+        if (androidId.isNotEmpty &&
+            androidId != 'unknown') {
           return 'ANDROID_${androidId.hashCode.abs()}';
         }
       } else if (Platform.isIOS) {
@@ -190,7 +188,7 @@ class DeviceService {
 
   dynamic _encodeValue(dynamic value) {
     if (value is List) {
-      return value.map((item) => _encodeValue(item)).toList();
+      return value.map(_encodeValue).toList();
     } else if (value is Map) {
       return value;
     } else if (value is Subscription) {
@@ -567,13 +565,13 @@ class DeviceService {
     try {
       if (Platform.isAndroid) {
         final androidInfo = await _deviceInfo.androidInfo;
-        final model = androidInfo.model?.toLowerCase() ?? '';
+        final model = androidInfo.model.toLowerCase() ?? '';
         return model.contains('tab') ||
             model.contains('pad') ||
             model.contains('tablet');
       } else if (Platform.isIOS) {
         final iosInfo = await _deviceInfo.iosInfo;
-        return iosInfo.model?.toLowerCase().contains('ipad') ?? false;
+        return iosInfo.model.toLowerCase().contains('ipad') ?? false;
       }
     } catch (e) {
       debugLog('DeviceService', 'isTablet check error: $e');

@@ -13,7 +13,6 @@ import '../../services/api_service.dart';
 import '../../providers/school_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../themes/app_themes.dart';
-import '../../widgets/common/loading_indicator.dart';
 import '../../utils/helpers.dart';
 
 class SchoolSelectionScreen extends StatefulWidget {
@@ -68,14 +67,13 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                AppColors.getCard(context).withOpacity(0.4),
-                AppColors.getCard(context).withOpacity(0.2),
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: AppColors.telegramBlue.withOpacity(0.2),
-              width: 1,
+              color: AppColors.telegramBlue.withValues(alpha: 0.2),
             ),
           ),
           child: child,
@@ -89,8 +87,8 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
       backgroundColor: AppColors.getBackground(context),
       appBar: AppBar(
         title: Shimmer.fromColors(
-          baseColor: Colors.grey[300]!.withOpacity(0.3),
-          highlightColor: Colors.grey[100]!.withOpacity(0.6),
+          baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+          highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
           child: Container(
             width: 150,
             height: 24,
@@ -111,8 +109,8 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
               child: Row(
                 children: [
                   Shimmer.fromColors(
-                    baseColor: Colors.grey[300]!.withOpacity(0.3),
-                    highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                    baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                    highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                     child: Container(
                       width: 48,
                       height: 48,
@@ -128,8 +126,8 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Shimmer.fromColors(
-                          baseColor: Colors.grey[300]!.withOpacity(0.3),
-                          highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                          baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                          highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                           child: Container(
                             height: 20,
                             width: double.infinity,
@@ -141,8 +139,8 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                         ),
                         const SizedBox(height: 8),
                         Shimmer.fromColors(
-                          baseColor: Colors.grey[300]!.withOpacity(0.3),
-                          highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                          baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                          highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                           child: Container(
                             height: 16,
                             width: 150,
@@ -282,8 +280,9 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
       await Future.delayed(const Duration(milliseconds: 100));
       if (mounted) context.go('/');
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         showTopSnackBar(context, 'Failed to proceed: $e', isError: true);
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -298,7 +297,7 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
         child: InkWell(
           onTap: () => _handleSchoolSelection(school.id),
           borderRadius: BorderRadius.circular(24),
-          splashColor: AppColors.telegramBlue.withOpacity(0.1),
+          splashColor: AppColors.telegramBlue.withValues(alpha: 0.1),
           highlightColor: Colors.transparent,
           child: Padding(
             padding: EdgeInsets.all(ScreenSize.responsiveValue(
@@ -318,12 +317,12 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                     gradient: LinearGradient(
                       colors: isSelected
                           ? [
-                              AppColors.telegramBlue.withOpacity(0.2),
-                              AppColors.telegramPurple.withOpacity(0.1),
+                              AppColors.telegramBlue.withValues(alpha: 0.2),
+                              AppColors.telegramPurple.withValues(alpha: 0.1),
                             ]
                           : [
-                              AppColors.getSurface(context).withOpacity(0.3),
-                              AppColors.getSurface(context).withOpacity(0.1),
+                              AppColors.getSurface(context).withValues(alpha: 0.3),
+                              AppColors.getSurface(context).withValues(alpha: 0.1),
                             ],
                     ),
                     borderRadius: BorderRadius.circular(16),
@@ -334,7 +333,7 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                         context: context, mobile: 24, tablet: 28, desktop: 32),
                     color: isSelected
                         ? AppColors.telegramBlue
-                        : AppColors.telegramBlue.withOpacity(0.5),
+                        : AppColors.telegramBlue.withValues(alpha: 0.5),
                   ),
                 ),
                 const SizedBox(width: 16),
@@ -386,7 +385,7 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                       color: isSelected
                           ? Colors.transparent
                           : AppColors.getTextSecondary(context)
-                              .withOpacity(0.3),
+                              .withValues(alpha: 0.3),
                       width: 2,
                     ),
                   ),
@@ -420,7 +419,7 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
         child: InkWell(
           onTap: () => _handleSchoolSelection(0),
           borderRadius: BorderRadius.circular(24),
-          splashColor: AppColors.telegramBlue.withOpacity(0.1),
+          splashColor: AppColors.telegramBlue.withValues(alpha: 0.1),
           highlightColor: Colors.transparent,
           child: Padding(
             padding: EdgeInsets.all(ScreenSize.responsiveValue(
@@ -440,12 +439,12 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                     gradient: LinearGradient(
                       colors: isSelected
                           ? [
-                              AppColors.telegramBlue.withOpacity(0.2),
-                              AppColors.telegramPurple.withOpacity(0.1),
+                              AppColors.telegramBlue.withValues(alpha: 0.2),
+                              AppColors.telegramPurple.withValues(alpha: 0.1),
                             ]
                           : [
-                              AppColors.getSurface(context).withOpacity(0.3),
-                              AppColors.getSurface(context).withOpacity(0.1),
+                              AppColors.getSurface(context).withValues(alpha: 0.3),
+                              AppColors.getSurface(context).withValues(alpha: 0.1),
                             ],
                     ),
                     borderRadius: BorderRadius.circular(16),
@@ -498,7 +497,7 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                       color: isSelected
                           ? Colors.transparent
                           : AppColors.getTextSecondary(context)
-                              .withOpacity(0.3),
+                              .withValues(alpha: 0.3),
                       width: 2,
                     ),
                   ),
@@ -532,7 +531,7 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
           tablet: 32,
           desktop: 40,
         )),
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           gradient: LinearGradient(
               colors: AppColors.blueGradient,
               begin: Alignment.topLeft,
@@ -549,7 +548,7 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                   child: Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
+                        color: Colors.white.withValues(alpha: 0.2),
                         shape: BoxShape.circle),
                     child: Icon(Icons.school_rounded,
                         size: ScreenSize.responsiveValue(
@@ -570,7 +569,7 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
             const SizedBox(height: 8),
             Text('This helps personalize your learning experience',
                 style: AppTextStyles.bodyMedium
-                    .copyWith(color: Colors.white.withOpacity(0.9)),
+                    .copyWith(color: Colors.white.withValues(alpha: 0.9)),
                 textAlign: TextAlign.center),
           ],
         ),
@@ -610,7 +609,7 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                   hintText: 'Search schools...',
                   hintStyle: AppTextStyles.bodyMedium.copyWith(
                       color:
-                          AppColors.getTextSecondary(context).withOpacity(0.5)),
+                          AppColors.getTextSecondary(context).withValues(alpha: 0.5)),
                   prefixIcon: Icon(Icons.search_rounded,
                       color: AppColors.getTextSecondary(context)),
                   border: InputBorder.none,
@@ -631,8 +630,9 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
             sliver: SliverList.separated(
               itemCount: _filteredSchools.length + 1,
               itemBuilder: (context, index) {
-                if (index == _filteredSchools.length)
+                if (index == _filteredSchools.length) {
                   return _buildOtherOption(context, index);
+                }
                 return _buildSchoolCard(
                     context, _filteredSchools[index], index);
               },
@@ -661,7 +661,7 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                             ? [
                                 BoxShadow(
                                   color:
-                                      AppColors.telegramBlue.withOpacity(0.3),
+                                      AppColors.telegramBlue.withValues(alpha: 0.3),
                                   blurRadius: 8,
                                   offset: const Offset(0, 2),
                                 ),
@@ -677,7 +677,7 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                           foregroundColor: Colors.white,
                           shadowColor: Colors.transparent,
                           disabledBackgroundColor: _selectedSchoolId == null
-                              ? AppColors.telegramGray.withOpacity(0.2)
+                              ? AppColors.telegramGray.withValues(alpha: 0.2)
                               : Colors.transparent,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(
@@ -685,7 +685,7 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                                   AppThemes.borderRadiusMedium)),
                         ),
                         child: _isLoading
-                            ? SizedBox(
+                            ? const SizedBox(
                                 width: 20,
                                 height: 20,
                                 child: CircularProgressIndicator(

@@ -4,10 +4,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../models/user_model.dart';
-import '../models/subscription_model.dart';
 import '../models/payment_model.dart';
 import '../models/notification_model.dart' as AppNotification;
-import '../utils/helpers.dart';
 
 class UserProvider with ChangeNotifier {
   final ApiService apiService;
@@ -26,11 +24,11 @@ class UserProvider with ChangeNotifier {
   bool _isBackgroundRefreshing = false;
   bool _hasInitialCache = false;
   Timer? _backgroundRefreshTimer;
-  StreamController<User?> _userUpdateController =
+  final StreamController<User?> _userUpdateController =
       StreamController<User?>.broadcast();
-  StreamController<List<Payment>> _paymentsUpdateController =
+  final StreamController<List<Payment>> _paymentsUpdateController =
       StreamController<List<Payment>>.broadcast();
-  StreamController<List<AppNotification.Notification>>
+  final StreamController<List<AppNotification.Notification>>
       _notificationsUpdateController =
       StreamController<List<AppNotification.Notification>>.broadcast();
 
@@ -84,8 +82,9 @@ class UserProvider with ChangeNotifier {
       String type, Future<void> Function() refreshFunction,
       {bool forceRefresh = false}) async {
     if (!_shouldRefresh(type, forceRefresh: forceRefresh)) return false;
-    if (_ongoingRefreshes.containsKey(type))
-      return await _ongoingRefreshes[type]!.future;
+    if (_ongoingRefreshes.containsKey(type)) {
+      return _ongoingRefreshes[type]!.future;
+    }
 
     final completer = Completer<bool>();
     _ongoingRefreshes[type] = completer;
@@ -125,8 +124,9 @@ class UserProvider with ChangeNotifier {
           _hasInitialCache = true;
           _lastProfileCacheTime = DateTime.now();
           _userUpdateController.add(_currentUser);
-          if (_isCacheStale(_lastProfileCacheTime))
+          if (_isCacheStale(_lastProfileCacheTime)) {
             unawaited(_refreshProfileInBackground());
+          }
           return;
         }
       }
@@ -153,10 +153,11 @@ class UserProvider with ChangeNotifier {
       _userUpdateController.add(_currentUser);
     } catch (e) {
       _error = e.toString();
-      if (!forceRefresh && _currentUser != null)
+      if (!forceRefresh && _currentUser != null) {
         _userUpdateController.add(_currentUser);
-      else
+      } else {
         rethrow;
+      }
     } finally {
       _isLoading = false;
       _notifySafely();
@@ -170,9 +171,9 @@ class UserProvider with ChangeNotifier {
         final response = await apiService.getMyProfile();
         if (response.success) {
           User? updatedUser;
-          if (response.data is User)
+          if (response.data is User) {
             updatedUser = response.data;
-          else if (response.data is Map<String, dynamic>)
+          } else if (response.data is Map<String, dynamic>)
             updatedUser = User.fromJson(response.data as Map<String, dynamic>);
 
           if (updatedUser != null && _currentUser?.id == updatedUser.id) {
@@ -186,7 +187,6 @@ class UserProvider with ChangeNotifier {
             if (_currentUser != null) _userUpdateController.add(_currentUser);
           }
         }
-      } catch (e) {
       } finally {
         _isBackgroundRefreshing = false;
       }
@@ -214,8 +214,9 @@ class UserProvider with ChangeNotifier {
           _hasLoadedPayments = true;
           _lastPaymentsCacheTime = DateTime.now();
           _paymentsUpdateController.add(_payments);
-          if (_isCacheStale(_lastPaymentsCacheTime))
+          if (_isCacheStale(_lastPaymentsCacheTime)) {
             unawaited(_refreshPaymentsInBackground());
+          }
           return;
         }
       }
@@ -234,10 +235,11 @@ class UserProvider with ChangeNotifier {
       _paymentsUpdateController.add(_payments);
     } catch (e) {
       _error = e.toString();
-      if (!forceRefresh && _payments.isNotEmpty)
+      if (!forceRefresh && _payments.isNotEmpty) {
         _paymentsUpdateController.add(_payments);
-      else
+      } else {
         rethrow;
+      }
     } finally {
       _isLoading = false;
       _notifySafely();
@@ -266,8 +268,9 @@ class UserProvider with ChangeNotifier {
           _hasLoadedNotifications = true;
           _lastNotificationsCacheTime = DateTime.now();
           _notificationsUpdateController.add(_notifications);
-          if (_isCacheStale(_lastNotificationsCacheTime))
+          if (_isCacheStale(_lastNotificationsCacheTime)) {
             unawaited(_refreshNotificationsInBackground());
+          }
           return;
         }
       }
@@ -286,10 +289,11 @@ class UserProvider with ChangeNotifier {
       _notificationsUpdateController.add(_notifications);
     } catch (e) {
       _error = e.toString();
-      if (!forceRefresh && _notifications.isNotEmpty)
+      if (!forceRefresh && _notifications.isNotEmpty) {
         _notificationsUpdateController.add(_notifications);
-      else
+      } else {
         rethrow;
+      }
     } finally {
       _isLoading = false;
       _notifySafely();
@@ -300,8 +304,9 @@ class UserProvider with ChangeNotifier {
     _stopBackgroundRefresh();
     _backgroundRefreshTimer =
         Timer.periodic(_backgroundRefreshInterval, (timer) async {
-      if (!_isLoading && !_isBackgroundRefreshing)
+      if (!_isLoading && !_isBackgroundRefreshing) {
         await _refreshAllInBackground();
+      }
     });
   }
 
@@ -315,7 +320,7 @@ class UserProvider with ChangeNotifier {
       _refreshProfileInBackground(),
       _refreshPaymentsInBackground(),
       _refreshNotificationsInBackground(),
-    ], eagerError: false);
+    ]);
   }
 
   Future<void> _refreshPaymentsInBackground() async {
@@ -389,9 +394,9 @@ class UserProvider with ChangeNotifier {
     } catch (e) {
       _error = e.toString();
       String errorMessage = 'Failed to update profile';
-      if (e.toString().contains('Email already in use'))
+      if (e.toString().contains('Email already in use')) {
         errorMessage = 'Email already in use by another user';
-      else if (e.toString().contains('phone'))
+      } else if (e.toString().contains('phone'))
         errorMessage = 'Phone number already in use by another user';
       else if (e.toString().contains('Invalid email'))
         errorMessage = 'Please enter a valid email address';
@@ -462,7 +467,7 @@ class UserProvider with ChangeNotifier {
     _notifySafely();
   }
 
-  void clearNotifications() async {
+  Future<void> clearNotifications() async {
     if (_currentUserId != null) {
       await deviceService.removeCacheItem('user_notifications_$_currentUserId',
           isUserSpecific: true);

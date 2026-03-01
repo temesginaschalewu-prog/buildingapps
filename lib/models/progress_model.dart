@@ -47,7 +47,7 @@ class UserProgress {
     // Chapter is complete when: video >= 90% + notes viewed + questions attempted
     if (completed) return 100.0;
 
-    final totalItems = 3; // Videos, Notes, Questions
+    const totalItems = 3; // Videos, Notes, Questions
     var completedItems = 0;
 
     if (videoProgress >= 90) completedItems++;

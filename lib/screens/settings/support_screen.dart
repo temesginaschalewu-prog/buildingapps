@@ -12,8 +12,6 @@ import 'package:pull_to_refresh/pull_to_refresh.dart';
 import 'package:flutter/services.dart';
 
 import 'package:familyacademyclient/providers/settings_provider.dart';
-import 'package:familyacademyclient/widgets/common/loading_indicator.dart';
-import 'package:familyacademyclient/widgets/common/empty_state.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
 import 'package:familyacademyclient/themes/app_themes.dart';
 import 'package:familyacademyclient/utils/helpers.dart';
@@ -74,14 +72,13 @@ class _SupportScreenState extends State<SupportScreen>
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                AppColors.getCard(context).withOpacity(0.4),
-                AppColors.getCard(context).withOpacity(0.2),
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: AppColors.telegramBlue.withOpacity(0.2),
-              width: 1,
+              color: AppColors.telegramBlue.withValues(alpha: 0.2),
             ),
           ),
           child: child,
@@ -149,8 +146,8 @@ class _SupportScreenState extends State<SupportScreen>
       backgroundColor: AppColors.getBackground(context),
       appBar: AppBar(
         title: Shimmer.fromColors(
-          baseColor: Colors.grey[300]!.withOpacity(0.3),
-          highlightColor: Colors.grey[100]!.withOpacity(0.6),
+          baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+          highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
           child: Container(
             width: 150,
             height: 24,
@@ -175,8 +172,8 @@ class _SupportScreenState extends State<SupportScreen>
               child: Row(
                 children: [
                   Shimmer.fromColors(
-                    baseColor: Colors.grey[300]!.withOpacity(0.3),
-                    highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                    baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                    highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                     child: Container(
                       width: 48,
                       height: 48,
@@ -192,8 +189,8 @@ class _SupportScreenState extends State<SupportScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Shimmer.fromColors(
-                          baseColor: Colors.grey[300]!.withOpacity(0.3),
-                          highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                          baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                          highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                           child: Container(
                             height: 20,
                             width: double.infinity,
@@ -205,8 +202,8 @@ class _SupportScreenState extends State<SupportScreen>
                         ),
                         const SizedBox(height: 8),
                         Shimmer.fromColors(
-                          baseColor: Colors.grey[300]!.withOpacity(0.3),
-                          highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                          baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                          highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                           child: Container(
                             height: 16,
                             width: 200,
@@ -356,7 +353,7 @@ class _SupportScreenState extends State<SupportScreen>
                               AppThemes.borderRadiusMedium),
                           boxShadow: [
                             BoxShadow(
-                              color: AppColors.telegramBlue.withOpacity(0.3),
+                              color: AppColors.telegramBlue.withValues(alpha: 0.3),
                               blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),
@@ -408,7 +405,7 @@ class _SupportScreenState extends State<SupportScreen>
             onTap:
                 canTap ? () => _handleContactTap(type, value, context) : null,
             borderRadius: BorderRadius.circular(24),
-            splashColor: color.withOpacity(0.1),
+            splashColor: color.withValues(alpha: 0.1),
             highlightColor: Colors.transparent,
             child: Padding(
               padding: EdgeInsets.all(ScreenSize.responsiveValue(
@@ -423,8 +420,8 @@ class _SupportScreenState extends State<SupportScreen>
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
-                          color.withOpacity(0.2),
-                          color.withOpacity(0.05),
+                          color.withValues(alpha: 0.2),
+                          color.withValues(alpha: 0.05),
                         ],
                       ),
                       borderRadius: BorderRadius.circular(16),
@@ -503,9 +500,7 @@ class _SupportScreenState extends State<SupportScreen>
     return SmartRefresher(
       controller: _refreshControllers[2],
       onRefresh: () => _refreshData(2),
-      enablePullDown: true,
-      enablePullUp: false,
-      header: WaterDropHeader(
+      header: const WaterDropHeader(
         waterDropColor: AppColors.telegramBlue,
         refresh: SizedBox(
             width: 24,
@@ -555,7 +550,7 @@ class _SupportScreenState extends State<SupportScreen>
           'Start a live chat',
           Icons.chat_rounded,
           () =>
-              showTopSnackBar(context, 'Live chat coming soon', isError: false),
+              showTopSnackBar(context, 'Live chat coming soon'),
           AppColors.telegramGreen,
           index: 2,
         ),
@@ -601,12 +596,12 @@ class _SupportScreenState extends State<SupportScreen>
               decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [
-                      AppColors.telegramBlue.withOpacity(0.2),
-                      AppColors.telegramPurple.withOpacity(0.1),
+                      AppColors.telegramBlue.withValues(alpha: 0.2),
+                      AppColors.telegramPurple.withValues(alpha: 0.1),
                     ],
                   ),
                   shape: BoxShape.circle),
-              child: Icon(Icons.help_rounded,
+              child: const Icon(Icons.help_rounded,
                   size: 18, color: AppColors.telegramBlue),
             ),
             title: Text(question,
@@ -647,7 +642,7 @@ class _SupportScreenState extends State<SupportScreen>
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(24),
-          splashColor: color.withOpacity(0.1),
+          splashColor: color.withValues(alpha: 0.1),
           highlightColor: Colors.transparent,
           child: Container(
             padding: EdgeInsets.all(ScreenSize.responsiveValue(
@@ -661,8 +656,8 @@ class _SupportScreenState extends State<SupportScreen>
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
-                        color.withOpacity(0.2),
-                        color.withOpacity(0.05),
+                        color.withValues(alpha: 0.2),
+                        color.withValues(alpha: 0.05),
                       ],
                     ),
                     borderRadius: BorderRadius.circular(12),
@@ -716,12 +711,12 @@ class _SupportScreenState extends State<SupportScreen>
                     badgeContent: Text('24H',
                         style: AppTextStyles.caption.copyWith(
                             color: Colors.white, fontWeight: FontWeight.w600)),
-                    badgeStyle: badges.BadgeStyle(
+                    badgeStyle: const badges.BadgeStyle(
                       badgeColor: AppColors.telegramGreen,
-                      padding: const EdgeInsets.symmetric(
+                      padding: EdgeInsets.symmetric(
                           horizontal: 12, vertical: 4),
                     ),
-                    child: Icon(Icons.timer_rounded,
+                    child: const Icon(Icons.timer_rounded,
                         size: 36, color: AppColors.telegramGreen),
                   ),
                 );
@@ -755,7 +750,7 @@ class _SupportScreenState extends State<SupportScreen>
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.access_time_rounded,
+                const Icon(Icons.access_time_rounded,
                     color: AppColors.telegramBlue, size: 20),
                 const SizedBox(width: 8),
                 Text('Support Hours',
@@ -813,25 +808,25 @@ class _SupportScreenState extends State<SupportScreen>
   Color _getBgColorForType(ContactType type, BuildContext context) {
     switch (type) {
       case ContactType.phone:
-        return AppColors.telegramGreen.withOpacity(0.1);
+        return AppColors.telegramGreen.withValues(alpha: 0.1);
       case ContactType.email:
-        return AppColors.telegramBlue.withOpacity(0.1);
+        return AppColors.telegramBlue.withValues(alpha: 0.1);
       case ContactType.whatsapp:
-        return AppColors.telegramGreen.withOpacity(0.1);
+        return AppColors.telegramGreen.withValues(alpha: 0.1);
       case ContactType.telegram:
-        return AppColors.telegramBlue.withOpacity(0.1);
+        return AppColors.telegramBlue.withValues(alpha: 0.1);
       case ContactType.address:
-        return AppColors.telegramYellow.withOpacity(0.1);
+        return AppColors.telegramYellow.withValues(alpha: 0.1);
       case ContactType.hours:
-        return AppColors.telegramYellow.withOpacity(0.1);
+        return AppColors.telegramYellow.withValues(alpha: 0.1);
       case ContactType.website:
-        return AppColors.telegramBlue.withOpacity(0.1);
+        return AppColors.telegramBlue.withValues(alpha: 0.1);
       case ContactType.social:
-        return AppColors.telegramBlue.withOpacity(0.1);
+        return AppColors.telegramBlue.withValues(alpha: 0.1);
       case ContactType.other:
-        return AppColors.telegramBlue.withOpacity(0.1);
+        return AppColors.telegramBlue.withValues(alpha: 0.1);
       default:
-        return AppColors.telegramBlue.withOpacity(0.1);
+        return AppColors.telegramBlue.withValues(alpha: 0.1);
     }
   }
 
@@ -842,9 +837,7 @@ class _SupportScreenState extends State<SupportScreen>
     return SmartRefresher(
       controller: _refreshControllers[0],
       onRefresh: () => _refreshData(0),
-      enablePullDown: true,
-      enablePullUp: false,
-      header: WaterDropHeader(
+      header: const WaterDropHeader(
         waterDropColor: AppColors.telegramBlue,
         refresh: SizedBox(
             width: 24,
@@ -949,9 +942,7 @@ class _SupportScreenState extends State<SupportScreen>
     return SmartRefresher(
       controller: _refreshControllers[1],
       onRefresh: () => _refreshData(1),
-      enablePullDown: true,
-      enablePullUp: false,
-      header: WaterDropHeader(
+      header: const WaterDropHeader(
         waterDropColor: AppColors.telegramBlue,
         refresh: SizedBox(
             width: 24,
@@ -980,7 +971,7 @@ class _SupportScreenState extends State<SupportScreen>
                       padding: const EdgeInsets.all(16),
                       child: Column(
                         children: [
-                          Icon(Icons.support_agent_rounded,
+                          const Icon(Icons.support_agent_rounded,
                               size: 48, color: AppColors.telegramBlue),
                           const SizedBox(height: 16),
                           Text('Contact Us Directly',
@@ -1024,7 +1015,7 @@ class _SupportScreenState extends State<SupportScreen>
         actions: [
           IconButton(
             icon: _isRefreshing
-                ? SizedBox(
+                ? const SizedBox(
                     width: 20,
                     height: 20,
                     child: CircularProgressIndicator(
@@ -1082,7 +1073,7 @@ class _SupportScreenState extends State<SupportScreen>
         actions: [
           IconButton(
             icon: _isRefreshing
-                ? SizedBox(
+                ? const SizedBox(
                     width: 24,
                     height: 24,
                     child: CircularProgressIndicator(
@@ -1127,7 +1118,7 @@ class _SupportScreenState extends State<SupportScreen>
                             Text(
                                 'Get help with your account, payments, subscriptions, or any other questions.',
                                 style: AppTextStyles.bodyLarge.copyWith(
-                                    color: Colors.white.withOpacity(0.9))),
+                                    color: Colors.white.withValues(alpha: 0.9))),
                           ],
                         ),
                       ),
@@ -1273,8 +1264,6 @@ class _SupportScreenState extends State<SupportScreen>
             title: 'Failed to Load',
             message: _errorMessage ?? 'Unable to load support information.',
             onRetry: _loadContactSettings,
-            type: custom.ErrorType.general,
-            fullScreen: false,
           ),
         ),
       );
@@ -1284,7 +1273,6 @@ class _SupportScreenState extends State<SupportScreen>
       mobile: _buildMobileLayout(context),
       tablet: _buildDesktopLayout(context),
       desktop: _buildDesktopLayout(context),
-      animateTransition: true,
     );
   }
 }

@@ -1,4 +1,3 @@
-import 'dart:math';
 import 'dart:ui';
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/themes/app_text_styles.dart';
@@ -7,7 +6,6 @@ import 'package:lottie/lottie.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
 import '../../themes/app_themes.dart';
-import '../../utils/helpers.dart';
 
 class ErrorWidget extends StatelessWidget {
   final String title;
@@ -42,14 +40,13 @@ class ErrorWidget extends StatelessWidget {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                AppColors.getCard(context).withOpacity(0.4),
-                AppColors.getCard(context).withOpacity(0.2),
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: _getIconColor(context).withOpacity(0.2),
-              width: 1,
+              color: _getIconColor(context).withValues(alpha: 0.2),
             ),
           ),
           child: child,
@@ -70,7 +67,7 @@ class ErrorWidget extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: _getIconColor(context).withOpacity(0.3),
+            color: _getIconColor(context).withValues(alpha: 0.3),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -123,19 +120,18 @@ class ErrorWidget extends StatelessWidget {
           child: SingleChildScrollView(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.center,
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (showAnimation) _buildAnimatedIcon(context),
-                SizedBox(height: AppThemes.spacingXXL),
+                const SizedBox(height: AppThemes.spacingXXL),
                 _buildTitle(context),
-                SizedBox(height: AppThemes.spacingM),
+                const SizedBox(height: AppThemes.spacingM),
                 _buildMessage(context),
                 if (onRetry != null) ...[
-                  SizedBox(height: AppThemes.spacingXXL),
+                  const SizedBox(height: AppThemes.spacingXXL),
                   _buildActionButtons(context),
                 ],
-                SizedBox(height: AppThemes.spacingL),
+                const SizedBox(height: AppThemes.spacingL),
               ],
             ),
           ),
@@ -219,13 +215,13 @@ class ErrorWidget extends StatelessWidget {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            _getIconColor(context).withOpacity(0.2),
-            _getIconColor(context).withOpacity(0.05),
+            _getIconColor(context).withValues(alpha: 0.2),
+            _getIconColor(context).withValues(alpha: 0.05),
           ],
         ),
         shape: BoxShape.circle,
         border: Border.all(
-            color: _getIconColor(context).withOpacity(0.2), width: 2.0),
+            color: _getIconColor(context).withValues(alpha: 0.2), width: 2.0),
       ),
       child: Icon(
         icon ?? _getIconForType(),
@@ -299,7 +295,7 @@ class ErrorWidget extends StatelessWidget {
       padding: const EdgeInsets.symmetric(
           horizontal: AppThemes.spacingL, vertical: AppThemes.spacingS),
       decoration: BoxDecoration(
-        color: _getIconColor(context).withOpacity(0.1),
+        color: _getIconColor(context).withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
       ),
       child: Text(
@@ -346,7 +342,7 @@ class ErrorWidget extends StatelessWidget {
           icon: Icons.refresh_outlined,
         ),
         if (type == ErrorType.network || type == ErrorType.access) ...[
-          SizedBox(height: AppThemes.spacingL),
+          const SizedBox(height: AppThemes.spacingL),
           TextButton(
             onPressed: () => _showHelpDialog(context),
             style: TextButton.styleFrom(
@@ -405,8 +401,8 @@ class ErrorWidget extends StatelessWidget {
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
-                        _getIconColor(context).withOpacity(0.2),
-                        _getIconColor(context).withOpacity(0.1),
+                        _getIconColor(context).withValues(alpha: 0.2),
+                        _getIconColor(context).withValues(alpha: 0.1),
                       ],
                     ),
                     shape: BoxShape.circle,
@@ -431,8 +427,8 @@ class ErrorWidget extends StatelessWidget {
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
-                        AppColors.getCard(context).withOpacity(0.3),
-                        AppColors.getCard(context).withOpacity(0.1),
+                        AppColors.getCard(context).withValues(alpha: 0.3),
+                        AppColors.getCard(context).withValues(alpha: 0.1),
                       ],
                     ),
                     borderRadius: BorderRadius.circular(12),
@@ -543,7 +539,6 @@ class NetworkErrorWidget extends StatelessWidget {
       onRetry: onRetry,
       type: ErrorType.network,
       fullScreen: fullScreen,
-      showAnimation: true,
     );
   }
 }
@@ -567,7 +562,6 @@ class ServerErrorWidget extends StatelessWidget {
       onRetry: onRetry,
       type: ErrorType.server,
       fullScreen: fullScreen,
-      showAnimation: true,
     );
   }
 }
@@ -592,7 +586,6 @@ class AccessErrorWidget extends StatelessWidget {
       onRetry: onAction,
       type: ErrorType.access,
       fullScreen: fullScreen,
-      showAnimation: true,
     );
   }
 }
@@ -618,7 +611,6 @@ class NotFoundErrorWidget extends StatelessWidget {
       onRetry: onRetry,
       type: ErrorType.notFound,
       fullScreen: fullScreen,
-      showAnimation: true,
     );
   }
 }
@@ -642,7 +634,6 @@ class TimeoutErrorWidget extends StatelessWidget {
       onRetry: onRetry,
       type: ErrorType.timeout,
       fullScreen: fullScreen,
-      showAnimation: true,
     );
   }
 }
@@ -667,7 +658,6 @@ class PaymentErrorWidget extends StatelessWidget {
       onRetry: onRetry,
       type: ErrorType.payment,
       fullScreen: fullScreen,
-      showAnimation: true,
     );
   }
 }

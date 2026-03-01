@@ -7,9 +7,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
-import 'package:flutter/foundation.dart';
 import '../utils/constants.dart';
 import '../utils/helpers.dart';
 
@@ -81,9 +79,7 @@ class NotificationService {
       const androidSettings =
           AndroidInitializationSettings('@mipmap/ic_launcher');
       const iosSettings = DarwinInitializationSettings(
-        requestAlertPermission: true,
-        requestBadgePermission: true,
-        requestSoundPermission: true,
+        
       );
 
       const initializationSettings = InitializationSettings(
@@ -127,7 +123,7 @@ class NotificationService {
         FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
         FirebaseMessaging.onMessageOpenedApp.listen(_handleMessageOpenedApp);
 
-        RemoteMessage? initialMessage =
+        final RemoteMessage? initialMessage =
             await _firebaseMessaging!.getInitialMessage();
         if (initialMessage != null) {
           await _handleMessage(initialMessage);
@@ -146,9 +142,7 @@ class NotificationService {
     try {
       if (Platform.isIOS && _firebaseMessaging != null) {
         await _firebaseMessaging!.requestPermission(
-          alert: true,
-          badge: true,
-          sound: true,
+          
         );
       }
     } catch (e) {
@@ -366,7 +360,9 @@ class NotificationService {
             .where((key) =>
                 now.difference(_lastNotificationTime[key]!).inMinutes > 5)
             .toList();
-        for (final key in keysToRemove) _lastNotificationTime.remove(key);
+        for (final key in keysToRemove) {
+          _lastNotificationTime.remove(key);
+        }
       }
 
       Color notificationColor;
@@ -401,8 +397,6 @@ class NotificationService {
         ledOnMs: 1000,
         ledOffMs: 500,
         enableLights: true,
-        enableVibration: true,
-        playSound: true,
         styleInformation: BigTextStyleInformation(
           body,
           contentTitle: title,
@@ -414,14 +408,14 @@ class NotificationService {
         onlyAlertOnce: true,
       );
 
-      final iosDetails = DarwinNotificationDetails(
+      const iosDetails = DarwinNotificationDetails(
         presentAlert: true,
         presentBadge: true,
         presentSound: true,
         threadIdentifier: 'family_academy',
       );
 
-      final linuxDetails = LinuxNotificationDetails(
+      const linuxDetails = LinuxNotificationDetails(
         defaultActionName: 'Open',
       );
 

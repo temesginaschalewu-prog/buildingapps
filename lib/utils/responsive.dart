@@ -35,8 +35,9 @@ class ScreenSize {
     double? desktop,
     double? largeScreen,
   }) {
-    if (isLargeScreen(context))
+    if (isLargeScreen(context)) {
       return largeScreen ?? desktop ?? tablet ?? mobile * 1.75;
+    }
     if (isDesktop(context)) return desktop ?? tablet ?? mobile * 1.5;
     if (isTablet(context)) return tablet ?? mobile * 1.25;
     return mobile;
@@ -49,8 +50,9 @@ class ScreenSize {
     int? desktop,
     int? largeScreen,
   }) {
-    if (isLargeScreen(context))
+    if (isLargeScreen(context)) {
       return largeScreen ?? (desktop ?? (tablet ?? mobile) * 2);
+    }
     if (isDesktop(context)) return desktop ?? (tablet ?? mobile * 2);
     if (isTablet(context)) return tablet ?? mobile + 1;
     return mobile;
@@ -63,10 +65,12 @@ class ScreenSize {
     EdgeInsets? desktop,
     EdgeInsets? largeScreen,
   }) {
-    if (isLargeScreen(context))
+    if (isLargeScreen(context)) {
       return largeScreen ?? _scaleEdgeInsets(desktop ?? tablet ?? mobile, 2.0);
-    if (isDesktop(context))
+    }
+    if (isDesktop(context)) {
       return desktop ?? _scaleEdgeInsets(tablet ?? mobile, 1.5);
+    }
     if (isTablet(context)) return tablet ?? _scaleEdgeInsets(mobile, 1.25);
     return mobile;
   }
@@ -87,8 +91,9 @@ class ScreenSize {
     double? desktop,
     double? largeScreen,
   }) {
-    if (isLargeScreen(context))
+    if (isLargeScreen(context)) {
       return largeScreen ?? desktop ?? tablet ?? mobile * 1.3;
+    }
     if (isDesktop(context)) return desktop ?? tablet ?? mobile * 1.2;
     if (isTablet(context)) return tablet ?? mobile * 1.1;
     return mobile;
@@ -101,8 +106,9 @@ class ScreenSize {
     double? desktop,
     double? largeScreen,
   }) {
-    if (isLargeScreen(context))
+    if (isLargeScreen(context)) {
       return largeScreen ?? desktop ?? tablet ?? mobile * 1.5;
+    }
     if (isDesktop(context)) return desktop ?? tablet ?? mobile * 1.35;
     if (isTablet(context)) return tablet ?? mobile * 1.2;
     return mobile;
@@ -115,8 +121,9 @@ class ScreenSize {
     double? desktop,
     double? largeScreen,
   }) {
-    if (isLargeScreen(context))
+    if (isLargeScreen(context)) {
       return largeScreen ?? desktop ?? tablet ?? mobile * 1.3;
+    }
     if (isDesktop(context)) return desktop ?? tablet ?? mobile * 1.2;
     if (isTablet(context)) return tablet ?? mobile * 1.1;
     return mobile;
@@ -129,8 +136,9 @@ class ScreenSize {
     double? desktop,
     double? largeScreen,
   }) {
-    if (isLargeScreen(context))
+    if (isLargeScreen(context)) {
       return largeScreen ?? desktop ?? tablet ?? mobile * 1.2;
+    }
     if (isDesktop(context)) return desktop ?? tablet ?? mobile * 1.1;
     if (isTablet(context)) return tablet ?? mobile * 1.05;
     return mobile;
@@ -177,9 +185,9 @@ class ResponsiveLayout extends StatelessWidget {
         final screenWidth = constraints.maxWidth;
         Widget selectedWidget;
 
-        if (screenWidth >= 1200)
+        if (screenWidth >= 1200) {
           selectedWidget = largeScreen ?? desktop;
-        else if (screenWidth >= 1024)
+        } else if (screenWidth >= 1024)
           selectedWidget = desktop;
         else if (screenWidth >= 600)
           selectedWidget = tablet;
@@ -274,12 +282,15 @@ class AdaptiveContainer extends StatelessWidget {
   }
 
   EdgeInsetsGeometry _getPadding(BuildContext context) {
-    if (ScreenSize.isLargeScreen(context))
+    if (ScreenSize.isLargeScreen(context)) {
       return const EdgeInsets.symmetric(horizontal: 64, vertical: 32);
-    if (ScreenSize.isDesktop(context))
+    }
+    if (ScreenSize.isDesktop(context)) {
       return const EdgeInsets.symmetric(horizontal: 48, vertical: 24);
-    if (ScreenSize.isTablet(context))
+    }
+    if (ScreenSize.isTablet(context)) {
       return const EdgeInsets.symmetric(horizontal: 32, vertical: 16);
+    }
     return const EdgeInsets.symmetric(horizontal: 16, vertical: 8);
   }
 }
@@ -344,13 +355,16 @@ class ResponsiveGrid extends StatelessWidget {
   }
 
   int _getColumnCount(BuildContext context) {
-    if (ScreenSize.isLargeScreen(context))
+    if (ScreenSize.isLargeScreen(context)) {
       return largeScreenColumns ??
           (desktopColumns ?? (tabletColumns ?? mobileColumns) * 2);
-    if (ScreenSize.isDesktop(context))
+    }
+    if (ScreenSize.isDesktop(context)) {
       return desktopColumns ?? (tabletColumns ?? mobileColumns * 2);
-    if (ScreenSize.isTablet(context))
+    }
+    if (ScreenSize.isTablet(context)) {
       return tabletColumns ?? (mobileColumns + 1);
+    }
     return mobileColumns;
   }
 

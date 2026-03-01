@@ -4,15 +4,12 @@ import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:badges/badges.dart' as badges;
 import 'package:familyacademyclient/utils/responsive.dart';
-import 'package:familyacademyclient/themes/app_themes.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../providers/category_provider.dart';
 import '../../providers/notification_provider.dart';
-import '../../utils/helpers.dart';
 
 class MainNavigation extends StatefulWidget {
   final Widget child;
@@ -30,11 +27,11 @@ class _MainNavigationState extends State<MainNavigation>
   bool _dataLoadedInBackground = false;
   StreamSubscription? _authStateSubscription;
   late NotificationProvider _notificationProvider;
-  List<int> _navigationHistory = [0];
+  final List<int> _navigationHistory = [0];
   late AnimationController _tabAnimationController;
   late Animation<double> _tabAnimation;
   Timer? _labelTimer;
-  double _bottomNavBarHeight = 70.0;
+  final double _bottomNavBarHeight = 70.0;
   bool _showLabels = true;
 
   @override
@@ -157,14 +154,13 @@ class _MainNavigationState extends State<MainNavigation>
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                AppColors.getCard(context).withOpacity(0.4),
-                AppColors.getCard(context).withOpacity(0.2),
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: AppColors.telegramBlue.withOpacity(0.2),
-              width: 1,
+              color: AppColors.telegramBlue.withValues(alpha: 0.2),
             ),
           ),
           child: child,
@@ -175,7 +171,7 @@ class _MainNavigationState extends State<MainNavigation>
 
   Widget _buildMobileNavigation() {
     final notificationProvider =
-        Provider.of<NotificationProvider>(context, listen: true);
+        Provider.of<NotificationProvider>(context);
     final unreadCount = notificationProvider.unreadCount;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -260,8 +256,8 @@ class _MainNavigationState extends State<MainNavigation>
                       gradient: isSelected
                           ? LinearGradient(
                               colors: [
-                                AppColors.telegramBlue.withOpacity(0.2),
-                                AppColors.telegramPurple.withOpacity(0.1),
+                                AppColors.telegramBlue.withValues(alpha: 0.2),
+                                AppColors.telegramPurple.withValues(alpha: 0.1),
                               ],
                             )
                           : null,
@@ -334,9 +330,9 @@ class _MainNavigationState extends State<MainNavigation>
 
   Widget _buildTabletNavigation() {
     final notificationProvider =
-        Provider.of<NotificationProvider>(context, listen: true);
+        Provider.of<NotificationProvider>(context);
     final unreadCount = notificationProvider.unreadCount;
-    final authProvider = Provider.of<AuthProvider>(context, listen: true);
+    final authProvider = Provider.of<AuthProvider>(context);
     final user = authProvider.currentUser;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -368,22 +364,19 @@ class _MainNavigationState extends State<MainNavigation>
                       index: 0,
                       icon: Icons.home_outlined,
                       activeIcon: Icons.home_rounded,
-                      label: 'Home',
-                      unreadCount: 0),
+                      label: 'Home'),
                   const SizedBox(height: 12),
                   _buildTabletNavItem(
                       index: 1,
                       icon: Icons.chat_bubble_outline_rounded,
                       activeIcon: Icons.chat_bubble_rounded,
-                      label: 'Chat',
-                      unreadCount: 0),
+                      label: 'Chat'),
                   const SizedBox(height: 12),
                   _buildTabletNavItem(
                       index: 2,
                       icon: Icons.auto_graph_outlined,
                       activeIcon: Icons.auto_graph_rounded,
-                      label: 'Progress',
-                      unreadCount: 0),
+                      label: 'Progress'),
                   const SizedBox(height: 12),
                   _buildTabletNavItem(
                     index: 3,
@@ -401,8 +394,8 @@ class _MainNavigationState extends State<MainNavigation>
                         child: Container(
                           width: 48,
                           height: 48,
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
+                          decoration: const BoxDecoration(
+                            gradient: LinearGradient(
                                 colors: AppColors.purpleGradient,
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight),
@@ -457,8 +450,8 @@ class _MainNavigationState extends State<MainNavigation>
                       gradient: isSelected
                           ? LinearGradient(
                               colors: [
-                                AppColors.telegramBlue.withOpacity(0.2),
-                                AppColors.telegramPurple.withOpacity(0.1),
+                                AppColors.telegramBlue.withValues(alpha: 0.2),
+                                AppColors.telegramPurple.withValues(alpha: 0.1),
                               ],
                             )
                           : null,
@@ -511,9 +504,9 @@ class _MainNavigationState extends State<MainNavigation>
 
   Widget _buildDesktopNavigation() {
     final notificationProvider =
-        Provider.of<NotificationProvider>(context, listen: true);
+        Provider.of<NotificationProvider>(context);
     final unreadCount = notificationProvider.unreadCount;
-    final authProvider = Provider.of<AuthProvider>(context, listen: true);
+    final authProvider = Provider.of<AuthProvider>(context);
     final user = authProvider.currentUser;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -576,22 +569,19 @@ class _MainNavigationState extends State<MainNavigation>
                               icon: Icons.home_outlined,
                               activeIcon: Icons.home_rounded,
                               label: 'Home',
-                              description: 'Discover courses and content',
-                              unreadCount: 0),
+                              description: 'Discover courses and content'),
                           _buildDesktopNavItem(
                               index: 1,
                               icon: Icons.chat_bubble_outline_rounded,
                               activeIcon: Icons.chat_bubble_rounded,
                               label: 'Chat Assistant',
-                              description: 'AI-powered learning help',
-                              unreadCount: 0),
+                              description: 'AI-powered learning help'),
                           _buildDesktopNavItem(
                               index: 2,
                               icon: Icons.auto_graph_outlined,
                               activeIcon: Icons.auto_graph_rounded,
                               label: 'Progress',
-                              description: 'Track your learning journey',
-                              unreadCount: 0),
+                              description: 'Track your learning journey'),
                           _buildDesktopNavItem(
                             index: 3,
                             icon: Icons.person_outline_rounded,
@@ -611,8 +601,8 @@ class _MainNavigationState extends State<MainNavigation>
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
-                            AppColors.getCard(context).withOpacity(0.4),
-                            AppColors.getCard(context).withOpacity(0.2),
+                            AppColors.getCard(context).withValues(alpha: 0.4),
+                            AppColors.getCard(context).withValues(alpha: 0.2),
                           ],
                         ),
                         borderRadius: BorderRadius.circular(12),
@@ -622,8 +612,8 @@ class _MainNavigationState extends State<MainNavigation>
                           Container(
                             width: 40,
                             height: 40,
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
+                            decoration: const BoxDecoration(
+                              gradient: LinearGradient(
                                   colors: AppColors.purpleGradient,
                                   begin: Alignment.topLeft,
                                   end: Alignment.bottomRight),
@@ -699,15 +689,15 @@ class _MainNavigationState extends State<MainNavigation>
           gradient: isSelected
               ? LinearGradient(
                   colors: [
-                    AppColors.telegramBlue.withOpacity(0.2),
-                    AppColors.telegramPurple.withOpacity(0.1),
+                    AppColors.telegramBlue.withValues(alpha: 0.2),
+                    AppColors.telegramPurple.withValues(alpha: 0.1),
                   ],
                 )
               : null,
           borderRadius: BorderRadius.circular(12),
           border: isSelected
               ? Border.all(
-                  color: AppColors.telegramBlue.withOpacity(0.3), width: 1)
+                  color: AppColors.telegramBlue.withValues(alpha: 0.3))
               : null,
         ),
         child: Row(
@@ -722,14 +712,14 @@ class _MainNavigationState extends State<MainNavigation>
                     gradient: isSelected
                         ? LinearGradient(
                             colors: [
-                              AppColors.telegramBlue.withOpacity(0.2),
-                              AppColors.telegramPurple.withOpacity(0.1),
+                              AppColors.telegramBlue.withValues(alpha: 0.2),
+                              AppColors.telegramPurple.withValues(alpha: 0.1),
                             ],
                           )
                         : LinearGradient(
                             colors: [
-                              AppColors.getCard(context).withOpacity(0.3),
-                              AppColors.getCard(context).withOpacity(0.1),
+                              AppColors.getCard(context).withValues(alpha: 0.3),
+                              AppColors.getCard(context).withValues(alpha: 0.1),
                             ],
                           ),
                     borderRadius: BorderRadius.circular(10),
@@ -780,7 +770,7 @@ class _MainNavigationState extends State<MainNavigation>
                       style: TextStyle(
                           fontSize: 12,
                           color: isSelected
-                              ? AppColors.telegramBlue.withOpacity(0.8)
+                              ? AppColors.telegramBlue.withValues(alpha: 0.8)
                               : (isDark
                                   ? AppColors.darkTextSecondary
                                   : AppColors.lightTextSecondary)),
@@ -790,7 +780,7 @@ class _MainNavigationState extends State<MainNavigation>
               ),
             ),
             if (isSelected)
-              Icon(Icons.arrow_forward_ios_rounded,
+              const Icon(Icons.arrow_forward_ios_rounded,
                   size: 14, color: AppColors.telegramBlue),
           ],
         ),
@@ -830,7 +820,7 @@ class _MainNavigationState extends State<MainNavigation>
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context, listen: true);
+    final authProvider = Provider.of<AuthProvider>(context);
 
     WidgetsBinding.instance
         .addPostFrameCallback((_) => _updateCurrentIndexFromRoute());
@@ -844,7 +834,6 @@ class _MainNavigationState extends State<MainNavigation>
       mobile: _buildMobileNavigation(),
       tablet: _buildTabletNavigation(),
       desktop: _buildDesktopNavigation(),
-      animateTransition: true,
     );
   }
 }

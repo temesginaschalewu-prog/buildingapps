@@ -1,6 +1,4 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
-import '../utils/constants.dart';
 
 class Category {
   final int id;

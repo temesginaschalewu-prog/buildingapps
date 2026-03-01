@@ -3,8 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
-import '../../themes/app_themes.dart';
-import '../../utils/responsive.dart';
 import '../../models/exam_question_model.dart';
 
 class QuestionWidget extends StatefulWidget {
@@ -102,14 +100,13 @@ class _QuestionWidgetState extends State<QuestionWidget> {
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    AppColors.getCard(context).withOpacity(0.3),
-                    AppColors.getCard(context).withOpacity(0.1),
+                    AppColors.getCard(context).withValues(alpha: 0.3),
+                    AppColors.getCard(context).withValues(alpha: 0.1),
                   ],
                 ),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: AppColors.telegramBlue.withOpacity(0.2),
-                  width: 1,
+                  color: AppColors.telegramBlue.withValues(alpha: 0.2),
                 ),
               ),
               child: Row(
@@ -125,7 +122,7 @@ class _QuestionWidgetState extends State<QuestionWidget> {
                           color: AppColors.blueFaded,
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
-                            color: AppColors.telegramBlue.withOpacity(0.3),
+                            color: AppColors.telegramBlue.withValues(alpha: 0.3),
                           ),
                         ),
                         child: Text(
@@ -146,7 +143,7 @@ class _QuestionWidgetState extends State<QuestionWidget> {
                           color: difficultyBgColor,
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
-                            color: difficultyColor.withOpacity(0.3),
+                            color: difficultyColor.withValues(alpha: 0.3),
                           ),
                         ),
                         child: Row(
@@ -160,7 +157,7 @@ class _QuestionWidgetState extends State<QuestionWidget> {
                                 shape: BoxShape.circle,
                                 boxShadow: [
                                   BoxShadow(
-                                    color: difficultyColor.withOpacity(0.5),
+                                    color: difficultyColor.withValues(alpha: 0.5),
                                     blurRadius: 4,
                                   ),
                                 ],
@@ -188,7 +185,7 @@ class _QuestionWidgetState extends State<QuestionWidget> {
                       color: AppColors.grayFaded,
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                        color: AppColors.telegramGray.withOpacity(0.3),
+                        color: AppColors.telegramGray.withValues(alpha: 0.3),
                       ),
                     ),
                     child: Text(
@@ -219,14 +216,13 @@ class _QuestionWidgetState extends State<QuestionWidget> {
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    AppColors.getCard(context).withOpacity(0.4),
-                    AppColors.getCard(context).withOpacity(0.2),
+                    AppColors.getCard(context).withValues(alpha: 0.4),
+                    AppColors.getCard(context).withValues(alpha: 0.2),
                   ],
                 ),
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
-                  color: AppColors.telegramBlue.withOpacity(0.2),
-                  width: 1,
+                  color: AppColors.telegramBlue.withValues(alpha: 0.2),
                 ),
               ),
               child: Text(
@@ -300,19 +296,15 @@ class _QuestionWidgetState extends State<QuestionWidget> {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  isSelected
-                      ? AppColors.telegramBlue.withOpacity(0.15)
-                      : AppColors.getCard(context).withOpacity(0.2),
-                  isSelected
-                      ? AppColors.telegramBlue.withOpacity(0.05)
-                      : AppColors.getCard(context).withOpacity(0.1),
+                  if (isSelected) AppColors.telegramBlue.withValues(alpha: 0.15) else AppColors.getCard(context).withValues(alpha: 0.2),
+                  if (isSelected) AppColors.telegramBlue.withValues(alpha: 0.05) else AppColors.getCard(context).withValues(alpha: 0.1),
                 ],
               ),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
                 color: isSelected
-                    ? AppColors.telegramBlue.withOpacity(0.5)
-                    : AppColors.getTextSecondary(context).withOpacity(0.1),
+                    ? AppColors.telegramBlue.withValues(alpha: 0.5)
+                    : AppColors.getTextSecondary(context).withValues(alpha: 0.1),
                 width: isSelected ? 2 : 1,
               ),
             ),
@@ -344,7 +336,7 @@ class _QuestionWidgetState extends State<QuestionWidget> {
                             color: isSelected
                                 ? Colors.transparent
                                 : AppColors.getTextSecondary(context)
-                                    .withOpacity(0.3),
+                                    .withValues(alpha: 0.3),
                             width: 2,
                           ),
                         ),
@@ -383,7 +375,7 @@ class _QuestionWidgetState extends State<QuestionWidget> {
                         Container(
                           padding: const EdgeInsets.all(4),
                           decoration: BoxDecoration(
-                            color: AppColors.telegramBlue.withOpacity(0.2),
+                            color: AppColors.telegramBlue.withValues(alpha: 0.2),
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(

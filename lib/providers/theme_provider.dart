@@ -1,4 +1,3 @@
-import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/constants.dart';
@@ -69,9 +68,7 @@ class ThemeProvider with ChangeNotifier {
 
     debugLog('ThemeProvider', 'Theme set to: $_themeMode');
 
-    Future.delayed(const Duration(milliseconds: 50), () {
-      notifyListeners();
-    });
+    Future.delayed(const Duration(milliseconds: 50), notifyListeners);
   }
 
   void toggleTheme() {

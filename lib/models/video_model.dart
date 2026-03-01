@@ -150,9 +150,9 @@ class Video {
         // Add .mp4 extension if missing
         if (url.contains('?')) {
           final parts = url.split('?');
-          url = parts[0] + '.mp4?' + parts[1];
+          url = '${parts[0]}.mp4?${parts[1]}';
         } else {
-          url = url + '.mp4';
+          url = '$url.mp4';
         }
       }
 
@@ -181,9 +181,9 @@ class Video {
           !url.contains('.m3u8')) {
         if (url.contains('?')) {
           final parts = url.split('?');
-          url = parts[0] + '.mp4?' + parts[1];
+          url = '${parts[0]}.mp4?${parts[1]}';
         } else {
-          url = url + '.mp4';
+          url = '$url.mp4';
         }
       }
 
@@ -195,9 +195,9 @@ class Video {
       if (!url.contains('.mp4') && !url.contains('.m3u8')) {
         if (url.contains('?')) {
           final parts = url.split('?');
-          url = parts[0] + '.mp4?' + parts[1];
+          url = '${parts[0]}.mp4?${parts[1]}';
         } else {
-          url = url + '.mp4';
+          url = '$url.mp4';
         }
       }
       return url;

@@ -47,7 +47,9 @@ class NotificationProvider with ChangeNotifier {
     if (!forceRefresh && _hasLoaded) {
       final now = DateTime.now();
       if (_lastLoadTime != null &&
-          now.difference(_lastLoadTime!) < _cacheDuration) return;
+          now.difference(_lastLoadTime!) < _cacheDuration) {
+        return;
+      }
     }
 
     if (!forceRefresh && !_hasLoaded) {
@@ -100,10 +102,12 @@ class NotificationProvider with ChangeNotifier {
       if (response.success && response.data != null) {
         final newNotifications = response.data ?? [];
         final Map<int, AppNotification.Notification> notificationMap = {};
-        for (final notif in _notifications)
+        for (final notif in _notifications) {
           notificationMap[notif.logId] = notif;
-        for (final notif in newNotifications)
+        }
+        for (final notif in newNotifications) {
           notificationMap[notif.logId] = notif;
+        }
 
         _notifications = notificationMap.values.toList()
           ..sort((a, b) => b.receivedAt.compareTo(a.receivedAt));

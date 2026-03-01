@@ -57,15 +57,11 @@ class AppThemes {
         primary: AppColors.telegramBlue,
         primaryContainer: AppColors.telegramBlueLight,
         secondary: AppColors.telegramGreen,
-        secondaryContainer: AppColors.telegramGreen.withOpacity(0.1),
+        secondaryContainer: AppColors.telegramGreen.withValues(alpha: 0.1),
         surface: AppColors.lightSurface,
-        surfaceVariant: const Color(0xFFE5E5EA),
-        background: AppColors.lightBackground,
+        surfaceContainerHighest: const Color(0xFFE5E5EA),
         error: AppColors.telegramRed,
-        onPrimary: Colors.white,
         onSecondary: Colors.white,
-        onSurface: AppColors.lightTextPrimary,
-        onBackground: AppColors.lightTextPrimary,
         outline: AppColors.lightDivider,
         outlineVariant: const Color(0xFFE5E5EA),
       ),
@@ -125,7 +121,7 @@ class AppThemes {
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.telegramBlue,
           foregroundColor: Colors.white,
-          disabledBackgroundColor: AppColors.telegramBlue.withOpacity(0.5),
+          disabledBackgroundColor: AppColors.telegramBlue.withValues(alpha: 0.5),
           elevation: elevationNone,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(borderRadiusMedium),
@@ -204,7 +200,6 @@ class AppThemes {
           borderRadius: BorderRadius.circular(borderRadiusMedium),
           borderSide: const BorderSide(
             color: AppColors.telegramRed,
-            width: 1.0,
           ),
         ),
         focusedErrorBorder: OutlineInputBorder(
@@ -354,7 +349,7 @@ class AppThemes {
       chipTheme: ChipThemeData(
         backgroundColor: AppColors.lightSurface,
         selectedColor: AppColors.telegramBlue,
-        disabledColor: Color(0xFFE5E5EA),
+        disabledColor: const Color(0xFFE5E5EA),
         labelStyle: AppTextStyles.labelSmall.copyWith(
           color: AppColors.lightTextSecondary,
         ),
@@ -383,15 +378,12 @@ class AppThemes {
         primary: AppColors.telegramBlueLight,
         primaryContainer: AppColors.telegramBlueDark,
         secondary: AppColors.telegramGreen,
-        secondaryContainer: AppColors.telegramGreen.withOpacity(0.1),
+        secondaryContainer: AppColors.telegramGreen.withValues(alpha: 0.1),
         surface: AppColors.darkSurface,
-        surfaceVariant: const Color(0xFF2C2C2E),
-        background: AppColors.darkBackground,
+        surfaceContainerHighest: const Color(0xFF2C2C2E),
         error: AppColors.telegramRed,
         onPrimary: Colors.white,
         onSecondary: Colors.white,
-        onSurface: AppColors.darkTextPrimary,
-        onBackground: AppColors.darkTextPrimary,
         outline: AppColors.darkDivider,
         outlineVariant: const Color(0xFF38383A),
       ),
@@ -451,7 +443,7 @@ class AppThemes {
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.telegramBlueLight,
           foregroundColor: Colors.white,
-          disabledBackgroundColor: AppColors.telegramBlueLight.withOpacity(0.5),
+          disabledBackgroundColor: AppColors.telegramBlueLight.withValues(alpha: 0.5),
           elevation: elevationNone,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(borderRadiusMedium),
@@ -530,7 +522,6 @@ class AppThemes {
           borderRadius: BorderRadius.circular(borderRadiusMedium),
           borderSide: const BorderSide(
             color: AppColors.telegramRed,
-            width: 1.0,
           ),
         ),
         focusedErrorBorder: OutlineInputBorder(
@@ -680,7 +671,7 @@ class AppThemes {
       chipTheme: ChipThemeData(
         backgroundColor: AppColors.darkSurface,
         selectedColor: AppColors.telegramBlueLight,
-        disabledColor: Color(0xFF38383A),
+        disabledColor: const Color(0xFF38383A),
         labelStyle: AppTextStyles.labelSmall.copyWith(
           color: AppColors.darkTextSecondary,
         ),
@@ -711,14 +702,14 @@ class AppThemes {
       boxShadow: Theme.of(context).brightness == Brightness.dark
           ? [
               BoxShadow(
-                color: Colors.black.withOpacity(0.3),
+                color: Colors.black.withValues(alpha: 0.3),
                 blurRadius: 8.0,
                 offset: const Offset(0, 2),
               ),
             ]
           : [
               BoxShadow(
-                color: Colors.black.withOpacity(0.08),
+                color: Colors.black.withValues(alpha: 0.08),
                 blurRadius: 8.0,
                 offset: const Offset(0, 2),
               ),
@@ -732,7 +723,7 @@ class AppThemes {
       borderRadius: BorderRadius.circular(borderRadiusLarge),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withOpacity(0.15),
+          color: Colors.black.withValues(alpha: 0.15),
           blurRadius: 16.0,
           offset: const Offset(0, 8),
         ),
@@ -746,28 +737,27 @@ class AppThemes {
       borderRadius: BorderRadius.circular(borderRadiusFull),
       border: Border.all(
         color: AppColors.getStatusColor(status, context),
-        width: 1.0,
       ),
     );
   }
 
   // Animation Effects
   static List<Effect<dynamic>> get fadeInSlideUp => [
-        FadeEffect(duration: animationDurationMedium),
-        SlideEffect(
-          begin: const Offset(0, 0.1),
+        const FadeEffect(duration: animationDurationMedium),
+        const SlideEffect(
+          begin: Offset(0, 0.1),
           end: Offset.zero,
           duration: animationDurationMedium,
         ),
       ];
 
   static List<Effect<dynamic>> get scaleIn => [
-        ScaleEffect(
-          begin: const Offset(0.95, 0.95),
-          end: const Offset(1, 1),
+        const ScaleEffect(
+          begin: Offset(0.95, 0.95),
+          end: Offset(1, 1),
           duration: animationDurationMedium,
         ),
-        FadeEffect(duration: animationDurationMedium),
+        const FadeEffect(duration: animationDurationMedium),
       ];
 
   // Loading Shimmer
@@ -832,7 +822,7 @@ class AppThemes {
       ),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withOpacity(0.1),
+          color: Colors.black.withValues(alpha: 0.1),
           blurRadius: 4.0,
           offset: const Offset(0, 2),
         ),

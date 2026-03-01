@@ -3,16 +3,14 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../models/setting_model.dart';
-import '../utils/helpers.dart';
-import '../utils/constants.dart';
 
 class SettingsProvider with ChangeNotifier {
   final ApiService apiService;
   final DeviceService deviceService;
 
   List<Setting> _allSettings = [];
-  Map<String, Setting> _settingsMap = {};
-  Map<String, List<Setting>> _settingsByCategory = {};
+  final Map<String, Setting> _settingsMap = {};
+  final Map<String, List<Setting>> _settingsByCategory = {};
   bool _isLoading = false;
   String? _error;
 
@@ -61,8 +59,9 @@ class SettingsProvider with ChangeNotifier {
     final contactSettings = _settingsByCategory['contact'] ?? [];
 
     for (final setting in contactSettings) {
-      if (setting.settingValue == null || setting.settingValue!.isEmpty)
+      if (setting.settingValue == null || setting.settingValue!.isEmpty) {
         continue;
+      }
 
       final key = setting.settingKey.toLowerCase();
       final value = setting.settingValue!;
@@ -168,7 +167,9 @@ class SettingsProvider with ChangeNotifier {
     final clean = value.replaceAll(RegExp(r'[\s\-\(\)\+]'), '');
     if (RegExp(r'^\d{8,15}$').hasMatch(clean)) return true;
     if (RegExp(r'^\+?\d{1,4}[\s\-]?\d{1,4}[\s\-]?\d{1,4}[\s\-]?\d{1,4}$')
-        .hasMatch(value)) return true;
+        .hasMatch(value)) {
+      return true;
+    }
     return false;
   }
 
@@ -195,7 +196,7 @@ class SettingsProvider with ChangeNotifier {
     if (_allSettings.isEmpty) return methods;
 
     final enabledValue = getSettingValue('payment_methods_enabled');
-    bool methodsEnabled =
+    final bool methodsEnabled =
         enabledValue == null || enabledValue.toString().toLowerCase() == 'true';
     if (!methodsEnabled) return methods;
 
@@ -473,7 +474,9 @@ class SettingsProvider with ChangeNotifier {
 
     if (!shouldForce &&
         _settingsByCategory.containsKey('contact') &&
-        _settingsByCategory['contact']!.isNotEmpty) return;
+        _settingsByCategory['contact']!.isNotEmpty) {
+      return;
+    }
 
     if (_allSettings.isEmpty || shouldForce) await getAllSettings();
   }
@@ -499,8 +502,9 @@ class SettingsProvider with ChangeNotifier {
           await deviceService.getCacheItem<List<Setting>>(cacheKey);
       if (cachedSettings != null) {
         _settingsByCategory[category] = cachedSettings;
-        for (final setting in cachedSettings)
+        for (final setting in cachedSettings) {
           _settingsMap[setting.settingKey] = setting;
+        }
         _isLoading = false;
         _lastCategoryLoadTime[category] = DateTime.now();
         completer.complete(true);
@@ -511,11 +515,12 @@ class SettingsProvider with ChangeNotifier {
       final categorySettings = response.data ?? [];
 
       _settingsByCategory[category] = categorySettings;
-      for (final setting in categorySettings)
+      for (final setting in categorySettings) {
         _settingsMap[setting.settingKey] = setting;
+      }
 
       await deviceService.saveCacheItem(cacheKey, categorySettings,
-          ttl: Duration(minutes: 30));
+          ttl: const Duration(minutes: 30));
       _lastCategoryLoadTime[category] = DateTime.now();
       completer.complete(true);
     } catch (e) {

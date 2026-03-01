@@ -14,7 +14,6 @@ void showTopSnackBar(BuildContext context, String message,
   if (!context.mounted) return;
 
   final overlay = Overlay.of(context);
-  if (overlay == null) return;
 
   final overlayEntry = OverlayEntry(
     builder: (context) => Positioned(
@@ -34,7 +33,7 @@ void showTopSnackBar(BuildContext context, String message,
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.2),
+                  color: Colors.black.withValues(alpha: 0.2),
                   blurRadius: 12,
                   offset: const Offset(0, 4),
                 ),
@@ -71,9 +70,7 @@ void showTopSnackBar(BuildContext context, String message,
   );
 
   overlay.insert(overlayEntry);
-  Future.delayed(Duration(seconds: durationSeconds), () {
-    overlayEntry.remove();
-  });
+  Future.delayed(Duration(seconds: durationSeconds), overlayEntry.remove);
 }
 
 // For backward compatibility - redirects to top snackbar

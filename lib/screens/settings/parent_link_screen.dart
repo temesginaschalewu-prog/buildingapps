@@ -15,7 +15,6 @@ import '../../providers/parent_link_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../themes/app_themes.dart';
-import '../../widgets/common/loading_indicator.dart';
 import '../../utils/helpers.dart';
 
 class ParentLinkScreen extends StatefulWidget {
@@ -121,8 +120,9 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
       final token = parentLinkProvider.parentToken;
       final expiresAt = parentLinkProvider.tokenExpiresAt;
 
-      if (token != null && expiresAt != null)
+      if (token != null && expiresAt != null) {
         _showTokenDialog(token, expiresAt);
+      }
     } catch (e) {
       showTopSnackBar(
           context, 'Failed to generate token: ${formatErrorMessage(e)}',
@@ -145,10 +145,11 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
 
           if (mounted) showTopSnackBar(context, 'Parent unlinked successfully');
         } catch (e) {
-          if (mounted)
+          if (mounted) {
             showTopSnackBar(
                 context, 'Failed to unlink: ${formatErrorMessage(e)}',
                 isError: true);
+          }
         }
       },
     );
@@ -165,14 +166,13 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                AppColors.getCard(context).withOpacity(0.4),
-                AppColors.getCard(context).withOpacity(0.2),
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: AppColors.telegramBlue.withOpacity(0.2),
-              width: 1,
+              color: AppColors.telegramBlue.withValues(alpha: 0.2),
             ),
           ),
           child: child,
@@ -186,8 +186,8 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
       backgroundColor: AppColors.getBackground(context),
       appBar: AppBar(
         title: Shimmer.fromColors(
-          baseColor: Colors.grey[300]!.withOpacity(0.3),
-          highlightColor: Colors.grey[100]!.withOpacity(0.6),
+          baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+          highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
           child: Container(
             width: 150,
             height: 24,
@@ -205,8 +205,8 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Shimmer.fromColors(
-                  baseColor: Colors.grey[300]!.withOpacity(0.3),
-                  highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                  baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                  highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                   child: Container(
                     width: 80,
                     height: 80,
@@ -218,8 +218,8 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                 ),
                 const SizedBox(height: 24),
                 Shimmer.fromColors(
-                  baseColor: Colors.grey[300]!.withOpacity(0.3),
-                  highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                  baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                  highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                   child: Container(
                     width: 200,
                     height: 24,
@@ -231,8 +231,8 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                 ),
                 const SizedBox(height: 16),
                 Shimmer.fromColors(
-                  baseColor: Colors.grey[300]!.withOpacity(0.3),
-                  highlightColor: Colors.grey[100]!.withOpacity(0.6),
+                  baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                  highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                   child: Container(
                     width: 300,
                     height: 16,
@@ -273,13 +273,13 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
-                              AppColors.telegramBlue.withOpacity(0.2),
-                              AppColors.telegramPurple.withOpacity(0.1),
+                              AppColors.telegramBlue.withValues(alpha: 0.2),
+                              AppColors.telegramPurple.withValues(alpha: 0.1),
                             ],
                           ),
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(Icons.link_rounded,
+                        child: const Icon(Icons.link_rounded,
                             color: AppColors.telegramBlue, size: 24),
                       ),
                       const SizedBox(width: 16),
@@ -329,15 +329,15 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                                     colors: isExpiringSoon
                                         ? [
                                             AppColors.telegramRed
-                                                .withOpacity(0.2),
+                                                .withValues(alpha: 0.2),
                                             AppColors.telegramRed
-                                                .withOpacity(0.1),
+                                                .withValues(alpha: 0.1),
                                           ]
                                         : [
                                             AppColors.telegramGreen
-                                                .withOpacity(0.2),
+                                                .withValues(alpha: 0.2),
                                             AppColors.telegramGreen
-                                                .withOpacity(0.1),
+                                                .withValues(alpha: 0.1),
                                           ],
                                   ),
                                   borderRadius: BorderRadius.circular(
@@ -345,8 +345,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                                   border: Border.all(
                                       color: isExpiringSoon
                                           ? AppColors.telegramRed
-                                          : AppColors.telegramGreen,
-                                      width: 1),
+                                          : AppColors.telegramGreen),
                                 ),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
@@ -404,7 +403,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                             padding: const EdgeInsets.symmetric(vertical: 12),
                           ),
                           child:
-                              Text('Close', style: AppTextStyles.buttonMedium),
+                              const Text('Close', style: AppTextStyles.buttonMedium),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -418,7 +417,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                                 AppThemes.borderRadiusMedium),
                             boxShadow: [
                               BoxShadow(
-                                color: AppColors.telegramBlue.withOpacity(0.3),
+                                color: AppColors.telegramBlue.withValues(alpha: 0.3),
                                 blurRadius: 8,
                                 offset: const Offset(0, 2),
                               ),
@@ -440,11 +439,11 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                                       AppThemes.borderRadiusMedium)),
                               padding: const EdgeInsets.symmetric(vertical: 12),
                             ),
-                            child: Row(
+                            child: const Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Icon(Icons.copy_rounded, size: 18),
-                                const SizedBox(width: 4),
+                                SizedBox(width: 4),
                                 Text('Copy', style: AppTextStyles.buttonMedium),
                               ],
                             ),
@@ -474,8 +473,8 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
               decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [
-                      AppColors.telegramBlue.withOpacity(0.2),
-                      AppColors.telegramPurple.withOpacity(0.1),
+                      AppColors.telegramBlue.withValues(alpha: 0.2),
+                      AppColors.telegramPurple.withValues(alpha: 0.1),
                     ],
                   ),
                   shape: BoxShape.circle),
@@ -509,8 +508,8 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         gradient: RadialGradient(colors: [
-                          AppColors.telegramGreen.withOpacity(0.3),
-                          AppColors.telegramGreen.withOpacity(0.1),
+                          AppColors.telegramGreen.withValues(alpha: 0.3),
+                          AppColors.telegramGreen.withValues(alpha: 0.1),
                           Colors.transparent
                         ]),
                       ),
@@ -527,7 +526,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                          color: AppColors.telegramGreen.withOpacity(0.3),
+                          color: AppColors.telegramGreen.withValues(alpha: 0.3),
                           blurRadius: 20,
                           spreadRadius: 2),
                     ],
@@ -551,7 +550,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.telegram,
+                      const Icon(Icons.telegram,
                           size: 20, color: AppColors.telegramBlue),
                       const SizedBox(width: 8),
                       Text('@${provider.parentTelegramUsername}',
@@ -574,7 +573,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                       BorderRadius.circular(AppThemes.borderRadiusMedium),
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.telegramRed.withOpacity(0.3),
+                      color: AppColors.telegramRed.withValues(alpha: 0.3),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -591,11 +590,11 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                         borderRadius: BorderRadius.circular(
                             AppThemes.borderRadiusMedium)),
                   ),
-                  child: Row(
+                  child: const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(Icons.link_off_rounded, size: 20),
-                      const SizedBox(width: 8),
+                      SizedBox(width: 8),
                       Text('Disconnect Parent',
                           style: AppTextStyles.buttonMedium),
                     ],
@@ -634,8 +633,8 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         gradient: RadialGradient(colors: [
-                          statusColor.withOpacity(0.3),
-                          statusColor.withOpacity(0.1),
+                          statusColor.withValues(alpha: 0.3),
+                          statusColor.withValues(alpha: 0.1),
                           Colors.transparent
                         ]),
                       ),
@@ -654,13 +653,13 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                          color: statusColor.withOpacity(0.3),
+                          color: statusColor.withValues(alpha: 0.3),
                           blurRadius: 20,
                           spreadRadius: 2),
                     ],
                   ),
                   child:
-                      Icon(Icons.timer_rounded, size: 32, color: Colors.white),
+                      const Icon(Icons.timer_rounded, size: 32, color: Colors.white),
                 ),
               ],
             ),
@@ -698,7 +697,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                       BorderRadius.circular(AppThemes.borderRadiusMedium),
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.telegramBlue.withOpacity(0.3),
+                      color: AppColors.telegramBlue.withValues(alpha: 0.3),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -721,11 +720,11 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                         borderRadius: BorderRadius.circular(
                             AppThemes.borderRadiusMedium)),
                   ),
-                  child: Row(
+                  child: const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(Icons.visibility_rounded, size: 20),
-                      const SizedBox(width: 8),
+                      SizedBox(width: 8),
                       Text('Show Token', style: AppTextStyles.buttonMedium),
                     ],
                   ),
@@ -743,11 +742,11 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                     borderRadius:
                         BorderRadius.circular(AppThemes.borderRadiusMedium)),
               ),
-              child: Row(
+              child: const Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(Icons.refresh_rounded, size: 18),
-                  const SizedBox(width: 4),
+                  SizedBox(width: 4),
                   Text('Generate New Token', style: AppTextStyles.buttonMedium),
                 ],
               ),
@@ -772,13 +771,13 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    AppColors.telegramBlue.withOpacity(0.2),
-                    AppColors.telegramPurple.withOpacity(0.1),
+                    AppColors.telegramBlue.withValues(alpha: 0.2),
+                    AppColors.telegramPurple.withValues(alpha: 0.1),
                   ],
                 ),
                 shape: BoxShape.circle,
               ),
-              child: Icon(Icons.person_add_alt_1_rounded,
+              child: const Icon(Icons.person_add_alt_1_rounded,
                   size: 32, color: AppColors.telegramBlue),
             ),
             const SizedBox(height: 16),
@@ -805,7 +804,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                       BorderRadius.circular(AppThemes.borderRadiusMedium),
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.telegramBlue.withOpacity(0.3),
+                      color: AppColors.telegramBlue.withValues(alpha: 0.3),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -822,11 +821,11 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                         borderRadius: BorderRadius.circular(
                             AppThemes.borderRadiusMedium)),
                   ),
-                  child: Row(
+                  child: const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(Icons.add_link_rounded, size: 20),
-                      const SizedBox(width: 8),
+                      SizedBox(width: 8),
                       Text('Generate Token', style: AppTextStyles.buttonMedium),
                     ],
                   ),
@@ -858,12 +857,12 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                     decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
-                            AppColors.telegramBlue.withOpacity(0.2),
-                            AppColors.telegramPurple.withOpacity(0.1),
+                            AppColors.telegramBlue.withValues(alpha: 0.2),
+                            AppColors.telegramPurple.withValues(alpha: 0.1),
                           ],
                         ),
                         shape: BoxShape.circle),
-                    child: Icon(Icons.info_rounded,
+                    child: const Icon(Icons.info_rounded,
                         color: AppColors.telegramBlue, size: 20)),
                 const SizedBox(width: 12),
                 Text('What parents can see',
@@ -892,7 +891,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                   children: [
                     Row(
                       children: [
-                        Icon(Icons.telegram,
+                        const Icon(Icons.telegram,
                             size: 20, color: AppColors.telegramBlue),
                         const SizedBox(width: 12),
                         Expanded(
@@ -910,8 +909,8 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
-                              AppColors.telegramBlue.withOpacity(0.2),
-                              AppColors.telegramPurple.withOpacity(0.1),
+                              AppColors.telegramBlue.withValues(alpha: 0.2),
+                              AppColors.telegramPurple.withValues(alpha: 0.1),
                             ],
                           ),
                           borderRadius: BorderRadius.circular(
@@ -928,7 +927,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            Icon(Icons.open_in_new,
+                            const Icon(Icons.open_in_new,
                                 size: 16, color: AppColors.telegramBlue),
                           ],
                         ),
@@ -974,8 +973,8 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
               decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [
-                      AppColors.telegramGreen.withOpacity(0.2),
-                      AppColors.telegramGreen.withOpacity(0.1),
+                      AppColors.telegramGreen.withValues(alpha: 0.2),
+                      AppColors.telegramGreen.withValues(alpha: 0.1),
                     ],
                   ),
                   shape: BoxShape.circle),
@@ -1006,7 +1005,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: AppColors.telegramBlue.withOpacity(0.3),
+                    color: AppColors.telegramBlue.withValues(alpha: 0.3),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -1062,23 +1061,22 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
         actions: [
           IconButton(
             icon: _isRefreshing
-                ? SizedBox(
+                ? const SizedBox(
                     width: 20,
                     height: 20,
                     child: CircularProgressIndicator(
                         strokeWidth: 2, color: AppColors.telegramBlue))
                 : Icon(Icons.refresh_rounded,
                     color: AppColors.getTextSecondary(context)),
-            onPressed: _isRefreshing ? null : () => _refreshData(),
+            onPressed: _isRefreshing ? null : _refreshData,
             tooltip: 'Refresh',
           ),
         ],
       ),
       body: SmartRefresher(
         controller: _refreshController,
-        onRefresh: () => _refreshData(),
-        enablePullDown: true,
-        header: WaterDropHeader(
+        onRefresh: _refreshData,
+        header: const WaterDropHeader(
           waterDropColor: AppColors.telegramBlue,
           refresh: SizedBox(
               width: 24,
@@ -1099,7 +1097,6 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                       tablet: 600,
                       desktop: 800)),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   if (!_isInitialized)
                     _buildSkeletonLoader()
@@ -1142,23 +1139,22 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
         actions: [
           IconButton(
             icon: _isRefreshing
-                ? SizedBox(
+                ? const SizedBox(
                     width: 24,
                     height: 24,
                     child: CircularProgressIndicator(
                         strokeWidth: 2, color: AppColors.telegramBlue))
                 : Icon(Icons.refresh_rounded,
                     color: AppColors.getTextSecondary(context)),
-            onPressed: _isRefreshing ? null : () => _refreshData(),
+            onPressed: _isRefreshing ? null : _refreshData,
             tooltip: 'Refresh',
           ),
         ],
       ),
       body: SmartRefresher(
         controller: _refreshController,
-        onRefresh: () => _refreshData(),
-        enablePullDown: true,
-        header: WaterDropHeader(
+        onRefresh: _refreshData,
+        header: const WaterDropHeader(
           waterDropColor: AppColors.telegramBlue,
           refresh: SizedBox(
               width: 24,
@@ -1196,7 +1192,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                     ),
                   ),
                   const SizedBox(width: 32),
-                  Expanded(flex: 1, child: _buildInfoSection()),
+                  Expanded(child: _buildInfoSection()),
                 ],
               ),
             ),

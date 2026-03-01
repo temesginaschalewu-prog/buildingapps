@@ -4,7 +4,6 @@ import 'package:familyacademyclient/themes/app_text_styles.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../themes/app_themes.dart';
-import '../../utils/responsive.dart';
 
 class AchievementBadge extends StatelessWidget {
   final String title;
@@ -37,13 +36,13 @@ class AchievementBadge extends StatelessWidget {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                AppColors.getCard(context).withOpacity(0.4),
-                AppColors.getCard(context).withOpacity(0.2),
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: unlocked ? color : AppColors.telegramBlue.withOpacity(0.2),
+              color: unlocked ? color : AppColors.telegramBlue.withValues(alpha: 0.2),
               width: 1.5,
             ),
           ),
@@ -84,12 +83,12 @@ class AchievementBadge extends StatelessWidget {
                     shape: BoxShape.circle,
                     gradient: LinearGradient(
                       colors: [
-                        color.withOpacity(unlocked ? 0.2 : 0.1),
-                        color.withOpacity(unlocked ? 0.1 : 0.05),
+                        color.withValues(alpha: unlocked ? 0.2 : 0.1),
+                        color.withValues(alpha: unlocked ? 0.1 : 0.05),
                       ],
                     ),
                     border: Border.all(
-                      color: unlocked ? color : color.withOpacity(0.3),
+                      color: unlocked ? color : color.withValues(alpha: 0.3),
                       width: 3,
                     ),
                   ),
@@ -108,7 +107,7 @@ class AchievementBadge extends StatelessWidget {
                         child: Icon(
                           icon,
                           size: iconSize,
-                          color: unlocked ? color : color.withOpacity(0.5),
+                          color: unlocked ? color : color.withValues(alpha: 0.5),
                         ),
                       ),
                     ],
@@ -129,7 +128,7 @@ class AchievementBadge extends StatelessWidget {
                         ),
                         boxShadow: [
                           BoxShadow(
-                              color: Colors.black.withOpacity(0.1),
+                              color: Colors.black.withValues(alpha: 0.1),
                               blurRadius: 4)
                         ],
                       ),
@@ -202,10 +201,10 @@ class AchievementBadge extends StatelessWidget {
                         : (isTablet ? AppThemes.spacingS : AppThemes.spacingM),
                   ),
                   decoration: BoxDecoration(
-                    color: color.withOpacity(0.1),
+                    color: color.withValues(alpha: 0.1),
                     borderRadius:
                         BorderRadius.circular(AppThemes.borderRadiusFull),
-                    border: Border.all(color: color, width: 1),
+                    border: Border.all(color: color),
                   ),
                   child: Text(
                     '${(progress * 100).toInt()}%',

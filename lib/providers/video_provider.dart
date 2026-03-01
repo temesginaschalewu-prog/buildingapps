@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart' as path;
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../models/video_model.dart';
@@ -26,7 +25,7 @@ class VideoProvider extends ChangeNotifier {
   final Dio _dio = Dio();
 
   // State
-  List<Video> _videos = [];
+  final List<Video> _videos = [];
   final Map<int, List<Video>> _videosByChapter = {};
   final Map<int, bool> _hasLoadedForChapter = {};
   final Map<int, bool> _isLoadingForChapter = {};

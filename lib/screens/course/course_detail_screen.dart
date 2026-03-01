@@ -24,7 +24,6 @@ import 'package:familyacademyclient/providers/exam_provider.dart';
 import 'package:familyacademyclient/providers/course_provider.dart';
 import 'package:familyacademyclient/providers/subscription_provider.dart';
 import 'package:familyacademyclient/providers/payment_provider.dart';
-import 'package:familyacademyclient/providers/auth_provider.dart';
 import 'package:familyacademyclient/utils/helpers.dart';
 import 'package:shimmer/shimmer.dart';
 
@@ -128,8 +127,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
       final categoryProvider =
           Provider.of<CategoryProvider>(context, listen: false);
 
-      if (_course == null)
-        _course = await _findCourse(courseProvider, categoryProvider);
+      _course ??= await _findCourse(courseProvider, categoryProvider);
       if (_course == null) throw Exception('Course not found');
 
       if (_category == null && _course!.categoryId > 0) {
@@ -155,7 +153,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
           orElse: () =>
               Course(id: 0, name: '', categoryId: 0, chapterCount: 0));
       if (foundCourse.id > 0) {
-        if (_category == null) _category = category;
+        _category ??= category;
         return foundCourse;
       }
     }
@@ -178,7 +176,6 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
       await _loadChapters(forceRefresh: true);
       await _loadExams(forceRefresh: true);
       await _saveToCache();
-    } catch (e) {
     } finally {
       _isRefreshing = false;
     }
@@ -408,14 +405,13 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    AppColors.getCard(context).withOpacity(0.4),
-                    AppColors.getCard(context).withOpacity(0.2),
+                    AppColors.getCard(context).withValues(alpha: 0.4),
+                    AppColors.getCard(context).withValues(alpha: 0.2),
                   ],
                 ),
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(
-                  color: AppColors.statusPending.withOpacity(0.3),
-                  width: 1,
+                  color: AppColors.statusPending.withValues(alpha: 0.3),
                 ),
               ),
               padding: const EdgeInsets.all(24),
@@ -425,10 +421,10 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: AppColors.statusPending.withOpacity(0.1),
+                      color: AppColors.statusPending.withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                     ),
-                    child: Icon(
+                    child: const Icon(
                       Icons.schedule_rounded,
                       color: AppColors.statusPending,
                       size: 32,
@@ -482,13 +478,12 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                AppColors.getCard(context).withOpacity(0.4),
-                AppColors.getCard(context).withOpacity(0.2),
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
             border: Border.all(
-              color: AppColors.telegramBlue.withOpacity(0.2),
-              width: 1,
+              color: AppColors.telegramBlue.withValues(alpha: 0.2),
             ),
           ),
           child: Padding(
@@ -506,7 +501,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         width: 40,
         height: 4,
         decoration: BoxDecoration(
-          color: AppColors.getTextSecondary(context).withOpacity(0.3),
+          color: AppColors.getTextSecondary(context).withValues(alpha: 0.3),
           borderRadius: BorderRadius.circular(2),
         ),
       ),
@@ -528,7 +523,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: iconColor.withOpacity(0.1),
+                color: iconColor.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: Icon(icon, color: iconColor, size: 28),
@@ -602,7 +597,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: gradient.first.withOpacity(0.3),
+            color: gradient.first.withValues(alpha: 0.3),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -639,7 +634,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         title: 'Free Category',
         message: 'All content is free and accessible',
         backgroundColor: AppColors.greenFaded,
-        borderColor: AppColors.telegramGreen.withOpacity(0.3),
+        borderColor: AppColors.telegramGreen.withValues(alpha: 0.3),
       );
     }
 
@@ -650,7 +645,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         title: 'Full Access',
         message: 'You have access to all content in this course',
         backgroundColor: AppColors.greenFaded,
-        borderColor: AppColors.telegramGreen.withOpacity(0.3),
+        borderColor: AppColors.telegramGreen.withValues(alpha: 0.3),
       );
     }
 
@@ -661,7 +656,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         title: 'Payment Pending',
         message: 'Please wait for admin verification (1-3 working days)',
         backgroundColor: AppColors.orangeFaded,
-        borderColor: AppColors.statusPending.withOpacity(0.3),
+        borderColor: AppColors.statusPending.withValues(alpha: 0.3),
       );
     }
 
@@ -674,7 +669,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         actionText: 'Pay Now',
         onAction: _showPaymentDialog,
         backgroundColor: AppColors.redFaded,
-        borderColor: AppColors.telegramRed.withOpacity(0.3),
+        borderColor: AppColors.telegramRed.withValues(alpha: 0.3),
       );
     }
 
@@ -686,7 +681,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
       actionText: 'Purchase',
       onAction: _showPaymentDialog,
       backgroundColor: AppColors.blueFaded,
-      borderColor: AppColors.telegramBlue.withOpacity(0.3),
+      borderColor: AppColors.telegramBlue.withValues(alpha: 0.3),
     );
   }
 
@@ -722,11 +717,10 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
               desktop: 24,
             )),
             decoration: BoxDecoration(
-              color: backgroundColor ?? color.withOpacity(0.1),
+              color: backgroundColor ?? color.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
-                color: borderColor ?? color.withOpacity(0.3),
-                width: 1,
+                color: borderColor ?? color.withValues(alpha: 0.3),
               ),
             ),
             child: Row(
@@ -734,7 +728,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: color.withOpacity(0.1),
+                    color: color.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Icon(icon, color: color, size: 24),
@@ -786,15 +780,14 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: Material(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         child: InkWell(
           onTap: onPressed,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(
               border: Border.all(
-                color: color.withOpacity(0.3),
-                width: 1,
+                color: color.withValues(alpha: 0.3),
               ),
               borderRadius: BorderRadius.circular(12),
             ),
@@ -825,9 +818,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
           onPressed: () => context.pop(),
         ),
         title: Shimmer.fromColors(
-          baseColor: Colors.grey[300]!.withOpacity(0.3),
-          highlightColor: Colors.grey[100]!.withOpacity(0.6),
-          period: const Duration(milliseconds: 1500),
+          baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+          highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
           child: Container(
             width: 200,
             height: 24,
@@ -840,7 +832,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
             decoration: BoxDecoration(
               border: Border(
                 bottom: BorderSide(
-                  color: Theme.of(context).dividerColor.withOpacity(0.5),
+                  color: Theme.of(context).dividerColor.withValues(alpha: 0.5),
                   width: 0.5,
                 ),
               ),
@@ -867,9 +859,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
           itemCount: 5,
           separatorBuilder: (_, __) => const SizedBox(height: 16),
           itemBuilder: (context, index) => Shimmer.fromColors(
-            baseColor: Colors.grey[300]!.withOpacity(0.3),
-            highlightColor: Colors.grey[100]!.withOpacity(0.6),
-            period: const Duration(milliseconds: 1500),
+            baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+            highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(20),
               child: BackdropFilter(
@@ -881,8 +872,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                       colors: [
-                        Colors.white.withOpacity(0.4),
-                        Colors.white.withOpacity(0.2),
+                        Colors.white.withValues(alpha: 0.4),
+                        Colors.white.withValues(alpha: 0.2),
                       ],
                     ),
                   ),
@@ -921,11 +912,10 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
               child: Container(
                 padding: const EdgeInsets.all(32),
                 decoration: BoxDecoration(
-                  color: AppColors.getCard(context).withOpacity(0.2),
+                  color: AppColors.getCard(context).withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(30),
                   border: Border.all(
-                    color: AppColors.telegramRed.withOpacity(0.2),
-                    width: 1,
+                    color: AppColors.telegramRed.withValues(alpha: 0.2),
                   ),
                 ),
                 child: Column(
@@ -934,7 +924,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
                     Icon(
                       Icons.error_outline_rounded,
                       size: 64,
-                      color: AppColors.telegramRed.withOpacity(0.5),
+                      color: AppColors.telegramRed.withValues(alpha: 0.5),
                     ),
                     const SizedBox(height: 16),
                     Text(
@@ -997,8 +987,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         ),
         actions: [
           if (_isRefreshing)
-            Padding(
-              padding: const EdgeInsets.all(16),
+            const Padding(
+              padding: EdgeInsets.all(16),
               child: SizedBox(
                 width: 20,
                 height: 20,
@@ -1015,7 +1005,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
             decoration: BoxDecoration(
               border: Border(
                 bottom: BorderSide(
-                  color: Theme.of(context).dividerColor.withOpacity(0.5),
+                  color: Theme.of(context).dividerColor.withValues(alpha: 0.5),
                   width: 0.5,
                 ),
               ),
@@ -1042,7 +1032,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              AppColors.getBackground(context).withOpacity(0.95),
+              AppColors.getBackground(context).withValues(alpha: 0.95),
               AppColors.getBackground(context),
             ],
           ),
@@ -1050,8 +1040,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         child: SmartRefresher(
           controller: _refreshController,
           onRefresh: _manualRefresh,
-          enablePullDown: true,
-          header: WaterDropHeader(
+          header: const WaterDropHeader(
             waterDropColor: AppColors.telegramBlue,
             refresh: SizedBox(
               width: 24,

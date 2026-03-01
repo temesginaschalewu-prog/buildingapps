@@ -24,7 +24,6 @@ import 'package:familyacademyclient/screens/settings/parent_link_screen.dart';
 import 'package:familyacademyclient/screens/settings/subscription_screen.dart';
 import 'package:familyacademyclient/screens/settings/support_screen.dart';
 import 'package:familyacademyclient/screens/settings/tv_pairing_screen.dart';
-import '../utils/helpers.dart';
 
 class AppRouter {
   late final GoRouter router;
@@ -92,10 +91,11 @@ class AppRouter {
           if (authProvider.isInitialized) {
             if (authProvider.isAuthenticated) {
               final user = authProvider.currentUser;
-              if (user?.schoolId == null)
+              if (user?.schoolId == null) {
                 return '/school-selection';
-              else
+              } else {
                 return '/';
+              }
             } else {
               return '/auth/login';
             }
@@ -103,8 +103,9 @@ class AppRouter {
           return null;
         }
 
-        if (!authProvider.isInitialized && location != '/splash')
+        if (!authProvider.isInitialized && location != '/splash') {
           return '/splash';
+        }
 
         final isAuthenticated = authProvider.isAuthenticated;
         final user = authProvider.currentUser;

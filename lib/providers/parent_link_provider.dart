@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:familyacademyclient/services/api_service.dart';
 import 'package:familyacademyclient/services/device_service.dart';
@@ -25,9 +24,9 @@ class ParentLinkProvider with ChangeNotifier {
   ParentLink? _parentLinkData;
   Duration? _serverTimeOffset;
 
-  StreamController<ParentLink?> _parentLinkUpdateController =
+  final StreamController<ParentLink?> _parentLinkUpdateController =
       StreamController<ParentLink?>.broadcast();
-  StreamController<bool> _linkStatusUpdateController =
+  final StreamController<bool> _linkStatusUpdateController =
       StreamController<bool>.broadcast();
 
   ParentLinkProvider({required this.apiService, required this.deviceService});
@@ -124,7 +123,7 @@ class ParentLinkProvider with ChangeNotifier {
                 'offset': _serverTimeOffset!.inMilliseconds,
                 'cached_at': DateTime.now().toIso8601String(),
               },
-              ttl: Duration(hours: 1));
+              ttl: const Duration(hours: 1));
 
           debugLog('ParentLinkProvider',
               'Server time synced. Offset: ${_serverTimeOffset!.inMinutes} minutes');
@@ -202,10 +201,10 @@ class ParentLinkProvider with ChangeNotifier {
             'token': _parentToken,
             'expires_at': _tokenExpiresAt!.toIso8601String(),
           },
-          ttl: Duration(minutes: 30));
+          ttl: const Duration(minutes: 30));
 
       debugLog('ParentLinkProvider',
-          '✅ Generated new token: ${_parentToken}, expiresAt: ${_tokenExpiresAt?.toIso8601String()}');
+          '✅ Generated new token: $_parentToken, expiresAt: ${_tokenExpiresAt?.toIso8601String()}');
 
       _startCountdownTimer();
 
@@ -257,7 +256,7 @@ class ParentLinkProvider with ChangeNotifier {
         _updateFromParentLink(_parentLinkData!);
 
         debugLog(
-            'ParentLinkProvider', 'Parent link status: isLinked=${_isLinked}');
+            'ParentLinkProvider', 'Parent link status: isLinked=$_isLinked');
       } else {
         // If API returns no data, clear everything
         _parentLinkData = null;

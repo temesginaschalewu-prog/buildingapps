@@ -1,11 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:familyacademyclient/providers/payment_provider.dart';
 import 'package:familyacademyclient/providers/settings_provider.dart';
 import 'package:familyacademyclient/providers/user_provider.dart';
-import 'package:familyacademyclient/screens/splash/splash_screen.dart';
 import 'package:familyacademyclient/utils/screen_protection.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -116,9 +114,10 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
               Provider.of<AuthProvider>(context, listen: false);
           _deviceDeactivatedSubscription =
               authProvider.deviceDeactivated.listen((message) {
-            if (mounted)
+            if (mounted) {
               _showDeviceDeactivatedDialog(
                   message ?? 'Device has been deactivated.');
+            }
           });
           await authProvider.initialize();
           if (authProvider.isAuthenticated) _initializeAuthenticatedProviders();
@@ -146,8 +145,9 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
           TextButton(
             onPressed: () {
               Navigator.of(context).pop();
-              if (mounted && context.mounted)
+              if (mounted && context.mounted) {
                 GoRouter.of(context).go('/auth/login');
+              }
             },
             child: const Text('OK'),
           ),
@@ -303,17 +303,17 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
           builder: (context, child) {
             return MediaQuery(
               data: MediaQuery.of(context).copyWith(
-                textScaleFactor: ScreenSize.isDesktop(context)
+                textScaler: TextScaler.linear(ScreenSize.isDesktop(context)
                     ? 1.1
                     : ScreenSize.isTablet(context)
                         ? 1.05
-                        : 1.0,
+                        : 1.0),
               ),
               child: PopScope(
-                canPop: true,
                 onPopInvoked: (didPop) {
-                  if (didPop && _isAppInForeground)
+                  if (didPop && _isAppInForeground) {
                     ScreenProtectionService.enableOnResume();
+                  }
                 },
                 child: child ?? const SizedBox(),
               ),

@@ -8,11 +8,11 @@ class CourseProvider with ChangeNotifier {
   final ApiService apiService;
   final DeviceService deviceService;
 
-  List<Course> _courses = [];
-  Map<int, List<Course>> _coursesByCategory = {};
-  Map<int, bool> _hasLoadedCategory = {};
-  Map<int, bool> _isLoadingCategory = {};
-  Map<int, DateTime> _lastLoadedTime = {};
+  final List<Course> _courses = [];
+  final Map<int, List<Course>> _coursesByCategory = {};
+  final Map<int, bool> _hasLoadedCategory = {};
+  final Map<int, bool> _isLoadingCategory = {};
+  final Map<int, DateTime> _lastLoadedTime = {};
   bool _isLoading = false;
   String? _error;
 
@@ -80,11 +80,11 @@ class CourseProvider with ChangeNotifier {
       final categoryData = responseData['category'] ?? {};
       final coursesData = responseData['courses'] ?? [];
 
-      bool categoryHasAccess =
+      final bool categoryHasAccess =
           hasAccess ?? (categoryData['has_access'] ?? false);
 
       if (coursesData is List) {
-        List<Course> parsedCourses = [];
+        final List<Course> parsedCourses = [];
 
         for (var courseData in coursesData) {
           try {
@@ -101,7 +101,6 @@ class CourseProvider with ChangeNotifier {
                 message: categoryHasAccess
                     ? 'Full access to all content'
                     : 'Limited access to free chapters only',
-                hasPendingPayment: false,
                 requiresPayment: !categoryHasAccess,
               ));
             }
@@ -205,7 +204,7 @@ class CourseProvider with ChangeNotifier {
     _notifySafely();
   }
 
-  void clearCoursesForCategory(int categoryId) async {
+  Future<void> clearCoursesForCategory(int categoryId) async {
     await deviceService.removeCacheItem('courses_$categoryId');
 
     final categoryCourses = _coursesByCategory[categoryId] ?? [];
