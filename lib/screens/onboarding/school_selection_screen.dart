@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 import 'package:familyacademyclient/models/school_model.dart';
+import 'package:familyacademyclient/services/user_session.dart';
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/themes/app_text_styles.dart';
 import 'package:flutter/material.dart';
@@ -14,6 +15,7 @@ import '../../providers/school_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../themes/app_themes.dart';
 import '../../utils/helpers.dart';
+import '../../widgets/common/empty_state.dart';
 
 class SchoolSelectionScreen extends StatefulWidget {
   const SchoolSelectionScreen({super.key});
@@ -29,6 +31,7 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
   int? _selectedSchoolId;
   bool _isLoading = false;
   bool _schoolsLoaded = false;
+  bool _isOffline = false;
   Timer? _debounceTimer;
 
   late AnimationController _headerAnimationController;
@@ -43,6 +46,7 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
     _searchController.addListener(_filterSchools);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkConnectivity();
       _loadSchools();
       _headerAnimationController.forward();
     });
@@ -54,6 +58,14 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
     _searchController.dispose();
     _headerAnimationController.dispose();
     super.dispose();
+  }
+
+  Future<void> _checkConnectivity() async {
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection) {
+      setState(() => _isOffline = true);
+      showOfflineMessage(context);
+    }
   }
 
   Widget _buildGlassContainer({required Widget child}) {
@@ -127,7 +139,8 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                       children: [
                         Shimmer.fromColors(
                           baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                          highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
+                          highlightColor:
+                              Colors.grey[100]!.withValues(alpha: 0.6),
                           child: Container(
                             height: 20,
                             width: double.infinity,
@@ -140,7 +153,8 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                         const SizedBox(height: 8),
                         Shimmer.fromColors(
                           baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                          highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
+                          highlightColor:
+                              Colors.grey[100]!.withValues(alpha: 0.6),
                           child: Container(
                             height: 16,
                             width: 150,
@@ -188,13 +202,15 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
     final schoolProvider = Provider.of<SchoolProvider>(context, listen: false);
 
     try {
-      await schoolProvider.loadSchools(forceRefresh: forceRefresh);
+      await schoolProvider.loadSchools(
+          forceRefresh: forceRefresh && !_isOffline);
       setState(() {
         _filteredSchools = schoolProvider.schools;
         _schoolsLoaded = true;
       });
     } catch (e) {
       debugLog('SchoolSelectionScreen', 'Error loading schools: $e');
+      setState(() => _isOffline = true);
     }
   }
 
@@ -205,6 +221,16 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
   Future<void> _selectSchool() async {
     if (_selectedSchoolId == null) {
       showTopSnackBar(context, 'Please select a school', isError: true);
+      return;
+    }
+
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection) {
+      showTopSnackBar(
+        context,
+        'You are offline. Please check your internet connection.',
+        isError: true,
+      );
       return;
     }
 
@@ -321,8 +347,10 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                               AppColors.telegramPurple.withValues(alpha: 0.1),
                             ]
                           : [
-                              AppColors.getSurface(context).withValues(alpha: 0.3),
-                              AppColors.getSurface(context).withValues(alpha: 0.1),
+                              AppColors.getSurface(context)
+                                  .withValues(alpha: 0.3),
+                              AppColors.getSurface(context)
+                                  .withValues(alpha: 0.1),
                             ],
                     ),
                     borderRadius: BorderRadius.circular(16),
@@ -443,8 +471,10 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                               AppColors.telegramPurple.withValues(alpha: 0.1),
                             ]
                           : [
-                              AppColors.getSurface(context).withValues(alpha: 0.3),
-                              AppColors.getSurface(context).withValues(alpha: 0.1),
+                              AppColors.getSurface(context)
+                                  .withValues(alpha: 0.3),
+                              AppColors.getSurface(context)
+                                  .withValues(alpha: 0.1),
                             ],
                     ),
                     borderRadius: BorderRadius.circular(16),
@@ -608,8 +638,8 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                 decoration: InputDecoration(
                   hintText: 'Search schools...',
                   hintStyle: AppTextStyles.bodyMedium.copyWith(
-                      color:
-                          AppColors.getTextSecondary(context).withValues(alpha: 0.5)),
+                      color: AppColors.getTextSecondary(context)
+                          .withValues(alpha: 0.5)),
                   prefixIcon: Icon(Icons.search_rounded,
                       color: AppColors.getTextSecondary(context)),
                   border: InputBorder.none,
@@ -617,6 +647,7 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                 ),
                 style: AppTextStyles.bodyMedium
                     .copyWith(color: AppColors.getTextPrimary(context)),
+                enabled: !_isOffline,
               ),
             ),
           ),
@@ -645,23 +676,56 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                   context: context, mobile: 16, tablet: 20, desktop: 24)),
               child: Column(
                 children: [
+                  if (_isOffline)
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            AppColors.telegramYellow.withValues(alpha: 0.2),
+                            AppColors.telegramYellow.withValues(alpha: 0.1),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color:
+                              AppColors.telegramYellow.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.wifi_off_rounded,
+                              color: AppColors.telegramYellow, size: 20),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'You are offline. Showing cached schools.',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: AppColors.telegramYellow,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
                     child: Container(
                       decoration: BoxDecoration(
-                        gradient: _selectedSchoolId == null
+                        gradient: _selectedSchoolId == null || _isOffline
                             ? null
                             : const LinearGradient(
                                 colors: [Color(0xFF2AABEE), Color(0xFF5856D6)],
                               ),
                         borderRadius:
                             BorderRadius.circular(AppThemes.borderRadiusMedium),
-                        boxShadow: _selectedSchoolId != null
+                        boxShadow: _selectedSchoolId != null && !_isOffline
                             ? [
                                 BoxShadow(
-                                  color:
-                                      AppColors.telegramBlue.withValues(alpha: 0.3),
+                                  color: AppColors.telegramBlue
+                                      .withValues(alpha: 0.3),
                                   blurRadius: 8,
                                   offset: const Offset(0, 2),
                                 ),
@@ -669,12 +733,16 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                             : null,
                       ),
                       child: ElevatedButton(
-                        onPressed: _isLoading || _selectedSchoolId == null
+                        onPressed: _isLoading ||
+                                _selectedSchoolId == null ||
+                                _isOffline
                             ? null
                             : _selectSchool,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.transparent,
-                          foregroundColor: Colors.white,
+                          foregroundColor: _isOffline
+                              ? AppColors.getTextSecondary(context)
+                              : Colors.white,
                           shadowColor: Colors.transparent,
                           disabledBackgroundColor: _selectedSchoolId == null
                               ? AppColors.telegramGray.withValues(alpha: 0.2)
@@ -696,17 +764,24 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
                                   Icon(
-                                      _selectedSchoolId == 0
-                                          ? Icons.arrow_forward_rounded
-                                          : Icons.check_rounded,
+                                      _isOffline
+                                          ? Icons.wifi_off_rounded
+                                          : (_selectedSchoolId == 0
+                                              ? Icons.arrow_forward_rounded
+                                              : Icons.check_rounded),
                                       size: 20),
                                   const SizedBox(width: 8),
                                   Text(
-                                    _selectedSchoolId == 0
-                                        ? 'Continue with Other School'
-                                        : 'Continue to Learning',
-                                    style: AppTextStyles.buttonMedium
-                                        .copyWith(color: Colors.white),
+                                    _isOffline
+                                        ? 'Offline'
+                                        : (_selectedSchoolId == 0
+                                            ? 'Continue with Other School'
+                                            : 'Continue to Learning'),
+                                    style: AppTextStyles.buttonMedium.copyWith(
+                                        color: _isOffline
+                                            ? AppColors.getTextSecondary(
+                                                context)
+                                            : Colors.white),
                                   ),
                                 ],
                               ),

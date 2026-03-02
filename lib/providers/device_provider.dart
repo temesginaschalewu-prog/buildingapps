@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
+import '../services/user_session.dart';
+import '../utils/constants.dart';
+import '../utils/helpers.dart';
 
 class DeviceProvider with ChangeNotifier {
   final ApiService apiService;
@@ -64,8 +67,8 @@ class DeviceProvider with ChangeNotifier {
 
   Future<void> _loadPairingCode() async {
     final prefs = await SharedPreferences.getInstance();
-    final code = prefs.getString('pairing_code');
-    final expiresAt = prefs.getInt('pairing_expires_at');
+    final code = prefs.getString(AppConstants.pairingCodeKey);
+    final expiresAt = prefs.getInt(AppConstants.pairingExpiresAtKey);
 
     if (code != null && expiresAt != null) {
       _pairingCode = code;
@@ -76,9 +79,9 @@ class DeviceProvider with ChangeNotifier {
 
   Future<void> _savePairingCode(String code, int expiresInSeconds) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('pairing_code', code);
+    await prefs.setString(AppConstants.pairingCodeKey, code);
     await prefs.setInt(
-      'pairing_expires_at',
+      AppConstants.pairingExpiresAtKey,
       DateTime.now()
           .add(Duration(seconds: expiresInSeconds))
           .millisecondsSinceEpoch,
@@ -169,8 +172,8 @@ class DeviceProvider with ChangeNotifier {
 
   Future<void> _clearPairingState() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('pairing_code');
-    await prefs.remove('pairing_expires_at');
+    await prefs.remove(AppConstants.pairingCodeKey);
+    await prefs.remove(AppConstants.pairingExpiresAtKey);
 
     _pairingCode = null;
     _pairingExpiresAt = null;
@@ -197,16 +200,32 @@ class DeviceProvider with ChangeNotifier {
   }
 
   Future<void> clearUserData() async {
+    debugLog('DeviceProvider', 'Clearing device data');
+
+    final session = UserSession();
+    final isDifferentUser = !await session.isSameUser();
+    final isLoggingOut = await _isLoggingOut();
+
+    if (!isDifferentUser || !isLoggingOut) {
+      debugLog('DeviceProvider', '✅ Same user - preserving device cache');
+      return;
+    }
+
     _tvDeviceId = null;
     _pairingCode = null;
     _pairingExpiresAt = null;
     _isPairing = false;
 
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('pairing_code');
-    await prefs.remove('pairing_expires_at');
+    await prefs.remove(AppConstants.pairingCodeKey);
+    await prefs.remove(AppConstants.pairingExpiresAtKey);
     await deviceService.clearTvDeviceId();
 
     notifyListeners();
+  }
+
+  Future<bool> _isLoggingOut() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
   }
 }

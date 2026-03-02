@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:ui';
 import 'package:familyacademyclient/models/user_model.dart';
 import 'package:familyacademyclient/providers/subscription_provider.dart';
+import 'package:familyacademyclient/services/user_session.dart';
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/themes/app_text_styles.dart';
 import 'package:familyacademyclient/widgets/common/app_bar.dart';
@@ -47,11 +48,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String? _schoolName;
   bool _notificationsEnabled = true;
   final int _unreadNotifications = 0;
+  bool _isOffline = false;
 
   User? _cachedUser;
   bool _hasCachedData = false;
   bool _isFirstLoad = true;
-  bool _isOffline = false;
   bool _isRefreshing = false;
 
   Timer? _refreshTimer;
@@ -62,6 +63,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkConnectivity();
       _initializeScreen();
       _setupStreamListeners();
       _checkSubscriptionStatus();
@@ -76,6 +78,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _emailController.dispose();
     _phoneController.dispose();
     super.dispose();
+  }
+
+  Future<void> _checkConnectivity() async {
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection) {
+      setState(() => _isOffline = true);
+      showOfflineMessage(context);
+    }
   }
 
   Widget _buildGlassContainer(BuildContext context, {required Widget child}) {
@@ -127,11 +137,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _emailController.text = _cachedUser!.email ?? '';
         _phoneController.text = _cachedUser!.phone ?? '';
       }
-      _refreshInBackground();
+      if (!_isOffline) {
+        _refreshInBackground();
+      }
     } else {
       await _loadFreshData();
     }
-    _startAutoRefresh();
+    if (!_isOffline) {
+      _startAutoRefresh();
+    }
   }
 
   Future<void> _loadFromCache() async {
@@ -163,6 +177,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _loadFreshData() async {
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection) {
+      setState(() {
+        _isOffline = true;
+        _isFirstLoad = false;
+      });
+      return;
+    }
+
     try {
       final userProvider = Provider.of<UserProvider>(context, listen: false);
       await userProvider.loadUserProfile(forceRefresh: true);
@@ -195,7 +218,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _refreshInBackground() async {
-    if (_isRefreshing) return;
+    if (_isRefreshing || _isOffline) return;
     _isRefreshing = true;
 
     try {
@@ -224,6 +247,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _manualRefresh() async {
     if (_isRefreshing) return;
+
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection) {
+      setState(() => _isOffline = true);
+      showTopSnackBar(context, 'You are offline. Using cached data.',
+          isError: true);
+      return;
+    }
+
     setState(() => _isRefreshing = true);
 
     try {
@@ -266,7 +298,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   void _startAutoRefresh() {
     _refreshTimer = Timer.periodic(const Duration(minutes: 5), (timer) {
-      if (mounted && !_isEditing && !_isSaving) _refreshInBackground();
+      if (mounted && !_isEditing && !_isSaving && !_isOffline) {
+        _refreshInBackground();
+      }
     });
   }
 
@@ -278,7 +312,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _schoolSubscription?.cancel();
 
     _userSubscription = userProvider.userUpdates.listen((user) {
-      if (user != null && mounted && !_isEditing) {
+      if (user != null && mounted && !_isEditing && !_isOffline) {
         setState(() {
           _cachedUser = user;
           _emailController.text = user.email ?? '';
@@ -290,7 +324,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     _schoolSubscription =
         schoolProvider.selectedSchoolUpdates.listen((schoolId) {
-      if (mounted) _loadSchoolName(schoolId);
+      if (mounted && !_isOffline) _loadSchoolName(schoolId);
     });
   }
 
@@ -305,7 +339,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final schoolProvider =
           Provider.of<SchoolProvider>(context, listen: false);
       if (forceRefresh || schoolProvider.schools.isEmpty) {
-        await schoolProvider.loadSchools(forceRefresh: forceRefresh);
+        await schoolProvider.loadSchools(
+            forceRefresh: forceRefresh && !_isOffline);
       }
       final school = schoolProvider.getSchoolById(schoolId);
       if (mounted) setState(() => _schoolName = school?.name);
@@ -363,7 +398,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _pickProfileImage() async {
-    if (!_isEditing) return;
+    if (!_isEditing || _isOffline) return;
 
     try {
       final image = await _picker.pickImage(
@@ -406,6 +441,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _uploadProfileImage(File imageFile) async {
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection) {
+      showTopSnackBar(context, 'You are offline. Cannot upload image.',
+          isError: true);
+      setState(() => _profileImageFile = null);
+      return;
+    }
+
     try {
       final apiService = Provider.of<ApiService>(context, listen: false);
       final response = await apiService.uploadImage(imageFile);
@@ -434,6 +477,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _saveProfile() async {
     if (_isSaving || !_formKey.currentState!.validate()) return;
+
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection) {
+      showTopSnackBar(context, 'You are offline. Cannot update profile.',
+          isError: true);
+      return;
+    }
 
     setState(() => _isSaving = true);
 
@@ -503,11 +553,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           fontSize: 9,
                           fontWeight: FontWeight.bold),
                     ),
-                    badgeStyle: badges.BadgeStyle(
+                    badgeStyle: const badges.BadgeStyle(
                       badgeColor: AppColors.telegramRed,
-                      padding: const EdgeInsets.all(4),
-                      borderRadius:
-                          BorderRadius.circular(AppThemes.borderRadiusFull),
+                      padding: EdgeInsets.all(4),
                     ),
                     child: Icon(Icons.notifications_outlined,
                         size: 22, color: AppColors.getTextPrimary(context)),
@@ -548,17 +596,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildEditButton() {
     return GestureDetector(
-      onTap: _isEditing ? null : () => setState(() => _isEditing = true),
+      onTap: _isOffline
+          ? null
+          : (_isEditing ? null : () => setState(() => _isEditing = true)),
       child: _buildGlassContainer(
         context,
-        child: const SizedBox(
+        child: SizedBox(
           width: 40,
           height: 40,
           child: Center(
             child: Icon(
-              Icons.edit_rounded,
+              _isOffline ? Icons.wifi_off_rounded : Icons.edit_rounded,
               size: 22,
-              color: AppColors.telegramBlue,
+              color:
+                  _isOffline ? AppColors.telegramGray : AppColors.telegramBlue,
             ),
           ),
         ),
@@ -605,7 +656,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           alignment: Alignment.center,
           children: [
             GestureDetector(
-              onTap: _isEditing ? _pickProfileImage : null,
+              onTap: (_isEditing && !_isOffline) ? _pickProfileImage : null,
               behavior: HitTestBehavior.opaque,
               child: _buildGlassContainer(
                 context,
@@ -646,7 +697,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
             ),
-            if (_isEditing && !_isUploadingImage)
+            if (_isEditing && !_isUploadingImage && !_isOffline)
               Positioned(
                 bottom: 0,
                 right: 0,
@@ -691,8 +742,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       borderRadius: BorderRadius.circular(avatarSize / 2)),
                   child: const Center(
                       child: CircularProgressIndicator(
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                              Colors.white))),
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(Colors.white))),
                 ),
               ),
           ],
@@ -724,6 +775,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
         ),
+        if (_isOffline)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: AppThemes.spacingM, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.telegramYellow.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: AppColors.telegramYellow.withValues(alpha: 0.3),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.wifi_off_rounded,
+                      size: 12, color: AppColors.telegramYellow),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Offline Mode',
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.telegramYellow,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -777,6 +858,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 keyboardType: TextInputType.emailAddress,
                 style: AppTextStyles.bodyMedium
                     .copyWith(color: AppColors.getTextPrimary(context)),
+                enabled: !_isOffline,
                 validator: (value) {
                   if (value != null &&
                       value.isNotEmpty &&
@@ -803,6 +885,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 keyboardType: TextInputType.phone,
                 style: AppTextStyles.bodyMedium
                     .copyWith(color: AppColors.getTextPrimary(context)),
+                enabled: !_isOffline,
                 validator: (value) {
                   if (value != null &&
                       value.isNotEmpty &&
@@ -813,6 +896,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 },
               ),
               const SizedBox(height: AppThemes.spacingXL),
+              if (_isOffline)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          AppColors.telegramYellow.withValues(alpha: 0.2),
+                          AppColors.telegramYellow.withValues(alpha: 0.1),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.wifi_off_rounded,
+                            color: AppColors.telegramYellow, size: 20),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'You are offline. Connect to update profile.',
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.telegramYellow,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               Row(
                 children: [
                   Expanded(
@@ -835,24 +949,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   Expanded(
                     child: Container(
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF2AABEE), Color(0xFF5856D6)],
-                        ),
+                        gradient: _isOffline
+                            ? null
+                            : const LinearGradient(
+                                colors: [Color(0xFF2AABEE), Color(0xFF5856D6)],
+                              ),
+                        color: _isOffline
+                            ? AppColors.telegramGray.withValues(alpha: 0.3)
+                            : null,
                         borderRadius:
                             BorderRadius.circular(AppThemes.borderRadiusMedium),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.telegramBlue.withValues(alpha: 0.3),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
+                        boxShadow: _isOffline
+                            ? null
+                            : [
+                                BoxShadow(
+                                  color: AppColors.telegramBlue
+                                      .withValues(alpha: 0.3),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
                       ),
                       child: ElevatedButton(
-                        onPressed: _isSaving ? null : _saveProfile,
+                        onPressed:
+                            _isSaving || _isOffline ? null : _saveProfile,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.transparent,
-                          foregroundColor: Colors.white,
+                          foregroundColor: _isOffline
+                              ? AppColors.getTextSecondary(context)
+                              : Colors.white,
                           shadowColor: Colors.transparent,
                           padding: const EdgeInsets.symmetric(
                               vertical: AppThemes.spacingM),
@@ -866,10 +991,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 height: 20,
                                 child: CircularProgressIndicator(
                                     strokeWidth: 2,
-                                    valueColor:
-                                        AlwaysStoppedAnimation<Color>(
-                                            Colors.white)))
-                            : const Text('Save'),
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.white)))
+                            : Text(_isOffline ? 'Offline' : 'Save'),
                       ),
                     ),
                   ),
@@ -1060,7 +1184,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               icon: Icons.notifications_outlined,
               title: 'Notifications',
               value: _notificationsEnabled,
-              onChanged: _toggleNotifications,
+              onChanged: _isOffline ? null : _toggleNotifications,
             ),
             const Divider(),
             _buildSettingCard(
@@ -1080,11 +1204,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
       {required IconData icon,
       required String title,
       required bool value,
-      required Function(bool) onChanged}) {
+      required Function(bool)? onChanged}) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () => onChanged(!value),
+        onTap: onChanged != null ? () => onChanged(!value) : null,
         borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: AppThemes.spacingM),
@@ -1322,7 +1446,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               AppThemes.borderRadiusMedium),
                           boxShadow: [
                             BoxShadow(
-                              color: AppColors.telegramRed.withValues(alpha: 0.3),
+                              color:
+                                  AppColors.telegramRed.withValues(alpha: 0.3),
                               blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),
@@ -1439,10 +1564,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               child: Row(
                                 children: [
                                   Shimmer.fromColors(
-                                    baseColor:
-                                        Colors.grey[300]!.withValues(alpha: 0.3),
-                                    highlightColor:
-                                        Colors.grey[100]!.withValues(alpha: 0.6),
+                                    baseColor: Colors.grey[300]!
+                                        .withValues(alpha: 0.3),
+                                    highlightColor: Colors.grey[100]!
+                                        .withValues(alpha: 0.6),
                                     child: Container(
                                         width: 40,
                                         height: 40,
@@ -1513,7 +1638,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
             Container(
                 alignment: Alignment.center, child: _buildProfileHeader(user)),
             const SizedBox(height: AppThemes.spacingXXL),
-            if (_isEditing) _buildEditProfileForm() else _buildInfoSection(user),
+            if (_isEditing)
+              _buildEditProfileForm()
+            else
+              _buildInfoSection(user),
             const SizedBox(height: AppThemes.spacingXXL),
             _buildMenuSection(),
             const SizedBox(height: AppThemes.spacingXXL),

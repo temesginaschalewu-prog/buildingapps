@@ -2,13 +2,17 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 void debugLog(String tag, String message) {
-  print(
+  if (const bool.fromEnvironment('PRODUCTION')) {
+    return;
+  }
+
+  debugPrint(
       '[${DateTime.now().toIso8601String().substring(11, 19)}] [$tag] $message');
 }
 
-// UNIFIED TOP SNACKBAR - all notifications from top, auto-dismiss
 void showTopSnackBar(BuildContext context, String message,
     {bool isError = false, int durationSeconds = 3}) {
   if (!context.mounted) return;
@@ -73,7 +77,6 @@ void showTopSnackBar(BuildContext context, String message,
   Future.delayed(Duration(seconds: durationSeconds), overlayEntry.remove);
 }
 
-// For backward compatibility - redirects to top snackbar
 void showSnackBar(BuildContext context, String message,
     {bool isError = false, int durationSeconds = 2}) {
   showTopSnackBar(context, message,
@@ -83,6 +86,32 @@ void showSnackBar(BuildContext context, String message,
 void showSimpleSnackBar(BuildContext context, String message,
     {bool isError = false}) {
   showTopSnackBar(context, message, isError: isError);
+}
+
+// 🔵 NEW: Show offline message
+void showOfflineMessage(BuildContext context) {
+  showTopSnackBar(
+    context,
+    'You are offline. Showing cached content.',
+    isError: false,
+  );
+}
+
+// 🔵 NEW: Check internet connectivity
+Future<bool> hasInternetConnection() async {
+  try {
+    final connectivityResult = await Connectivity().checkConnectivity();
+    return connectivityResult != ConnectivityResult.none;
+  } catch (e) {
+    return false;
+  }
+}
+
+// 🔵 NEW: Stream connectivity changes
+Stream<bool> connectivityStream() {
+  return Connectivity().onConnectivityChanged.map((result) {
+    return result != ConnectivityResult.none;
+  });
 }
 
 double ensureDouble(dynamic value) {
@@ -140,6 +169,8 @@ Future<void> showConfirmDialog(
   String message,
   Function() onConfirm,
 ) async {
+  if (!context.mounted) return;
+
   await showDialog(
     context: context,
     builder: (context) => AlertDialog(
@@ -164,9 +195,9 @@ Future<void> showConfirmDialog(
 
 bool validatePassword(String password) {
   if (password.length < 6) return false;
-  if (!password.contains(RegExp(r'[A-Z]'))) return false;
-  if (!password.contains(RegExp(r'[a-z]'))) return false;
-  if (!password.contains(RegExp(r'[0-9]'))) return false;
+  if (!password.contains(RegExp('[A-Z]'))) return false;
+  if (!password.contains(RegExp('[a-z]'))) return false;
+  if (!password.contains(RegExp('[0-9]'))) return false;
   return true;
 }
 
@@ -206,12 +237,28 @@ String generateCacheKey(String base, List<String> parameters) {
   return '${base}_$params';
 }
 
+// 🔵 FIX: Better error message formatting for offline scenarios
 String formatErrorMessage(dynamic error) {
-  if (error is String) return error;
+  if (error is String) {
+    if (error.contains('Network') || error.contains('connection')) {
+      return 'Network error. Please check your internet connection.';
+    }
+    return error;
+  }
   if (error is Map<String, dynamic>) {
+    if (error.containsKey('offline') && error['offline'] == true) {
+      return 'You are offline. Showing cached data.';
+    }
     return error['message']?.toString() ?? 'An error occurred';
   }
-  return error.toString();
+  if (error is Exception) {
+    final message = error.toString();
+    if (message.contains('Network') || message.contains('connection')) {
+      return 'Network error. Please check your internet connection.';
+    }
+    return message;
+  }
+  return error?.toString() ?? 'An unknown error occurred';
 }
 
 Function debounce(Function func, [int delay = 500]) {

@@ -1,18 +1,21 @@
 import 'dart:io';
 import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import '../../providers/auth_provider.dart';
-import '../../utils/responsive.dart';
-import '../../utils/helpers.dart';
-import '../../services/device_service.dart';
-import '../../services/notification_service.dart';
-import '../../themes/app_colors.dart';
-import '../../themes/app_text_styles.dart';
-import '../../utils/router.dart';
+import 'package:familyacademyclient/providers/auth_provider.dart';
+import 'package:familyacademyclient/services/user_session.dart';
+import 'package:familyacademyclient/utils/responsive.dart';
+import 'package:familyacademyclient/utils/helpers.dart';
+import 'package:familyacademyclient/services/device_service.dart';
+import 'package:familyacademyclient/services/notification_service.dart';
+import 'package:familyacademyclient/themes/app_colors.dart';
+import 'package:familyacademyclient/themes/app_text_styles.dart';
+import 'package:familyacademyclient/utils/router.dart';
+import 'package:familyacademyclient/widgets/common/empty_state.dart';
+import 'package:familyacademyclient/widgets/auth/auth_form_field.dart';
+import 'package:familyacademyclient/widgets/auth/password_field.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -29,6 +32,7 @@ class _RegisterScreenState extends State<RegisterScreen>
   final _confirmPasswordController = TextEditingController();
 
   bool _isLoading = false;
+  bool _isOffline = false;
   bool _mounted = true;
   bool _isInitializing = false;
   String? _deviceId;
@@ -50,6 +54,7 @@ class _RegisterScreenState extends State<RegisterScreen>
         parent: _logoAnimationController, curve: Curves.elasticOut);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_mounted) _checkConnectivity();
       if (_mounted) _initializeDeviceAndServices();
     });
   }
@@ -62,6 +67,14 @@ class _RegisterScreenState extends State<RegisterScreen>
     _confirmPasswordController.dispose();
     _logoAnimationController.dispose();
     super.dispose();
+  }
+
+  Future<void> _checkConnectivity() async {
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection) {
+      setState(() => _isOffline = true);
+      showOfflineMessage(context);
+    }
   }
 
   Widget _buildGlassContainer({required Widget child}) {
@@ -180,8 +193,47 @@ class _RegisterScreenState extends State<RegisterScreen>
     }
   }
 
+  String? _validateUsername(String? value) {
+    if (value == null || value.isEmpty) return 'Username is required';
+    if (value.length < 3) return 'Username must be at least 3 characters';
+    if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(value)) {
+      return 'Only letters, numbers and underscore allowed';
+    }
+    return null;
+  }
+
+  String? _validatePassword(String? value) {
+    if (value == null || value.isEmpty) return 'Password is required';
+    if (value.length < 8) {
+      return 'Password must be at least 8 characters';
+    }
+    return null;
+  }
+
+  String? _validateConfirmPassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Please confirm your password';
+    }
+    if (value != _passwordController.text) {
+      return 'Passwords do not match';
+    }
+    return null;
+  }
+
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
+
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection) {
+      showTopSnackBar(
+        context,
+        'You are offline. Please check your internet connection.',
+        isError: true,
+      );
+      setState(() => _isOffline = true);
+      return;
+    }
+
     if (_deviceId == null || _deviceId!.isEmpty) {
       showTopSnackBar(context, 'Device not ready. Please restart the app.',
           isError: true);
@@ -202,15 +254,10 @@ class _RegisterScreenState extends State<RegisterScreen>
     }
 
     try {
-      if (_deviceService != null) {
-        await _deviceService!.clearAllCache();
-      }
-
       final result = await authProvider.register(
           username, password, _deviceId!, _fcmToken);
 
       if (result['success'] == true && _mounted) {
-        if (_deviceService != null) await _deviceService!.clearUserCache();
         showTopSnackBar(context, 'Registration successful!');
         await Future.delayed(const Duration(milliseconds: 100));
 
@@ -231,8 +278,7 @@ class _RegisterScreenState extends State<RegisterScreen>
       }
     } catch (e) {
       if (_mounted) {
-        showTopSnackBar(context, 'Registration failed: ${e.toString()}',
-            isError: true);
+        showTopSnackBar(context, formatErrorMessage(e), isError: true);
       }
     } finally {
       if (_mounted) setState(() => _isLoading = false);
@@ -304,15 +350,9 @@ class _RegisterScreenState extends State<RegisterScreen>
         ),
         style: AppTextStyles.bodyLarge
             .copyWith(color: AppColors.getTextPrimary(context)),
-        validator: (value) {
-          if (value == null || value.isEmpty) return 'Username is required';
-          if (value.length < 3) return 'Username must be at least 3 characters';
-          if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(value)) {
-            return 'Only letters, numbers and underscore allowed';
-          }
-          return null;
-        },
+        validator: _validateUsername, // 🔵 FIX: Using proper method
         onChanged: (value) => setState(() {}),
+        enabled: !_isLoading,
       ),
     )
         .animate()
@@ -350,13 +390,8 @@ class _RegisterScreenState extends State<RegisterScreen>
             ),
             style: AppTextStyles.bodyLarge
                 .copyWith(color: AppColors.getTextPrimary(context)),
-            validator: (value) {
-              if (value == null || value.isEmpty) return 'Password is required';
-              if (value.length < 8) {
-                return 'Password must be at least 8 characters';
-              }
-              return null;
-            },
+            validator: _validatePassword, // 🔵 FIX: Using proper method
+            enabled: !_isLoading,
           ),
         );
       },
@@ -396,15 +431,8 @@ class _RegisterScreenState extends State<RegisterScreen>
             ),
             style: AppTextStyles.bodyLarge
                 .copyWith(color: AppColors.getTextPrimary(context)),
-            validator: (value) {
-              if (value == null || value.isEmpty) {
-                return 'Please confirm your password';
-              }
-              if (value != _passwordController.text) {
-                return 'Passwords do not match';
-              }
-              return null;
-            },
+            validator: _validateConfirmPassword, // 🔵 FIX: Using proper method
+            enabled: !_isLoading,
           ),
         );
       },
@@ -415,6 +443,17 @@ class _RegisterScreenState extends State<RegisterScreen>
   }
 
   Widget _buildForm() {
+    if (_isOffline) {
+      return OfflineState(
+        dataType: 'registration',
+        message: 'You are offline. Please connect to create an account.',
+        onRetry: () {
+          setState(() => _isOffline = false);
+          _checkConnectivity();
+        },
+      );
+    }
+
     return Form(
       key: _formKey,
       child: Column(
@@ -448,7 +487,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                       .copyWith(color: AppColors.getTextSecondary(context))),
               const SizedBox(width: 4),
               GestureDetector(
-                onTap: () => context.go('/auth/login'),
+                onTap: _isLoading ? null : () => context.go('/auth/login'),
                 child: Text('Sign in',
                     style: AppTextStyles.bodyMedium.copyWith(
                         color: AppColors.telegramBlue,

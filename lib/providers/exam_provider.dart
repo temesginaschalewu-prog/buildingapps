@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
+import '../services/user_session.dart';
 import '../models/exam_model.dart';
 import '../models/exam_result_model.dart';
+import '../utils/constants.dart';
 import '../utils/helpers.dart';
 
 class ExamProvider with ChangeNotifier {
@@ -19,7 +22,6 @@ class ExamProvider with ChangeNotifier {
   String? _error;
   Timer? _cacheCleanupTimer;
 
-  // NEW: Track pending payments per category
   final Map<int, bool> _pendingPaymentsByCategory = {};
 
   StreamController<List<Exam>> _examsUpdateController =
@@ -51,14 +53,12 @@ class ExamProvider with ChangeNotifier {
 
   bool isLoadingCourse(int courseId) => _isLoadingCourse[courseId] ?? false;
 
-  // NEW: Update pending payments status for exams
   Future<void> updatePendingPayments(Map<int, bool> pendingStatus) async {
     debugLog(
         'ExamProvider', '🔄 Updating pending payments status: $pendingStatus');
 
     _pendingPaymentsByCategory.addAll(pendingStatus);
 
-    // Update all exams with new pending payment status
     bool hasChanges = false;
 
     for (int i = 0; i < _availableExams.length; i++) {
@@ -99,7 +99,6 @@ class ExamProvider with ChangeNotifier {
       }
     }
 
-    // Update course-specific exams
     for (final courseId in _examsByCourse.keys) {
       final courseExams = _examsByCourse[courseId]!;
       for (int i = 0; i < courseExams.length; i++) {
@@ -160,11 +159,11 @@ class ExamProvider with ChangeNotifier {
       debugLog('ExamProvider', 'Loading available exams for course: $courseId');
 
       if (courseId == null) {
-        final cachedExams =
-            await deviceService.getCacheItem<List<Exam>>('available_exams');
+        final cachedExams = await deviceService
+            .getCacheItem<List<Exam>>(AppConstants.availableExamsCacheKey);
         if (cachedExams != null && !forceRefresh) {
           _availableExams = cachedExams;
-          // Apply pending payment status to cached exams
+
           _applyPendingPaymentStatus();
           _isLoading = false;
           _examsUpdateController.add(_availableExams);
@@ -174,7 +173,7 @@ class ExamProvider with ChangeNotifier {
         }
       } else {
         final cachedExams = await deviceService
-            .getCacheItem<List<Exam>>('exams_course_$courseId');
+            .getCacheItem<List<Exam>>(AppConstants.examsByCourseKey(courseId));
         if (cachedExams != null && !forceRefresh) {
           _examsByCourse[courseId] = cachedExams;
           _updateGlobalExams(cachedExams);
@@ -196,14 +195,16 @@ class ExamProvider with ChangeNotifier {
         if (courseId == null) {
           _availableExams = exams;
           _applyPendingPaymentStatus();
-          await deviceService.saveCacheItem('available_exams', exams,
+          await deviceService.saveCacheItem(
+              AppConstants.availableExamsCacheKey, exams,
               ttl: _cacheDuration);
         } else {
           _examsByCourse[courseId] = exams;
           _updateGlobalExams(exams);
           _lastLoadedTime[courseId] = DateTime.now();
           _applyPendingPaymentStatus();
-          await deviceService.saveCacheItem('exams_course_$courseId', exams,
+          await deviceService.saveCacheItem(
+              AppConstants.examsByCourseKey(courseId), exams,
               ttl: _cacheDuration);
         }
 
@@ -224,7 +225,6 @@ class ExamProvider with ChangeNotifier {
     }
   }
 
-  // NEW: Apply pending payment status to all exams
   void _applyPendingPaymentStatus() {
     for (int i = 0; i < _availableExams.length; i++) {
       final exam = _availableExams[i];
@@ -330,7 +330,7 @@ class ExamProvider with ChangeNotifier {
 
       if (!forceRefresh) {
         final cachedResults = await deviceService
-            .getCacheItem<List<ExamResult>>('my_exam_results');
+            .getCacheItem<List<ExamResult>>(AppConstants.myExamResultsCacheKey);
         if (cachedResults != null && cachedResults.isNotEmpty) {
           _myExamResults = cachedResults;
           _isLoading = false;
@@ -362,7 +362,8 @@ class ExamProvider with ChangeNotifier {
           _myExamResults = [];
         }
 
-        await deviceService.saveCacheItem('my_exam_results', _myExamResults,
+        await deviceService.saveCacheItem(
+            AppConstants.myExamResultsCacheKey, _myExamResults,
             ttl: _cacheDuration);
 
         _resultsUpdateController.add(_myExamResults);
@@ -390,7 +391,7 @@ class ExamProvider with ChangeNotifier {
 
     if (!forceRefresh) {
       final cachedExams = await deviceService
-          .getCacheItem<List<Exam>>('exams_course_$courseId');
+          .getCacheItem<List<Exam>>(AppConstants.examsByCourseKey(courseId));
       if (cachedExams != null) {
         _examsByCourse[courseId] = cachedExams;
         _updateGlobalExams(cachedExams);
@@ -419,7 +420,8 @@ class ExamProvider with ChangeNotifier {
         _lastLoadedTime[courseId] = DateTime.now();
         _applyPendingPaymentStatus();
 
-        await deviceService.saveCacheItem('exams_course_$courseId', exams,
+        await deviceService.saveCacheItem(
+            AppConstants.examsByCourseKey(courseId), exams,
             ttl: _cacheDuration);
 
         _examsUpdateController.add(_availableExams);
@@ -466,7 +468,8 @@ class ExamProvider with ChangeNotifier {
     }
 
     for (final courseId in expiredCourses) {
-      await deviceService.removeCacheItem('exams_course_$courseId');
+      await deviceService
+          .removeCacheItem(AppConstants.examsByCourseKey(courseId));
       _examsByCourse.remove(courseId);
       _lastLoadedTime.remove(courseId);
       _isLoadingCourse.remove(courseId);
@@ -475,19 +478,31 @@ class ExamProvider with ChangeNotifier {
     if (expiredCourses.isNotEmpty) {
       _examsUpdateController.add(_availableExams);
       debugLog('ExamProvider',
-          '🧹 Cleared cache for ${expiredCourses.length} expired courses');
+          ' Cleared cache for ${expiredCourses.length} expired courses');
     }
   }
 
+  /// 🔵 FIX: Clear user data ONLY for different user logout
   Future<void> clearUserData() async {
     debugLog('ExamProvider', 'Clearing exam data');
 
-    await deviceService.removeCacheItem('available_exams');
-    await deviceService.removeCacheItem('my_exam_results');
+    // Only clear if this is a different user logout
+    final session = UserSession();
+    final isDifferentUser = !await session.isSameUser();
+    final isLoggingOut = await _isLoggingOut();
+
+    if (!isDifferentUser || !isLoggingOut) {
+      debugLog('ExamProvider', '✅ Same user - preserving exam cache');
+      return;
+    }
+
+    await deviceService.removeCacheItem(AppConstants.availableExamsCacheKey);
+    await deviceService.removeCacheItem(AppConstants.myExamResultsCacheKey);
 
     final courseIds = _examsByCourse.keys.toList();
     for (final courseId in courseIds) {
-      await deviceService.removeCacheItem('exams_course_$courseId');
+      await deviceService
+          .removeCacheItem(AppConstants.examsByCourseKey(courseId));
     }
 
     _availableExams = [];
@@ -497,8 +512,8 @@ class ExamProvider with ChangeNotifier {
     _isLoadingCourse = {};
     _pendingPaymentsByCategory.clear();
 
-    _examsUpdateController.close();
-    _resultsUpdateController.close();
+    await _examsUpdateController.close();
+    await _resultsUpdateController.close();
 
     _examsUpdateController = StreamController<List<Exam>>.broadcast();
     _resultsUpdateController = StreamController<List<ExamResult>>.broadcast();
@@ -509,8 +524,14 @@ class ExamProvider with ChangeNotifier {
     _notifySafely();
   }
 
+  Future<bool> _isLoggingOut() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
+  }
+
   Future<void> clearExamsForCourse(int courseId) async {
-    await deviceService.removeCacheItem('exams_course_$courseId');
+    await deviceService
+        .removeCacheItem(AppConstants.examsByCourseKey(courseId));
 
     final courseExams = _examsByCourse[courseId] ?? [];
     _availableExams

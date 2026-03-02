@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 import 'package:familyacademyclient/providers/subscription_provider.dart';
+import 'package:familyacademyclient/services/user_session.dart';
 import 'package:familyacademyclient/widgets/common/app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -16,6 +17,7 @@ import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/themes/app_text_styles.dart';
 import '../../utils/helpers.dart';
 import '../../widgets/progress/achievement_badge.dart';
+import '../../widgets/common/empty_state.dart';
 
 class ProgressScreen extends StatefulWidget {
   const ProgressScreen({super.key});
@@ -36,7 +38,9 @@ class _ProgressScreenState extends State<ProgressScreen>
   int _unreadNotifications = 0;
   bool _isInitialLoad = true;
   bool _hasInitialData = false;
+  bool _isOffline = false;
   DateTime? _lastRefreshTime;
+  String? _currentUserId;
 
   // Track which sections are loading
   final Map<String, bool> _loadingSections = {
@@ -55,6 +59,8 @@ class _ProgressScreenState extends State<ProgressScreen>
     WidgetsBinding.instance.addObserver(this);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _getCurrentUserId();
+      _checkConnectivity();
       _initializeData();
       _setupStreamListeners();
       _checkSubscriptionAccess();
@@ -62,10 +68,23 @@ class _ProgressScreenState extends State<ProgressScreen>
 
     // Set up background refresh every 5 minutes
     _backgroundRefreshTimer = Timer.periodic(const Duration(minutes: 5), (_) {
-      if (mounted && !_isRefreshing) {
+      if (mounted && !_isRefreshing && !_isOffline) {
         _refreshDataInBackground();
       }
     });
+  }
+
+  Future<void> _getCurrentUserId() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    _currentUserId = authProvider.currentUser?.id.toString();
+  }
+
+  Future<void> _checkConnectivity() async {
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection) {
+      setState(() => _isOffline = true);
+      showOfflineMessage(context);
+    }
   }
 
   Widget _buildGlassContainer(BuildContext context, {required Widget child}) {
@@ -189,7 +208,7 @@ class _ProgressScreenState extends State<ProgressScreen>
       });
 
       _authSubscription = authProvider.userChanges.listen((user) {
-        if (mounted && user != null) {
+        if (mounted && user != null && !_isOffline) {
           _refreshDataInBackground();
         }
       });
@@ -213,7 +232,7 @@ class _ProgressScreenState extends State<ProgressScreen>
       final categoryProvider =
           Provider.of<CategoryProvider>(context, listen: false);
 
-      // Load data in parallel
+      // Load data in parallel (will use cache if offline)
       await Future.wait([
         streakProvider.loadStreak(),
         examProvider.loadMyExamResults(),
@@ -231,13 +250,22 @@ class _ProgressScreenState extends State<ProgressScreen>
           _updateLoadingStates(progressProvider);
         });
 
-        // Trigger a background refresh after initial load
-        _refreshDataInBackground();
+        // Trigger a background refresh after initial load if online
+        if (!_isOffline) {
+          _refreshDataInBackground();
+        }
       }
     } catch (e) {
       if (mounted) {
         setState(() {
           _isInitialLoad = false;
+          // If we have cached data, we're not really offline
+          final progressProvider =
+              Provider.of<ProgressProvider>(context, listen: false);
+          if (progressProvider.hasLoadedOverall ||
+              progressProvider.hasLoadedProgress) {
+            _isOffline = true;
+          }
         });
       }
     }
@@ -284,6 +312,14 @@ class _ProgressScreenState extends State<ProgressScreen>
   Future<void> _manualRefresh() async {
     if (_isRefreshing) return;
 
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection) {
+      setState(() => _isOffline = true);
+      showTopSnackBar(context, 'You are offline. Using cached data.',
+          isError: true);
+      return;
+    }
+
     setState(() => _isRefreshing = true);
 
     try {
@@ -304,12 +340,18 @@ class _ProgressScreenState extends State<ProgressScreen>
       _lastRefreshTime = DateTime.now();
 
       if (mounted) {
-        setState(() => _updateLoadingStates(progressProvider));
+        setState(() {
+          _updateLoadingStates(progressProvider);
+          _isOffline = false;
+        });
         showTopSnackBar(context, 'Progress refreshed');
       }
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, 'Failed to refresh progress', isError: true);
+        setState(() => _isOffline = true);
+        showTopSnackBar(
+            context, 'Failed to refresh progress. Using cached data.',
+            isError: true);
       }
     } finally {
       if (mounted) setState(() => _isRefreshing = false);
@@ -461,7 +503,8 @@ class _ProgressScreenState extends State<ProgressScreen>
                         children: [
                           Shimmer.fromColors(
                             baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                            highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
+                            highlightColor:
+                                Colors.grey[100]!.withValues(alpha: 0.6),
                             child: Container(
                               width: 100,
                               height: 16,
@@ -470,7 +513,8 @@ class _ProgressScreenState extends State<ProgressScreen>
                           ),
                           Shimmer.fromColors(
                             baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                            highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
+                            highlightColor:
+                                Colors.grey[100]!.withValues(alpha: 0.6),
                             child: Container(
                               width: 50,
                               height: 16,
@@ -482,7 +526,8 @@ class _ProgressScreenState extends State<ProgressScreen>
                       const SizedBox(height: 8),
                       Shimmer.fromColors(
                         baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                        highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
+                        highlightColor:
+                            Colors.grey[100]!.withValues(alpha: 0.6),
                         child: Container(
                           width: double.infinity,
                           height: 6,
@@ -638,7 +683,8 @@ class _ProgressScreenState extends State<ProgressScreen>
           borderRadius: BorderRadius.circular(8),
           child: LinearProgressIndicator(
             value: percentage / 100,
-            backgroundColor: AppColors.getSurface(context).withValues(alpha: 0.3),
+            backgroundColor:
+                AppColors.getSurface(context).withValues(alpha: 0.3),
             valueColor: AlwaysStoppedAnimation<Color>(color),
             minHeight: 8,
           ),
@@ -734,14 +780,18 @@ class _ProgressScreenState extends State<ProgressScreen>
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          'No exams taken yet',
+                          _isOffline
+                              ? 'No cached exam results'
+                              : 'No exams taken yet',
                           style: AppTextStyles.bodyMedium.copyWith(
                             color: AppColors.getTextSecondary(context),
                           ),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Take your first exam to see results here',
+                          _isOffline
+                              ? 'Connect to view exam results'
+                              : 'Take your first exam to see results here',
                           style: AppTextStyles.labelSmall.copyWith(
                             color: AppColors.getTextSecondary(context)
                                 .withValues(alpha: 0.7),
@@ -926,11 +976,14 @@ class _ProgressScreenState extends State<ProgressScreen>
                           gradient: LinearGradient(
                             colors: passed
                                 ? [
-                                    AppColors.telegramGreen.withValues(alpha: 0.2),
-                                    AppColors.telegramGreen.withValues(alpha: 0.1)
+                                    AppColors.telegramGreen
+                                        .withValues(alpha: 0.2),
+                                    AppColors.telegramGreen
+                                        .withValues(alpha: 0.1)
                                   ]
                                 : [
-                                    AppColors.telegramRed.withValues(alpha: 0.2),
+                                    AppColors.telegramRed
+                                        .withValues(alpha: 0.2),
                                     AppColors.telegramRed.withValues(alpha: 0.1)
                                   ],
                           ),
@@ -1099,7 +1152,7 @@ class _ProgressScreenState extends State<ProgressScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    if (state == AppLifecycleState.resumed && !_isOffline) {
       _refreshDataInBackground();
     }
   }
@@ -1125,6 +1178,34 @@ class _ProgressScreenState extends State<ProgressScreen>
         final examResults = examProvider.myExamResults;
         final achievements = progressProvider.achievements;
 
+        // If we have no data and we're offline, show offline state
+        if (_isOffline &&
+            !progressProvider.hasLoadedOverall &&
+            !progressProvider.hasLoadedProgress &&
+            examResults.isEmpty) {
+          return Scaffold(
+            backgroundColor: AppColors.getBackground(context),
+            appBar: CustomAppBar(
+              title: 'Progress',
+              subtitle: 'Offline Mode',
+              showRefresh: true,
+              isLoading: _isRefreshing,
+              onRefresh: _manualRefresh,
+            ),
+            body: Center(
+              child: OfflineState(
+                dataType: 'progress',
+                message: 'You are offline. Connect to view your progress.',
+                onRetry: () {
+                  setState(() => _isOffline = false);
+                  _checkConnectivity();
+                  _manualRefresh();
+                },
+              ),
+            ),
+          );
+        }
+
         return Scaffold(
           backgroundColor: AppColors.getBackground(context),
           body: RefreshIndicator(
@@ -1137,9 +1218,11 @@ class _ProgressScreenState extends State<ProgressScreen>
                 SliverToBoxAdapter(
                   child: CustomAppBar(
                     title: 'Progress',
-                    subtitle: _isRefreshing && !_isInitialLoad
-                        ? 'Refreshing...'
-                        : 'Track your learning journey',
+                    subtitle: _isOffline
+                        ? 'Offline mode - showing cached data'
+                        : (_isRefreshing && !_isInitialLoad
+                            ? 'Refreshing...'
+                            : 'Track your learning journey'),
                     showRefresh: true,
                     isLoading: _isRefreshing,
                     onRefresh: _manualRefresh,

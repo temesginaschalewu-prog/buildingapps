@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
+import '../services/user_session.dart';
 import '../models/chapter_model.dart';
 import '../utils/helpers.dart';
 
@@ -174,8 +176,19 @@ class ChapterProvider with ChangeNotifier {
     _notifySafely();
   }
 
+  /// 🔵 FIX: Clear user data ONLY for different user logout
   Future<void> clearUserData() async {
     debugLog('ChapterProvider', 'Clearing chapter data');
+
+    // Only clear if this is a different user logout
+    final session = UserSession();
+    final isDifferentUser = !await session.isSameUser();
+    final isLoggingOut = await _isLoggingOut();
+
+    if (!isDifferentUser || !isLoggingOut) {
+      debugLog('ChapterProvider', '✅ Same user - preserving chapter cache');
+      return;
+    }
 
     await deviceService.clearCacheByPrefix('chapters_course_');
 
@@ -185,16 +198,31 @@ class ChapterProvider with ChangeNotifier {
     _lastLoadedTime.clear();
     _isLoadingForCourse.clear();
 
-    _chaptersUpdateController.close();
+    await _chaptersUpdateController.close();
     _chaptersUpdateController =
         StreamController<Map<int, List<Chapter>>>.broadcast();
 
     _chaptersUpdateController.add({});
-
     _notifySafely();
   }
 
+  Future<bool> _isLoggingOut() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('is_logging_out') ?? false;
+  }
+
   Future<void> clearAllChapters() async {
+    debugLog(
+        'ChapterProvider', '⚠️ clearAllChapters called - check if intentional');
+
+    // Only clear if explicitly requested during logout
+    final isLoggingOut = await _isLoggingOut();
+    if (!isLoggingOut) {
+      debugLog(
+          'ChapterProvider', 'Skipping clearAllChapters - not logging out');
+      return;
+    }
+
     await deviceService.clearCacheByPrefix('chapters_course_');
 
     _chapters.clear();
@@ -204,7 +232,6 @@ class ChapterProvider with ChangeNotifier {
     _isLoadingForCourse.clear();
 
     _chaptersUpdateController.add({});
-
     _notifySafely();
   }
 

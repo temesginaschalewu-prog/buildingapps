@@ -5,6 +5,7 @@ class ApiResponse<T> {
   final dynamic error;
   final int? statusCode;
   final DateTime timestamp;
+  final bool isOffline;
 
   ApiResponse({
     required this.success,
@@ -13,6 +14,7 @@ class ApiResponse<T> {
     this.error,
     this.statusCode,
     DateTime? timestamp,
+    this.isOffline = false,
   }) : timestamp = timestamp ?? DateTime.now();
 
   factory ApiResponse.success(
@@ -26,13 +28,28 @@ class ApiResponse<T> {
   }
 
   factory ApiResponse.error(
-      {required String message, dynamic error, int? statusCode, T? data}) {
+      {required String message,
+      dynamic error,
+      int? statusCode,
+      T? data,
+      bool isOffline = false}) {
     return ApiResponse<T>(
       success: false,
       message: message,
       error: error,
       statusCode: statusCode ?? 500,
       data: data,
+      isOffline: isOffline,
+    );
+  }
+
+  factory ApiResponse.offline({String? message, T? data}) {
+    return ApiResponse<T>(
+      success: false,
+      message: message ?? 'You are offline. Showing cached data.',
+      isOffline: true,
+      data: data,
+      statusCode: 0,
     );
   }
 
@@ -45,6 +62,7 @@ class ApiResponse<T> {
         data: json['data'] != null ? fromJson(json['data']) : null,
         error: json['error'],
         statusCode: json['statusCode'],
+        isOffline: json['offline'] == true,
       );
     } catch (e) {
       return ApiResponse<T>(
@@ -63,11 +81,20 @@ class ApiResponse<T> {
       'error': error,
       'statusCode': statusCode,
       'timestamp': timestamp.toIso8601String(),
+      'offline': isOffline,
     };
   }
 
   bool get hasData => data != null;
   bool get hasError => error != null;
+
+  bool get isNetworkError =>
+      statusCode == 0 ||
+      statusCode == -1 ||
+      isOffline ||
+      message.contains('Network') ||
+      message.contains('internet') ||
+      message.contains('offline');
 
   ApiResponse<R> map<R>(R Function(T) mapper) {
     if (data == null) {
@@ -77,6 +104,7 @@ class ApiResponse<T> {
         error: error,
         statusCode: statusCode,
         timestamp: timestamp,
+        isOffline: isOffline,
       );
     }
 
@@ -87,6 +115,7 @@ class ApiResponse<T> {
       error: error,
       statusCode: statusCode,
       timestamp: timestamp,
+      isOffline: isOffline,
     );
   }
 
@@ -100,15 +129,16 @@ class ApiResponse<T> {
 
   @override
   String toString() =>
-      'ApiResponse{success: $success, message: $message, hasData: ${data != null}, statusCode: $statusCode}';
+      'ApiResponse{success: $success, message: $message, hasData: ${data != null}, statusCode: $statusCode, isOffline: $isOffline}';
 }
 
-class ApiError {
+class ApiError implements Exception {
   final String message;
   final int? statusCode;
   final dynamic data;
   final String? action;
   final DateTime timestamp;
+  final bool isOffline;
 
   ApiError({
     required this.message,
@@ -116,6 +146,7 @@ class ApiError {
     this.data,
     this.action,
     DateTime? timestamp,
+    this.isOffline = false,
   }) : timestamp = timestamp ?? DateTime.now();
 
   @override
@@ -127,6 +158,7 @@ class ApiError {
       statusCode: json['statusCode'],
       data: json['data'],
       action: json['action'],
+      isOffline: json['offline'] == true,
     );
   }
 
@@ -135,12 +167,15 @@ class ApiError {
       message: response.message,
       statusCode: response.statusCode,
       data: response.data,
+      isOffline: response.isOffline,
     );
   }
 
   factory ApiError.networkError() {
     return ApiError(
-        message: 'Network error. Please check your connection.', statusCode: 0);
+        message: 'Network error. Please check your connection.',
+        statusCode: 0,
+        isOffline: true);
   }
 
   factory ApiError.timeoutError() {
@@ -164,10 +199,17 @@ class ApiError {
       'data': data,
       'action': action,
       'timestamp': timestamp.toIso8601String(),
+      'offline': isOffline,
     };
   }
 
-  bool get isNetworkError => statusCode == 0 || message.contains('Network');
+  bool get isNetworkError =>
+      statusCode == 0 ||
+      statusCode == -1 ||
+      isOffline ||
+      message.contains('Network') ||
+      message.contains('connection');
+
   bool get isTimeout => statusCode == 408 || message.contains('timeout');
   bool get isUnauthorized => statusCode == 401;
   bool get isNotFound => statusCode == 404;
@@ -194,6 +236,7 @@ class PaginatedResponse<T> {
   final int totalItems;
   final bool hasNext;
   final bool hasPrevious;
+  final bool isOffline;
 
   PaginatedResponse({
     required this.items,
@@ -202,6 +245,7 @@ class PaginatedResponse<T> {
     required this.totalItems,
     required this.hasNext,
     required this.hasPrevious,
+    this.isOffline = false,
   });
 
   factory PaginatedResponse.fromJson(
@@ -216,6 +260,7 @@ class PaginatedResponse<T> {
       totalItems: json['total_items'] ?? items.length,
       hasNext: json['has_next'] ?? false,
       hasPrevious: json['has_previous'] ?? false,
+      isOffline: json['offline'] == true,
     );
   }
 
@@ -227,6 +272,7 @@ class PaginatedResponse<T> {
       'total_items': totalItems,
       'has_next': hasNext,
       'has_previous': hasPrevious,
+      'offline': isOffline,
     };
   }
 

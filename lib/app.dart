@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:familyacademyclient/providers/payment_provider.dart';
 import 'package:familyacademyclient/providers/settings_provider.dart';
 import 'package:familyacademyclient/providers/user_provider.dart';
+import 'package:familyacademyclient/services/user_session.dart';
 import 'package:familyacademyclient/utils/screen_protection.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -42,6 +43,7 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
   final Map<String, DateTime> _lastRouteVisited = {};
   Timer? _sessionCheckTimer;
   StreamSubscription? _deviceDeactivatedSubscription;
+  bool _mounted = true;
 
   @override
   void initState() {
@@ -54,18 +56,21 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_isRouterReady && context.mounted) {
+    if (!_isRouterReady && _mounted && context.mounted) {
       try {
         final routeState = GoRouterState.of(context);
         _currentRoute = routeState.uri.toString();
         _isRouterReady = true;
         debugLog('FamilyAcademyApp', 'Router ready: $_currentRoute');
-      } catch (e) {}
+      } catch (e) {
+        debugLog('FamilyAcademyApp', 'Router error: $e');
+      }
     }
   }
 
   @override
   void dispose() {
+    _mounted = false;
     WidgetsBinding.instance.removeObserver(this);
     _sessionCheckTimer?.cancel();
     _deviceDeactivatedSubscription?.cancel();
@@ -92,7 +97,7 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
 
   void _startSessionChecker() {
     _sessionCheckTimer = Timer.periodic(const Duration(minutes: 1), (_) {
-      if (context.mounted) {
+      if (_mounted && context.mounted) {
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
         if (authProvider.isAuthenticated) {
           authProvider.checkSession();
@@ -106,23 +111,27 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
       await ScreenProtectionService.initialize();
       await ScreenProtectionService.disableSplitScreen();
 
-      widget.notificationService.setApiService(widget.apiService);
+      widget.notificationService.apiService = widget.apiService;
 
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        if (context.mounted) {
-          final authProvider =
-              Provider.of<AuthProvider>(context, listen: false);
-          _deviceDeactivatedSubscription =
-              authProvider.deviceDeactivated.listen((message) {
-            if (mounted) {
-              _showDeviceDeactivatedDialog(
-                  message ?? 'Device has been deactivated.');
+      if (_mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
+          if (_mounted && context.mounted) {
+            final authProvider =
+                Provider.of<AuthProvider>(context, listen: false);
+            _deviceDeactivatedSubscription =
+                authProvider.deviceDeactivated.listen((message) {
+              if (_mounted && context.mounted) {
+                _showDeviceDeactivatedDialog(
+                    message ?? 'Device has been deactivated.');
+              }
+            });
+            await authProvider.initialize();
+            if (authProvider.isAuthenticated && _mounted && context.mounted) {
+              await _initializeAuthenticatedProviders();
             }
-          });
-          await authProvider.initialize();
-          if (authProvider.isAuthenticated) _initializeAuthenticatedProviders();
-        }
-      });
+          }
+        });
+      }
 
       widget.notificationService.notificationStream
           .listen(_handleNotificationData);
@@ -134,7 +143,7 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
   }
 
   void _showDeviceDeactivatedDialog(String message) {
-    if (!mounted || !context.mounted) return;
+    if (!_mounted || !context.mounted) return;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -145,7 +154,7 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
           TextButton(
             onPressed: () {
               Navigator.of(context).pop();
-              if (mounted && context.mounted) {
+              if (_mounted && context.mounted) {
                 GoRouter.of(context).go('/auth/login');
               }
             },
@@ -157,7 +166,7 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
   }
 
   Future<void> _initializeAuthenticatedProviders() async {
-    if (_isInitializing || !context.mounted) return;
+    if (_isInitializing || !_mounted || !context.mounted) return;
     _isInitializing = true;
     try {
       final subscriptionProvider =
@@ -169,8 +178,9 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
       await settingsProvider.getAllSettings();
       await subscriptionProvider.loadSubscriptions();
       await categoryProvider.loadCategoriesWithSubscriptionCheck();
-      _loadBackgroundProviders();
-      await widget.notificationService.sendFcmTokenToBackendIfAuthenticated();
+      unawaited(_loadBackgroundProviders());
+      unawaited(
+          widget.notificationService.sendFcmTokenToBackendIfAuthenticated());
     } catch (e) {
       debugLog('FamilyAcademyApp', 'Provider init error: $e');
     } finally {
@@ -179,6 +189,8 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
   }
 
   Future<void> _loadBackgroundProviders() async {
+    if (!_mounted || !context.mounted) return;
+
     try {
       final userProvider = Provider.of<UserProvider>(context, listen: false);
       final notificationProvider =
@@ -188,25 +200,40 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
       final settingsProvider =
           Provider.of<SettingsProvider>(context, listen: false);
 
-      await settingsProvider.getAllSettings().catchError((e) => null);
+      await settingsProvider.getAllSettings().catchError((e) {
+        debugLog('FamilyAcademyApp', 'Settings error: $e');
+        return null;
+      });
+
       await Future.wait([
-        userProvider.loadUserProfile().catchError((e) => null),
-        notificationProvider.loadNotifications().catchError((e) => null),
-        paymentProvider.loadPayments().catchError((e) => null),
+        userProvider.loadUserProfile().catchError((e) {
+          debugLog('FamilyAcademyApp', 'User profile error: $e');
+          return null;
+        }),
+        notificationProvider.loadNotifications().catchError((e) {
+          debugLog('FamilyAcademyApp', 'Notifications error: $e');
+          return null;
+        }),
+        paymentProvider.loadPayments().catchError((e) {
+          debugLog('FamilyAcademyApp', 'Payments error: $e');
+          return null;
+        }),
       ]);
-    } catch (e) {}
+    } catch (e) {
+      debugLog('FamilyAcademyApp', 'Background providers error: $e');
+    }
   }
 
   Future<void> _refreshAllData() async {
-    if (!_isAppInForeground || !context.mounted) return;
+    if (!_isAppInForeground || !_mounted || !context.mounted) return;
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     if (authProvider.isAuthenticated) {
       final subscriptionProvider =
           Provider.of<SubscriptionProvider>(context, listen: false);
       final categoryProvider =
           Provider.of<CategoryProvider>(context, listen: false);
-      await subscriptionProvider.loadSubscriptions(forceRefresh: true);
-      await categoryProvider.loadCategories(forceRefresh: true);
+      unawaited(subscriptionProvider.loadSubscriptions(forceRefresh: true));
+      unawaited(categoryProvider.loadCategories(forceRefresh: true));
     }
   }
 
@@ -223,34 +250,45 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
       case 'exam_result':
       case 'streak_update':
       case 'system_announcement':
-        widget.notificationService.showLocalNotification(
+        unawaited(widget.notificationService.showLocalNotification(
           title: data['title'] ?? 'Notification',
           body: data['message'] ?? '',
-        );
+        ));
         break;
       case 'navigate':
       case 'notification_clicked':
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (context.mounted && _isRouterReady) {
-            ScreenProtectionService.enableOnResume();
-            context.read<NotificationProvider>().loadNotifications().then((_) {
-              final currentRoute = GoRouterState.of(context).uri.toString();
-              if (currentRoute == route) return;
-              if (currentRoute.startsWith('/chatbot') ||
-                  currentRoute.startsWith('/progress')) {
-                GoRouter.of(context).push(route);
-              } else {
-                GoRouter.of(context).go(route);
-              }
-            });
-          }
+          _handleNavigation(route);
         });
         break;
     }
   }
 
+  void _handleNavigation(String route) {
+    if (!_mounted || !context.mounted || !_isRouterReady) return;
+
+    ScreenProtectionService.enableOnResume();
+
+    final currentContext = context;
+    final notificationProvider = currentContext.read<NotificationProvider>();
+
+    notificationProvider.loadNotifications().then((_) {
+      if (!_mounted || !currentContext.mounted) return;
+
+      final currentRoute = GoRouterState.of(currentContext).uri.toString();
+      if (currentRoute == route) return;
+
+      if (currentRoute.startsWith('/chatbot') ||
+          currentRoute.startsWith('/progress')) {
+        GoRouter.of(currentContext).push(route);
+      } else {
+        GoRouter.of(currentContext).go(route);
+      }
+    });
+  }
+
   void _handlePaymentVerified(Map<String, dynamic> data) {
-    widget.notificationService.showLocalNotification(
+    unawaited(widget.notificationService.showLocalNotification(
       title: 'Payment Verified!',
       body: 'Your payment has been verified. Access is now active.',
       payload: json.encode({
@@ -259,23 +297,30 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
         'category_id': data['category_id'],
         'click_action': '/notifications',
       }),
-    );
+    ));
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (context.mounted) {
-        final subscriptionProvider =
-            Provider.of<SubscriptionProvider>(context, listen: false);
-        final categoryProvider =
-            Provider.of<CategoryProvider>(context, listen: false);
-        subscriptionProvider.refreshAfterPaymentVerification().then((_) {
-          categoryProvider.loadCategories(forceRefresh: true);
-        });
+      _handlePaymentRefresh(data);
+    });
+  }
+
+  void _handlePaymentRefresh(Map<String, dynamic> data) {
+    if (!_mounted || !context.mounted) return;
+
+    final subscriptionProvider =
+        Provider.of<SubscriptionProvider>(context, listen: false);
+    final categoryProvider =
+        Provider.of<CategoryProvider>(context, listen: false);
+
+    subscriptionProvider.refreshAfterPaymentVerification().then((_) {
+      if (_mounted && context.mounted) {
+        categoryProvider.loadCategories(forceRefresh: true);
       }
     });
   }
 
   void _monitorRouteChanges() {
-    if (!_isRouterReady || !context.mounted) return;
+    if (!_isRouterReady || !_mounted || !context.mounted) return;
     try {
       final routeState = GoRouterState.of(context);
       final currentUri = routeState.uri.toString();
@@ -284,7 +329,9 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
         _lastRouteVisited[currentUri] = DateTime.now();
         if (_isAppInForeground) ScreenProtectionService.enableOnResume();
       }
-    } catch (e) {}
+    } catch (e) {
+      debugLog('FamilyAcademyApp', 'Route monitor error: $e');
+    }
   }
 
   @override
@@ -310,7 +357,8 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
                         : 1.0),
               ),
               child: PopScope(
-                onPopInvoked: (didPop) {
+                canPop: true,
+                onPopInvokedWithResult: (didPop, result) {
                   if (didPop && _isAppInForeground) {
                     ScreenProtectionService.enableOnResume();
                   }

@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'package:familyacademyclient/providers/category_provider.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
+import '../services/user_session.dart';
 import '../models/subscription_model.dart';
+import '../utils/constants.dart';
 import '../utils/helpers.dart';
 
 class SubscriptionProvider with ChangeNotifier {
@@ -21,11 +24,9 @@ class SubscriptionProvider with ChangeNotifier {
   String? _error;
 
   Timer? _backgroundRefreshTimer;
-  // CHANGED: Increased from 30 seconds to 5 minutes
   static const Duration _backgroundRefreshInterval = Duration(minutes: 5);
   static const Duration _cacheDuration = Duration(minutes: 30);
 
-  // NEW: Track last background refresh time to prevent multiple refreshes
   DateTime? _lastBackgroundRefreshTime;
 
   final StreamController<Map<int, bool>> _subscriptionUpdateController =
@@ -87,14 +88,10 @@ class SubscriptionProvider with ChangeNotifier {
     });
   }
 
-  // NEW: Separate method for background refresh with time tracking
   Future<void> _performBackgroundRefresh() async {
-    // Check if we've refreshed recently
     if (_lastBackgroundRefreshTime != null) {
       final minutesSinceLastRefresh =
           DateTime.now().difference(_lastBackgroundRefreshTime!).inMinutes;
-
-      // Don't refresh if less than 2 minutes have passed
       if (minutesSinceLastRefresh < 2) {
         debugLog('SubscriptionProvider',
             '⏰ Skipping background refresh - only $minutesSinceLastRefresh minutes since last refresh');
@@ -121,7 +118,8 @@ class SubscriptionProvider with ChangeNotifier {
           debugLog(
               'SubscriptionProvider', '📦 Changes detected, updating cache');
           _allSubscriptions = newSubscriptions;
-          await deviceService.saveCacheItem('subscriptions', _allSubscriptions,
+          await deviceService.saveCacheItem(
+              AppConstants.subscriptionsCacheKey, _allSubscriptions,
               ttl: _cacheDuration, isUserSpecific: true);
 
           _rebuildCacheFromSubscriptions();
@@ -134,7 +132,6 @@ class SubscriptionProvider with ChangeNotifier {
             'SubscriptionProvider', '⚠️ Background refresh returned no data');
       }
     } catch (e) {
-      // Check if it's a 429 rate limit error
       if (e.toString().contains('429') ||
           e.toString().contains('Too many requests')) {
         debugLog('SubscriptionProvider',
@@ -175,8 +172,9 @@ class SubscriptionProvider with ChangeNotifier {
       debugLog('SubscriptionProvider', '📥 Loading subscriptions...');
 
       if (!forceRefresh) {
-        final cachedSubscriptions = await deviceService
-            .getCacheItem<List<Subscription>>('subscriptions',
+        final cachedSubscriptions =
+            await deviceService.getCacheItem<List<Subscription>>(
+                AppConstants.subscriptionsCacheKey,
                 isUserSpecific: true);
 
         if (cachedSubscriptions != null && cachedSubscriptions.isNotEmpty) {
@@ -198,9 +196,6 @@ class SubscriptionProvider with ChangeNotifier {
 
           debugLog('SubscriptionProvider',
               '✅ Loaded ${_allSubscriptions.length} subscriptions from cache');
-
-          // Don't auto-refresh after cache load - let the timer handle it
-          // unawaited(_refreshInBackground());
           return;
         }
       }
@@ -210,7 +205,8 @@ class SubscriptionProvider with ChangeNotifier {
       if (response.success && response.data != null) {
         _allSubscriptions = response.data!;
 
-        await deviceService.saveCacheItem('subscriptions', _allSubscriptions,
+        await deviceService.saveCacheItem(
+            AppConstants.subscriptionsCacheKey, _allSubscriptions,
             ttl: _cacheDuration, isUserSpecific: true);
 
         _rebuildCacheFromSubscriptions();
@@ -238,15 +234,13 @@ class SubscriptionProvider with ChangeNotifier {
       _error = e.toString();
       debugLog('SubscriptionProvider', '❌ Error loading subscriptions: $e');
 
-      // Check if it's a rate limit error
       if (e.toString().contains('429') ||
           e.toString().contains('Too many requests')) {
         debugLog('SubscriptionProvider', '⚠️ Rate limited, using cached data');
-        // Don't clear cache on rate limit
         if (_allSubscriptions.isEmpty) {
-          // Try to get from cache again
-          final cachedSubscriptions = await deviceService
-              .getCacheItem<List<Subscription>>('subscriptions',
+          final cachedSubscriptions =
+              await deviceService.getCacheItem<List<Subscription>>(
+                  AppConstants.subscriptionsCacheKey,
                   isUserSpecific: true);
           if (cachedSubscriptions != null && cachedSubscriptions.isNotEmpty) {
             _allSubscriptions = cachedSubscriptions;
@@ -378,7 +372,7 @@ class SubscriptionProvider with ChangeNotifier {
           if (!_allSubscriptions.any((s) => s.id == subscription.id)) {
             _allSubscriptions.add(subscription);
             unawaited(deviceService.saveCacheItem(
-                'subscriptions', _allSubscriptions,
+                AppConstants.subscriptionsCacheKey, _allSubscriptions,
                 ttl: _cacheDuration, isUserSpecific: true));
           }
         }
@@ -440,8 +434,7 @@ class SubscriptionProvider with ChangeNotifier {
         categoryIds.where((id) => !results.containsKey(id)).toList();
 
     if (missingIds.isNotEmpty) {
-      final futures =
-          missingIds.map(checkHasActiveSubscriptionForCategory);
+      final futures = missingIds.map(checkHasActiveSubscriptionForCategory);
       final newResults = await Future.wait(futures);
 
       for (int i = 0; i < missingIds.length; i++) {
@@ -505,7 +498,8 @@ class SubscriptionProvider with ChangeNotifier {
 
   Future<void> refreshCategorySubscription(int categoryId) async {
     try {
-      await deviceService.removeCacheItem('category_access_$categoryId',
+      await deviceService.removeCacheItem(
+          AppConstants.categoryAccessKey(categoryId),
           isUserSpecific: true);
 
       _categoryAccessCache.remove(categoryId);
@@ -533,11 +527,23 @@ class SubscriptionProvider with ChangeNotifier {
     await deviceService.clearCacheByPrefix('subscriptions');
     await loadSubscriptions(forceRefresh: true);
 
-    debugLog('SubscriptionProvider', '✅ All categories refreshed');
+    debugLog('SubscriptionProvider', ' All categories refreshed');
   }
 
+  /// 🔵 FIX: Clear user data ONLY for different user logout
   Future<void> clearUserData() async {
-    debugLog('SubscriptionProvider', '🧹 Clearing subscription data');
+    debugLog('SubscriptionProvider', ' Clearing subscription data');
+
+    // Only clear if this is a different user logout
+    final session = UserSession();
+    final isDifferentUser = !await session.isSameUser();
+    final isLoggingOut = await _isLoggingOut();
+
+    if (!isDifferentUser || !isLoggingOut) {
+      debugLog('SubscriptionProvider',
+          '✅ Same user - preserving subscription cache');
+      return;
+    }
 
     await deviceService.clearCacheByPrefix('subscriptions');
 
@@ -553,6 +559,11 @@ class SubscriptionProvider with ChangeNotifier {
     _subscriptionsUpdateController.add([]);
 
     _notifySafely();
+  }
+
+  Future<bool> _isLoggingOut() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
   }
 
   void clearError() {

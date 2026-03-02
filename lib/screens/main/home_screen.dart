@@ -111,7 +111,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         child: Row(
                           children: [
                             Shimmer.fromColors(
-                              baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                              baseColor:
+                                  Colors.grey[300]!.withValues(alpha: 0.3),
                               highlightColor:
                                   Colors.grey[100]!.withValues(alpha: 0.6),
                               child: Container(
@@ -123,7 +124,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             ),
                             const SizedBox(width: 4),
                             Shimmer.fromColors(
-                              baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                              baseColor:
+                                  Colors.grey[300]!.withValues(alpha: 0.3),
                               highlightColor:
                                   Colors.grey[100]!.withValues(alpha: 0.6),
                               child: Container(
@@ -143,7 +145,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             horizontal: 12, vertical: 4),
                         child: Shimmer.fromColors(
                           baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                          highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
+                          highlightColor:
+                              Colors.grey[100]!.withValues(alpha: 0.6),
                           child: Container(
                               width: 30,
                               height: 16,

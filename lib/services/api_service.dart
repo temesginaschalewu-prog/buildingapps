@@ -1,5 +1,3 @@
-// ignore_for_file: only_throw_errors, empty_catches
-
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -41,6 +39,9 @@ class ApiService {
       StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get deviceDeactivationStream =>
       _deviceDeactivationController.stream;
+
+  bool _hasNetworkConnection = true;
+  bool get hasNetworkConnection => _hasNetworkConnection;
 
   Dio get dio => _dio;
 
@@ -100,7 +101,9 @@ class ApiService {
             if (minutesUntilExpiry < 5) await _refreshAccessToken();
           }
         }
-      } catch (e) {}
+      } catch (e) {
+        debugLog('api_service', 'Error: $e');
+      }
       options.headers['Authorization'] = 'Bearer $token';
     }
 
@@ -110,7 +113,9 @@ class ApiService {
         final userJson = json.decode(userData);
         final userId = userJson['id'];
         if (userId != null) options.headers['X-User-ID'] = userId.toString();
-      } catch (e) {}
+      } catch (e) {
+        debugLog('api_service', 'Error: $e');
+      }
     }
 
     if (kDebugMode) {
@@ -130,12 +135,32 @@ class ApiService {
     debugLog(
         'ApiService', '${response.statusCode} ${response.requestOptions.path}');
     _retryCounts.remove(response.requestOptions.path);
+    _hasNetworkConnection = true;
     handler.next(response);
   }
 
   Future<void> _onError(
       DioException error, ErrorInterceptorHandler handler) async {
     debugLog('ApiService', '${error.type} - ${error.message}');
+
+    if (error.type == DioExceptionType.connectionError ||
+        error.type == DioExceptionType.connectionTimeout ||
+        error.type == DioExceptionType.receiveTimeout ||
+        error.type == DioExceptionType.sendTimeout) {
+      _hasNetworkConnection = false;
+
+      handler.resolve(Response(
+        requestOptions: error.requestOptions,
+        statusCode: -1,
+        data: {
+          'success': false,
+          'message': 'Network error. Please check your internet connection.',
+          'offline': true,
+        },
+      ));
+      return;
+    }
+
     final path = error.requestOptions.path;
     final currentRetryCount = _retryCounts[path] ?? 0;
 
@@ -178,7 +203,9 @@ class ApiService {
         );
         handler.resolve(response);
         return;
-      } catch (retryError) {}
+      } catch (retryError) {
+        debugLog('ApiService', 'Retry failed after rate limit: $retryError');
+      }
     }
 
     if (error.response?.data is String) {
@@ -221,9 +248,13 @@ class ApiService {
               );
               handler.resolve(retryResponse);
               return;
-            } catch (retryError) {}
+            } catch (retryError) {
+              debugLog('ApiService',
+                  'Retry after token refresh failed: $retryError');
+            }
           }
         } catch (e) {
+          debugLog('ApiService', 'Error refreshing token: $e');
         } finally {
           _isRefreshingToken = false;
         }
@@ -304,6 +335,14 @@ class ApiService {
                 response.data['message']?.toString() ?? 'Registration failed');
       }
     } on DioException catch (e) {
+      if (e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.connectionTimeout) {
+        return ApiResponse<Map<String, dynamic>>(
+          success: false,
+          message: 'Network error. Please check your internet connection.',
+          data: null,
+        );
+      }
       throw ApiError(
         message:
             e.response?.data['message']?.toString() ?? 'Registration failed',
@@ -327,6 +366,14 @@ class ApiService {
       return ApiResponse.fromJson(
           response.data, (data) => data as Map<String, dynamic>);
     } on DioException catch (e) {
+      if (e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.connectionTimeout) {
+        return ApiResponse<Map<String, dynamic>>(
+          success: false,
+          message: 'Network error. Please check your internet connection.',
+          data: null,
+        );
+      }
       throw ApiError(
         message:
             e.response?.data['message'] ?? 'Failed to approve device change',
@@ -394,6 +441,14 @@ class ApiService {
             message: response.data['message']?.toString() ?? 'Login failed');
       }
     } on DioException catch (e) {
+      if (e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.connectionTimeout) {
+        return ApiResponse<Map<String, dynamic>>(
+          success: false,
+          message: 'Network error. Please check your internet connection.',
+          data: null,
+        );
+      }
       if (e.response?.statusCode == 403 && e.response?.data is Map) {
         final responseData = e.response!.data as Map<String, dynamic>;
         if (responseData['action'] == 'device_change_required') {
@@ -426,6 +481,13 @@ class ApiService {
           await _dio.put('/users/fcm-token', data: {'fcm_token': fcmToken});
       return ApiResponse(success: true, message: response.data['message']);
     } on DioException catch (e) {
+      if (e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.connectionTimeout) {
+        return ApiResponse(
+          success: false,
+          message: 'Network error. Will retry later.',
+        );
+      }
       throw ApiError(
         message: e.response?.data['message'] ?? 'Failed to update FCM token',
         statusCode: e.response?.statusCode,
@@ -437,6 +499,7 @@ class ApiService {
     try {
       await _dio.post(AppConstants.logoutEndpoint);
     } catch (e) {
+      debugLog('ApiService', 'Logout error (non-critical): $e');
     } finally {
       await _clearUserDataOnly();
     }
@@ -448,7 +511,7 @@ class ApiService {
     for (final key in keys) {
       if (key.startsWith('user_') ||
           key == AppConstants.userDataKey ||
-          key == 'session_start' ||
+          key == AppConstants.sessionStartKey ||
           key.startsWith('cache_')) {
         await _prefs.remove(key);
       }
@@ -489,6 +552,14 @@ class ApiService {
             message: response.data['message'] ?? 'Failed to fetch schools');
       }
     } on DioException catch (e) {
+      if (e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.connectionTimeout) {
+        return ApiResponse<List<School>>(
+          success: false,
+          message: 'Network error. Please check your internet connection.',
+          data: [],
+        );
+      }
       if (e.response?.statusCode == 429) {
         throw ApiError(message: 'Too many requests');
       }
@@ -496,6 +567,21 @@ class ApiService {
         message: e.response?.data['message'] ?? 'Failed to fetch schools',
         statusCode: e.response?.statusCode,
       );
+    }
+  }
+
+  Future<bool> checkConnectivity() async {
+    try {
+      final response = await _dio.get('/health',
+          options: Options(
+            sendTimeout: const Duration(seconds: 5),
+            receiveTimeout: const Duration(seconds: 5),
+          ));
+      _hasNetworkConnection = response.statusCode == 200;
+      return _hasNetworkConnection;
+    } catch (e) {
+      _hasNetworkConnection = false;
+      return false;
     }
   }
 
@@ -664,7 +750,6 @@ class ApiService {
   Future<ApiResponse<Map<String, dynamic>>> getVideosByChapter(
       int chapterId) async {
     try {
-      // Using the RESTful pattern that matches your backend
       final response = await _dio.get('/videos/chapter/$chapterId');
 
       if (response.data is Map && response.data['success'] == true) {

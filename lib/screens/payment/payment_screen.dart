@@ -1,11 +1,13 @@
 import 'dart:io';
 import 'dart:ui';
+import 'package:familyacademyclient/services/device_service.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter/services.dart';
+import 'package:familyacademyclient/services/user_session.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
 import 'package:familyacademyclient/themes/app_themes.dart';
 import 'package:familyacademyclient/themes/app_colors.dart';
@@ -54,7 +56,7 @@ class _PaymentScreenState extends State<PaymentScreen>
   bool _initialized = false;
   bool _settingsLoadAttempted = false;
   List<PaymentMethod> _cachedMethods = [];
-  final bool _isOffline = false;
+  bool _isOffline = false;
   String? _currentUserId;
 
   @override
@@ -66,6 +68,7 @@ class _PaymentScreenState extends State<PaymentScreen>
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _getCurrentUserId();
+      _checkConnectivity();
       _initializeData();
       _animationController.forward();
     });
@@ -84,12 +87,51 @@ class _PaymentScreenState extends State<PaymentScreen>
     _currentUserId = authProvider.currentUser?.id.toString();
   }
 
+  Future<void> _checkConnectivity() async {
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection) {
+      setState(() => _isOffline = true);
+      showOfflineMessage(context);
+    }
+  }
+
+  Future<void> _loadCachedPaymentMethods() async {
+    try {
+      final deviceService = Provider.of<DeviceService>(context, listen: false);
+      final cachedMethods = await deviceService.getCacheItem<List<dynamic>>(
+        'payment_methods_$_currentUserId',
+        isUserSpecific: true,
+      );
+
+      if (cachedMethods != null && mounted) {
+        setState(() {
+          _cachedMethods = cachedMethods
+              .map((m) => PaymentMethod(
+                    method: m['method'],
+                    name: m['name'],
+                    accountInfo: m['accountInfo'],
+                    instructions: m['instructions'],
+                    iconData: Icons.payment,
+                  ))
+              .toList();
+          _isLoadingMethods = false;
+        });
+      }
+    } catch (e) {
+      debugLog('PaymentScreen', 'Error loading cached methods: $e');
+    }
+  }
+
   void _initializeData() {
     if (_initialized) return;
 
     try {
       final args = widget.extra;
       if (args == null) {
+        // Try to load from cache if offline
+        if (_isOffline) {
+          _loadCachedPaymentMethods();
+        }
         setState(() {
           _hasError = true;
           _errorMessage = 'No payment data provided';
@@ -158,11 +200,32 @@ class _PaymentScreenState extends State<PaymentScreen>
     final settingsProvider =
         Provider.of<SettingsProvider>(context, listen: false);
 
-    if (settingsProvider.allSettings.isEmpty) {
+    if (settingsProvider.allSettings.isEmpty && !_isOffline) {
       await settingsProvider.getAllSettings();
     }
 
     _cachedMethods = settingsProvider.getPaymentMethods();
+
+    // Cache payment methods for offline use
+    if (_cachedMethods.isNotEmpty && _currentUserId != null && !_isOffline) {
+      try {
+        final deviceService =
+            Provider.of<DeviceService>(context, listen: false);
+        await deviceService.saveCacheItem(
+          'payment_methods_$_currentUserId',
+          _cachedMethods
+              .map((m) => {
+                    'method': m.method,
+                    'name': m.name,
+                    'accountInfo': m.accountInfo,
+                    'instructions': m.instructions,
+                  })
+              .toList(),
+          ttl: const Duration(days: 7),
+          isUserSpecific: true,
+        );
+      } catch (e) {}
+    }
 
     if (mounted) setState(() => _isLoadingMethods = false);
   }
@@ -204,6 +267,26 @@ class _PaymentScreenState extends State<PaymentScreen>
       return 'You will get access for 4 months';
     }
     return 'You will get access for 1 month';
+  }
+
+  String? _validateAccountHolderName(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Account holder name is required';
+    }
+    if (value.trim().length < 3) {
+      return 'Account holder name must be at least 3 characters';
+    }
+    return null;
+  }
+
+  String? _validatePassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Password is required';
+    }
+    if (value.length < 6) {
+      return 'Password must be at least 6 characters';
+    }
+    return null;
   }
 
   Widget _buildGlassContainer({required Widget child}) {
@@ -255,7 +338,7 @@ class _PaymentScreenState extends State<PaymentScreen>
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: DropdownButtonFormField<PaymentMethod>(
-              initialValue: _selectedPaymentMethod,
+              value: _selectedPaymentMethod,
               hint: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Text('Select a payment method',
@@ -316,11 +399,23 @@ class _PaymentScreenState extends State<PaymentScreen>
                   ),
                 );
               }).toList(),
-              onChanged: (PaymentMethod? newValue) =>
-                  setState(() => _selectedPaymentMethod = newValue),
+              onChanged: !_isOffline
+                  ? (PaymentMethod? newValue) =>
+                      setState(() => _selectedPaymentMethod = newValue)
+                  : null,
             ),
           ),
         ),
+        if (_isOffline)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              'Payment methods require internet connection',
+              style: AppTextStyles.caption.copyWith(
+                color: AppColors.telegramYellow,
+              ),
+            ),
+          ),
         if (_selectedPaymentMethod != null) ...[
           const SizedBox(height: 16),
           _buildGlassContainer(
@@ -370,8 +465,10 @@ class _PaymentScreenState extends State<PaymentScreen>
                             decoration: BoxDecoration(
                                 gradient: LinearGradient(
                                   colors: [
-                                    AppColors.telegramBlue.withValues(alpha: 0.2),
-                                    AppColors.telegramBlue.withValues(alpha: 0.1),
+                                    AppColors.telegramBlue
+                                        .withValues(alpha: 0.2),
+                                    AppColors.telegramBlue
+                                        .withValues(alpha: 0.1),
                                   ],
                                 ),
                                 borderRadius: BorderRadius.circular(
@@ -422,10 +519,10 @@ class _PaymentScreenState extends State<PaymentScreen>
                               child: Row(
                                 children: [
                                   Shimmer.fromColors(
-                                    baseColor:
-                                        Colors.grey[300]!.withValues(alpha: 0.3),
-                                    highlightColor:
-                                        Colors.grey[100]!.withValues(alpha: 0.6),
+                                    baseColor: Colors.grey[300]!
+                                        .withValues(alpha: 0.3),
+                                    highlightColor: Colors.grey[100]!
+                                        .withValues(alpha: 0.6),
                                     child: Container(
                                       width: 32,
                                       height: 32,
@@ -473,7 +570,8 @@ class _PaymentScreenState extends State<PaymentScreen>
                         (index) => Padding(
                               padding: const EdgeInsets.only(bottom: 16),
                               child: Shimmer.fromColors(
-                                baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                                baseColor:
+                                    Colors.grey[300]!.withValues(alpha: 0.3),
                                 highlightColor:
                                     Colors.grey[100]!.withValues(alpha: 0.6),
                                 child: Container(
@@ -520,6 +618,16 @@ class _PaymentScreenState extends State<PaymentScreen>
 
     if (!_confirmAccuracy) {
       showTopSnackBar(context, 'Please confirm accuracy', isError: true);
+      return;
+    }
+
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection) {
+      showTopSnackBar(
+        context,
+        'You are offline. Please check your internet connection.',
+        isError: true,
+      );
       return;
     }
 
@@ -633,24 +741,26 @@ class _PaymentScreenState extends State<PaymentScreen>
           ? _buildErrorState()
           : _isLoadingMethods
               ? _buildSkeletonLoader()
-              : methods.isEmpty
-                  ? _buildNoMethodsState()
-                  : SingleChildScrollView(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildPaymentSummary(),
-                            const SizedBox(height: 24),
-                            _buildPaymentForm(methods),
-                            const SizedBox(height: 24),
-                            _buildPaymentInstructions(),
-                            const SizedBox(height: 32),
-                          ],
+              : methods.isEmpty && _isOffline
+                  ? _buildOfflineNoMethodsState()
+                  : methods.isEmpty
+                      ? _buildNoMethodsState()
+                      : SingleChildScrollView(
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildPaymentSummary(),
+                                const SizedBox(height: 24),
+                                _buildPaymentForm(methods),
+                                const SizedBox(height: 24),
+                                _buildPaymentInstructions(),
+                                const SizedBox(height: 32),
+                              ],
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
     );
   }
 
@@ -663,36 +773,39 @@ class _PaymentScreenState extends State<PaymentScreen>
           ? Center(child: _buildErrorState())
           : _isLoadingMethods
               ? Center(child: _buildSkeletonLoader())
-              : methods.isEmpty
-                  ? Center(child: _buildNoMethodsState())
-                  : SingleChildScrollView(
-                      child: Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 1200),
-                          child: Padding(
-                            padding: const EdgeInsets.all(32),
-                            child: Column(
-                              children: [
-                                _buildPaymentSummary(),
-                                const SizedBox(height: 48),
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+              : methods.isEmpty && _isOffline
+                  ? Center(child: _buildOfflineNoMethodsState())
+                  : methods.isEmpty
+                      ? Center(child: _buildNoMethodsState())
+                      : SingleChildScrollView(
+                          child: Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 1200),
+                              child: Padding(
+                                padding: const EdgeInsets.all(32),
+                                child: Column(
                                   children: [
-                                    Expanded(
-                                        flex: 2,
-                                        child: _buildPaymentForm(methods)),
-                                    const SizedBox(width: 48),
-                                    Expanded(
-                                        child: _buildPaymentInstructions()),
+                                    _buildPaymentSummary(),
+                                    const SizedBox(height: 48),
+                                    Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Expanded(
+                                            flex: 2,
+                                            child: _buildPaymentForm(methods)),
+                                        const SizedBox(width: 48),
+                                        Expanded(
+                                            child: _buildPaymentInstructions()),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 48),
                                   ],
                                 ),
-                                const SizedBox(height: 48),
-                              ],
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ),
     );
   }
 
@@ -795,9 +908,56 @@ class _PaymentScreenState extends State<PaymentScreen>
                         borderRadius: BorderRadius.circular(
                             AppThemes.borderRadiusMedium)),
                   ),
-                  child: const Text('Go Back', style: AppTextStyles.buttonMedium),
+                  child:
+                      const Text('Go Back', style: AppTextStyles.buttonMedium),
                 ),
               ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOfflineNoMethodsState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(32),
+              decoration: BoxDecoration(
+                  color: AppColors.telegramYellow.withValues(alpha: 0.1),
+                  shape: BoxShape.circle),
+              child: const Icon(Icons.wifi_off_rounded,
+                  size: 64, color: AppColors.telegramYellow),
+            ),
+            const SizedBox(height: 32),
+            Text('No Payment Methods Available',
+                style: AppTextStyles.headlineSmall.copyWith(
+                    color: AppColors.getTextPrimary(context),
+                    fontWeight: FontWeight.w700)),
+            const SizedBox(height: 16),
+            Text(
+                'You are offline and no cached payment methods are available.\nPlease connect to the internet and try again.',
+                style: AppTextStyles.bodyLarge
+                    .copyWith(color: AppColors.getTextSecondary(context)),
+                textAlign: TextAlign.center),
+            const SizedBox(height: 32),
+            OutlinedButton(
+              onPressed: () => GoRouter.of(context).pop(),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.getTextPrimary(context),
+                side: BorderSide(color: AppColors.getTextSecondary(context)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                shape: RoundedRectangleBorder(
+                    borderRadius:
+                        BorderRadius.circular(AppThemes.borderRadiusMedium)),
+              ),
+              child: const Text('Go Back', style: AppTextStyles.buttonMedium),
             ),
           ],
         ),
@@ -969,7 +1129,8 @@ class _PaymentScreenState extends State<PaymentScreen>
                   hintStyle: AppTextStyles.bodyMedium
                       .copyWith(color: AppColors.getTextSecondary(context)),
                   filled: true,
-                  fillColor: AppColors.getSurface(context).withValues(alpha: 0.3),
+                  fillColor:
+                      AppColors.getSurface(context).withValues(alpha: 0.3),
                   border: OutlineInputBorder(
                       borderRadius:
                           BorderRadius.circular(AppThemes.borderRadiusMedium),
@@ -981,15 +1142,8 @@ class _PaymentScreenState extends State<PaymentScreen>
                 ),
                 style: AppTextStyles.bodyMedium
                     .copyWith(color: AppColors.getTextPrimary(context)),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Account holder name is required';
-                  }
-                  if (value.trim().length < 3) {
-                    return 'Account holder name must be at least 3 characters';
-                  }
-                  return null;
-                },
+                validator: _validateAccountHolderName,
+                enabled: !_isOffline,
               ),
               const SizedBox(height: 16),
               Text('Password',
@@ -1003,7 +1157,8 @@ class _PaymentScreenState extends State<PaymentScreen>
                   hintStyle: AppTextStyles.bodyMedium
                       .copyWith(color: AppColors.getTextSecondary(context)),
                   filled: true,
-                  fillColor: AppColors.getSurface(context).withValues(alpha: 0.3),
+                  fillColor:
+                      AppColors.getSurface(context).withValues(alpha: 0.3),
                   border: OutlineInputBorder(
                       borderRadius:
                           BorderRadius.circular(AppThemes.borderRadiusMedium),
@@ -1016,15 +1171,8 @@ class _PaymentScreenState extends State<PaymentScreen>
                 obscureText: true,
                 style: AppTextStyles.bodyMedium
                     .copyWith(color: AppColors.getTextPrimary(context)),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Password is required';
-                  }
-                  if (value.length < 6) {
-                    return 'Password must be at least 6 characters';
-                  }
-                  return null;
-                },
+                validator: _validatePassword,
+                enabled: !_isOffline,
               ),
               const SizedBox(height: 16),
               Text('Payment Proof',
@@ -1040,8 +1188,10 @@ class _PaymentScreenState extends State<PaymentScreen>
                     height: 24,
                     child: Checkbox(
                       value: _confirmAccuracy,
-                      onChanged: (value) =>
-                          setState(() => _confirmAccuracy = value ?? false),
+                      onChanged: _isOffline
+                          ? null
+                          : (value) =>
+                              setState(() => _confirmAccuracy = value ?? false),
                       activeColor: AppColors.telegramBlue,
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(
@@ -1053,18 +1203,56 @@ class _PaymentScreenState extends State<PaymentScreen>
                     child: Text(
                         'I confirm that all payment information is accurate and valid',
                         style: AppTextStyles.bodyMedium.copyWith(
-                            color: AppColors.getTextPrimary(context))),
+                            color: _isOffline
+                                ? AppColors.getTextSecondary(context)
+                                    .withValues(alpha: 0.5)
+                                : AppColors.getTextPrimary(context))),
                   ),
                 ],
               ),
+              if (_isOffline)
+                Padding(
+                  padding: const EdgeInsets.only(top: 16, bottom: 16),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          AppColors.telegramYellow.withValues(alpha: 0.2),
+                          AppColors.telegramYellow.withValues(alpha: 0.1),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.wifi_off_rounded,
+                            color: AppColors.telegramYellow, size: 20),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'You are offline. Please connect to submit payment.',
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.telegramYellow,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _isLoading ? null : _submitPayment,
+                  onPressed: _isLoading || _isOffline ? null : _submitPayment,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.telegramBlue,
-                    foregroundColor: Colors.white,
+                    backgroundColor: _isOffline
+                        ? AppColors.telegramGray.withValues(alpha: 0.3)
+                        : AppColors.telegramBlue,
+                    foregroundColor: _isOffline
+                        ? AppColors.getTextSecondary(context)
+                        : Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(
@@ -1082,12 +1270,17 @@ class _PaymentScreenState extends State<PaymentScreen>
                       : Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            const Icon(Icons.send_rounded,
-                                size: 20, color: Colors.white),
+                            Icon(Icons.send_rounded,
+                                size: 20,
+                                color: _isOffline
+                                    ? AppColors.getTextSecondary(context)
+                                    : Colors.white),
                             const SizedBox(width: 8),
-                            Text('Submit Payment',
-                                style: AppTextStyles.buttonMedium
-                                    .copyWith(color: Colors.white)),
+                            Text(_isOffline ? 'Offline' : 'Submit Payment',
+                                style: AppTextStyles.buttonMedium.copyWith(
+                                    color: _isOffline
+                                        ? AppColors.getTextSecondary(context)
+                                        : Colors.white)),
                           ],
                         ),
                 ),
@@ -1105,7 +1298,7 @@ class _PaymentScreenState extends State<PaymentScreen>
 
   Widget _buildProofUploadSection() {
     return GestureDetector(
-      onTap: _pickImage,
+      onTap: _isOffline ? null : _pickImage,
       child: AnimatedContainer(
         duration: AppThemes.animationDurationFast,
         height: 150,
@@ -1119,7 +1312,10 @@ class _PaymentScreenState extends State<PaymentScreen>
           borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
           border: Border.all(
               color: _proofImageFile == null
-                  ? AppColors.getTextSecondary(context).withValues(alpha: 0.2)
+                  ? (_isOffline
+                      ? AppColors.telegramGray.withValues(alpha: 0.2)
+                      : AppColors.getTextSecondary(context)
+                          .withValues(alpha: 0.2))
                   : AppColors.telegramBlue,
               width: _proofImageFile == null ? 1.0 : 2.0),
         ),
@@ -1209,16 +1405,35 @@ class _PaymentScreenState extends State<PaymentScreen>
             : Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.cloud_upload_rounded,
-                      size: 40, color: AppColors.getTextSecondary(context)),
+                  Icon(
+                    _isOffline
+                        ? Icons.wifi_off_rounded
+                        : Icons.cloud_upload_rounded,
+                    size: 40,
+                    color: _isOffline
+                        ? AppColors.telegramGray
+                        : AppColors.getTextSecondary(context),
+                  ),
                   const SizedBox(height: 12),
-                  Text('Tap to upload payment proof',
-                      style: AppTextStyles.bodyMedium
-                          .copyWith(color: AppColors.getTextPrimary(context))),
+                  Text(
+                    _isOffline
+                        ? 'Offline - cannot upload'
+                        : 'Tap to upload payment proof',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: _isOffline
+                          ? AppColors.telegramGray
+                          : AppColors.getTextPrimary(context),
+                    ),
+                  ),
                   const SizedBox(height: 4),
-                  Text('JPG or PNG • Max 5MB',
-                      style: AppTextStyles.caption.copyWith(
-                          color: AppColors.getTextSecondary(context))),
+                  Text(
+                    _isOffline ? 'Connect to internet' : 'JPG or PNG • Max 5MB',
+                    style: AppTextStyles.caption.copyWith(
+                      color: _isOffline
+                          ? AppColors.telegramGray
+                          : AppColors.getTextSecondary(context),
+                    ),
+                  ),
                 ],
               ),
       ),
@@ -1299,7 +1514,8 @@ class _PaymentScreenState extends State<PaymentScreen>
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.circle_rounded, size: 6, color: AppColors.telegramBlue),
+          const Icon(Icons.circle_rounded,
+              size: 6, color: AppColors.telegramBlue),
           const SizedBox(width: 8),
           Expanded(
               child: Text(text,

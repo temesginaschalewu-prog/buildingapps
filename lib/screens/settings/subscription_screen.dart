@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ui';
+import 'package:familyacademyclient/services/user_session.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -25,6 +26,7 @@ class SubscriptionScreen extends StatefulWidget {
 class _SubscriptionScreenState extends State<SubscriptionScreen>
     with TickerProviderStateMixin {
   bool _isRefreshing = false;
+  bool _isOffline = false;
   Timer? _refreshTimer;
   late AnimationController _pulseAnimationController;
 
@@ -36,9 +38,12 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
         AnimationController(vsync: this, duration: 1.seconds)
           ..repeat(reverse: true);
 
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadSubscriptions());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkConnectivity();
+      _loadSubscriptions();
+    });
     _refreshTimer = Timer.periodic(const Duration(minutes: 5), (_) {
-      if (mounted) _loadSubscriptions(forceRefresh: true);
+      if (mounted && !_isOffline) _loadSubscriptions(forceRefresh: true);
     });
   }
 
@@ -49,19 +54,40 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
     super.dispose();
   }
 
+  Future<void> _checkConnectivity() async {
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection) {
+      setState(() => _isOffline = true);
+      showOfflineMessage(context);
+    }
+  }
+
   Future<void> _loadSubscriptions({bool forceRefresh = false}) async {
     final subscriptionProvider =
         Provider.of<SubscriptionProvider>(context, listen: false);
-    await subscriptionProvider.loadSubscriptions(forceRefresh: forceRefresh);
+    await subscriptionProvider.loadSubscriptions(
+        forceRefresh: forceRefresh && !_isOffline);
   }
 
   Future<void> _refreshData() async {
     setState(() => _isRefreshing = true);
 
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection) {
+      setState(() {
+        _isOffline = true;
+        _isRefreshing = false;
+      });
+      showTopSnackBar(context, 'You are offline. Using cached data.',
+          isError: true);
+      return;
+    }
+
     try {
       final subscriptionProvider =
           Provider.of<SubscriptionProvider>(context, listen: false);
       await subscriptionProvider.loadSubscriptions(forceRefresh: true);
+      setState(() => _isOffline = false);
       showTopSnackBar(context, 'Subscriptions refreshed');
     } catch (e) {
       showTopSnackBar(context, 'Refresh failed: $e', isError: true);
@@ -119,7 +145,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            onTap: (isExpired || isExpiringSoon)
+            onTap: (isExpired || isExpiringSoon) && !_isOffline
                 ? () {
                     context.push('/payment', extra: {
                       'category': {
@@ -246,8 +272,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                           borderRadius: BorderRadius.circular(20),
                           child: LinearProgressIndicator(
                             value: progressValue.clamp(0.0, 1.0),
-                            backgroundColor:
-                                AppColors.getSurface(context).withValues(alpha: 0.3),
+                            backgroundColor: AppColors.getSurface(context)
+                                .withValues(alpha: 0.3),
                             color: statusColor,
                             minHeight: 6,
                           ),
@@ -301,7 +327,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                       ),
                     ),
                   ),
-                  if (isExpired || isExpiringSoon) ...[
+                  if ((isExpired || isExpiringSoon) && !_isOffline) ...[
                     const SizedBox(height: 24),
                     SizedBox(
                       width: double.infinity,
@@ -481,7 +507,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                   ],
                 ),
               ),
-              const Icon(Icons.arrow_forward_rounded, color: AppColors.statusPending),
+              const Icon(Icons.arrow_forward_rounded,
+                  color: AppColors.statusPending),
             ],
           ),
         ),
@@ -504,7 +531,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                         children: [
                           Shimmer.fromColors(
                             baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                            highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
+                            highlightColor:
+                                Colors.grey[100]!.withValues(alpha: 0.6),
                             child: Container(
                               width: 48,
                               height: 48,
@@ -520,7 +548,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Shimmer.fromColors(
-                                  baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                                  baseColor:
+                                      Colors.grey[300]!.withValues(alpha: 0.3),
                                   highlightColor:
                                       Colors.grey[100]!.withValues(alpha: 0.6),
                                   child: Container(
@@ -533,7 +562,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                                 ),
                                 const SizedBox(height: 8),
                                 Shimmer.fromColors(
-                                  baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                                  baseColor:
+                                      Colors.grey[300]!.withValues(alpha: 0.3),
                                   highlightColor:
                                       Colors.grey[100]!.withValues(alpha: 0.6),
                                   child: Container(
@@ -596,7 +626,41 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
               ),
             ),
           ),
-          if (expiringSoonSubscriptions.isNotEmpty)
+          if (_isOffline && allSubscriptions.isNotEmpty)
+            SliverToBoxAdapter(
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      AppColors.telegramYellow.withValues(alpha: 0.2),
+                      AppColors.telegramYellow.withValues(alpha: 0.1),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppColors.telegramYellow.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.wifi_off_rounded,
+                        color: AppColors.telegramYellow, size: 20),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Offline mode - showing cached subscriptions',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.telegramYellow,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          if (expiringSoonSubscriptions.isNotEmpty && !_isOffline)
             SliverToBoxAdapter(
                 child:
                     _buildExpiringSoonBanner(expiringSoonSubscriptions.length)),
@@ -695,15 +759,25 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
           if (allSubscriptions.isEmpty && !subscriptionProvider.isLoading)
             SliverFillRemaining(
               child: Center(
-                child: EmptyState(
-                  lottieAsset: 'assets/lottie/empty_subscriptions.json',
-                  title: 'No Subscriptions',
-                  message:
-                      'You don\'t have any subscriptions yet.\nBrowse categories to get started.',
-                  actionText: 'Browse Categories',
-                  onAction: () => context.go('/'),
-                  type: EmptyStateType.noData,
-                ),
+                child: _isOffline
+                    ? OfflineState(
+                        dataType: 'subscriptions',
+                        message: 'No cached subscriptions available.',
+                        onRetry: () {
+                          setState(() => _isOffline = false);
+                          _checkConnectivity();
+                          _refreshData();
+                        },
+                      )
+                    : EmptyState(
+                        lottieAsset: 'assets/lottie/empty_subscriptions.json',
+                        title: 'No Subscriptions',
+                        message:
+                            'You don\'t have any subscriptions yet.\nBrowse categories to get started.',
+                        actionText: 'Browse Categories',
+                        onAction: () => context.go('/'),
+                        type: EmptyStateType.noData,
+                      ),
               ),
             ),
           if (subscriptionProvider.isLoading && allSubscriptions.isNotEmpty)
@@ -712,14 +786,13 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                 padding: EdgeInsets.all(24),
                 child: Center(
                     child: LoadingIndicator(
-                        size: 32,
-                        color: AppColors.telegramBlue)),
+                        size: 32, color: AppColors.telegramBlue)),
               ),
             ),
           const SliverToBoxAdapter(child: SizedBox(height: 32)),
         ],
       ),
-      floatingActionButton: allSubscriptions.isEmpty
+      floatingActionButton: allSubscriptions.isEmpty && !_isOffline
           ? FloatingActionButton(
               onPressed: () => context.go('/'),
               backgroundColor: AppColors.telegramBlue,
@@ -748,10 +821,13 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                   height: 20,
                   child: CircularProgressIndicator(
                       strokeWidth: 2, color: AppColors.telegramBlue))
-              : Icon(Icons.refresh_rounded,
-                  color: AppColors.getTextSecondary(context)),
+              : Icon(
+                  _isOffline ? Icons.wifi_off_rounded : Icons.refresh_rounded,
+                  color: _isOffline
+                      ? AppColors.telegramGray
+                      : AppColors.getTextSecondary(context)),
           onPressed: _isRefreshing ? null : _refreshData,
-          tooltip: 'Refresh',
+          tooltip: _isOffline ? 'Offline' : 'Refresh',
         ),
       ],
     );
@@ -800,7 +876,46 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                 ),
               ),
               const SizedBox(height: 32),
-              if (expiringSoonSubscriptions.isNotEmpty)
+              if (_isOffline && allSubscriptions.isNotEmpty)
+                Padding(
+                  padding: EdgeInsets.symmetric(
+                      horizontal: ScreenSize.responsiveValue(
+                          context: context,
+                          mobile: 16,
+                          tablet: 20,
+                          desktop: 24)),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          AppColors.telegramYellow.withValues(alpha: 0.2),
+                          AppColors.telegramYellow.withValues(alpha: 0.1),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: AppColors.telegramYellow.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.wifi_off_rounded,
+                            color: AppColors.telegramYellow, size: 20),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Offline mode - showing cached subscriptions',
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.telegramYellow,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              if (expiringSoonSubscriptions.isNotEmpty && !_isOffline)
                 Padding(
                   padding: EdgeInsets.symmetric(
                       horizontal: ScreenSize.responsiveValue(
@@ -923,15 +1038,26 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 64),
                   child: Center(
-                    child: EmptyState(
-                      lottieAsset: 'assets/lottie/empty_subscriptions.json',
-                      title: 'No Subscriptions Found',
-                      message:
-                          'You don\'t have any active subscriptions.\nBrowse categories to start learning.',
-                      actionText: 'Browse Categories',
-                      onAction: () => context.go('/'),
-                      type: EmptyStateType.noData,
-                    ),
+                    child: _isOffline
+                        ? OfflineState(
+                            dataType: 'subscriptions',
+                            message: 'No cached subscriptions available.',
+                            onRetry: () {
+                              setState(() => _isOffline = false);
+                              _checkConnectivity();
+                              _refreshData();
+                            },
+                          )
+                        : EmptyState(
+                            lottieAsset:
+                                'assets/lottie/empty_subscriptions.json',
+                            title: 'No Subscriptions Found',
+                            message:
+                                'You don\'t have any active subscriptions.\nBrowse categories to start learning.',
+                            actionText: 'Browse Categories',
+                            onAction: () => context.go('/'),
+                            type: EmptyStateType.noData,
+                          ),
                   ),
                 ),
               if (subscriptionProvider.isLoading && allSubscriptions.isNotEmpty)
@@ -939,15 +1065,14 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                   padding: EdgeInsets.symmetric(vertical: 32),
                   child: Center(
                       child: LoadingIndicator(
-                          size: 40,
-                          color: AppColors.telegramBlue)),
+                          size: 40, color: AppColors.telegramBlue)),
                 ),
               const SizedBox(height: 48),
             ],
           ),
         ),
       ),
-      floatingActionButton: allSubscriptions.isEmpty
+      floatingActionButton: allSubscriptions.isEmpty && !_isOffline
           ? FloatingActionButton.extended(
               onPressed: () => context.go('/'),
               icon: const Icon(Icons.explore_rounded, color: Colors.white),

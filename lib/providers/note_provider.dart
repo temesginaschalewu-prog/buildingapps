@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
+import '../services/user_session.dart';
 import '../models/note_model.dart';
+import '../utils/constants.dart';
 import '../utils/helpers.dart';
 
 class NoteProvider with ChangeNotifier {
@@ -70,7 +73,7 @@ class NoteProvider with ChangeNotifier {
 
       if (notesData is List) {
         final noteList = <Note>[];
-        for (var noteJson in notesData) {
+        for (final noteJson in notesData) {
           try {
             noteList.add(Note.fromJson(noteJson));
           } catch (e) {
@@ -89,7 +92,7 @@ class NoteProvider with ChangeNotifier {
         }
 
         await deviceService.saveCacheItem(
-          'notes_chapter_$chapterId',
+          AppConstants.notesChapterKey(chapterId),
           noteList.map((n) => n.toJson()).toList(),
           ttl: cacheDuration,
         );
@@ -114,14 +117,16 @@ class NoteProvider with ChangeNotifier {
       debugLog('NoteProvider', '❌ loadNotesByChapter error: $e');
 
       try {
-        final cachedNotes = await deviceService
-            .getCacheItem<List<dynamic>>('notes_chapter_$chapterId');
+        final cachedNotes = await deviceService.getCacheItem<List<dynamic>>(
+            AppConstants.notesChapterKey(chapterId));
         if (cachedNotes != null) {
           final noteList = <Note>[];
-          for (var noteJson in cachedNotes) {
+          for (final noteJson in cachedNotes) {
             try {
               noteList.add(Note.fromJson(noteJson));
-            } catch (e) {}
+            } catch (e) {
+              debugLog('NoteProvider', 'Error parsing note from cache: $e');
+            }
           }
           _notesByChapter[chapterId] = noteList;
           _hasLoadedForChapter[chapterId] = true;
@@ -146,8 +151,8 @@ class NoteProvider with ChangeNotifier {
   Future<void> _loadViewedStatus(int chapterId) async {
     final notes = _notesByChapter[chapterId] ?? [];
     for (final note in notes) {
-      final viewed =
-          await deviceService.getCacheItem<bool>('note_viewed_${note.id}');
+      final viewed = await deviceService
+          .getCacheItem<bool>(AppConstants.noteViewedKey(note.id));
       _noteViewedStatus[note.id] = viewed ?? false;
     }
   }
@@ -168,7 +173,7 @@ class NoteProvider with ChangeNotifier {
     _noteViewedStatus[noteId] = true;
 
     await deviceService.saveCacheItem(
-      'note_viewed_$noteId',
+      AppConstants.noteViewedKey(noteId),
       true,
       ttl: viewedCacheDuration,
     );
@@ -198,10 +203,11 @@ class NoteProvider with ChangeNotifier {
     _notes.removeWhere((note) => chapterNotes.any((n) => n.id == note.id));
     _notesByChapter.remove(chapterId);
 
-    await deviceService.removeCacheItem('notes_chapter_$chapterId');
+    await deviceService
+        .removeCacheItem(AppConstants.notesChapterKey(chapterId));
 
     for (final note in chapterNotes) {
-      await deviceService.removeCacheItem('note_viewed_${note.id}');
+      await deviceService.removeCacheItem(AppConstants.noteViewedKey(note.id));
       _noteViewedStatus.remove(note.id);
     }
 
@@ -211,8 +217,19 @@ class NoteProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// 🔵 FIX: Clear user data ONLY for different user logout
   Future<void> clearUserData() async {
     debugLog('NoteProvider', 'Clearing note data');
+
+    // Only clear if this is a different user logout
+    final session = UserSession();
+    final isDifferentUser = !await session.isSameUser();
+    final isLoggingOut = await _isLoggingOut();
+
+    if (!isDifferentUser || !isLoggingOut) {
+      debugLog('NoteProvider', '✅ Same user - preserving note cache');
+      return;
+    }
 
     _notes.clear();
     _notesByChapter.clear();
@@ -224,12 +241,17 @@ class NoteProvider with ChangeNotifier {
     await deviceService.clearCacheByPrefix('notes_');
     await deviceService.clearCacheByPrefix('note_viewed_');
 
-    _noteUpdateController.close();
+    await _noteUpdateController.close();
     _noteUpdateController = StreamController<Map<String, dynamic>>.broadcast();
 
     _noteUpdateController.add({'type': 'all_notes_cleared'});
 
     notifyListeners();
+  }
+
+  Future<bool> _isLoggingOut() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
   }
 
   void clearError() {

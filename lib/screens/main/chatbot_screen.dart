@@ -4,6 +4,7 @@ import 'package:familyacademyclient/widgets/common/app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:familyacademyclient/services/user_session.dart';
 
 import '../../models/chatbot_model.dart';
 import '../../providers/chatbot_provider.dart';
@@ -41,6 +42,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   String _timeBasedEmoji = '';
   late AnimationController _slideController;
   late Animation<Offset> _slideAnimation;
+  bool _isOffline = false;
+  String? _currentUserId;
 
   @override
   void initState() {
@@ -61,10 +64,25 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _setGreeting();
+      _checkConnectivity();
       _initializeChat();
       _loadNotifications();
       _setupScreenSize();
+      _getCurrentUserId();
     });
+  }
+
+  Future<void> _getCurrentUserId() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    _currentUserId = authProvider.currentUser?.id.toString();
+  }
+
+  Future<void> _checkConnectivity() async {
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection) {
+      setState(() => _isOffline = true);
+      showOfflineMessage(context);
+    }
   }
 
   Widget _buildGlassContainer(
@@ -155,6 +173,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _setGreeting();
+      _checkConnectivity();
       _loadNotifications();
     }
   }
@@ -184,6 +203,18 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   Future<void> _sendMessage() async {
     final message = _messageController.text.trim();
     if (message.isEmpty || _isSending) return;
+
+    // Check connectivity
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection) {
+      showTopSnackBar(
+        context,
+        'You are offline. Please check your internet connection.',
+        isError: true,
+      );
+      setState(() => _isOffline = true);
+      return;
+    }
 
     final chatbotProvider =
         Provider.of<ChatbotProvider>(context, listen: false);
@@ -568,7 +599,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                     IconButton(
                       icon: const Icon(Icons.add_comment_outlined,
                           color: AppColors.telegramBlue),
-                      onPressed: _showNewChatDialog,
+                      onPressed: _isOffline ? null : _showNewChatDialog,
                       tooltip: 'New Chat',
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
@@ -686,7 +717,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                                                     .copyWith(
                                                   color: isSelected
                                                       ? AppColors.telegramBlue
-                                                          .withValues(alpha: 0.8)
+                                                          .withValues(
+                                                              alpha: 0.8)
                                                       : AppColors
                                                           .getTextSecondary(
                                                               context),
@@ -701,7 +733,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                                                     .copyWith(
                                                   color: isSelected
                                                       ? AppColors.telegramBlue
-                                                          .withValues(alpha: 0.8)
+                                                          .withValues(
+                                                              alpha: 0.8)
                                                       : AppColors
                                                           .getTextSecondary(
                                                               context),
@@ -1010,10 +1043,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                 return Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: GestureDetector(
-                    onTap: () {
-                      _messageController.text = question;
-                      _sendMessage();
-                    },
+                    onTap: _isOffline
+                        ? null
+                        : () {
+                            _messageController.text = question;
+                            _sendMessage();
+                          },
                     child: _buildGlassContainer(
                       child: Container(
                         padding: const EdgeInsets.symmetric(
@@ -1023,7 +1058,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                         child: Text(
                           question,
                           style: AppTextStyles.labelSmall.copyWith(
-                            color: AppColors.telegramBlue,
+                            color: _isOffline
+                                ? AppColors.getTextSecondary(context)
+                                    .withValues(alpha: 0.3)
+                                : AppColors.telegramBlue,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
@@ -1034,6 +1072,16 @@ class _ChatbotScreenState extends State<ChatbotScreen>
               }).toList(),
             ),
           ),
+          if (_isOffline)
+            Padding(
+              padding: const EdgeInsets.only(top: 8, left: 8),
+              child: Text(
+                'Connect to internet to send messages',
+                style: AppTextStyles.caption.copyWith(
+                  color: AppColors.telegramYellow,
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -1052,18 +1100,24 @@ class _ChatbotScreenState extends State<ChatbotScreen>
             Icon(
               Icons.message,
               size: 14,
-              color: provider.remainingMessages > 0
-                  ? AppColors.telegramGreen
-                  : AppColors.telegramRed,
+              color: _isOffline
+                  ? AppColors.telegramGray
+                  : (provider.remainingMessages > 0
+                      ? AppColors.telegramGreen
+                      : AppColors.telegramRed),
             ),
             const SizedBox(width: 4),
             Text(
-              '${provider.remainingMessages}/${provider.dailyLimit}',
+              _isOffline
+                  ? 'Offline'
+                  : '${provider.remainingMessages}/${provider.dailyLimit}',
               style: AppTextStyles.labelSmall.copyWith(
                 fontWeight: FontWeight.w600,
-                color: provider.remainingMessages > 0
-                    ? AppColors.telegramGreen
-                    : AppColors.telegramRed,
+                color: _isOffline
+                    ? AppColors.telegramGray
+                    : (provider.remainingMessages > 0
+                        ? AppColors.telegramGreen
+                        : AppColors.telegramRed),
               ),
             ),
           ],
@@ -1074,7 +1128,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   Widget _buildInputArea(ChatbotProvider provider) {
     final hasMessagesLeft = provider.hasMessagesLeft;
-    final isEnabled = hasMessagesLeft && !_isSending;
+    final isEnabled = hasMessagesLeft && !_isSending && !_isOffline;
 
     return _buildGlassContainer(
       child: Container(
@@ -1083,7 +1137,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            _buildQuickQuestions(),
+            if (!_isOffline) _buildQuickQuestions(),
             const SizedBox(height: 12),
             Row(
               children: [
@@ -1093,9 +1147,11 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                       controller: _messageController,
                       focusNode: _focusNode,
                       decoration: InputDecoration(
-                        hintText: hasMessagesLeft
-                            ? 'Ask about any subject...'
-                            : 'Daily limit reached',
+                        hintText: _isOffline
+                            ? 'You are offline'
+                            : (hasMessagesLeft
+                                ? 'Ask about any subject...'
+                                : 'Daily limit reached'),
                         hintStyle: AppTextStyles.bodyMedium.copyWith(
                           color: isEnabled
                               ? AppColors.getTextSecondary(context)
@@ -1111,7 +1167,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                       onSubmitted: (_) => _sendMessage(),
                       enabled: isEnabled,
                       style: AppTextStyles.bodyMedium.copyWith(
-                        color: AppColors.getTextPrimary(context),
+                        color: isEnabled
+                            ? AppColors.getTextPrimary(context)
+                            : AppColors.getTextSecondary(context)
+                                .withValues(alpha: 0.4),
                       ),
                     ),
                   ),
@@ -1182,8 +1241,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
             child: EmptyState(
               icon: Icons.smart_toy,
               title: 'AI Learning Assistant',
-              message:
-                  'Ask me about mathematics, sciences, Amharic, Ethiopian history, or get study tips. You have ${provider.remainingMessages}/${provider.dailyLimit} messages left today.',
+              message: _isOffline
+                  ? 'You are offline. Connect to start chatting with the AI assistant.'
+                  : 'Ask me about mathematics, sciences, Amharic, Ethiopian history, or get study tips. You have ${provider.remainingMessages}/${provider.dailyLimit} messages left today.',
             ),
           );
         }
@@ -1206,6 +1266,29 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     final chatbotProvider = Provider.of<ChatbotProvider>(context);
     final username = authProvider.currentUser?.username ?? 'Student';
 
+    if (_isOffline &&
+        chatbotProvider.messages.isEmpty &&
+        chatbotProvider.conversations.isEmpty) {
+      return Scaffold(
+        backgroundColor: AppColors.getBackground(context),
+        appBar: CustomAppBar(
+          title: 'AI Tutor',
+          subtitle: 'Offline Mode',
+        ),
+        body: Center(
+          child: OfflineState(
+            dataType: 'chat',
+            message:
+                'You are offline. Connect to start chatting with the AI assistant.',
+            onRetry: () {
+              setState(() => _isOffline = false);
+              _checkConnectivity();
+            },
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: AppColors.getBackground(context),
@@ -1222,7 +1305,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         children: [
           CustomAppBar(
             title: chatbotProvider.currentConversation?.title ?? 'AI Tutor',
-            subtitle: _greeting,
+            subtitle: _isOffline ? 'Offline Mode' : _greeting,
             leading: ScreenSize.isMobile(context)
                 ? IconButton(
                     icon: Icon(Icons.menu,

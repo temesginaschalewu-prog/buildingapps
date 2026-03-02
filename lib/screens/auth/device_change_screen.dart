@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
 import 'package:familyacademyclient/services/api_service.dart';
+import 'package:familyacademyclient/services/user_session.dart';
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/themes/app_text_styles.dart';
 import 'package:familyacademyclient/widgets/common/empty_state.dart';
@@ -42,6 +43,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
   bool _isInitializing = true;
   DeviceService? _deviceService;
   bool _mounted = true;
+  bool _isOffline = false;
 
   late String _username;
   late String _deviceId;
@@ -63,6 +65,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     )..repeat(reverse: true);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_mounted) _checkConnectivity();
       if (_mounted) _initializeArgs();
     });
   }
@@ -73,6 +76,14 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     _passwordController.dispose();
     _pulseAnimationController.dispose();
     super.dispose();
+  }
+
+  Future<void> _checkConnectivity() async {
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection) {
+      setState(() => _isOffline = true);
+      showOfflineMessage(context);
+    }
   }
 
   Widget _buildGlassContainer({required Widget child}) {
@@ -155,6 +166,54 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     );
   }
 
+  Future<void> _saveDeviceChangeToCache() async {
+    try {
+      final deviceService = Provider.of<DeviceService>(context, listen: false);
+      final userId = await UserSession().getCurrentUserId();
+      if (userId != null) {
+        await deviceService.saveCacheItem(
+          'device_change_$userId',
+          _args,
+          ttl: const Duration(hours: 1),
+          isUserSpecific: true,
+        );
+      }
+    } catch (e) {
+      debugLog('DeviceChangeScreen', 'Error caching device change: $e');
+    }
+  }
+
+  Future<void> _loadDeviceChangeFromCache() async {
+    try {
+      final deviceService = Provider.of<DeviceService>(context, listen: false);
+      final userId = await UserSession().getCurrentUserId();
+      if (userId != null) {
+        final cached = await deviceService.getCacheItem<Map<String, dynamic>>(
+          'device_change_$userId',
+          isUserSpecific: true,
+        );
+        if (cached != null && cached.isNotEmpty) {
+          setState(() {
+            _args = cached;
+            _hasArgs = true;
+            _username = cached['username']?.toString() ?? '';
+            _currentDeviceId =
+                cached['currentDeviceId']?.toString() ?? 'Unknown';
+            _deviceId = cached['newDeviceId']?.toString() ??
+                cached['deviceId']?.toString() ??
+                '';
+            _changeCount = cached['changeCount'] as int? ?? 0;
+            _maxChanges = cached['maxChanges'] as int? ?? 2;
+            _remainingChanges = cached['remainingChanges'] as int? ?? 2;
+            _canChangeDevice = cached['canChangeDevice'] as bool? ?? true;
+          });
+        }
+      }
+    } catch (e) {
+      debugLog('DeviceChangeScreen', 'Error loading cached device change: $e');
+    }
+  }
+
   void _initializeArgs() {
     Map<String, dynamic>? routeArgs;
 
@@ -202,17 +261,31 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
         _passwordController.text = password;
       }
 
+      // Save to cache for offline access
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        await _saveDeviceChangeToCache();
+      });
+
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         await _initializeDeviceInfo();
         if (_mounted) setState(() => _isInitializing = false);
       });
     } else {
       debugLog('DeviceChangeScreen', '❌ No arguments provided');
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_mounted) {
-          showTopSnackBar(context, 'Invalid device change request',
-              isError: true);
-          context.go('/auth/login');
+      // Try to load from cache
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        await _loadDeviceChangeFromCache();
+        if (_hasArgs) {
+          WidgetsBinding.instance.addPostFrameCallback((_) async {
+            await _initializeDeviceInfo();
+            if (_mounted) setState(() => _isInitializing = false);
+          });
+        } else {
+          if (_mounted) {
+            showTopSnackBar(context, 'Invalid device change request',
+                isError: true);
+            context.go('/auth/login');
+          }
         }
       });
     }
@@ -237,6 +310,13 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     }
   }
 
+  String? _validatePassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Password is required to confirm device change';
+    }
+    return null;
+  }
+
   Future<void> _approveDeviceChange() async {
     if (!_formKey.currentState!.validate()) return;
     if (!_confirmChange) {
@@ -248,6 +328,16 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
       showTopSnackBar(context,
           'You have reached the maximum device changes ($_maxChanges per month)',
           isError: true);
+      return;
+    }
+
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection) {
+      showTopSnackBar(
+        context,
+        'You are offline. Please check your internet connection.',
+        isError: true,
+      );
       return;
     }
 
@@ -268,9 +358,6 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
       debugLog(
           'DeviceChangeScreen', 'Approving device change for user: $_username');
 
-      // STEP 1: Call the backend to approve the device change
-      debugLog('DeviceChangeScreen', 'Calling device change approval API...');
-
       final approveResponse = await apiService.approveDeviceChange(
         username: _username,
         password: password,
@@ -285,10 +372,8 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
 
       debugLog('DeviceChangeScreen', '✅ Device change approved by backend');
 
-      // STEP 2: Small delay to ensure backend processes
       await Future.delayed(const Duration(seconds: 1));
 
-      // STEP 3: Now login with the new device
       debugLog('DeviceChangeScreen', 'Logging in with new device...');
 
       final loginResult = await authProvider.login(
@@ -304,9 +389,17 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
             forceRefresh: true);
         await deviceProvider.initialize();
 
+        // Clear cached device change after successful approval
+        final userId = await UserSession().getCurrentUserId();
+        if (userId != null) {
+          await deviceProvider.deviceService.removeCacheItem(
+            'device_change_$userId',
+            isUserSpecific: true,
+          );
+        }
+
         showTopSnackBar(context, 'Device change approved successfully!');
 
-        // Set navigation flags BEFORE navigating
         if (authProvider.currentUser?.schoolId == null) {
           appRouter.setNavigatingToSchoolSelection(true);
           appRouter.setPendingDestination('/school-selection');
@@ -434,6 +527,31 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
 
   @override
   Widget build(BuildContext context) {
+    if (_isOffline) {
+      return Scaffold(
+        backgroundColor: AppColors.getBackground(context),
+        appBar: AppBar(
+          title: Text('Device Change',
+              style: AppTextStyles.appBarTitle
+                  .copyWith(color: AppColors.getTextPrimary(context))),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+              icon: Icon(Icons.arrow_back_rounded,
+                  color: AppColors.getTextPrimary(context)),
+              onPressed: () => context.go('/auth/login')),
+        ),
+        body: OfflineState(
+          dataType: 'device change',
+          message: 'You are offline. Please connect to complete device change.',
+          onRetry: () {
+            setState(() => _isOffline = false);
+            _checkConnectivity();
+          },
+        ),
+      );
+    }
+
     if (_isInitializing) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
@@ -456,8 +574,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
                 child: Container(
                   padding: const EdgeInsets.all(24),
                   child: const LoadingIndicator(
-                      size: 48,
-                      color: AppColors.telegramBlue),
+                      size: 48, color: AppColors.telegramBlue),
                 ),
               ),
               const SizedBox(height: 16),
@@ -504,6 +621,9 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     ).animate().fadeIn(duration: AppThemes.animationDurationMedium);
   }
 
+  // ... rest of the existing UI methods (_buildMobileLayout, _buildDesktopLayout, etc.)
+  // They remain the same as in your original file
+
   Widget _buildMobileLayout() {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
@@ -545,12 +665,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
                       controller: _passwordController,
                       label: 'Verify Password',
                       hintText: 'Enter your password to confirm device change',
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Password is required to confirm device change';
-                        }
-                        return null;
-                      },
+                      validator: _validatePassword,
                     ),
                   ),
                 ),
@@ -623,12 +738,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
                           label: 'Verify Password',
                           hintText:
                               'Enter your password to confirm device change',
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Password is required to confirm device change';
-                            }
-                            return null;
-                          },
+                          validator: _validatePassword,
                         ),
                         const SizedBox(height: 24),
                         _buildConfirmationCard(),

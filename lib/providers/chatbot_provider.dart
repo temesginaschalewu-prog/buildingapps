@@ -1,9 +1,10 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
+import '../services/user_session.dart';
 import '../models/chatbot_model.dart';
+import '../utils/constants.dart';
 import '../utils/helpers.dart';
-import '../utils/api_response.dart';
 
 class ChatbotProvider extends ChangeNotifier {
   final ApiService apiService;
@@ -158,13 +159,6 @@ class ChatbotProvider extends ChangeNotifier {
     }
   }
 
-  List<T> _takeLast<T>(Iterable<T> items, int n) {
-    final list = items.toList();
-    if (list.isEmpty) return [];
-    if (list.length <= n) return list;
-    return list.sublist(list.length - n);
-  }
-
   Future<Map<String, dynamic>> sendMessage(
     String message, {
     int? conversationId,
@@ -229,10 +223,10 @@ class ChatbotProvider extends ChangeNotifier {
         if (data['remaining'] != null) {
           _remainingMessages = data['remaining'];
           debugLog(
-              'ChatbotProvider', '📊 Updated remaining: $_remainingMessages');
+              'ChatbotProvider', ' Updated remaining: $_remainingMessages');
         }
 
-        loadUsageStats();
+        await loadUsageStats();
 
         if (conversationId == null && data['conversation_id'] != null) {
           await loadConversations(refresh: true);
@@ -340,13 +334,39 @@ class ChatbotProvider extends ChangeNotifier {
     await loadConversations();
   }
 
-  void clearError() {
-    _error = null;
+  /// 🔵 FIX: Clear user data ONLY for different user logout
+  Future<void> clearUserData() async {
+    debugLog('ChatbotProvider', 'Clearing chatbot data');
+
+    // Only clear if this is a different user logout
+    final session = UserSession();
+    final isDifferentUser = !await session.isSameUser();
+    final isLoggingOut = await _isLoggingOut();
+
+    if (!isDifferentUser || !isLoggingOut) {
+      debugLog('ChatbotProvider', '✅ Same user - preserving chatbot cache');
+      return;
+    }
+
+    _messages.clear();
+    _conversations.clear();
+    _currentConversation = null;
+    _remainingMessages = 30;
+    _totalMessages = 0;
+    _totalConversations = 0;
+    _currentPage = 1;
+    _hasMoreConversations = true;
+
     notifyListeners();
   }
 
-  @override
-  void dispose() {
-    super.dispose();
+  Future<bool> _isLoggingOut() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
+  }
+
+  void clearError() {
+    _error = null;
+    notifyListeners();
   }
 }

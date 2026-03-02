@@ -27,6 +27,7 @@ import 'package:familyacademyclient/services/api_service.dart';
 import 'package:familyacademyclient/services/device_service.dart';
 import 'package:familyacademyclient/services/storage_service.dart';
 import 'package:familyacademyclient/services/notification_service.dart';
+import 'package:familyacademyclient/services/user_session.dart';
 import 'package:familyacademyclient/utils/helpers.dart';
 import 'package:familyacademyclient/utils/screen_protection.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -51,7 +52,9 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
     final notificationService = NotificationService();
     await notificationService.handleBackgroundMessage(message);
-  } catch (e) {}
+  } catch (e) {
+    debugLog('Main', 'Background message handler error: $e');
+  }
 }
 
 class AppLifecycleObserver extends WidgetsBindingObserver {
@@ -80,7 +83,7 @@ class AppLifecycleObserver extends WidgetsBindingObserver {
 
       if (newToken != null && newToken != oldToken) {
         final context = _getContext();
-        if (context != null) {
+        if (context != null && context.mounted) {
           final authProvider =
               Provider.of<AuthProvider>(context, listen: false);
           if (authProvider.isAuthenticated) {
@@ -112,24 +115,52 @@ void _syncProviders(BuildContext context) {
     subscriptionProvider.setCategoryProvider(categoryProvider);
 
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    authProvider.registerOnLogoutCallback(() {
-      categoryProvider.clearUserData();
-      subscriptionProvider.clearUserData();
-    });
 
-    authProvider.registerOnLoginCallback(() async {
-      await subscriptionProvider.loadSubscriptions();
-      await categoryProvider.loadCategories();
+    // 🔵 FIX: Update logout callback
+    authProvider.registerOnLogoutCallback(() async {
+      // Prepare for logout
+      await UserSession().prepareForLogout();
 
-      final notificationService = NotificationService();
-      final fcmToken = await notificationService.getFCMToken();
-      if (fcmToken != null) {
-        final apiService = Provider.of<ApiService>(context, listen: false);
-        await apiService.updateFcmToken(fcmToken);
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('fcm_token', fcmToken);
+      // Get current user before logout
+      final currentUserId = await UserSession().getCurrentUserId();
+      final lastUserId = await UserSession().getLastUserId();
+
+      // Only clear provider data if different user
+      if (lastUserId != null && lastUserId != currentUserId) {
+        debugLog('Main', '🔄 Different user logout - clearing provider data');
+
+        // Clear all provider data for old user
+        categoryProvider.clearUserData();
+        subscriptionProvider.clearUserData();
+
+        // Get other providers and clear them
+        Provider.of<CourseProvider>(context, listen: false).clearUserData();
+        Provider.of<ChapterProvider>(context, listen: false).clearUserData();
+        Provider.of<ExamProvider>(context, listen: false).clearUserData();
+        Provider.of<ExamQuestionProvider>(context, listen: false)
+            .clearUserData();
+        Provider.of<NoteProvider>(context, listen: false).clearUserData();
+        Provider.of<QuestionProvider>(context, listen: false).clearUserData();
+        Provider.of<PaymentProvider>(context, listen: false).clearUserData();
+        Provider.of<ProgressProvider>(context, listen: false).clearUserData();
+        Provider.of<StreakProvider>(context, listen: false).clearUserData();
+        Provider.of<NotificationProvider>(context, listen: false)
+            .clearUserData();
+        Provider.of<UserProvider>(context, listen: false).clearUserData();
+        Provider.of<VideoProvider>(context, listen: false).clearUserData();
+        Provider.of<SettingsProvider>(context, listen: false).clearUserData();
+        Provider.of<SchoolProvider>(context, listen: false).clearUserData();
+        Provider.of<ParentLinkProvider>(context, listen: false).clearUserData();
+        Provider.of<DeviceProvider>(context, listen: false).clearUserData();
+      } else {
+        debugLog('Main', '✅ Same user logout - preserving all provider data');
       }
+
+      // Complete logout
+      await UserSession().completeLogout();
     });
+
+    authProvider.registerOnLoginCallback(() => _handleLoginCallback(context));
 
     authProvider.deviceChangeRequired.listen((requiresChange) {
       if (requiresChange && context.mounted) {
@@ -142,10 +173,40 @@ void _syncProviders(BuildContext context) {
         _showDeviceDeactivatedDialog(context, message);
       }
     });
-  } catch (e) {}
+  } catch (e) {
+    debugLog('Main', 'Sync providers error: $e');
+  }
+}
+
+Future<void> _handleLoginCallback(BuildContext context) async {
+  if (!context.mounted) return;
+
+  final subscriptionProvider =
+      Provider.of<SubscriptionProvider>(context, listen: false);
+  final categoryProvider =
+      Provider.of<CategoryProvider>(context, listen: false);
+
+  await subscriptionProvider.loadSubscriptions();
+  if (!context.mounted) return;
+
+  await categoryProvider.loadCategories();
+  if (!context.mounted) return;
+
+  final notificationService = NotificationService();
+  final fcmToken = await notificationService.getFCMToken();
+  if (!context.mounted) return;
+
+  if (fcmToken != null) {
+    final apiService = Provider.of<ApiService>(context, listen: false);
+    await apiService.updateFcmToken(fcmToken);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('fcm_token', fcmToken);
+  }
 }
 
 void _showDeviceChangeDialog(BuildContext context) {
+  if (!context.mounted) return;
+
   showDialog(
     context: context,
     barrierDismissible: false,
@@ -157,15 +218,18 @@ void _showDeviceChangeDialog(BuildContext context) {
         TextButton(
           onPressed: () {
             Navigator.of(dialogContext).pop();
-
-            Navigator.of(context).pushNamed('/device-change');
+            if (context.mounted) {
+              Navigator.of(context).pushNamed('/device-change');
+            }
           },
           child: const Text('Continue'),
         ),
         TextButton(
           onPressed: () {
             Navigator.of(dialogContext).pop();
-            Provider.of<AuthProvider>(context, listen: false).logout();
+            if (context.mounted) {
+              Provider.of<AuthProvider>(context, listen: false).logout();
+            }
           },
           child: const Text('Cancel'),
         ),
@@ -175,6 +239,8 @@ void _showDeviceChangeDialog(BuildContext context) {
 }
 
 void _showDeviceDeactivatedDialog(BuildContext context, String message) {
+  if (!context.mounted) return;
+
   showDialog(
     context: context,
     barrierDismissible: false,
@@ -185,7 +251,9 @@ void _showDeviceDeactivatedDialog(BuildContext context, String message) {
         TextButton(
           onPressed: () {
             Navigator.of(dialogContext).pop();
-            Provider.of<AuthProvider>(context, listen: false).logout();
+            if (context.mounted) {
+              Provider.of<AuthProvider>(context, listen: false).logout();
+            }
           },
           child: const Text('OK'),
         ),
@@ -201,7 +269,7 @@ Future<void> main() async {
     media_kit.MediaKit.ensureInitialized();
 
     if (Platform.isAndroid) {
-      SystemChrome.setPreferredOrientations([
+      await SystemChrome.setPreferredOrientations([
         DeviceOrientation.portraitUp,
         DeviceOrientation.landscapeLeft,
         DeviceOrientation.landscapeRight,
@@ -225,10 +293,16 @@ Future<void> main() async {
         await dotenv.load(fileName: envPath);
         envLoaded = true;
         break;
-      } catch (e) {}
+      } catch (e) {
+        debugLog('Main', 'Env load error for $envPath: $e');
+      }
     }
-    if (!envLoaded) {}
-  } catch (e) {}
+    if (!envLoaded) {
+      debugLog('Main', 'No .env file found, using defaults');
+    }
+  } catch (e) {
+    debugLog('Main', 'Env setup error: $e');
+  }
 
   if (Platform.isAndroid || Platform.isIOS) {
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -241,15 +315,16 @@ Future<void> main() async {
     try {
       await SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
           overlays: []);
-    } catch (e) {}
+    } catch (e) {
+      debugLog('Main', 'System UI mode error: $e');
+    }
   }
 
-  FirebaseApp? firebaseApp;
   final notificationService = NotificationService();
 
   if (Platform.isAndroid || Platform.isIOS) {
     try {
-      firebaseApp = await Firebase.initializeApp();
+      await Firebase.initializeApp();
       await notificationService.init();
 
       FirebaseMessaging.onBackgroundMessage(
@@ -261,7 +336,11 @@ Future<void> main() async {
           AuthorizationStatus.notDetermined) {
         await messaging.requestPermission(
           alert: true,
+          announcement: false,
           badge: true,
+          carPlay: false,
+          criticalAlert: false,
+          provisional: false,
           sound: true,
         );
       }
@@ -278,24 +357,41 @@ Future<void> main() async {
   } else {
     try {
       await notificationService.init();
-    } catch (e) {}
+    } catch (e) {
+      debugLog('Main', 'Notification service init error: $e');
+    }
   }
 
   try {
     await ScreenProtectionService.initialize();
-  } catch (e) {}
+  } catch (e) {
+    debugLog('Main', 'Screen protection init error: $e');
+  }
 
   final storageService = StorageService();
   try {
     await storageService.init();
-  } catch (e) {}
+  } catch (e) {
+    debugLog('Main', 'Storage service init error: $e');
+  }
 
   final deviceService = DeviceService();
   try {
     await deviceService.init();
-  } catch (e) {}
+  } catch (e) {
+    debugLog('Main', 'Device service init error: $e');
+  }
+
+  // Initialize UserSession
+  try {
+    await UserSession().init();
+  } catch (e) {
+    debugLog('Main', 'UserSession init error: $e');
+  }
 
   final apiService = ApiService();
+
+  notificationService.apiService = apiService;
 
   final appLifecycleObserver = AppLifecycleObserver();
   WidgetsBinding.instance.addObserver(appLifecycleObserver);
@@ -436,8 +532,12 @@ Future<void> main() async {
       child: Builder(
         builder: (context) {
           _appContext = context;
-          WidgetsBinding.instance
-              .addPostFrameCallback((_) => _syncProviders(context));
+
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (context.mounted) {
+              _syncProviders(context);
+            }
+          });
           return FamilyAcademyApp(
             apiService: apiService,
             notificationService: notificationService,

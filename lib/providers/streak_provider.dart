@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'package:familyacademyclient/utils/helpers.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
+import '../services/user_session.dart';
 import '../models/streak_model.dart';
+import '../utils/constants.dart';
 
 class StreakProvider with ChangeNotifier {
   final ApiService apiService;
@@ -33,7 +36,7 @@ class StreakProvider with ChangeNotifier {
 
   Future<void> _getCurrentUserId() async {
     final prefs = await SharedPreferences.getInstance();
-    _currentUserId = prefs.getString('current_user_id');
+    _currentUserId = prefs.getString(AppConstants.currentUserIdKey);
   }
 
   Streak? get streak => _streak;
@@ -86,9 +89,8 @@ class StreakProvider with ChangeNotifier {
       if (!forceRefresh && _currentUserId != null) {
         final cachedStreak =
             await deviceService.getCacheItem<Map<String, dynamic>>(
-          'streak_$_currentUserId',
-          isUserSpecific: true,
-        );
+                AppConstants.streakKey(_currentUserId!),
+                isUserSpecific: true);
         if (cachedStreak != null) {
           _streak = Streak.fromJson(cachedStreak);
           _streakHistory = _streak?.history ?? [];
@@ -105,11 +107,8 @@ class StreakProvider with ChangeNotifier {
 
         if (_currentUserId != null) {
           await deviceService.saveCacheItem(
-            'streak_$_currentUserId',
-            response.data!,
-            ttl: _cacheDuration,
-            isUserSpecific: true,
-          );
+              AppConstants.streakKey(_currentUserId!), response.data!,
+              ttl: _cacheDuration, isUserSpecific: true);
         }
       }
     } catch (e) {
@@ -188,13 +187,30 @@ class StreakProvider with ChangeNotifier {
   }
 
   Future<void> clearUserData() async {
+    debugLog('StreakProvider', 'Clearing streak data');
+
+    final session = UserSession();
+    final isDifferentUser = !await session.isSameUser();
+    final isLoggingOut = await _isLoggingOut();
+
+    if (!isDifferentUser || !isLoggingOut) {
+      debugLog('StreakProvider', '✅ Same user - preserving streak cache');
+      return;
+    }
+
     if (_currentUserId != null) {
-      await deviceService.removeCacheItem('streak_$_currentUserId',
+      await deviceService.removeCacheItem(
+          AppConstants.streakKey(_currentUserId!),
           isUserSpecific: true);
     }
     _streak = null;
     _streakHistory = [];
     _notifySafely();
+  }
+
+  Future<bool> _isLoggingOut() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
   }
 
   void clearError() {

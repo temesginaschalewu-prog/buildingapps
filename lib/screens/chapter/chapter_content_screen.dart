@@ -21,6 +21,7 @@ import 'package:familyacademyclient/providers/category_provider.dart';
 import 'package:familyacademyclient/providers/subscription_provider.dart';
 import 'package:familyacademyclient/providers/auth_provider.dart';
 import 'package:familyacademyclient/providers/progress_provider.dart';
+import 'package:familyacademyclient/services/user_session.dart';
 import 'package:familyacademyclient/themes/app_themes.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
 import 'package:familyacademyclient/utils/helpers.dart';
@@ -207,7 +208,16 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     _dio.close();
   }
 
+  Future<void> _checkConnectivity() async {
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection && mounted) {
+      setState(() => _isOffline = true);
+      showOfflineMessage(context);
+    }
+  }
+
   Future<void> _initialize() async {
+    await _checkConnectivity();
     await _loadCachedContent();
     await _initializeFromCache();
 
@@ -216,12 +226,16 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         _isLoading = false;
         _isCheckingAccess = false;
       });
-      _refreshInBackground();
+      if (!_isOffline) {
+        _refreshInBackground();
+      }
     } else {
       await _checkAccessAndLoadData();
     }
 
-    _setupBackgroundRefresh();
+    if (!_isOffline) {
+      _setupBackgroundRefresh();
+    }
   }
 
   Future<Directory> _getAppCacheDirectory() async {
@@ -343,6 +357,13 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
   Future<void> _manualRefresh() async {
     if (_isRefreshing) return;
+
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection) {
+      setState(() => _isOffline = true);
+      return;
+    }
+
     setState(() => _isRefreshing = true);
 
     try {
@@ -378,11 +399,13 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     if (_chapter!.isFree) {
       _hasAccess = true;
     } else if (_category != null) {
-      _hasAccess = forceRefresh
-          ? await subscriptionProvider
-              .checkHasActiveSubscriptionForCategory(_category!.id)
-          : subscriptionProvider
-              .hasActiveSubscriptionForCategory(_category!.id);
+      if (!_isOffline && forceRefresh) {
+        _hasAccess = await subscriptionProvider
+            .checkHasActiveSubscriptionForCategory(_category!.id);
+      } else {
+        _hasAccess = subscriptionProvider
+            .hasActiveSubscriptionForCategory(_category!.id);
+      }
     } else {
       _hasAccess = false;
     }
@@ -390,7 +413,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     setState(() => _isCheckingAccess = false);
 
     if (_hasAccess) {
-      await _loadContent(forceRefresh: forceRefresh);
+      await _loadContent(forceRefresh: forceRefresh && !_isOffline);
     }
 
     setState(() => _isLoading = false);
@@ -402,19 +425,20 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     final categoryProvider = context.read<CategoryProvider>();
 
     if (categoryProvider.categories.isEmpty)
-      await categoryProvider.loadCategories(forceRefresh: forceRefresh);
+      await categoryProvider.loadCategories(
+          forceRefresh: forceRefresh && !_isOffline);
 
     for (final category in categoryProvider.categories) {
       if (!courseProvider.hasLoadedCategory(category.id)) {
         await courseProvider.loadCoursesByCategory(category.id,
-            forceRefresh: forceRefresh);
+            forceRefresh: forceRefresh && !_isOffline);
       }
 
       final courses = courseProvider.getCoursesByCategory(category.id);
       for (final course in courses) {
         if (!chapterProvider.hasLoadedForCourse(course.id)) {
           await chapterProvider.loadChaptersByCourse(course.id,
-              forceRefresh: forceRefresh);
+              forceRefresh: forceRefresh && !_isOffline);
         }
 
         final chapters = chapterProvider.getChaptersByCourse(course.id);
@@ -451,7 +475,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
   void _setupBackgroundRefresh() {
     _refreshTimer = Timer.periodic(const Duration(minutes: 5), (_) async {
-      if (mounted && _hasAccess && !_isRefreshing) await _refreshInBackground();
+      if (mounted && _hasAccess && !_isRefreshing && !_isOffline)
+        await _refreshInBackground();
     });
   }
 
@@ -1590,22 +1615,25 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'There are no videos for this chapter yet.',
+                      _isOffline
+                          ? 'No cached videos available. Connect to load videos.'
+                          : 'There are no videos for this chapter yet.',
                       style: AppTextStyles.bodyLarge.copyWith(
                         color: AppColors.getTextSecondary(context),
                       ),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 24),
-                    _buildGlassButton(
-                      context,
-                      label: 'Refresh',
-                      icon: Icons.refresh_rounded,
-                      onPressed: () => context
-                          .read<VideoProvider>()
-                          .loadVideosByChapter(widget.chapterId,
-                              forceRefresh: true),
-                    ),
+                    if (!_isOffline)
+                      _buildGlassButton(
+                        context,
+                        label: 'Refresh',
+                        icon: Icons.refresh_rounded,
+                        onPressed: () => context
+                            .read<VideoProvider>()
+                            .loadVideosByChapter(widget.chapterId,
+                                forceRefresh: true),
+                      ),
                   ],
                 ),
               ),
@@ -1644,7 +1672,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
               border: Border.all(
                 color: isDownloaded
                     ? AppColors.telegramGreen.withValues(alpha: 0.3)
-                    : AppColors.getTextSecondary(context).withValues(alpha: 0.1),
+                    : AppColors.getTextSecondary(context)
+                        .withValues(alpha: 0.1),
                 width: 1.5,
               ),
             ),
@@ -1678,7 +1707,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                                     child: Icon(
                                       Icons.movie,
                                       size: 40,
-                                      color: Colors.white.withValues(alpha: 0.3),
+                                      color:
+                                          Colors.white.withValues(alpha: 0.3),
                                     ),
                                   ),
                                 ),
@@ -1697,7 +1727,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                                     child: Icon(
                                       Icons.broken_image,
                                       size: 40,
-                                      color: Colors.white.withValues(alpha: 0.3),
+                                      color:
+                                          Colors.white.withValues(alpha: 0.3),
                                     ),
                                   ),
                                 ),
@@ -1806,8 +1837,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                                 shape: BoxShape.circle,
                                 boxShadow: [
                                   BoxShadow(
-                                    color:
-                                        AppColors.telegramBlue.withValues(alpha: 0.5),
+                                    color: AppColors.telegramBlue
+                                        .withValues(alpha: 0.5),
                                     blurRadius: 20,
                                     spreadRadius: 2,
                                   ),
@@ -1892,7 +1923,9 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                       Container(
                         width: 1,
                         height: 32,
-                        color: Theme.of(context).dividerColor.withValues(alpha: 0.2),
+                        color: Theme.of(context)
+                            .dividerColor
+                            .withValues(alpha: 0.2),
                       ),
                       Expanded(
                         child: _buildVideoActionButton(
@@ -2033,7 +2066,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   size: 18,
                   color: isEnabled
                       ? Colors.white
-                      : AppColors.getTextSecondary(context).withValues(alpha: 0.5),
+                      : AppColors.getTextSecondary(context)
+                          .withValues(alpha: 0.5),
                 ),
                 const SizedBox(width: 6),
                 Text(
@@ -2041,7 +2075,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   style: AppTextStyles.labelMedium.copyWith(
                     color: isEnabled
                         ? Colors.white
-                        : AppColors.getTextSecondary(context).withValues(alpha: 0.5),
+                        : AppColors.getTextSecondary(context)
+                            .withValues(alpha: 0.5),
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -2259,22 +2294,25 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'There are no notes for this chapter yet.',
+                      _isOffline
+                          ? 'No cached notes available. Connect to load notes.'
+                          : 'There are no notes for this chapter yet.',
                       style: AppTextStyles.bodyLarge.copyWith(
                         color: AppColors.getTextSecondary(context),
                       ),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 24),
-                    _buildGlassButton(
-                      context,
-                      label: 'Refresh',
-                      icon: Icons.refresh_rounded,
-                      onPressed: () => context
-                          .read<NoteProvider>()
-                          .loadNotesByChapter(widget.chapterId,
-                              forceRefresh: true),
-                    ),
+                    if (!_isOffline)
+                      _buildGlassButton(
+                        context,
+                        label: 'Refresh',
+                        icon: Icons.refresh_rounded,
+                        onPressed: () => context
+                            .read<NoteProvider>()
+                            .loadNotesByChapter(widget.chapterId,
+                                forceRefresh: true),
+                      ),
                   ],
                 ),
               ),
@@ -2312,7 +2350,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
               border: Border.all(
                 color: isDownloaded
                     ? AppColors.telegramGreen.withValues(alpha: 0.3)
-                    : AppColors.getTextSecondary(context).withValues(alpha: 0.1),
+                    : AppColors.getTextSecondary(context)
+                        .withValues(alpha: 0.1),
                 width: 1.5,
               ),
             ),
@@ -2623,7 +2662,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   ? AppColors.telegramGreen.withValues(alpha: 0.3)
                   : isDownloading
                       ? AppColors.telegramBlue.withValues(alpha: 0.3)
-                      : AppColors.getTextSecondary(context).withValues(alpha: 0.1),
+                      : AppColors.getTextSecondary(context)
+                          .withValues(alpha: 0.1),
               width: 1,
             ),
           ),
@@ -2818,13 +2858,17 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         child: EmptyState(
           icon: Icons.quiz_outlined,
           title: 'No Practice Questions',
-          message: 'Practice questions will be added soon.',
+          message: _isOffline
+              ? 'No cached questions available. Connect to load questions.'
+              : 'Practice questions will be added soon.',
           type: EmptyStateType.noData,
           actionText: 'Refresh',
-          onAction: () => questionProvider.loadPracticeQuestions(
-            widget.chapterId,
-            forceRefresh: true,
-          ),
+          onAction: _isOffline
+              ? null
+              : () => questionProvider.loadPracticeQuestions(
+                    widget.chapterId,
+                    forceRefresh: true,
+                  ),
         ),
       );
     }
@@ -3076,7 +3120,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
               border: Border.all(
                 color: isEnabled
                     ? Colors.transparent
-                    : AppColors.getTextSecondary(context).withValues(alpha: 0.2),
+                    : AppColors.getTextSecondary(context)
+                        .withValues(alpha: 0.2),
                 width: 1,
               ),
               boxShadow: isEnabled
@@ -3096,7 +3141,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   icon,
                   color: isEnabled
                       ? Colors.white
-                      : AppColors.getTextSecondary(context).withValues(alpha: 0.5),
+                      : AppColors.getTextSecondary(context)
+                          .withValues(alpha: 0.5),
                   size: 20,
                 ),
                 const SizedBox(width: 8),
@@ -3105,7 +3151,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   style: AppTextStyles.labelLarge.copyWith(
                     color: isEnabled
                         ? Colors.white
-                        : AppColors.getTextSecondary(context).withValues(alpha: 0.5),
+                        : AppColors.getTextSecondary(context)
+                            .withValues(alpha: 0.5),
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -3150,7 +3197,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                     ? (isCorrect
                         ? AppColors.telegramGreen.withValues(alpha: 0.3)
                         : AppColors.telegramRed.withValues(alpha: 0.3))
-                    : AppColors.getTextSecondary(context).withValues(alpha: 0.1),
+                    : AppColors.getTextSecondary(context)
+                        .withValues(alpha: 0.1),
                 width: 1.5,
               ),
             ),
@@ -3172,7 +3220,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                     shaderCallback: (bounds) => LinearGradient(
                       colors: [
                         AppColors.getTextPrimary(context),
-                        AppColors.getTextPrimary(context).withValues(alpha: 0.8),
+                        AppColors.getTextPrimary(context)
+                            .withValues(alpha: 0.8),
                       ],
                       begin: Alignment.centerLeft,
                       end: Alignment.centerRight,
@@ -3351,7 +3400,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           icon = Icons.cancel_rounded;
         } else {
           optionColor = Colors.transparent;
-          borderColor = AppColors.getTextSecondary(context).withValues(alpha: 0.1);
+          borderColor =
+              AppColors.getTextSecondary(context).withValues(alpha: 0.1);
           icon = null;
         }
       } else {
@@ -3361,7 +3411,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           icon = null;
         } else {
           optionColor = Colors.transparent;
-          borderColor = AppColors.getTextSecondary(context).withValues(alpha: 0.1);
+          borderColor =
+              AppColors.getTextSecondary(context).withValues(alpha: 0.1);
           icon = null;
         }
       }
@@ -3573,7 +3624,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
               border: Border.all(
                 color: isSelected
                     ? Colors.transparent
-                    : AppColors.getTextSecondary(context).withValues(alpha: 0.2),
+                    : AppColors.getTextSecondary(context)
+                        .withValues(alpha: 0.2),
                 width: 1,
               ),
               boxShadow: isSelected
@@ -3780,7 +3832,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                                 width: double.infinity,
                                 height: 20,
                                 decoration: BoxDecoration(
-                                  color: Colors.grey[300]!.withValues(alpha: 0.5),
+                                  color:
+                                      Colors.grey[300]!.withValues(alpha: 0.5),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                               ),
@@ -3791,7 +3844,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                                     width: 80,
                                     height: 16,
                                     decoration: BoxDecoration(
-                                      color: Colors.grey[300]!.withValues(alpha: 0.5),
+                                      color: Colors.grey[300]!
+                                          .withValues(alpha: 0.5),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                   ),
@@ -3800,7 +3854,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                                     width: 60,
                                     height: 16,
                                     decoration: BoxDecoration(
-                                      color: Colors.grey[300]!.withValues(alpha: 0.5),
+                                      color: Colors.grey[300]!
+                                          .withValues(alpha: 0.5),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                   ),
@@ -3843,40 +3898,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       default:
         return AppColors.telegramBlue;
     }
-  }
-
-  Color _getOptionColor(BuildContext context, bool isSelected,
-      bool showExplanation, bool isCorrectAnswer, bool isUserSelection) {
-    if (showExplanation) {
-      if (isCorrectAnswer) return AppColors.telegramGreen.withValues(alpha: 0.1);
-      if (isUserSelection) return AppColors.telegramRed.withValues(alpha: 0.1);
-      return Colors.transparent;
-    }
-    return isSelected
-        ? AppColors.telegramBlue.withValues(alpha: 0.1)
-        : Colors.transparent;
-  }
-
-  Color _getOptionBorderColor(BuildContext context, bool isSelected,
-      bool showExplanation, bool isCorrectAnswer, bool isUserSelection) {
-    if (showExplanation) {
-      if (isCorrectAnswer) return AppColors.telegramGreen;
-      if (isUserSelection) return AppColors.telegramRed;
-      return Theme.of(context).dividerColor;
-    }
-    return isSelected ? AppColors.telegramBlue : Theme.of(context).dividerColor;
-  }
-
-  Color _getOptionTextColor(BuildContext context, bool isSelected,
-      bool showExplanation, bool isCorrectAnswer, bool isUserSelection) {
-    if (showExplanation) {
-      if (isCorrectAnswer) return AppColors.telegramGreen;
-      if (isUserSelection) return AppColors.telegramRed;
-      return AppColors.getTextSecondary(context);
-    }
-    return isSelected
-        ? AppColors.getTextPrimary(context)
-        : AppColors.getTextSecondary(context);
   }
 
   @override

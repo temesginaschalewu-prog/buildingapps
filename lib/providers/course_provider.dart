@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
+import '../services/user_session.dart';
 import '../models/course_model.dart';
 import '../utils/helpers.dart';
 
@@ -86,7 +88,7 @@ class CourseProvider with ChangeNotifier {
       if (coursesData is List) {
         final List<Course> parsedCourses = [];
 
-        for (var courseData in coursesData) {
+        for (final courseData in coursesData) {
           try {
             if (courseData is Map<String, dynamic>) {
               final course = Course.fromJson(courseData);
@@ -188,8 +190,19 @@ class CourseProvider with ChangeNotifier {
     }
   }
 
+  /// 🔵 FIX: Clear user data ONLY for different user logout
   Future<void> clearUserData() async {
     debugLog('CourseProvider', 'Clearing course data');
+
+    // Only clear if this is a different user logout
+    final session = UserSession();
+    final isDifferentUser = !await session.isSameUser();
+    final isLoggingOut = await _isLoggingOut();
+
+    if (!isDifferentUser || !isLoggingOut) {
+      debugLog('CourseProvider', '✅ Same user - preserving course cache');
+      return;
+    }
 
     for (final categoryId in _coursesByCategory.keys) {
       await deviceService.removeCacheItem('courses_$categoryId');
@@ -202,6 +215,11 @@ class CourseProvider with ChangeNotifier {
     _lastLoadedTime.clear();
 
     _notifySafely();
+  }
+
+  Future<bool> _isLoggingOut() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('is_logging_out') ?? false;
   }
 
   Future<void> clearCoursesForCategory(int categoryId) async {

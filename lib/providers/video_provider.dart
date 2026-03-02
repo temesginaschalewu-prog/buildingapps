@@ -2,9 +2,12 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
+import '../services/user_session.dart';
 import '../models/video_model.dart';
+import '../utils/constants.dart';
 import '../utils/helpers.dart';
 import 'package:dio/dio.dart';
 
@@ -19,7 +22,7 @@ enum VideoQualityLevel {
   const VideoQualityLevel(this.height, this.label);
 }
 
-class VideoProvider extends ChangeNotifier {
+class VideoProvider with ChangeNotifier {
   final ApiService apiService;
   final DeviceService deviceService;
   final Dio _dio = Dio();
@@ -83,7 +86,7 @@ class VideoProvider extends ChangeNotifier {
   Future<void> _loadDownloadedVideos() async {
     try {
       final paths = await deviceService.getCacheItem<Map<String, dynamic>>(
-        'downloaded_videos',
+        AppConstants.downloadedVideosKey,
         isUserSpecific: true,
       );
 
@@ -101,7 +104,7 @@ class VideoProvider extends ChangeNotifier {
       }
 
       final qualities = await deviceService.getCacheItem<Map<String, dynamic>>(
-        'download_qualities',
+        AppConstants.downloadQualitiesKey,
         isUserSpecific: true,
       );
 
@@ -164,14 +167,14 @@ class VideoProvider extends ChangeNotifier {
       }
 
       await deviceService.saveCacheItem(
-        'downloaded_videos',
+        AppConstants.downloadedVideosKey,
         paths,
         isUserSpecific: true,
         ttl: _downloadMetadataCache,
       );
 
       await deviceService.saveCacheItem(
-        'download_qualities',
+        AppConstants.downloadQualitiesKey,
         qualities,
         isUserSpecific: true,
         ttl: _downloadMetadataCache,
@@ -231,7 +234,7 @@ class VideoProvider extends ChangeNotifier {
 
       // Cache in DeviceService only
       await deviceService.saveCacheItem(
-        'videos_chapter_$chapterId',
+        AppConstants.videosByChapterKey(chapterId),
         list.map((v) => v.toJson()).toList(),
         ttl: _cacheDuration,
         isUserSpecific: true,
@@ -251,7 +254,7 @@ class VideoProvider extends ChangeNotifier {
 
       // Try cache
       final cached = await deviceService.getCacheItem<List<dynamic>>(
-        'videos_chapter_$chapterId',
+        AppConstants.videosByChapterKey(chapterId),
         isUserSpecific: true,
       );
 
@@ -260,7 +263,9 @@ class VideoProvider extends ChangeNotifier {
         for (final json in cached) {
           try {
             list.add(Video.fromJson(json));
-          } catch (e) {}
+          } catch (e) {
+            debugLog('VideoProvider', 'Error loading downloaded videos: $e');
+          }
         }
         _videosByChapter[chapterId] = list;
         _hasLoadedForChapter[chapterId] = true;
@@ -396,9 +401,13 @@ class VideoProvider extends ChangeNotifier {
         try {
           final file = File(path);
           if (await file.exists()) await file.delete();
-        } catch (e) {}
+        } catch (e) {
+          debugLog('VideoProvider', 'Error parsing cached video: $e');
+        }
       }
-    } catch (e) {}
+    } catch (e) {
+      debugLog('VideoProvider', 'Error in catch block: $e');
+    }
 
     _downloadedVideoPaths.clear();
     _downloadedQualities.clear();
@@ -474,9 +483,19 @@ class VideoProvider extends ChangeNotifier {
     return _videoViewCounts[videoId] ?? 0;
   }
 
-  /// Clear user data on logout
+  /// 🔵 FIX: Clear user data ONLY for different user logout
   Future<void> clearUserData() async {
     debugLog('VideoProvider', 'Clearing user data');
+
+    // Only clear if this is a different user logout
+    final session = UserSession();
+    final isDifferentUser = !await session.isSameUser();
+    final isLoggingOut = await _isLoggingOut();
+
+    if (!isDifferentUser || !isLoggingOut) {
+      debugLog('VideoProvider', '✅ Same user - preserving video cache');
+      return;
+    }
 
     await deviceService.clearCacheByPrefix('videos_');
     await deviceService.clearCacheByPrefix('video_view_');
@@ -493,6 +512,11 @@ class VideoProvider extends ChangeNotifier {
 
     _videoUpdateController.add({'type': 'all_videos_cleared'});
     notifyListeners();
+  }
+
+  Future<bool> _isLoggingOut() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
   }
 
   void clearError() {

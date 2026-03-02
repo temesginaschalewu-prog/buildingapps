@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:familyacademyclient/services/api_service.dart';
 import 'package:familyacademyclient/services/device_service.dart';
+import 'package:familyacademyclient/services/user_session.dart';
 import 'package:familyacademyclient/models/parent_link_model.dart';
+import 'package:familyacademyclient/utils/constants.dart';
 import 'package:familyacademyclient/utils/helpers.dart';
 import 'package:familyacademyclient/utils/api_response.dart';
 
@@ -83,17 +86,17 @@ class ParentLinkProvider with ChangeNotifier {
     return _currentServerTime.isAfter(_tokenExpiresAt!);
   }
 
-  // 🔥 FIX: Method to clear cache
+  // 🔵 FIX: Method to clear cache - only when needed
   Future<void> clearCache() async {
-    debugLog('ParentLinkProvider', '🧹 Clearing cache');
-    await deviceService.removeCacheItem('parent_link_status');
-    await deviceService.removeCacheItem('parent_token');
+    debugLog('ParentLinkProvider', ' Clearing cache');
+    await deviceService.removeCacheItem(AppConstants.parentLinkStatusKey);
+    await deviceService.removeCacheItem(AppConstants.parentTokenKey);
   }
 
   Future<void> _syncServerTime() async {
     try {
       final cachedTime = await deviceService
-          .getCacheItem<Map<String, dynamic>>('server_time_info');
+          .getCacheItem<Map<String, dynamic>>(AppConstants.serverTimeInfoKey);
       if (cachedTime != null) {
         final offset = Duration(milliseconds: cachedTime['offset'] ?? 0);
         final cachedAt = DateTime.parse(cachedTime['cached_at']);
@@ -118,7 +121,7 @@ class ParentLinkProvider with ChangeNotifier {
           _serverTimeOffset = estimatedServerTime.difference(DateTime.now());
 
           await deviceService.saveCacheItem(
-              'server_time_info',
+              AppConstants.serverTimeInfoKey,
               {
                 'offset': _serverTimeOffset!.inMilliseconds,
                 'cached_at': DateTime.now().toIso8601String(),
@@ -168,11 +171,11 @@ class ParentLinkProvider with ChangeNotifier {
     _notifySafely();
 
     try {
-      // 🔥 FIX: Clear cache before generating
-      await deviceService.removeCacheItem('parent_token');
-      await deviceService.removeCacheItem('parent_link_status');
+      // 🔵 FIX: Clear cache before generating
+      await deviceService.removeCacheItem(AppConstants.parentTokenKey);
+      await deviceService.removeCacheItem(AppConstants.parentLinkStatusKey);
 
-      debugLog('ParentLinkProvider', '🧹 Cleared cache, generating new token');
+      debugLog('ParentLinkProvider', ' Cleared cache, generating new token');
 
       await _syncServerTime();
 
@@ -180,7 +183,7 @@ class ParentLinkProvider with ChangeNotifier {
       final response = await apiService.generateParentToken();
 
       if (!response.success || response.data == null) {
-        throw Exception(response.message ?? 'Failed to generate token');
+        throw Exception(response.message);
       }
 
       final data = response.data!;
@@ -196,7 +199,7 @@ class ParentLinkProvider with ChangeNotifier {
 
       // Save new token to cache
       await deviceService.saveCacheItem(
-          'parent_token',
+          AppConstants.parentTokenKey,
           {
             'token': _parentToken,
             'expires_at': _tokenExpiresAt!.toIso8601String(),
@@ -234,9 +237,9 @@ class ParentLinkProvider with ChangeNotifier {
     _notifySafely();
 
     try {
-      // 🔥 FIX: Force remove cache if refresh requested
+      // 🔵 FIX: Force remove cache if refresh requested
       if (forceRefresh) {
-        await deviceService.removeCacheItem('parent_link_status');
+        await deviceService.removeCacheItem(AppConstants.parentLinkStatusKey);
       }
 
       debugLog('ParentLinkProvider',
@@ -246,10 +249,10 @@ class ParentLinkProvider with ChangeNotifier {
       if (response.success && response.data != null) {
         _parentLinkData = response.data;
 
-        // 🔥 FIX: Always refresh from server, don't cache if forceRefresh
+        // 🔵 FIX: Always refresh from server, don't cache if forceRefresh
         if (!forceRefresh) {
           await deviceService.saveCacheItem(
-              'parent_link_status', _parentLinkData!,
+              AppConstants.parentLinkStatusKey, _parentLinkData!,
               ttl: const Duration(minutes: 5));
         }
 
@@ -311,7 +314,7 @@ class ParentLinkProvider with ChangeNotifier {
   }
 
   Future<void> refreshParentLinkStatus() async {
-    await deviceService.removeCacheItem('parent_link_status');
+    await deviceService.removeCacheItem(AppConstants.parentLinkStatusKey);
     await getParentLinkStatus(forceRefresh: true);
   }
 
@@ -327,9 +330,9 @@ class ParentLinkProvider with ChangeNotifier {
       final response = await apiService.unlinkParent();
 
       if (response.success) {
-        // 🔥 FIX: Clear cache immediately
-        await deviceService.removeCacheItem('parent_link_status');
-        await deviceService.removeCacheItem('parent_token');
+        // 🔵 FIX: Clear cache immediately
+        await deviceService.removeCacheItem(AppConstants.parentLinkStatusKey);
+        await deviceService.removeCacheItem(AppConstants.parentTokenKey);
 
         _stopCountdownTimer();
         _isLinked = false;
@@ -393,12 +396,24 @@ class ParentLinkProvider with ChangeNotifier {
     _notifySafely();
   }
 
+  /// 🔵 FIX: Clear user data ONLY for different user logout
   Future<void> clearUserData() async {
     debugLog('ParentLinkProvider', 'Clearing parent link data');
 
-    await deviceService.removeCacheItem('parent_link_status');
-    await deviceService.removeCacheItem('parent_token');
-    await deviceService.removeCacheItem('server_time_info');
+    // Only clear if this is a different user logout
+    final session = UserSession();
+    final isDifferentUser = !await session.isSameUser();
+    final isLoggingOut = await _isLoggingOut();
+
+    if (!isDifferentUser || !isLoggingOut) {
+      debugLog(
+          'ParentLinkProvider', '✅ Same user - preserving parent link cache');
+      return;
+    }
+
+    await deviceService.removeCacheItem(AppConstants.parentLinkStatusKey);
+    await deviceService.removeCacheItem(AppConstants.parentTokenKey);
+    await deviceService.removeCacheItem(AppConstants.serverTimeInfoKey);
 
     _stopCountdownTimer();
 
@@ -417,6 +432,11 @@ class ParentLinkProvider with ChangeNotifier {
     _linkStatusUpdateController.add(false);
 
     _notifySafely();
+  }
+
+  Future<bool> _isLoggingOut() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
   }
 
   @override

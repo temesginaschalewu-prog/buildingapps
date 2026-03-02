@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
+import '../services/user_session.dart';
 import '../models/payment_model.dart';
+import '../utils/constants.dart';
 import '../utils/helpers.dart';
 
 class PaymentProvider with ChangeNotifier {
@@ -77,8 +80,8 @@ class PaymentProvider with ChangeNotifier {
 
   Future<void> _loadPaymentsFromCacheOrApi({bool forceRefresh = false}) async {
     if (!forceRefresh) {
-      final cachedPayments =
-          await deviceService.getCacheItem<List<Payment>>('payments');
+      final cachedPayments = await deviceService
+          .getCacheItem<List<Payment>>(AppConstants.paymentsCacheKey);
       if (cachedPayments != null) {
         _payments = cachedPayments;
         _paymentsUpdateController.add(_payments);
@@ -91,7 +94,7 @@ class PaymentProvider with ChangeNotifier {
     final response = await apiService.getMyPayments();
     _payments = response.data ?? [];
 
-    await deviceService.saveCacheItem('payments', _payments,
+    await deviceService.saveCacheItem(AppConstants.paymentsCacheKey, _payments,
         ttl: _cacheDuration);
     _paymentsUpdateController.add(_payments);
 
@@ -133,7 +136,7 @@ class PaymentProvider with ChangeNotifier {
           'PaymentProvider', 'Submit payment message: ${apiResponse.message}');
 
       if (apiResponse.success) {
-        await deviceService.removeCacheItem('payments');
+        await deviceService.removeCacheItem(AppConstants.paymentsCacheKey);
         await _loadPaymentsFromCacheOrApi(forceRefresh: true);
       }
 
@@ -157,19 +160,35 @@ class PaymentProvider with ChangeNotifier {
     }
   }
 
+  /// 🔵 FIX: Clear user data ONLY for different user logout
   Future<void> clearUserData() async {
     debugLog('PaymentProvider', 'Clearing payment data');
+
+    // Only clear if this is a different user logout
+    final session = UserSession();
+    final isDifferentUser = !await session.isSameUser();
+    final isLoggingOut = await _isLoggingOut();
+
+    if (!isDifferentUser || !isLoggingOut) {
+      debugLog('PaymentProvider', '✅ Same user - preserving payment cache');
+      return;
+    }
 
     await deviceService.clearCacheByPrefix('payment');
 
     _payments = [];
 
-    _paymentsUpdateController.close();
+    await _paymentsUpdateController.close();
     _paymentsUpdateController = StreamController<List<Payment>>.broadcast();
 
     _paymentsUpdateController.add(_payments);
 
     _notifySafely();
+  }
+
+  Future<bool> _isLoggingOut() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
   }
 
   void clearError() {

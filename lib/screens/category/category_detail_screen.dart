@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:familyacademyclient/models/category_model.dart';
 import 'package:familyacademyclient/models/payment_model.dart';
 import 'package:familyacademyclient/services/device_service.dart';
+import 'package:familyacademyclient/services/user_session.dart';
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/themes/app_text_styles.dart';
 import 'package:flutter/material.dart';
@@ -42,8 +43,6 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
   bool _hasCachedData = false;
   bool _isOffline = false;
   bool _isRefreshing = false;
-
-  // FIXED: Set to true by default to show skeleton immediately
   bool _isLoading = true;
 
   final RefreshController _refreshController = RefreshController();
@@ -118,19 +117,30 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     );
   }
 
+  Future<void> _checkConnectivity() async {
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection && mounted) {
+      setState(() => _isOffline = true);
+      showOfflineMessage(context);
+    }
+  }
+
   Future<void> _initializeScreen() async {
+    await _checkConnectivity();
+
     // Try to load from cache first
     await _loadFromCache();
 
     if (_category != null && _hasCachedData) {
-      // If we have cached data, show it immediately
       setState(() {
         _isLoading = false;
       });
-      // Then refresh in background
-      _refreshInBackground();
+      // Then refresh in background if online
+      if (!_isOffline) {
+        _refreshInBackground();
+      }
     } else {
-      // If no cache, load fresh data
+      // If no cache, load fresh data (will show error if offline)
       await _loadFreshData();
       setState(() {
         _isLoading = false;
@@ -163,6 +173,12 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
   }
 
   Future<void> _loadFreshData() async {
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection) {
+      setState(() => _isOffline = true);
+      return;
+    }
+
     try {
       final categoryProvider =
           Provider.of<CategoryProvider>(context, listen: false);
@@ -206,6 +222,14 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
 
   Future<void> _manualRefresh() async {
     if (_isRefreshing) return;
+
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection) {
+      setState(() => _isOffline = true);
+      _refreshController.refreshFailed();
+      return;
+    }
+
     setState(() => _isRefreshing = true);
 
     try {
@@ -236,11 +260,14 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     if (_category == null) return;
     final subscriptionProvider =
         Provider.of<SubscriptionProvider>(context, listen: false);
-    _hasAccess = forceCheck
-        ? await subscriptionProvider
-            .checkHasActiveSubscriptionForCategory(widget.categoryId)
-        : subscriptionProvider
-            .hasActiveSubscriptionForCategory(widget.categoryId);
+
+    if (!_isOffline && forceCheck) {
+      _hasAccess = await subscriptionProvider
+          .checkHasActiveSubscriptionForCategory(widget.categoryId);
+    } else {
+      _hasAccess = subscriptionProvider
+          .hasActiveSubscriptionForCategory(widget.categoryId);
+    }
   }
 
   Future<void> _updateAccessStatus() async {
@@ -260,7 +287,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     final paymentProvider =
         Provider.of<PaymentProvider>(context, listen: false);
     try {
-      await paymentProvider.loadPayments(forceRefresh: forceRefresh);
+      await paymentProvider.loadPayments(
+          forceRefresh: forceRefresh && !_isOffline);
       final pendingPayments = paymentProvider.getPendingPayments();
       _hasPendingPayment = pendingPayments.any((payment) =>
           payment.categoryName.toLowerCase() == _category!.name.toLowerCase());
@@ -286,7 +314,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     if (_category == null) return;
     final courseProvider = Provider.of<CourseProvider>(context, listen: false);
     await courseProvider.loadCoursesByCategory(widget.categoryId,
-        forceRefresh: forceRefresh, hasAccess: _hasAccess);
+        forceRefresh: forceRefresh && !_isOffline, hasAccess: _hasAccess);
   }
 
   Future<void> _saveToCache() async {
@@ -307,6 +335,12 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     } catch (e) {}
   }
 
+  // ... rest of the UI methods (_handlePaymentAction, _showPendingPaymentDialog,
+  // _showRejectedPaymentDialog, _buildGlassBottomSheet, _buildBottomSheetHandle,
+  // _buildDialogContent, _buildGradientButton, _buildAccessBanner, _buildStatusBanner,
+  // _buildGlassButton, _buildHeader, _buildHeaderShimmer, _buildSkeletonLoader,
+  // _buildCourseCardShimmer, etc.) remain the same as in your original file
+
   void _handlePaymentAction() {
     if (_category == null) return;
     if (_hasPendingPayment) {
@@ -325,7 +359,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     final bool hasExpiredSubscription = subscriptions
         .any((sub) => sub.categoryId == _category!.id && sub.isExpired);
 
-    final String paymentType = hasExpiredSubscription ? 'repayment' : 'first_time';
+    final String paymentType =
+        hasExpiredSubscription ? 'repayment' : 'first_time';
 
     context.push('/payment',
         extra: {'category': _category, 'paymentType': paymentType});
@@ -812,7 +847,10 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
               gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [Colors.transparent, Colors.black.withValues(alpha: 0.7)]),
+                  colors: [
+                    Colors.transparent,
+                    Colors.black.withValues(alpha: 0.7)
+                  ]),
             ),
           ),
         ),
@@ -904,7 +942,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
           left: AppThemes.spacingL,
           child: Container(
             decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.3), shape: BoxShape.circle),
+                color: Colors.black.withValues(alpha: 0.3),
+                shape: BoxShape.circle),
             child: IconButton(
                 icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
                 onPressed: () => context.pop()),
@@ -920,7 +959,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.3), shape: BoxShape.circle),
+                  color: Colors.black.withValues(alpha: 0.3),
+                  shape: BoxShape.circle),
               child: const Center(
                 child: SizedBox(
                     width: 20,
@@ -1014,8 +1054,10 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: [
-                                  AppColors.getCard(context).withValues(alpha: 0.4),
-                                  AppColors.getCard(context).withValues(alpha: 0.2),
+                                  AppColors.getCard(context)
+                                      .withValues(alpha: 0.4),
+                                  AppColors.getCard(context)
+                                      .withValues(alpha: 0.2),
                                 ],
                               ),
                             ),
@@ -1032,8 +1074,10 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: [
-                                  AppColors.getCard(context).withValues(alpha: 0.4),
-                                  AppColors.getCard(context).withValues(alpha: 0.2),
+                                  AppColors.getCard(context)
+                                      .withValues(alpha: 0.4),
+                                  AppColors.getCard(context)
+                                      .withValues(alpha: 0.2),
                                 ],
                               ),
                             ),
@@ -1146,7 +1190,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                       children: [
                         Shimmer.fromColors(
                           baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                          highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
+                          highlightColor:
+                              Colors.grey[100]!.withValues(alpha: 0.6),
                           child: Container(
                             width: 80,
                             height: 24,
@@ -1159,7 +1204,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                         const SizedBox(width: 12),
                         Shimmer.fromColors(
                           baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                          highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
+                          highlightColor:
+                              Colors.grey[100]!.withValues(alpha: 0.6),
                           child: Container(
                             width: 70,
                             height: 24,
@@ -1198,7 +1244,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // FIXED: Show skeleton loader immediately on first load
+    // Show skeleton loader immediately on first load
     if (_isLoading) return _buildSkeletonLoader();
 
     if (_category == null) {
@@ -1397,7 +1443,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                     ),
                   ),
                 ),
-              const SliverToBoxAdapter(child: SizedBox(height: AppThemes.spacingXXL)),
+              const SliverToBoxAdapter(
+                  child: SizedBox(height: AppThemes.spacingXXL)),
             ],
           ),
         ),

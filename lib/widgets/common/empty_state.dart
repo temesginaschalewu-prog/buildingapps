@@ -127,27 +127,28 @@ class EmptyState extends StatelessWidget {
               return SingleChildScrollView(
                 physics: const NeverScrollableScrollPhysics(),
                 child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                  child: IntrinsicHeight(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: centerContent
-                          ? CrossAxisAlignment.center
-                          : CrossAxisAlignment.start,
-                      children: [
-                        if (showAnimation) _buildAnimatedIcon(context),
-                        const SizedBox(height: AppThemes.spacingL),
-                        _buildTitle(context),
-                        const SizedBox(height: AppThemes.spacingM),
-                        _buildMessage(context),
-                        if (actionText != null && onAction != null) ...[
-                          const SizedBox(height: AppThemes.spacingXL),
-                          _buildActionButton(context),
-                        ],
-                        const SizedBox(height: AppThemes.spacingS),
+                  constraints: BoxConstraints(
+                    minHeight: constraints.maxHeight,
+                    maxHeight: double.infinity,
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: centerContent
+                        ? CrossAxisAlignment.center
+                        : CrossAxisAlignment.start,
+                    children: [
+                      if (showAnimation) _buildAnimatedIcon(context),
+                      const SizedBox(height: AppThemes.spacingL),
+                      _buildTitle(context),
+                      const SizedBox(height: AppThemes.spacingM),
+                      _buildMessage(context),
+                      if (actionText != null && onAction != null) ...[
+                        const SizedBox(height: AppThemes.spacingXL),
+                        _buildActionButton(context),
                       ],
-                    ),
+                      const SizedBox(height: AppThemes.spacingS),
+                    ],
                   ),
                 ),
               );
@@ -354,17 +355,17 @@ class NoDataState extends StatelessWidget {
 
 class NoInternetState extends StatelessWidget {
   final VoidCallback onRetry;
-  final String? customMessage;
+  final String? message; // 🔵 FIX: Added message parameter
 
-  const NoInternetState({super.key, required this.onRetry, this.customMessage});
+  const NoInternetState({super.key, required this.onRetry, this.message});
 
   @override
   Widget build(BuildContext context) {
     return EmptyState(
       lottieAsset: 'assets/lottie/no_internet.json',
       title: 'No Connection',
-      message: customMessage ??
-          'You are offline. Please check your internet connection.',
+      message:
+          message ?? 'You are offline. Please check your internet connection.',
       actionText: 'Retry',
       onAction: onRetry,
       type: EmptyStateType.noInternet,
@@ -373,20 +374,20 @@ class NoInternetState extends StatelessWidget {
 }
 
 class OfflineState extends StatelessWidget {
-  final String? customMessage;
   final String? dataType;
   final VoidCallback? onRetry;
+  final String? message; // 🔵 FIX: Added message parameter
 
   const OfflineState({
     super.key,
-    this.customMessage,
     this.dataType,
     this.onRetry,
+    this.message, // 🔵 FIX: Added message parameter
   });
 
   @override
   Widget build(BuildContext context) {
-    final message = customMessage ??
+    final displayMessage = message ??
         (dataType != null
             ? 'Showing cached $dataType. Connect to update.'
             : 'You are offline. Using cached data.');
@@ -394,7 +395,7 @@ class OfflineState extends StatelessWidget {
     return EmptyState(
       lottieAsset: 'assets/lottie/offline.json',
       title: 'Offline Mode',
-      message: message,
+      message: displayMessage,
       actionText: onRetry != null ? 'Retry' : null,
       onAction: onRetry,
       type: EmptyStateType.offline,

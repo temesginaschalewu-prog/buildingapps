@@ -1,15 +1,18 @@
 import 'dart:async';
 import 'dart:ui';
-import 'package:familyacademyclient/models/user_model.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:familyacademyclient/providers/auth_provider.dart';
+import 'package:familyacademyclient/providers/settings_provider.dart';
+import 'package:familyacademyclient/services/user_session.dart';
 import 'package:familyacademyclient/themes/app_themes.dart';
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/themes/app_text_styles.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
+import 'package:familyacademyclient/utils/helpers.dart';
+import 'package:familyacademyclient/widgets/common/empty_state.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -36,6 +39,7 @@ class _SplashScreenState extends State<SplashScreen>
   bool _authInitialized = false;
   bool _authCompleted = false;
   bool _hasError = false;
+  bool _isOffline = false;
   String? _errorMessage;
   String _currentStatus = 'Initializing...';
   Timer? _statusTimer;
@@ -89,6 +93,7 @@ class _SplashScreenState extends State<SplashScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkRouterReady();
       _startStatusUpdates();
+      _checkConnectivity();
     });
   }
 
@@ -116,6 +121,17 @@ class _SplashScreenState extends State<SplashScreen>
         ),
       ),
     );
+  }
+
+  Future<void> _checkConnectivity() async {
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection && mounted) {
+      setState(() {
+        _isOffline = true;
+        _isInitializing = false;
+        _currentStatus = 'Offline mode';
+      });
+    }
   }
 
   void _checkRouterReady() {
@@ -154,7 +170,9 @@ class _SplashScreenState extends State<SplashScreen>
 
       String newStatus = _currentStatus;
 
-      if (!_routerReady) {
+      if (_isOffline) {
+        newStatus = 'Offline mode - using cached data';
+      } else if (!_routerReady) {
         newStatus = 'Checking user status...';
       } else if (_authCompleted) {
         newStatus = 'Ready!';
@@ -173,8 +191,20 @@ class _SplashScreenState extends State<SplashScreen>
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
+      // Initialize UserSession
+      await UserSession().init();
+
+      // Check if already authenticated from cache
       if (authProvider.isAuthenticated && authProvider.isInitialized) {
         final user = authProvider.currentUser;
+        setState(() {
+          _authCompleted = true;
+          _currentStatus = 'Welcome back!';
+        });
+        _checkmarkController.forward();
+        await Future.delayed(const Duration(milliseconds: 800));
+
+        if (!mounted) return;
         if (user?.schoolId == null) {
           context.go('/school-selection');
         } else {
@@ -204,7 +234,7 @@ class _SplashScreenState extends State<SplashScreen>
       if (mounted) {
         setState(() {
           _authCompleted = true;
-          _currentStatus = 'Authentication complete';
+          _currentStatus = isAuthenticated ? 'Welcome back!' : 'Ready to start';
         });
         _checkmarkController.forward();
       }
@@ -213,41 +243,49 @@ class _SplashScreenState extends State<SplashScreen>
 
       if (!mounted) return;
 
-      _navigateBasedOnAuthState(isAuthenticated, user);
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _hasError = true;
-          _errorMessage = 'Failed to initialize app. Please restart.';
-          _isInitializing = false;
-          _currentStatus = 'Error occurred';
-        });
-        _checkmarkController.forward();
-        await Future.delayed(const Duration(seconds: 2));
-        if (mounted) context.go('/auth/login');
-      }
-    } finally {
-      if (mounted && !_hasError) setState(() => _isInitializing = false);
-    }
-  }
-
-  void _navigateBasedOnAuthState(bool isAuthenticated, User? user) {
-    if (!mounted) return;
-
-    if (isAuthenticated) {
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (!mounted) return;
+      if (isAuthenticated) {
         if (user?.schoolId == null) {
           context.go('/school-selection');
         } else {
           context.go('/');
         }
-      });
-    } else {
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (!mounted) return;
+      } else {
         context.go('/auth/login');
-      });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+          _errorMessage = _isOffline
+              ? 'Offline - using cached data. Some features may be limited.'
+              : 'Failed to initialize app. Please restart.';
+          _isInitializing = false;
+          _currentStatus = 'Error occurred';
+        });
+
+        // If offline and we have cached user, try to go to home
+        if (_isOffline) {
+          final authProvider =
+              Provider.of<AuthProvider>(context, listen: false);
+          final user = authProvider.currentUser;
+          if (user != null) {
+            await Future.delayed(const Duration(seconds: 1));
+            if (!mounted) return;
+            if (user.schoolId == null) {
+              context.go('/school-selection');
+            } else {
+              context.go('/');
+            }
+            return;
+          }
+        }
+
+        _checkmarkController.forward();
+        await Future.delayed(const Duration(seconds: 2));
+        if (mounted && !_isOffline) context.go('/auth/login');
+      }
+    } finally {
+      if (mounted && !_hasError) setState(() => _isInitializing = false);
     }
   }
 
@@ -276,6 +314,35 @@ class _SplashScreenState extends State<SplashScreen>
           Text(_errorMessage ?? 'Initialization Error',
               style: AppTextStyles.bodyMedium.copyWith(
                   color: AppColors.telegramRed, fontWeight: FontWeight.w500),
+              textAlign: TextAlign.center),
+        ],
+      );
+    }
+
+    if (_isOffline) {
+      return Column(
+        children: [
+          _buildGlassContainer(
+            child: Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    AppColors.telegramYellow.withValues(alpha: 0.2),
+                    AppColors.telegramYellow.withValues(alpha: 0.1),
+                  ],
+                ),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.wifi_off_rounded,
+                  size: 32, color: AppColors.telegramYellow),
+            ),
+          ).animate().shake(duration: 600.ms),
+          const SizedBox(height: 16),
+          Text('Offline Mode',
+              style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.telegramYellow, fontWeight: FontWeight.w500),
               textAlign: TextAlign.center),
         ],
       );
@@ -375,8 +442,8 @@ class _SplashScreenState extends State<SplashScreen>
                             borderRadius: BorderRadius.circular(24),
                             boxShadow: [
                               BoxShadow(
-                                  color:
-                                      AppColors.telegramBlue.withValues(alpha: 0.3),
+                                  color: AppColors.telegramBlue
+                                      .withValues(alpha: 0.3),
                                   blurRadius: 24,
                                   offset: const Offset(0, 12))
                             ],
@@ -413,9 +480,11 @@ class _SplashScreenState extends State<SplashScreen>
                               color: AppColors.getTextPrimary(context),
                               fontWeight: FontWeight.w700)),
                       const SizedBox(height: 16),
-                      Text('Empowering Education',
+                      Text(_isOffline ? 'Offline Mode' : 'Empowering Education',
                           style: AppTextStyles.bodyLarge.copyWith(
-                              color: AppColors.getTextSecondary(context))),
+                              color: _isOffline
+                                  ? AppColors.telegramYellow
+                                  : AppColors.getTextSecondary(context))),
                     ],
                   ),
                 ),
@@ -440,21 +509,31 @@ class _SplashScreenState extends State<SplashScreen>
                           gradient: LinearGradient(
                             colors: _hasError
                                 ? [
-                                    AppColors.telegramRed.withValues(alpha: 0.2),
-                                    AppColors.telegramRed.withValues(alpha: 0.1),
+                                    AppColors.telegramRed
+                                        .withValues(alpha: 0.2),
+                                    AppColors.telegramRed
+                                        .withValues(alpha: 0.1),
                                   ]
-                                : (_authCompleted
+                                : (_isOffline
                                     ? [
-                                        AppColors.telegramGreen
+                                        AppColors.telegramYellow
                                             .withValues(alpha: 0.2),
-                                        AppColors.telegramGreen
+                                        AppColors.telegramYellow
                                             .withValues(alpha: 0.1),
                                       ]
-                                    : [
-                                        AppColors.telegramBlue.withValues(alpha: 0.2),
-                                        AppColors.telegramPurple
-                                            .withValues(alpha: 0.1),
-                                      ]),
+                                    : (_authCompleted
+                                        ? [
+                                            AppColors.telegramGreen
+                                                .withValues(alpha: 0.2),
+                                            AppColors.telegramGreen
+                                                .withValues(alpha: 0.1),
+                                          ]
+                                        : [
+                                            AppColors.telegramBlue
+                                                .withValues(alpha: 0.2),
+                                            AppColors.telegramPurple
+                                                .withValues(alpha: 0.1),
+                                          ])),
                           ),
                           borderRadius:
                               BorderRadius.circular(AppThemes.borderRadiusFull),
@@ -464,23 +543,29 @@ class _SplashScreenState extends State<SplashScreen>
                           style: AppTextStyles.labelMedium.copyWith(
                             color: _hasError
                                 ? AppColors.telegramRed
-                                : (_authCompleted
-                                    ? AppColors.telegramGreen
-                                    : AppColors.telegramBlue),
+                                : (_isOffline
+                                    ? AppColors.telegramYellow
+                                    : (_authCompleted
+                                        ? AppColors.telegramGreen
+                                        : AppColors.telegramBlue)),
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
                     ),
                     const SizedBox(height: 8),
-                    if (_isInitializing && !_hasError)
+                    if (_isInitializing && !_hasError && !_isOffline)
                       Text('Please wait...',
                           style: AppTextStyles.caption.copyWith(
                               color: AppColors.getTextSecondary(context))),
-                    if (!_routerReady && !_hasError)
+                    if (!_routerReady && !_hasError && !_isOffline)
                       Text('Preparing navigation...',
                           style: AppTextStyles.caption.copyWith(
                               color: AppColors.getTextSecondary(context))),
+                    if (_isOffline && !_hasError)
+                      Text('Using cached data',
+                          style: AppTextStyles.caption
+                              .copyWith(color: AppColors.telegramYellow)),
                   ],
                 ),
               ),

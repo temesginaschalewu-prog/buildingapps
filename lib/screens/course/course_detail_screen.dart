@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:familyacademyclient/models/course_model.dart';
 import 'package:familyacademyclient/models/payment_model.dart';
 import 'package:familyacademyclient/services/device_service.dart';
+import 'package:familyacademyclient/services/user_session.dart';
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/themes/app_text_styles.dart';
 import 'package:familyacademyclient/widgets/chapter/chapter_card.dart';
@@ -86,11 +87,23 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     });
   }
 
+  Future<void> _checkConnectivity() async {
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection && mounted) {
+      setState(() => _isOffline = true);
+      showOfflineMessage(context);
+    }
+  }
+
   Future<void> _initializeScreen() async {
+    await _checkConnectivity();
     await _loadFromCache();
+
     if (_course != null && _hasCachedData) {
       setState(() => _isFirstLoad = false);
-      _refreshInBackground();
+      if (!_isOffline) {
+        _refreshInBackground();
+      }
     } else {
       await _loadFreshData();
     }
@@ -121,6 +134,15 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
   }
 
   Future<void> _loadFreshData() async {
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection) {
+      setState(() {
+        _isOffline = true;
+        _isFirstLoad = false;
+      });
+      return;
+    }
+
     try {
       final courseProvider =
           Provider.of<CourseProvider>(context, listen: false);
@@ -183,6 +205,14 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
 
   Future<void> _manualRefresh() async {
     if (_isRefreshing) return;
+
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection) {
+      setState(() => _isOffline = true);
+      _refreshController.refreshFailed();
+      return;
+    }
+
     setState(() => _isRefreshing = true);
 
     try {
@@ -214,10 +244,14 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     if (_category == null) return;
     final subscriptionProvider =
         Provider.of<SubscriptionProvider>(context, listen: false);
-    _hasAccess = forceCheck
-        ? await subscriptionProvider
-            .checkHasActiveSubscriptionForCategory(_category!.id)
-        : subscriptionProvider.hasActiveSubscriptionForCategory(_category!.id);
+
+    if (!_isOffline && forceCheck) {
+      _hasAccess = await subscriptionProvider
+          .checkHasActiveSubscriptionForCategory(_category!.id);
+    } else {
+      _hasAccess =
+          subscriptionProvider.hasActiveSubscriptionForCategory(_category!.id);
+    }
   }
 
   Future<void> _updateAccessStatus() async {
@@ -237,7 +271,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     final paymentProvider =
         Provider.of<PaymentProvider>(context, listen: false);
     try {
-      await paymentProvider.loadPayments(forceRefresh: forceRefresh);
+      await paymentProvider.loadPayments(
+          forceRefresh: forceRefresh && !_isOffline);
       final pendingPayments = paymentProvider.getPendingPayments();
       _hasPendingPayment = pendingPayments.any((payment) =>
           payment.categoryName.toLowerCase() == _category!.name.toLowerCase());
@@ -264,14 +299,14 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     final chapterProvider =
         Provider.of<ChapterProvider>(context, listen: false);
     await chapterProvider.loadChaptersByCourse(_course!.id,
-        forceRefresh: forceRefresh);
+        forceRefresh: forceRefresh && !_isOffline);
   }
 
   Future<void> _loadExams({bool forceRefresh = false}) async {
     if (_course == null) return;
     final examProvider = Provider.of<ExamProvider>(context, listen: false);
     await examProvider.loadExamsByCourse(_course!.id,
-        forceRefresh: forceRefresh);
+        forceRefresh: forceRefresh && !_isOffline);
   }
 
   Future<void> _saveToCache() async {

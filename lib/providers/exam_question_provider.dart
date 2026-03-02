@@ -3,9 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:familyacademyclient/providers/exam_provider.dart';
 import 'package:familyacademyclient/providers/subscription_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
+import '../services/user_session.dart';
 import '../models/exam_question_model.dart';
+import '../utils/constants.dart';
 import '../utils/helpers.dart';
 import '../utils/api_response.dart';
 
@@ -174,19 +177,15 @@ class ExamQuestionProvider with ChangeNotifier {
 
       List<ExamQuestion> questions = [];
 
-      // ✅ CRITICAL FIX: Directly use the response.data if it's already a List
       if (response.data is List) {
         final items = response.data as List;
         debugLog('ExamQuestionProvider',
             'Response is direct List with ${items.length} items');
 
-        // The items should already be ExamQuestion objects from ApiService
         questions = items.whereType<ExamQuestion>().toList();
         debugLog('ExamQuestionProvider',
             '✅ Directly got ${questions.length} ExamQuestion objects');
-      }
-      // If it's a Map, try to extract the data
-      else if (response.data is Map<String, dynamic>) {
+      } else if (response.data is Map<String, dynamic>) {
         final dataMap = response.data as Map<String, dynamic>;
         debugLog('ExamQuestionProvider',
             'Response is Map with keys: ${dataMap.keys}');
@@ -196,7 +195,7 @@ class ExamQuestionProvider with ChangeNotifier {
           debugLog('ExamQuestionProvider',
               'Found data list with ${items.length} items');
 
-          for (var item in items) {
+          for (final item in items) {
             if (item is Map<String, dynamic>) {
               try {
                 final examQuestion = ExamQuestion(
@@ -232,14 +231,12 @@ class ExamQuestionProvider with ChangeNotifier {
       debugLog('ExamQuestionProvider',
           '✅ Successfully processed ${questions.length} questions for exam $examId');
 
-      // Save to cache if we have questions
       if (questions.isNotEmpty) {
         await _cacheExamQuestions(examId, questions);
       } else {
         debugLog('ExamQuestionProvider',
             '⚠️ No questions parsed from response for exam $examId');
 
-        // Try to use cached questions as fallback
         final cachedQuestions = await _getCachedExamQuestions(examId);
         if (cachedQuestions != null && cachedQuestions.isNotEmpty) {
           questions = cachedQuestions;
@@ -248,7 +245,6 @@ class ExamQuestionProvider with ChangeNotifier {
         }
       }
 
-      // ALWAYS update the state
       _questionsByExam[examId] = questions;
       _updateGlobalQuestions(questions);
       _lastLoadedTime[examId] = DateTime.now();
@@ -297,8 +293,9 @@ class ExamQuestionProvider with ChangeNotifier {
 
   Future<List<ExamQuestion>?> _getCachedExamQuestions(int examId) async {
     try {
-      final cached = await deviceService
-          .getCacheItem<List<Map<String, dynamic>>>('exam_questions_$examId',
+      final cached =
+          await deviceService.getCacheItem<List<Map<String, dynamic>>>(
+              AppConstants.examQuestionsKey(examId),
               isUserSpecific: true);
       if (cached != null) {
         return cached.map(ExamQuestion.fromJson).toList();
@@ -314,7 +311,7 @@ class ExamQuestionProvider with ChangeNotifier {
     try {
       final questionsJson = questions.map((q) => q.toJson()).toList();
       await deviceService.saveCacheItem(
-        'exam_questions_$examId',
+        AppConstants.examQuestionsKey(examId),
         questionsJson,
         ttl: _cacheDuration,
         isUserSpecific: true,
@@ -338,7 +335,7 @@ class ExamQuestionProvider with ChangeNotifier {
   Future<void> clearExamAccessCache(int examId) async {
     _examAccessChecked.remove(examId);
     _examHasAccess.remove(examId);
-    await deviceService.removeCacheItem('exam_access_$examId',
+    await deviceService.removeCacheItem(AppConstants.examAccessKey(examId),
         isUserSpecific: true);
     _notifySafely();
   }
@@ -398,7 +395,7 @@ class ExamQuestionProvider with ChangeNotifier {
     }
 
     for (final examId in expiredExams) {
-      await deviceService.removeCacheItem('exam_questions_$examId',
+      await deviceService.removeCacheItem(AppConstants.examQuestionsKey(examId),
           isUserSpecific: true);
       _questionsByExam.remove(examId);
       _lastLoadedTime.remove(examId);
@@ -411,18 +408,30 @@ class ExamQuestionProvider with ChangeNotifier {
       _questionsUpdateController.add({});
       _examAccessController.add({});
       debugLog('ExamQuestionProvider',
-          '🧹 Cleared cache for ${expiredExams.length} expired exams');
+          ' Cleared cache for ${expiredExams.length} expired exams');
     }
   }
 
+  /// 🔵 FIX: Clear user data ONLY for different user logout
   Future<void> clearUserData() async {
     debugLog('ExamQuestionProvider', 'Clearing exam question data');
 
+    // Only clear if this is a different user logout
+    final session = UserSession();
+    final isDifferentUser = !await session.isSameUser();
+    final isLoggingOut = await _isLoggingOut();
+
+    if (!isDifferentUser || !isLoggingOut) {
+      debugLog('ExamQuestionProvider',
+          '✅ Same user - preserving exam question cache');
+      return;
+    }
+
     final keys = _questionsByExam.keys.toList();
     for (final examId in keys) {
-      await deviceService.removeCacheItem('exam_questions_$examId',
+      await deviceService.removeCacheItem(AppConstants.examQuestionsKey(examId),
           isUserSpecific: true);
-      await deviceService.removeCacheItem('exam_access_$examId',
+      await deviceService.removeCacheItem(AppConstants.examAccessKey(examId),
           isUserSpecific: true);
     }
 
@@ -433,8 +442,8 @@ class ExamQuestionProvider with ChangeNotifier {
     _examAccessChecked.clear();
     _examHasAccess.clear();
 
-    _questionsUpdateController.close();
-    _examAccessController.close();
+    await _questionsUpdateController.close();
+    await _examAccessController.close();
 
     _questionsUpdateController =
         StreamController<Map<int, List<ExamQuestion>>>.broadcast();
@@ -446,10 +455,15 @@ class ExamQuestionProvider with ChangeNotifier {
     _notifySafely();
   }
 
+  Future<bool> _isLoggingOut() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
+  }
+
   Future<void> clearExamQuestionsForExam(int examId) async {
-    await deviceService.removeCacheItem('exam_questions_$examId',
+    await deviceService.removeCacheItem(AppConstants.examQuestionsKey(examId),
         isUserSpecific: true);
-    await deviceService.removeCacheItem('exam_access_$examId',
+    await deviceService.removeCacheItem(AppConstants.examAccessKey(examId),
         isUserSpecific: true);
 
     final examQuestions = _questionsByExam[examId] ?? [];

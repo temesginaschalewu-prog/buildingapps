@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
+import '../services/user_session.dart';
 import '../models/question_model.dart';
+import '../utils/constants.dart';
 import '../utils/helpers.dart';
 
 class QuestionProvider with ChangeNotifier {
@@ -78,7 +81,7 @@ class QuestionProvider with ChangeNotifier {
 
       if (questionsData is List) {
         final questionList = <Question>[];
-        for (var questionJson in questionsData) {
+        for (final questionJson in questionsData) {
           try {
             questionList.add(Question.fromJson(questionJson));
           } catch (e) {
@@ -98,7 +101,7 @@ class QuestionProvider with ChangeNotifier {
         }
 
         await deviceService.saveCacheItem(
-          'questions_chapter_$chapterId',
+          AppConstants.questionsChapterKey(chapterId),
           questionList.map((q) => q.toJson()).toList(),
           ttl: cacheDuration,
         );
@@ -123,14 +126,16 @@ class QuestionProvider with ChangeNotifier {
       debugLog('QuestionProvider', '❌ loadPracticeQuestions error: $e');
 
       try {
-        final cachedQuestions = await deviceService
-            .getCacheItem<List<dynamic>>('questions_chapter_$chapterId');
+        final cachedQuestions = await deviceService.getCacheItem<List<dynamic>>(
+            AppConstants.questionsChapterKey(chapterId));
         if (cachedQuestions != null) {
           final questionList = <Question>[];
-          for (var questionJson in cachedQuestions) {
+          for (final questionJson in cachedQuestions) {
             try {
               questionList.add(Question.fromJson(questionJson));
-            } catch (e) {}
+            } catch (e) {
+              debugLog('QuestionProvider', 'Error parsing cached question: $e');
+            }
           }
           _questionsByChapter[chapterId] = questionList;
           _hasLoadedForChapter[chapterId] = true;
@@ -164,13 +169,13 @@ class QuestionProvider with ChangeNotifier {
 
     for (final question in questions) {
       final result = await deviceService
-          .getCacheItem<bool>('answer_result_${question.id}');
+          .getCacheItem<bool>(AppConstants.answerResultKey(question.id));
       if (result != null) {
         _answerResults[chapterId]![question.id] = result;
       }
 
       final selected = await deviceService
-          .getCacheItem<String>('selected_answer_${question.id}');
+          .getCacheItem<String>(AppConstants.selectedAnswerKey(question.id));
       if (selected != null) {
         _selectedAnswers[chapterId]![question.id] = selected;
       }
@@ -231,12 +236,12 @@ class QuestionProvider with ChangeNotifier {
           _selectedAnswers[chapterId]![questionId] = selectedOption;
 
           await deviceService.saveCacheItem(
-            'answer_result_$questionId',
+            AppConstants.answerResultKey(questionId),
             isCorrect,
             ttl: answerCacheDuration,
           );
           await deviceService.saveCacheItem(
-            'selected_answer_$questionId',
+            AppConstants.selectedAnswerKey(questionId),
             selectedOption,
             ttl: answerCacheDuration,
           );
@@ -315,11 +320,14 @@ class QuestionProvider with ChangeNotifier {
     _answerResults.remove(chapterId);
     _selectedAnswers.remove(chapterId);
 
-    await deviceService.removeCacheItem('questions_chapter_$chapterId');
+    await deviceService
+        .removeCacheItem(AppConstants.questionsChapterKey(chapterId));
 
     for (final question in chapterQuestions) {
-      await deviceService.removeCacheItem('answer_result_${question.id}');
-      await deviceService.removeCacheItem('selected_answer_${question.id}');
+      await deviceService
+          .removeCacheItem(AppConstants.answerResultKey(question.id));
+      await deviceService
+          .removeCacheItem(AppConstants.selectedAnswerKey(question.id));
     }
 
     _questionUpdateController
@@ -328,8 +336,19 @@ class QuestionProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// 🔵 FIX: Clear user data ONLY for different user logout
   Future<void> clearUserData() async {
     debugLog('QuestionProvider', 'Clearing question data');
+
+    // Only clear if this is a different user logout
+    final session = UserSession();
+    final isDifferentUser = !await session.isSameUser();
+    final isLoggingOut = await _isLoggingOut();
+
+    if (!isDifferentUser || !isLoggingOut) {
+      debugLog('QuestionProvider', '✅ Same user - preserving question cache');
+      return;
+    }
 
     _questions.clear();
     _questionsByChapter.clear();
@@ -343,8 +362,8 @@ class QuestionProvider with ChangeNotifier {
     await deviceService.clearCacheByPrefix('answer_result_');
     await deviceService.clearCacheByPrefix('selected_answer_');
 
-    _questionUpdateController.close();
-    _answerUpdateController.close();
+    await _questionUpdateController.close();
+    await _answerUpdateController.close();
 
     _questionUpdateController =
         StreamController<Map<String, dynamic>>.broadcast();
@@ -355,6 +374,11 @@ class QuestionProvider with ChangeNotifier {
     _answerUpdateController.add({'type': 'all_answers_cleared'});
 
     notifyListeners();
+  }
+
+  Future<bool> _isLoggingOut() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
   }
 
   void clearError() {

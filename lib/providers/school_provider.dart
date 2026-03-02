@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:familyacademyclient/services/api_service.dart';
 import 'package:familyacademyclient/services/device_service.dart';
+import 'package:familyacademyclient/services/user_session.dart';
 import 'package:familyacademyclient/models/school_model.dart';
+import 'package:familyacademyclient/utils/constants.dart';
 import 'package:familyacademyclient/utils/helpers.dart';
 
 class SchoolProvider with ChangeNotifier {
@@ -14,7 +17,6 @@ class SchoolProvider with ChangeNotifier {
   bool _isLoading = false;
   String? _error;
   bool _hasError = false;
-  DateTime? _lastLoadTime;
 
   StreamController<List<School>> _schoolsUpdateController =
       StreamController<List<School>>.broadcast();
@@ -39,11 +41,10 @@ class SchoolProvider with ChangeNotifier {
 
     if (!forceRefresh) {
       try {
-        final cachedSchools =
-            await deviceService.getCacheItem<List<School>>('schools_list');
+        final cachedSchools = await deviceService
+            .getCacheItem<List<School>>(AppConstants.schoolsListKey);
         if (cachedSchools != null) {
           _schools = cachedSchools;
-          _lastLoadTime = DateTime.now();
           _hasError = false;
           _schoolsUpdateController.add(_schools);
           _notifySafely();
@@ -65,9 +66,8 @@ class SchoolProvider with ChangeNotifier {
 
       if (response.success && response.data != null) {
         _schools = response.data ?? [];
-        _lastLoadTime = DateTime.now();
 
-        await deviceService.saveCacheItem('schools_list', _schools,
+        await deviceService.saveCacheItem(AppConstants.schoolsListKey, _schools,
             ttl: _schoolsCacheTTL);
         await _loadSelectedSchool();
 
@@ -75,7 +75,7 @@ class SchoolProvider with ChangeNotifier {
         _hasError = false;
         _schoolsUpdateController.add(_schools);
       } else {
-        _error = response.message ?? 'Failed to load schools';
+        _error = response.message;
         _hasError = true;
         debugLog('SchoolProvider', 'API error: $_error');
       }
@@ -92,7 +92,7 @@ class SchoolProvider with ChangeNotifier {
   Future<void> selectSchool(int schoolId) async {
     _selectedSchoolId = schoolId;
 
-    await deviceService.saveCacheItem('selected_school', schoolId,
+    await deviceService.saveCacheItem(AppConstants.selectedSchoolKey, schoolId,
         ttl: const Duration(days: 365));
     _selectedSchoolController.add(schoolId);
     _notifySafely();
@@ -100,7 +100,7 @@ class SchoolProvider with ChangeNotifier {
 
   Future<void> clearSelectedSchool() async {
     _selectedSchoolId = null;
-    await deviceService.removeCacheItem('selected_school');
+    await deviceService.removeCacheItem(AppConstants.selectedSchoolKey);
     _selectedSchoolController.add(null);
     _notifySafely();
   }
@@ -113,23 +113,39 @@ class SchoolProvider with ChangeNotifier {
     }
   }
 
+  /// 🔵 FIX: Clear user data ONLY for different user logout
   Future<void> clearUserData() async {
     debugLog('SchoolProvider', 'Clearing school data');
+
+    // Only clear if this is a different user logout
+    final session = UserSession();
+    final isDifferentUser = !await session.isSameUser();
+    final isLoggingOut = await _isLoggingOut();
+
+    if (!isDifferentUser || !isLoggingOut) {
+      debugLog('SchoolProvider', '✅ Same user - preserving school cache');
+      return;
+    }
+
     await deviceService.clearCacheByPrefix('schools');
-    await deviceService.removeCacheItem('selected_school');
+    await deviceService.removeCacheItem(AppConstants.selectedSchoolKey);
 
     _schools = [];
     _selectedSchoolId = null;
-    _lastLoadTime = null;
 
-    _schoolsUpdateController.close();
-    _selectedSchoolController.close();
+    await _schoolsUpdateController.close();
+    await _selectedSchoolController.close();
     _schoolsUpdateController = StreamController<List<School>>.broadcast();
     _selectedSchoolController = StreamController<int?>.broadcast();
 
     _schoolsUpdateController.add(_schools);
     _selectedSchoolController.add(null);
     _notifySafely();
+  }
+
+  Future<bool> _isLoggingOut() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
   }
 
   void clearError() {
@@ -146,7 +162,7 @@ class SchoolProvider with ChangeNotifier {
   Future<void> _loadSelectedSchool() async {
     try {
       final selectedSchool =
-          await deviceService.getCacheItem<int>('selected_school');
+          await deviceService.getCacheItem<int>(AppConstants.selectedSchoolKey);
       if (selectedSchool != null) {
         _selectedSchoolId = selectedSchool;
         _selectedSchoolController.add(selectedSchool);

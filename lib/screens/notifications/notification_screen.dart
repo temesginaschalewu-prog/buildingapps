@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:ui';
+import 'package:familyacademyclient/providers/auth_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:familyacademyclient/models/notification_model.dart'
     as AppNotification;
+import 'package:familyacademyclient/services/user_session.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../providers/notification_provider.dart';
@@ -13,6 +15,7 @@ import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/helpers.dart';
+import '../../widgets/common/empty_state.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -26,12 +29,14 @@ class _NotificationsScreenState extends State<NotificationsScreen>
   bool _isInitialLoad = true;
   bool _isRefreshing = false;
   bool _isLoadingMore = false;
+  bool _isOffline = false;
   final ScrollController _scrollController = ScrollController();
   bool _showFAB = true;
   Timer? _scrollTimer;
   int _page = 1;
   final int _pageSize = 20;
   bool _hasMore = true;
+  String? _currentUserId;
 
   late AnimationController _fabAnimationController;
 
@@ -43,7 +48,11 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     _fabAnimationController = AnimationController(
         vsync: this, duration: AppThemes.animationDurationMedium);
 
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadNotifications());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _getCurrentUserId();
+      _checkConnectivity();
+      _loadNotifications();
+    });
 
     _scrollController.addListener(() {
       if (_scrollTimer != null) _scrollTimer!.cancel();
@@ -64,11 +73,24 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       // Load more when scrolling near bottom
       if (_scrollController.position.pixels >=
           _scrollController.position.maxScrollExtent - 200) {
-        if (!_isLoadingMore && _hasMore && !_isRefreshing) {
+        if (!_isLoadingMore && _hasMore && !_isRefreshing && !_isOffline) {
           _loadMoreNotifications();
         }
       }
     });
+  }
+
+  Future<void> _getCurrentUserId() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    _currentUserId = authProvider.currentUser?.id.toString();
+  }
+
+  Future<void> _checkConnectivity() async {
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection) {
+      setState(() => _isOffline = true);
+      showOfflineMessage(context);
+    }
   }
 
   @override
@@ -151,7 +173,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                       children: [
                         Shimmer.fromColors(
                           baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                          highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
+                          highlightColor:
+                              Colors.grey[100]!.withValues(alpha: 0.6),
                           child: Container(
                             height: 20,
                             width: double.infinity,
@@ -164,7 +187,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                         const SizedBox(height: 8),
                         Shimmer.fromColors(
                           baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                          highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
+                          highlightColor:
+                              Colors.grey[100]!.withValues(alpha: 0.6),
                           child: Container(
                             height: 16,
                             width: 200,
@@ -188,7 +212,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    if (state == AppLifecycleState.resumed && !_isOffline) {
       _refreshUnreadCount();
     }
   }
@@ -198,7 +222,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     if (_isInitialLoad) {
       setState(() => _isRefreshing = true);
       try {
-        await provider.loadNotifications(forceRefresh: true);
+        await provider.loadNotifications(forceRefresh: !_isOffline);
         _page = 1;
         _hasMore = provider.notifications.length >= _pageSize;
       } finally {
@@ -215,12 +239,21 @@ class _NotificationsScreenState extends State<NotificationsScreen>
   Future<void> _refreshNotifications() async {
     if (_isRefreshing) return;
 
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection) {
+      setState(() => _isOffline = true);
+      showTopSnackBar(context, 'You are offline. Using cached notifications.',
+          isError: true);
+      return;
+    }
+
     setState(() => _isRefreshing = true);
     final provider = Provider.of<NotificationProvider>(context, listen: false);
     try {
       await provider.loadNotifications(forceRefresh: true);
       _page = 1;
       _hasMore = provider.notifications.length >= _pageSize;
+      setState(() => _isOffline = false);
     } finally {
       if (mounted) setState(() => _isRefreshing = false);
     }
@@ -228,6 +261,9 @@ class _NotificationsScreenState extends State<NotificationsScreen>
 
   Future<void> _loadMoreNotifications() async {
     if (_isLoadingMore || !_hasMore) return;
+
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection) return;
 
     setState(() => _isLoadingMore = true);
     final provider = Provider.of<NotificationProvider>(context, listen: false);
@@ -269,8 +305,11 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         Navigator.of(context).pop(); // Remove loading dialog
         showTopSnackBar(context, 'Failed to delete notification',
             isError: true);
-        // Force refresh to sync with backend
-        await provider.loadNotifications(forceRefresh: true);
+        // Force refresh to sync with backend if online
+        final hasConnection = await hasInternetConnection();
+        if (hasConnection) {
+          await provider.loadNotifications(forceRefresh: true);
+        }
       }
     }
   }
@@ -297,7 +336,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                 color: AppColors.getTextPrimary(context)),
             onPressed: () => context.pop()),
         actions: [
-          if (provider.unreadNotifications.isNotEmpty)
+          if (provider.unreadNotifications.isNotEmpty && !_isOffline)
             Container(
               margin: const EdgeInsets.only(right: 4),
               child: IconButton(
@@ -316,14 +355,20 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                         strokeWidth: 2,
                         valueColor: AlwaysStoppedAnimation<Color>(
                             AppColors.telegramBlue)))
-                : const Icon(Icons.refresh_rounded, color: AppColors.telegramBlue),
+                : Icon(
+                    _isOffline ? Icons.wifi_off_rounded : Icons.refresh_rounded,
+                    color: _isOffline
+                        ? AppColors.telegramGray
+                        : AppColors.telegramBlue),
             onPressed: _isRefreshing ? null : _refreshNotifications,
-            tooltip: 'Refresh',
+            tooltip: _isOffline ? 'Offline' : 'Refresh',
           ),
         ],
       ),
       body: _buildNotificationsContent(provider),
-      floatingActionButton: _showFAB && provider.unreadNotifications.isNotEmpty
+      floatingActionButton: _showFAB &&
+              provider.unreadNotifications.isNotEmpty &&
+              !_isOffline
           ? ScaleTransition(
               scale: _fabAnimationController,
               child: Container(
@@ -391,36 +436,37 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                       .copyWith(color: AppColors.getTextSecondary(context)),
                   textAlign: TextAlign.center),
               const SizedBox(height: 24),
-              Container(
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF2AABEE), Color(0xFF5856D6)],
-                  ),
-                  borderRadius:
-                      BorderRadius.circular(AppThemes.borderRadiusMedium),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.telegramBlue.withValues(alpha: 0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
+              if (!_isOffline)
+                Container(
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF2AABEE), Color(0xFF5856D6)],
                     ),
-                  ],
-                ),
-                child: ElevatedButton(
-                  onPressed: _refreshNotifications,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.transparent,
-                    foregroundColor: Colors.white,
-                    shadowColor: Colors.transparent,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(
-                            AppThemes.borderRadiusMedium)),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 12),
+                    borderRadius:
+                        BorderRadius.circular(AppThemes.borderRadiusMedium),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.telegramBlue.withValues(alpha: 0.3),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
-                  child: const Text('Try Again'),
+                  child: ElevatedButton(
+                    onPressed: _refreshNotifications,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      foregroundColor: Colors.white,
+                      shadowColor: Colors.transparent,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(
+                              AppThemes.borderRadiusMedium)),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 24, vertical: 12),
+                    ),
+                    child: const Text('Try Again'),
+                  ),
                 ),
-              ),
             ],
           ),
         ),
@@ -429,67 +475,77 @@ class _NotificationsScreenState extends State<NotificationsScreen>
 
     if (provider.notifications.isEmpty) {
       return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _buildGlassContainer(
-              child: Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      AppColors.telegramGray.withValues(alpha: 0.2),
-                      AppColors.telegramGray.withValues(alpha: 0.1),
-                    ],
+        child: _isOffline
+            ? OfflineState(
+                dataType: 'notifications',
+                message: 'You are offline. No cached notifications available.',
+                onRetry: () {
+                  setState(() => _isOffline = false);
+                  _checkConnectivity();
+                  _refreshNotifications();
+                },
+              )
+            : Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _buildGlassContainer(
+                    child: Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            AppColors.telegramGray.withValues(alpha: 0.2),
+                            AppColors.telegramGray.withValues(alpha: 0.1),
+                          ],
+                        ),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.notifications_off_rounded,
+                          size: 48, color: AppColors.telegramGray),
+                    ),
                   ),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.notifications_off_rounded,
-                    size: 48, color: AppColors.telegramGray),
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text('No Notifications',
-                style: AppTextStyles.titleLarge
-                    .copyWith(color: AppColors.getTextPrimary(context))),
-            const SizedBox(height: 16),
-            Text('You\'ll see notifications here\nwhen you receive them.',
-                textAlign: TextAlign.center,
-                style: AppTextStyles.bodyMedium
-                    .copyWith(color: AppColors.getTextSecondary(context))),
-            const SizedBox(height: 24),
-            Container(
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF2AABEE), Color(0xFF5856D6)],
-                ),
-                borderRadius:
-                    BorderRadius.circular(AppThemes.borderRadiusMedium),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.telegramBlue.withValues(alpha: 0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
+                  const SizedBox(height: 24),
+                  Text('No Notifications',
+                      style: AppTextStyles.titleLarge
+                          .copyWith(color: AppColors.getTextPrimary(context))),
+                  const SizedBox(height: 16),
+                  Text('You\'ll see notifications here\nwhen you receive them.',
+                      textAlign: TextAlign.center,
+                      style: AppTextStyles.bodyMedium.copyWith(
+                          color: AppColors.getTextSecondary(context))),
+                  const SizedBox(height: 24),
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF2AABEE), Color(0xFF5856D6)],
+                      ),
+                      borderRadius:
+                          BorderRadius.circular(AppThemes.borderRadiusMedium),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.telegramBlue.withValues(alpha: 0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: ElevatedButton(
+                      onPressed: _refreshNotifications,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.transparent,
+                        foregroundColor: Colors.white,
+                        shadowColor: Colors.transparent,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(
+                                AppThemes.borderRadiusMedium)),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 24, vertical: 12),
+                      ),
+                      child: const Text('Refresh'),
+                    ),
                   ),
                 ],
               ),
-              child: ElevatedButton(
-                onPressed: _refreshNotifications,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.transparent,
-                  foregroundColor: Colors.white,
-                  shadowColor: Colors.transparent,
-                  shape: RoundedRectangleBorder(
-                      borderRadius:
-                          BorderRadius.circular(AppThemes.borderRadiusMedium)),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                ),
-                child: const Text('Refresh'),
-              ),
-            ),
-          ],
-        ),
       );
     }
 
@@ -504,6 +560,40 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         controller: _scrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
+          if (_isOffline)
+            SliverToBoxAdapter(
+              child: Container(
+                margin: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      AppColors.telegramYellow.withValues(alpha: 0.2),
+                      AppColors.telegramYellow.withValues(alpha: 0.1),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppColors.telegramYellow.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.wifi_off_rounded,
+                        color: AppColors.telegramYellow, size: 20),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Offline mode - showing cached notifications',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.telegramYellow,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           const SliverToBoxAdapter(child: SizedBox(height: 8)),
           if (unreadNotifications.isNotEmpty) ...[
             SliverToBoxAdapter(
@@ -747,7 +837,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
 
   void _handleNotificationTap(AppNotification.Notification notification,
       NotificationProvider provider) {
-    if (!notification.isRead) {
+    if (!notification.isRead && !_isOffline) {
       provider.markAsRead(notification.logId);
     }
     _showNotificationDetails(context, notification, provider);
@@ -785,8 +875,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                   height: 4,
                   margin: const EdgeInsets.symmetric(vertical: 16),
                   decoration: BoxDecoration(
-                      color:
-                          AppColors.getTextSecondary(context).withValues(alpha: 0.2),
+                      color: AppColors.getTextSecondary(context)
+                          .withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(2))),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -820,7 +910,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                         ],
                       ),
                     ),
-                    if (!notification.isRead)
+                    if (!notification.isRead && !_isOffline)
                       IconButton(
                         icon: const Icon(Icons.mark_email_read_rounded,
                             color: AppColors.telegramBlue),
@@ -873,7 +963,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                               AppThemes.borderRadiusMedium),
                           boxShadow: [
                             BoxShadow(
-                              color: AppColors.telegramRed.withValues(alpha: 0.3),
+                              color:
+                                  AppColors.telegramRed.withValues(alpha: 0.3),
                               blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),
@@ -925,7 +1016,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                 height: 4,
                 margin: const EdgeInsets.symmetric(vertical: 16),
                 decoration: BoxDecoration(
-                    color: AppColors.getTextSecondary(context).withValues(alpha: 0.2),
+                    color: AppColors.getTextSecondary(context)
+                        .withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(2))),
             ListTile(
               leading: _buildGlassContainer(
@@ -944,7 +1036,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                 _deleteNotification(notification, provider);
               },
             ),
-            if (!notification.isRead)
+            if (!notification.isRead && !_isOffline)
               ListTile(
                 leading: _buildGlassContainer(
                   child: Container(
@@ -1048,7 +1140,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                               AppThemes.borderRadiusMedium),
                           boxShadow: [
                             BoxShadow(
-                              color: AppColors.telegramRed.withValues(alpha: 0.3),
+                              color:
+                                  AppColors.telegramRed.withValues(alpha: 0.3),
                               blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),
@@ -1147,7 +1240,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                               AppThemes.borderRadiusMedium),
                           boxShadow: [
                             BoxShadow(
-                              color: AppColors.telegramBlue.withValues(alpha: 0.3),
+                              color:
+                                  AppColors.telegramBlue.withValues(alpha: 0.3),
                               blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),

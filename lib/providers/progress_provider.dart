@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:familyacademyclient/models/progress_model.dart';
 import 'package:familyacademyclient/services/api_service.dart';
 import 'package:familyacademyclient/services/device_service.dart';
+import 'package:familyacademyclient/services/user_session.dart';
 import 'package:familyacademyclient/providers/streak_provider.dart';
+import 'package:familyacademyclient/utils/constants.dart';
 import 'package:familyacademyclient/utils/helpers.dart';
 import '../utils/api_response.dart';
 
@@ -36,7 +39,6 @@ class ProgressProvider with ChangeNotifier {
       StreamController<Map<String, dynamic>>.broadcast();
 
   static const Duration _cacheDuration = Duration(minutes: 30);
-  static const Duration _syncInterval = Duration(seconds: 60);
   static const Duration _saveDebounceDuration = Duration(seconds: 5);
 
   ProgressProvider({
@@ -110,7 +112,7 @@ class ProgressProvider with ChangeNotifier {
   Future<void> _loadCachedProgress() async {
     try {
       final cachedProgress = await deviceService
-          .getCacheItem<Map<String, dynamic>>('all_user_progress',
+          .getCacheItem<Map<String, dynamic>>(AppConstants.allUserProgressKey,
               isUserSpecific: true);
 
       if (cachedProgress != null) {
@@ -118,7 +120,7 @@ class ProgressProvider with ChangeNotifier {
         _userProgress = progressList
             .map((json) => UserProgress.fromJson(json as Map<String, dynamic>))
             .toList();
-        _progressByChapter = {for (var p in _userProgress) p.chapterId: p};
+        _progressByChapter = {for (final p in _userProgress) p.chapterId: p};
         _hasLoadedProgress = true;
 
         _progressUpdateController.add(_userProgress);
@@ -129,7 +131,7 @@ class ProgressProvider with ChangeNotifier {
       }
 
       final cachedStats = await deviceService
-          .getCacheItem<Map<String, dynamic>>('overall_stats',
+          .getCacheItem<Map<String, dynamic>>(AppConstants.overallStatsKey,
               isUserSpecific: true);
       if (cachedStats != null) {
         _overallStats = cachedStats;
@@ -160,7 +162,7 @@ class ProgressProvider with ChangeNotifier {
         debugLog('ProgressProvider', '✅ Loaded overall stats from cache');
       }
 
-      _loadAllProgressFromApi();
+      await _loadAllProgressFromApi();
     } catch (e) {
       debugLog('ProgressProvider', 'Error loading cached progress: $e');
     }
@@ -201,7 +203,8 @@ class ProgressProvider with ChangeNotifier {
               '✅ Loaded ${_streakHistory.length} streak history entries');
         }
 
-        await deviceService.saveCacheItem('overall_stats', _overallStats,
+        await deviceService.saveCacheItem(
+            AppConstants.overallStatsKey, _overallStats,
             ttl: _cacheDuration, isUserSpecific: true);
 
         _hasLoadedOverall = true;
@@ -232,7 +235,7 @@ class ProgressProvider with ChangeNotifier {
     try {
       debugLog('ProgressProvider', 'Loading progress for course: $courseId');
 
-      final cacheKey = 'progress_course_$courseId';
+      final cacheKey = AppConstants.progressCourseKey(courseId);
       final cachedProgress = await deviceService
           .getCacheItem<List<dynamic>>(cacheKey, isUserSpecific: true);
 
@@ -240,23 +243,23 @@ class ProgressProvider with ChangeNotifier {
         _userProgress = cachedProgress
             .map((json) => UserProgress.fromJson(json as Map<String, dynamic>))
             .toList();
-        _progressByChapter = {for (var p in _userProgress) p.chapterId: p};
+        _progressByChapter = {for (final p in _userProgress) p.chapterId: p};
         _hasLoadedProgress = true;
 
         _progressUpdateController.add(_userProgress);
         _chapterProgressController.add(_progressByChapter);
 
         debugLog('ProgressProvider',
-            '✅ Loaded ${_userProgress.length} progress entries from cache');
+            ' Loaded ${_userProgress.length} progress entries from cache');
 
-        _refreshCourseProgressInBackground(courseId);
+        await _refreshCourseProgressInBackground(courseId);
         return;
       }
 
       final response = await apiService.getUserProgressForCourse(courseId);
       if (response.success && response.data != null) {
         _userProgress = response.data!;
-        _progressByChapter = {for (var p in _userProgress) p.chapterId: p};
+        _progressByChapter = {for (final p in _userProgress) p.chapterId: p};
         _hasLoadedProgress = true;
 
         await deviceService.saveCacheItem(
@@ -286,9 +289,9 @@ class ProgressProvider with ChangeNotifier {
       final response = await apiService.getUserProgressForCourse(courseId);
       if (response.success && response.data != null) {
         _userProgress = response.data!;
-        _progressByChapter = {for (var p in _userProgress) p.chapterId: p};
+        _progressByChapter = {for (final p in _userProgress) p.chapterId: p};
 
-        final cacheKey = 'progress_course_$courseId';
+        final cacheKey = AppConstants.progressCourseKey(courseId);
         await deviceService.saveCacheItem(
             cacheKey, _userProgress.map((p) => p.toJson()).toList(),
             ttl: _cacheDuration, isUserSpecific: true);
@@ -308,11 +311,11 @@ class ProgressProvider with ChangeNotifier {
     if (_isLoadingOverall) return;
 
     if (!forceRefresh && _hasLoadedOverall && _overallStats.isNotEmpty) {
-      debugLog('ProgressProvider', '📦 Using cached overall stats');
+      debugLog('ProgressProvider', ' Using cached overall stats');
       _overallStatsController.add(_overallStats);
       notifyListeners();
 
-      _refreshOverallProgressInBackground();
+      await _refreshOverallProgressInBackground();
       return;
     }
 
@@ -324,7 +327,7 @@ class ProgressProvider with ChangeNotifier {
       debugLog('ProgressProvider', 'Loading overall progress');
 
       final cachedStats = await deviceService
-          .getCacheItem<Map<String, dynamic>>('overall_stats',
+          .getCacheItem<Map<String, dynamic>>(AppConstants.overallStatsKey,
               isUserSpecific: true);
       if (cachedStats != null && !forceRefresh) {
         _overallStats = cachedStats;
@@ -352,7 +355,7 @@ class ProgressProvider with ChangeNotifier {
         _overallStatsController.add(_overallStats);
         debugLog('ProgressProvider', '✅ Loaded overall stats from cache');
 
-        _refreshOverallProgressInBackground();
+        await _refreshOverallProgressInBackground();
         return;
       }
 
@@ -381,7 +384,8 @@ class ProgressProvider with ChangeNotifier {
               .toList();
         }
 
-        await deviceService.saveCacheItem('overall_stats', _overallStats,
+        await deviceService.saveCacheItem(
+            AppConstants.overallStatsKey, _overallStats,
             ttl: _cacheDuration, isUserSpecific: true);
         _overallStatsController.add(_overallStats);
         notifyListeners();
@@ -428,7 +432,8 @@ class ProgressProvider with ChangeNotifier {
               .toList();
         }
 
-        await deviceService.saveCacheItem('overall_stats', _overallStats,
+        await deviceService.saveCacheItem(
+            AppConstants.overallStatsKey, _overallStats,
             ttl: _cacheDuration, isUserSpecific: true);
 
         _overallStatsController.add(_overallStats);
@@ -566,11 +571,11 @@ class ProgressProvider with ChangeNotifier {
 
   Future<void> _saveToLocalCache(int chapterId, UserProgress progress) async {
     try {
-      final cacheKey = 'progress_chapter_$chapterId';
+      final cacheKey = AppConstants.progressChapterKey(chapterId);
       await deviceService.saveCacheItem(cacheKey, progress.toJson(),
           ttl: _cacheDuration, isUserSpecific: true);
 
-      const allProgressKey = 'all_user_progress';
+      final allProgressKey = AppConstants.allUserProgressKey;
       final allProgressData = {
         'progress': _userProgress.map((p) => p.toJson()).toList(),
         'last_updated': DateTime.now().toIso8601String(),
@@ -664,8 +669,19 @@ class ProgressProvider with ChangeNotifier {
     await _syncPendingProgress();
   }
 
+  /// 🔵 FIX: Clear user data ONLY for different user logout
   Future<void> clearUserData() async {
     debugLog('ProgressProvider', 'Clearing progress data');
+
+    // Only clear if this is a different user logout
+    final session = UserSession();
+    final isDifferentUser = !await session.isSameUser();
+    final isLoggingOut = await _isLoggingOut();
+
+    if (!isDifferentUser || !isLoggingOut) {
+      debugLog('ProgressProvider', '✅ Same user - preserving progress cache');
+      return;
+    }
 
     for (final timer in _saveDebounceTimers.values) {
       timer.cancel();
@@ -685,9 +701,9 @@ class ProgressProvider with ChangeNotifier {
     _hasLoadedOverall = false;
     _hasLoadedProgress = false;
 
-    _progressUpdateController.close();
-    _chapterProgressController.close();
-    _overallStatsController.close();
+    await _progressUpdateController.close();
+    await _chapterProgressController.close();
+    await _overallStatsController.close();
 
     _progressUpdateController =
         StreamController<List<UserProgress>>.broadcast();
@@ -701,6 +717,11 @@ class ProgressProvider with ChangeNotifier {
     _overallStatsController.add(_overallStats);
 
     _notifySafely();
+  }
+
+  Future<bool> _isLoggingOut() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
   }
 
   void clearError() {

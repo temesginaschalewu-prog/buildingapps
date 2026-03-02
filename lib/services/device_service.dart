@@ -13,6 +13,7 @@ import 'package:familyacademyclient/models/course_model.dart';
 import 'package:familyacademyclient/models/chapter_model.dart';
 import 'package:familyacademyclient/models/exam_model.dart';
 import 'package:familyacademyclient/models/exam_result_model.dart';
+import 'package:familyacademyclient/services/user_session.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/constants.dart';
 import '../utils/helpers.dart';
@@ -27,7 +28,6 @@ class DeviceService {
   final Map<String, dynamic> _memoryCache = {};
   final Map<String, DateTime> _cacheTimestamps = {};
   static const Duration _defaultCacheTTL = Duration(hours: 24);
-  static const Duration _longCacheTTL = Duration(days: 7);
 
   String? _currentUserId;
   final Map<String, List<StreamController>> _cacheListeners = {};
@@ -121,8 +121,7 @@ class DeviceService {
       if (Platform.isAndroid) {
         final androidInfo = await _deviceInfo.androidInfo;
         final androidId = androidInfo.id;
-        if (androidId.isNotEmpty &&
-            androidId != 'unknown') {
+        if (androidId.isNotEmpty && androidId != 'unknown') {
           return 'ANDROID_${androidId.hashCode.abs()}';
         }
       } else if (Platform.isIOS) {
@@ -153,6 +152,7 @@ class DeviceService {
     return _persistentDeviceId!;
   }
 
+  /// Save cache item - NEVER clears on its own
   Future<void> saveCacheItem<T>(String key, T value,
       {Duration? ttl,
       bool isUserSpecific = false,
@@ -215,32 +215,37 @@ class DeviceService {
     return value;
   }
 
+  /// Get cache item - returns null if not found or expired
   Future<T?> getCacheItem<T>(String key, {bool isUserSpecific = false}) async {
     await ensureInitialized();
 
     final cacheKey = _getCacheKey(key, isUserSpecific);
 
+    // Check memory cache first
     if (_memoryCache.containsKey(cacheKey)) {
       final cacheData = _memoryCache[cacheKey] as Map<String, dynamic>;
       if (_isCacheValid(cacheData)) {
         return _decodeValue<T>(cacheData['value']);
       } else {
+        // Remove expired from memory
         _memoryCache.remove(cacheKey);
         _cacheTimestamps.remove(cacheKey);
-
-        unawaited(_prefs.remove('cache_$cacheKey'));
+        // Will check disk below
       }
     }
 
+    // Check disk cache
     try {
       final cachedStr = _prefs.getString('cache_$cacheKey');
       if (cachedStr != null) {
         final cacheData = json.decode(cachedStr) as Map<String, dynamic>;
         if (_isCacheValid(cacheData)) {
+          // Restore to memory
           _memoryCache[cacheKey] = cacheData;
           _cacheTimestamps[cacheKey] = DateTime.parse(cacheData['timestamp']);
           return _decodeValue<T>(cacheData['value']);
         } else {
+          // Remove expired
           await _prefs.remove('cache_$cacheKey');
         }
       }
@@ -273,7 +278,6 @@ class DeviceService {
       if (T == bool) return value as T;
       if (T == Map<String, dynamic>) return value as T;
 
-      // Handle List types
       if (value is List) {
         if (T == List<Subscription>) {
           return value.map((item) => Subscription.fromJson(item)).toList() as T;
@@ -299,7 +303,6 @@ class DeviceService {
         if (T == List<Exam>) {
           return value.map((item) => Exam.fromJson(item)).toList() as T;
         }
-        // FIX: Add ExamResult handling
         if (T == List<ExamResult>) {
           return value
               .map((item) {
@@ -318,7 +321,6 @@ class DeviceService {
         }
       }
 
-      // Handle single object types
       if (T == Subscription && value is Map) {
         return Subscription.fromJson(value as Map<String, dynamic>) as T;
       }
@@ -400,6 +402,7 @@ class DeviceService {
     }
   }
 
+  /// Remove specific cache item
   Future<void> removeCacheItem(String key,
       {bool isUserSpecific = false}) async {
     await ensureInitialized();
@@ -413,8 +416,17 @@ class DeviceService {
     _notifyCacheListeners(cacheKey, null);
   }
 
+  /// Clear cache by prefix - USE WITH CAUTION
   Future<void> clearCacheByPrefix(String prefix) async {
     await ensureInitialized();
+
+    // Only clear if explicitly requested and not during navigation
+    final session = UserSession();
+    if (!session.shouldClearCache('clear_by_prefix')) {
+      debugLog(
+          'DeviceService', '⚠️ Skipping clearCacheByPrefix - not authorized');
+      return;
+    }
 
     for (final key in _memoryCache.keys.toList()) {
       if (key.startsWith(prefix)) {
@@ -430,82 +442,74 @@ class DeviceService {
     }
   }
 
-  Future<void> clearUserCache() async {
+  /// Clear ONLY the old user's cache when switching users
+  Future<void> clearOldUserCache(String oldUserId) async {
     await ensureInitialized();
 
-    debugLog(
-        'DeviceService', '🧹 Clearing user cache for user: $_currentUserId');
+    debugLog('DeviceService', '🔄 Clearing cache for old user: $oldUserId');
 
+    // Clear memory cache for old user
     for (final key in _memoryCache.keys.toList()) {
-      if (key.startsWith('user_${_currentUserId}_')) {
+      if (key.startsWith('user_${oldUserId}_')) {
         _memoryCache.remove(key);
         _cacheTimestamps.remove(key);
       }
     }
 
+    // Clear disk cache for old user
     for (final key in _prefs.getKeys()) {
-      if (key.startsWith('cache_user_${_currentUserId}_')) {
+      if (key.startsWith('cache_user_${oldUserId}_')) {
         await _prefs.remove(key);
       }
     }
 
-    debugLog('DeviceService', '✅ User cache cleared');
+    debugLog('DeviceService', '✅ Old user cache cleared');
   }
 
-  Future<void> clearAllCache() async {
+  /// Clear current user's cache - ONLY for different user login
+  Future<void> clearCurrentUserCache() async {
     await ensureInitialized();
 
-    debugLog('DeviceService', '🧹 Clearing all cache');
+    final session = UserSession();
+    final isDifferentUser = !await session.isSameUser();
 
-    _memoryCache.clear();
-    _cacheTimestamps.clear();
-    _cacheListeners.clear();
+    if (!isDifferentUser) {
+      debugLog('DeviceService', '✅ Same user - preserving current user cache');
+      return;
+    }
 
-    final keys = _prefs.getKeys();
-    for (final key in keys) {
-      if (key.startsWith('cache_')) {
-        await _prefs.remove(key);
+    debugLog(
+        'DeviceService', '🔄 Different user - clearing current user cache');
+
+    if (_currentUserId != null) {
+      for (final key in _memoryCache.keys.toList()) {
+        if (key.startsWith('user_${_currentUserId}_')) {
+          _memoryCache.remove(key);
+          _cacheTimestamps.remove(key);
+        }
+      }
+
+      for (final key in _prefs.getKeys()) {
+        if (key.startsWith('cache_user_${_currentUserId}_')) {
+          await _prefs.remove(key);
+        }
       }
     }
 
-    debugLog('DeviceService', '✅ All cache cleared');
+    debugLog('DeviceService', '✅ Current user cache cleared');
   }
 
-  Future<void> clearForLogout() async {
-    await ensureInitialized();
-
-    debugLog('DeviceService', '🚪 Clearing for logout');
-
-    await clearUserCache();
-
-    final keysToClear = [
-      'current_user_id',
-      'session_start',
-      'token_saved_at',
-      'registration_complete',
-      'selected_school_id',
-      'fcm_token',
-      'notifications_enabled'
-    ];
-
-    for (final key in keysToClear) {
-      await _prefs.remove(key);
-    }
-
-    debugLog('DeviceService', '✅ Logout cleanup complete');
-  }
-
+  /// Set current user ID
   Future<void> setCurrentUserId(String userId) async {
     await ensureInitialized();
-
     _currentUserId = userId;
     await _prefs.setString('current_user_id', userId);
     debugLog('DeviceService', '👤 Current user ID set to: $userId');
   }
 
+  /// Clear current user ID - doesn't clear cache
   Future<void> clearCurrentUserId() async {
     await ensureInitialized();
-
     _currentUserId = null;
     await _prefs.remove('current_user_id');
     debugLog('DeviceService', '👤 Current user ID cleared');
@@ -565,13 +569,13 @@ class DeviceService {
     try {
       if (Platform.isAndroid) {
         final androidInfo = await _deviceInfo.androidInfo;
-        final model = androidInfo.model.toLowerCase() ?? '';
+        final model = androidInfo.model.toLowerCase();
         return model.contains('tab') ||
             model.contains('pad') ||
             model.contains('tablet');
       } else if (Platform.isIOS) {
         final iosInfo = await _deviceInfo.iosInfo;
-        return iosInfo.model.toLowerCase().contains('ipad') ?? false;
+        return iosInfo.model.toLowerCase().contains('ipad');
       }
     } catch (e) {
       debugLog('DeviceService', 'isTablet check error: $e');
@@ -600,6 +604,7 @@ class DeviceService {
     await _prefs.remove('tv_device_id');
   }
 
+  /// Clean expired cache - safe to run periodically
   Future<void> cleanExpiredCache() async {
     await ensureInitialized();
 

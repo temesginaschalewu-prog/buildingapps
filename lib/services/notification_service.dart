@@ -31,14 +31,14 @@ class NotificationService {
 
   FirebaseMessaging? _firebaseMessaging;
   String? _fcmToken;
+
+  // 🔵 FIX: Add ApiService as a field with setter
   ApiService? _apiService;
 
-  final Map<String, DateTime> _lastNotificationTime = {};
-  final Set<String> _processedMessageIds = {};
-  final Set<String> _preventDuplicateIds = {};
-
-  void setApiService(ApiService apiService) {
-    _apiService = apiService;
+  // Setter for apiService
+  set apiService(ApiService service) {
+    _apiService = service;
+    debugLog('NotificationService', 'ApiService set');
   }
 
   Future<void> init({bool forceReinit = false}) async {
@@ -79,12 +79,20 @@ class NotificationService {
       const androidSettings =
           AndroidInitializationSettings('@mipmap/ic_launcher');
       const iosSettings = DarwinInitializationSettings(
-        
+        requestAlertPermission: true,
+        requestBadgePermission: true,
+        requestSoundPermission: true,
       );
 
-      const initializationSettings = InitializationSettings(
+      // Add Linux settings for Linux platform
+      const linuxSettings = LinuxInitializationSettings(
+        defaultActionName: 'Open',
+      );
+
+      final initializationSettings = InitializationSettings(
         android: androidSettings,
         iOS: iosSettings,
+        linux: linuxSettings, // Add Linux support
       );
 
       await _localNotifications.initialize(
@@ -142,7 +150,9 @@ class NotificationService {
     try {
       if (Platform.isIOS && _firebaseMessaging != null) {
         await _firebaseMessaging!.requestPermission(
-          
+          alert: true,
+          badge: true,
+          sound: true,
         );
       }
     } catch (e) {
@@ -164,7 +174,9 @@ class NotificationService {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('fcm_token', token);
-    } catch (e) {}
+    } catch (e) {
+      debugLog('NotificationService', 'Error saving FCM token: $e');
+    }
   }
 
   Future<void> sendFcmTokenToBackendIfAuthenticated() async {
@@ -174,14 +186,23 @@ class NotificationService {
       final token = prefs.getString(AppConstants.tokenKey);
       if (token == null || token.isEmpty) return;
       await _sendFcmTokenToBackend(_fcmToken!);
-    } catch (e) {}
+    } catch (e) {
+      debugLog('NotificationService', 'Error sending FCM token: $e');
+    }
   }
 
   Future<void> _sendFcmTokenToBackend(String fcmToken) async {
     try {
-      if (_apiService == null) return;
+      if (_apiService == null) {
+        debugLog(
+            'NotificationService', 'ApiService not set, cannot send token');
+        return;
+      }
       await _apiService!.updateFcmToken(fcmToken);
-    } catch (e) {}
+      debugLog('NotificationService', 'FCM token sent to backend');
+    } catch (e) {
+      debugLog('NotificationService', 'Error sending token to backend: $e');
+    }
   }
 
   Future<void> _handleForegroundMessage(RemoteMessage message) async {
@@ -215,7 +236,7 @@ class NotificationService {
               .contains('payment') ??
           false) {
         notificationType = 'payment';
-      } else if (message.notification?.title?.toLowerCase().contains('exam') ??
+      } else if (message.notification!.title?.toLowerCase().contains('exam') ??
           false) {
         notificationType = 'academic';
       } else if (message.notification?.title
@@ -242,6 +263,10 @@ class NotificationService {
     }
   }
 
+  final Map<String, DateTime> _lastNotificationTime = {};
+  final Set<String> _processedMessageIds = {};
+  final Set<String> _preventDuplicateIds = {};
+
   String _generateNotificationId(RemoteMessage message) {
     final title = message.notification?.title ?? '';
     final body = message.notification?.body ?? '';
@@ -263,7 +288,9 @@ class NotificationService {
         'route': _getRouteFromData(data),
         'message_id': message.messageId,
       });
-    } catch (e) {}
+    } catch (e) {
+      debugLog('NotificationService', 'Error handling message: $e');
+    }
   }
 
   String _getRouteFromData(Map<String, dynamic> data) {
@@ -330,7 +357,9 @@ class NotificationService {
           'timestamp': DateTime.now(),
           'route': NotificationService._instance._getRouteFromData(data),
         });
-      } catch (e) {}
+      } catch (e) {
+        debugLog('NotificationService', 'Error on notification response: $e');
+      }
     }
   }
 
@@ -415,14 +444,16 @@ class NotificationService {
         threadIdentifier: 'family_academy',
       );
 
+      // Add Linux notification details
       const linuxDetails = LinuxNotificationDetails(
         defaultActionName: 'Open',
+        // You can add icon here if needed
       );
 
       final notificationDetails = NotificationDetails(
         android: androidDetails,
         iOS: iosDetails,
-        linux: linuxDetails,
+        linux: linuxDetails, // Add Linux support
       );
 
       final notificationId =
@@ -447,7 +478,9 @@ class NotificationService {
       try {
         _fcmToken = await _firebaseMessaging?.getToken();
         if (_fcmToken != null) await _saveFCMToken(_fcmToken!);
-      } catch (e) {}
+      } catch (e) {
+        debugLog('NotificationService', 'Error getting FCM token: $e');
+      }
     }
     return _fcmToken;
   }

@@ -3,9 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
+import '../services/user_session.dart';
 import '../models/user_model.dart';
 import '../models/payment_model.dart';
-import '../models/notification_model.dart' as AppNotification;
+import '../models/notification_model.dart' as notification_model;
+import '../utils/constants.dart';
+import '../utils/helpers.dart';
 
 class UserProvider with ChangeNotifier {
   final ApiService apiService;
@@ -13,7 +16,7 @@ class UserProvider with ChangeNotifier {
 
   User? _currentUser;
   List<Payment> _payments = [];
-  List<AppNotification.Notification> _notifications = [];
+  List<notification_model.Notification> _notifications = [];
   bool _isLoading = false;
   bool _hasLoadedProfile = false;
   bool _hasLoadedNotifications = false;
@@ -28,9 +31,9 @@ class UserProvider with ChangeNotifier {
       StreamController<User?>.broadcast();
   final StreamController<List<Payment>> _paymentsUpdateController =
       StreamController<List<Payment>>.broadcast();
-  final StreamController<List<AppNotification.Notification>>
+  final StreamController<List<notification_model.Notification>>
       _notificationsUpdateController =
-      StreamController<List<AppNotification.Notification>>.broadcast();
+      StreamController<List<notification_model.Notification>>.broadcast();
 
   DateTime? _lastProfileCacheTime;
   DateTime? _lastNotificationsCacheTime;
@@ -52,12 +55,12 @@ class UserProvider with ChangeNotifier {
 
   Future<void> _getCurrentUserId() async {
     final prefs = await SharedPreferences.getInstance();
-    _currentUserId = prefs.getString('current_user_id');
+    _currentUserId = prefs.getString(AppConstants.currentUserIdKey);
   }
 
   User? get currentUser => _currentUser;
   List<Payment> get payments => List.unmodifiable(_payments);
-  List<AppNotification.Notification> get notifications =>
+  List<notification_model.Notification> get notifications =>
       List.unmodifiable(_notifications);
   bool get isLoading => _isLoading;
   bool get isBackgroundRefreshing => _isBackgroundRefreshing;
@@ -66,7 +69,7 @@ class UserProvider with ChangeNotifier {
 
   Stream<User?> get userUpdates => _userUpdateController.stream;
   Stream<List<Payment>> get paymentsUpdates => _paymentsUpdateController.stream;
-  Stream<List<AppNotification.Notification>> get notificationsUpdates =>
+  Stream<List<notification_model.Notification>> get notificationsUpdates =>
       _notificationsUpdateController.stream;
 
   bool _shouldRefresh(String type, {bool forceRefresh = false}) {
@@ -95,6 +98,7 @@ class UserProvider with ChangeNotifier {
       completer.complete(true);
       return true;
     } catch (e) {
+      debugLog('UserProvider', 'Refresh error for $type: $e');
       completer.complete(false);
       return false;
     } finally {
@@ -116,7 +120,7 @@ class UserProvider with ChangeNotifier {
     try {
       if (!forceRefresh && _currentUserId != null) {
         final cachedUser = await deviceService.getCacheItem<User>(
-            'user_profile_$_currentUserId',
+            AppConstants.userProfileKey(_currentUserId!),
             isUserSpecific: true);
         if (cachedUser != null) {
           _currentUser = cachedUser;
@@ -146,13 +150,14 @@ class UserProvider with ChangeNotifier {
 
       if (_currentUser != null && _currentUserId != null) {
         await deviceService.saveCacheItem(
-            'user_profile_$_currentUserId', _currentUser!,
+            AppConstants.userProfileKey(_currentUserId!), _currentUser!,
             ttl: _cacheExpiry, isUserSpecific: true);
       }
 
       _userUpdateController.add(_currentUser);
     } catch (e) {
       _error = e.toString();
+      debugLog('UserProvider', 'Load user profile error: $e');
       if (!forceRefresh && _currentUser != null) {
         _userUpdateController.add(_currentUser);
       } else {
@@ -173,15 +178,16 @@ class UserProvider with ChangeNotifier {
           User? updatedUser;
           if (response.data is User) {
             updatedUser = response.data;
-          } else if (response.data is Map<String, dynamic>)
+          } else if (response.data is Map<String, dynamic>) {
             updatedUser = User.fromJson(response.data as Map<String, dynamic>);
+          }
 
           if (updatedUser != null && _currentUser?.id == updatedUser.id) {
             _currentUser = updatedUser;
             _lastProfileCacheTime = DateTime.now();
             if (_currentUserId != null) {
               await deviceService.saveCacheItem(
-                  'user_profile_$_currentUserId', _currentUser!,
+                  AppConstants.userProfileKey(_currentUserId!), _currentUser!,
                   ttl: _cacheExpiry, isUserSpecific: true);
             }
             if (_currentUser != null) _userUpdateController.add(_currentUser);
@@ -207,7 +213,7 @@ class UserProvider with ChangeNotifier {
     try {
       if (!forceRefresh && _currentUserId != null) {
         final cachedPayments = await deviceService.getCacheItem<List<Payment>>(
-            'user_payments_$_currentUserId',
+            AppConstants.userPaymentsKey(_currentUserId!),
             isUserSpecific: true);
         if (cachedPayments != null) {
           _payments = cachedPayments;
@@ -228,13 +234,14 @@ class UserProvider with ChangeNotifier {
 
       if (_currentUserId != null) {
         await deviceService.saveCacheItem(
-            'user_payments_$_currentUserId', _payments,
+            AppConstants.userPaymentsKey(_currentUserId!), _payments,
             ttl: _cacheExpiry, isUserSpecific: true);
       }
 
       _paymentsUpdateController.add(_payments);
     } catch (e) {
       _error = e.toString();
+      debugLog('UserProvider', 'Load payments error: $e');
       if (!forceRefresh && _payments.isNotEmpty) {
         _paymentsUpdateController.add(_payments);
       } else {
@@ -260,8 +267,8 @@ class UserProvider with ChangeNotifier {
     try {
       if (!forceRefresh && _currentUserId != null) {
         final cachedNotifications = await deviceService
-            .getCacheItem<List<AppNotification.Notification>>(
-                'user_notifications_$_currentUserId',
+            .getCacheItem<List<notification_model.Notification>>(
+                AppConstants.userNotificationsKey(_currentUserId!),
                 isUserSpecific: true);
         if (cachedNotifications != null) {
           _notifications = cachedNotifications;
@@ -282,13 +289,14 @@ class UserProvider with ChangeNotifier {
 
       if (_currentUserId != null) {
         await deviceService.saveCacheItem(
-            'user_notifications_$_currentUserId', _notifications,
+            AppConstants.userNotificationsKey(_currentUserId!), _notifications,
             ttl: _cacheExpiry, isUserSpecific: true);
       }
 
       _notificationsUpdateController.add(_notifications);
     } catch (e) {
       _error = e.toString();
+      debugLog('UserProvider', 'Load notifications error: $e');
       if (!forceRefresh && _notifications.isNotEmpty) {
         _notificationsUpdateController.add(_notifications);
       } else {
@@ -332,12 +340,14 @@ class UserProvider with ChangeNotifier {
           _lastPaymentsCacheTime = DateTime.now();
           if (_currentUserId != null) {
             await deviceService.saveCacheItem(
-                'user_payments_$_currentUserId', _payments,
+                AppConstants.userPaymentsKey(_currentUserId!), _payments,
                 ttl: _cacheExpiry, isUserSpecific: true);
           }
           _paymentsUpdateController.add(_payments);
         }
-      } catch (e) {}
+      } catch (e) {
+        debugLog('UserProvider', 'Refresh payments error: $e');
+      }
     });
   }
 
@@ -350,12 +360,16 @@ class UserProvider with ChangeNotifier {
           _lastNotificationsCacheTime = DateTime.now();
           if (_currentUserId != null) {
             await deviceService.saveCacheItem(
-                'user_notifications_$_currentUserId', _notifications,
-                ttl: _cacheExpiry, isUserSpecific: true);
+                AppConstants.userNotificationsKey(_currentUserId!),
+                _notifications,
+                ttl: _cacheExpiry,
+                isUserSpecific: true);
           }
           _notificationsUpdateController.add(_notifications);
         }
-      } catch (e) {}
+      } catch (e) {
+        debugLog('UserProvider', 'Refresh notifications error: $e');
+      }
     });
   }
 
@@ -386,22 +400,24 @@ class UserProvider with ChangeNotifier {
 
         if (_currentUserId != null) {
           await deviceService.saveCacheItem(
-              'user_profile_$_currentUserId', _currentUser!,
+              AppConstants.userProfileKey(_currentUserId!), _currentUser!,
               ttl: _cacheExpiry, isUserSpecific: true);
         }
         _userUpdateController.add(_currentUser);
       }
     } catch (e) {
       _error = e.toString();
+      debugLog('UserProvider', 'Update profile error: $e');
       String errorMessage = 'Failed to update profile';
       if (e.toString().contains('Email already in use')) {
         errorMessage = 'Email already in use by another user';
-      } else if (e.toString().contains('phone'))
+      } else if (e.toString().contains('phone')) {
         errorMessage = 'Phone number already in use by another user';
-      else if (e.toString().contains('Invalid email'))
+      } else if (e.toString().contains('Invalid email')) {
         errorMessage = 'Please enter a valid email address';
-      else if (e.toString().contains('Invalid phone'))
+      } else if (e.toString().contains('Invalid phone')) {
         errorMessage = 'Please enter a valid phone number';
+      }
       throw Exception(errorMessage);
     } finally {
       _isLoading = false;
@@ -413,7 +429,7 @@ class UserProvider with ChangeNotifier {
     final index = _notifications.indexWhere((n) => n.logId == logId);
     if (index != -1) {
       final notification = _notifications[index];
-      _notifications[index] = AppNotification.Notification(
+      _notifications[index] = notification_model.Notification(
         logId: notification.logId,
         notificationId: notification.notificationId,
         title: notification.title,
@@ -429,7 +445,7 @@ class UserProvider with ChangeNotifier {
 
       if (_currentUserId != null) {
         await deviceService.saveCacheItem(
-            'user_notifications_$_currentUserId', _notifications,
+            AppConstants.userNotificationsKey(_currentUserId!), _notifications,
             ttl: _cacheExpiry, isUserSpecific: true);
       }
       _notificationsUpdateController.add(_notifications);
@@ -437,13 +453,29 @@ class UserProvider with ChangeNotifier {
     }
   }
 
+  /// 🔵 FIX: Clear user data ONLY for different user logout
   Future<void> clearUserData() async {
+    debugLog('UserProvider', 'Clearing user data');
+
+    // Only clear if this is a different user logout
+    final session = UserSession();
+    final isDifferentUser = !await session.isSameUser();
+    final isLoggingOut = await _isLoggingOut();
+
+    if (!isDifferentUser || !isLoggingOut) {
+      debugLog('UserProvider', '✅ Same user - preserving user cache');
+      return;
+    }
+
     if (_currentUserId != null) {
-      await deviceService.removeCacheItem('user_profile_$_currentUserId',
+      await deviceService.removeCacheItem(
+          AppConstants.userProfileKey(_currentUserId!),
           isUserSpecific: true);
-      await deviceService.removeCacheItem('user_payments_$_currentUserId',
+      await deviceService.removeCacheItem(
+          AppConstants.userPaymentsKey(_currentUserId!),
           isUserSpecific: true);
-      await deviceService.removeCacheItem('user_notifications_$_currentUserId',
+      await deviceService.removeCacheItem(
+          AppConstants.userNotificationsKey(_currentUserId!),
           isUserSpecific: true);
     }
 
@@ -467,9 +499,15 @@ class UserProvider with ChangeNotifier {
     _notifySafely();
   }
 
+  Future<bool> _isLoggingOut() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
+  }
+
   Future<void> clearNotifications() async {
     if (_currentUserId != null) {
-      await deviceService.removeCacheItem('user_notifications_$_currentUserId',
+      await deviceService.removeCacheItem(
+          AppConstants.userNotificationsKey(_currentUserId!),
           isUserSpecific: true);
     }
     _notifications.clear();

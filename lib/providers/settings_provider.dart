@@ -1,8 +1,12 @@
 import 'dart:async';
+import 'package:familyacademyclient/utils/helpers.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
+import '../services/user_session.dart';
 import '../models/setting_model.dart';
+import '../utils/constants.dart';
 
 class SettingsProvider with ChangeNotifier {
   final ApiService apiService;
@@ -15,7 +19,6 @@ class SettingsProvider with ChangeNotifier {
   String? _error;
 
   final Map<String, DateTime> _lastCategoryLoadTime = {};
-  static const Duration _categoryLoadMinInterval = Duration(minutes: 5);
   final Map<String, Completer<bool>> _ongoingLoads = {};
   StreamController<List<Setting>> _settingsUpdateController =
       StreamController<List<Setting>>.broadcast();
@@ -421,15 +424,15 @@ class SettingsProvider with ChangeNotifier {
     _notifySafely();
 
     try {
-      final cachedSettings =
-          await deviceService.getCacheItem<List<Setting>>('all_settings');
+      final cachedSettings = await deviceService
+          .getCacheItem<List<Setting>>(AppConstants.allSettingsKey);
       if (cachedSettings != null && cachedSettings.isNotEmpty) {
         _allSettings = cachedSettings;
         _rebuildMaps();
         _isLoading = false;
         _settingsUpdateController.add(_allSettings);
         _notifySafely();
-        _refreshSettingsInBackground();
+        await _refreshSettingsInBackground();
         return;
       }
 
@@ -439,7 +442,8 @@ class SettingsProvider with ChangeNotifier {
           response.data != null &&
           response.data!.isNotEmpty) {
         _allSettings = response.data!;
-        await deviceService.saveCacheItem('all_settings', _allSettings,
+        await deviceService.saveCacheItem(
+            AppConstants.allSettingsKey, _allSettings,
             ttl: const Duration(minutes: 30));
       }
 
@@ -447,6 +451,7 @@ class SettingsProvider with ChangeNotifier {
       _settingsUpdateController.add(_allSettings);
     } catch (e) {
       _error = e.toString();
+      debugLog('SettingsProvider', 'Error getting all settings: $e');
       _rebuildMaps();
     } finally {
       _isLoading = false;
@@ -463,10 +468,13 @@ class SettingsProvider with ChangeNotifier {
         _allSettings = response.data!;
         _rebuildMaps();
         _settingsUpdateController.add(_allSettings);
-        await deviceService.saveCacheItem('all_settings', _allSettings,
+        await deviceService.saveCacheItem(
+            AppConstants.allSettingsKey, _allSettings,
             ttl: const Duration(minutes: 30));
       }
-    } catch (e) {}
+    } catch (e) {
+      debugLog('SettingsProvider', 'Background refresh error: $e');
+    }
   }
 
   Future<void> loadContactSettings({bool? forceRefresh}) async {
@@ -497,7 +505,7 @@ class SettingsProvider with ChangeNotifier {
     _notifySafely();
 
     try {
-      final cacheKey = 'settings_category_$category';
+      final cacheKey = AppConstants.settingsCategoryKey(category);
       final cachedSettings =
           await deviceService.getCacheItem<List<Setting>>(cacheKey);
       if (cachedSettings != null) {
@@ -525,6 +533,7 @@ class SettingsProvider with ChangeNotifier {
       completer.complete(true);
     } catch (e) {
       _error = e.toString();
+      debugLog('SettingsProvider', 'Error loading category $category: $e');
       completer.complete(false);
     } finally {
       _isLoading = false;
@@ -554,7 +563,20 @@ class SettingsProvider with ChangeNotifier {
     }
   }
 
+  /// 🔵 FIX: Clear user data ONLY for different user logout
   Future<void> clearUserData() async {
+    debugLog('SettingsProvider', 'Clearing settings data');
+
+    // Only clear if this is a different user logout
+    final session = UserSession();
+    final isDifferentUser = !await session.isSameUser();
+    final isLoggingOut = await _isLoggingOut();
+
+    if (!isDifferentUser || !isLoggingOut) {
+      debugLog('SettingsProvider', '✅ Same user - preserving settings cache');
+      return;
+    }
+
     await deviceService.clearCacheByPrefix('settings');
     await deviceService.clearCacheByPrefix('all_settings');
 
@@ -564,10 +586,15 @@ class SettingsProvider with ChangeNotifier {
     _lastCategoryLoadTime.clear();
     _ongoingLoads.clear();
 
-    _settingsUpdateController.close();
+    await _settingsUpdateController.close();
     _settingsUpdateController = StreamController<List<Setting>>.broadcast();
     _settingsUpdateController.add(_allSettings);
     _notifySafely();
+  }
+
+  Future<bool> _isLoggingOut() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
   }
 
   void clearError() {

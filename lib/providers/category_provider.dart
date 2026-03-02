@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
+import '../services/user_session.dart';
 import '../models/category_model.dart';
 import '../utils/helpers.dart';
 
@@ -22,8 +24,7 @@ class CategoryProvider with ChangeNotifier {
 
   Timer? _backgroundRefreshTimer;
   static const Duration _backgroundRefreshInterval = Duration(minutes: 5);
-  static const Duration _cacheDuration =
-      Duration(hours: 1); // Reduced to 1 hour
+  static const Duration _cacheDuration = Duration(hours: 1);
 
   final StreamController<List<Category>> _categoriesUpdateController =
       StreamController<List<Category>>.broadcast();
@@ -69,8 +70,7 @@ class CategoryProvider with ChangeNotifier {
           _categories = loadedCategories;
           _updateCategoryLists();
 
-          // Log image URLs for debugging
-          for (var cat in _categories) {
+          for (final cat in _categories) {
             if (cat.imageUrl != null) {
               debugLog('CategoryProvider',
                   '📸 ${cat.name} has image: ${cat.imageUrl}');
@@ -103,7 +103,6 @@ class CategoryProvider with ChangeNotifier {
           _categories[i].name != newCategories[i].name ||
           _categories[i].status != newCategories[i].status ||
           _categories[i].imageUrl != newCategories[i].imageUrl) {
-        // Check image URL changes
         return true;
       }
     }
@@ -186,8 +185,7 @@ class CategoryProvider with ChangeNotifier {
           _hasLoaded = true;
           _isLoading = false;
 
-          // Log cached image URLs
-          for (var cat in _categories) {
+          for (final cat in _categories) {
             if (cat.imageUrl != null) {
               debugLog('CategoryProvider',
                   '📸 [CACHED] ${cat.name} image: ${cat.imageUrl}');
@@ -228,13 +226,12 @@ class CategoryProvider with ChangeNotifier {
         _categories = loadedCategories;
         _updateCategoryLists();
 
-        // Log image URLs from API
-        for (var cat in _categories) {
+        for (final cat in _categories) {
           if (cat.imageUrl != null) {
             debugLog('CategoryProvider',
-                '📸 [API] ${cat.name} image: ${cat.imageUrl}');
+                ' [API] ${cat.name} image: ${cat.imageUrl}');
           } else {
-            debugLog('CategoryProvider', '📸 [API] ${cat.name} has NO image');
+            debugLog('CategoryProvider', ' [API] ${cat.name} has NO image');
           }
         }
 
@@ -415,8 +412,19 @@ class CategoryProvider with ChangeNotifier {
     _notifySafely();
   }
 
+  /// 🔵 FIX: Clear user data ONLY for different user logout
   Future<void> clearUserData() async {
-    debugLog('CategoryProvider', '🧹 Clearing category data');
+    debugLog('CategoryProvider', ' Clearing category data');
+
+    // Only clear if this is a different user logout
+    final session = UserSession();
+    final isDifferentUser = !await session.isSameUser();
+    final isLoggingOut = await _isLoggingOut();
+
+    if (!isDifferentUser || !isLoggingOut) {
+      debugLog('CategoryProvider', '✅ Same user - preserving category cache');
+      return;
+    }
 
     await deviceService.clearCacheByPrefix('categories');
 
@@ -433,6 +441,11 @@ class CategoryProvider with ChangeNotifier {
     _categoriesUpdateController.add([]);
     _subscriptionStatusController.add({});
     _notifySafely();
+  }
+
+  Future<bool> _isLoggingOut() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('is_logging_out') ?? false;
   }
 
   @override

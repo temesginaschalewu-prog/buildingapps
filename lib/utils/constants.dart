@@ -146,12 +146,14 @@ class AppConstants {
   static const String uploadImageEndpoint = '/upload/image';
   static const String uploadVideoEndpoint = '/upload/video';
   static const String uploadFileEndpoint = '/upload/file';
-// Chatbot
+
+  // Chatbot
   static const String chatbotEndpoint = '/chatbot';
   static const String chatbotChatEndpoint = '$chatbotEndpoint/chat';
   static const String chatbotConversationsEndpoint =
       '$chatbotEndpoint/conversations';
   static const String chatbotUsageEndpoint = '$chatbotEndpoint/usage';
+
   // Storage Keys
   static const String tokenKey = 'auth_token';
   static const String refreshTokenKey = 'refresh_token';
@@ -162,6 +164,99 @@ class AppConstants {
   static const String registrationCompleteKey = 'registration_complete';
   static const String selectedSchoolIdKey = 'selected_school_id';
   static const String tvDeviceIdKey = 'tv_device_id';
+
+  // 🔵 ADD THESE NEW CACHE KEYS
+  // User Session Keys
+  static const String lastUserIdKey = 'last_logged_in_user_id';
+  static const String currentUserIdKey = 'current_user_id';
+  static const String isLoggingOutKey = 'is_logging_out';
+  static const String sessionStartKey = 'session_start';
+
+  // Category Cache Keys
+  static const String categoriesCacheKey = 'categories';
+  static String categorySubscriptionKey(int categoryId) =>
+      'category_sub_$categoryId';
+
+  // Course Cache Keys
+  static String coursesByCategoryKey(int categoryId) => 'courses_$categoryId';
+
+  // Chapter Cache Keys
+  static String chaptersByCourseKey(int courseId) =>
+      'chapters_course_$courseId';
+
+  // Exam Cache Keys
+  static const String availableExamsCacheKey = 'available_exams';
+  static const String myExamResultsCacheKey = 'my_exam_results';
+  static String examsByCourseKey(int courseId) => 'exams_course_$courseId';
+  static String examQuestionsKey(int examId) => 'exam_questions_$examId';
+  static String examAccessKey(int examId) => 'exam_access_$examId';
+
+  // Progress Cache Keys
+  static String progressCourseKey(int courseId) => 'progress_course_$courseId';
+  static String progressChapterKey(int chapterId) =>
+      'progress_chapter_$chapterId';
+  static const String allUserProgressKey = 'all_user_progress';
+  static const String overallStatsKey = 'overall_stats';
+
+  // User Cache Keys
+  static String userProfileKey(String userId) => 'user_profile_$userId';
+  static String userPaymentsKey(String userId) => 'user_payments_$userId';
+  static String userNotificationsKey(String userId) =>
+      'user_notifications_$userId';
+
+  // Settings Cache Keys
+  static const String allSettingsKey = 'all_settings';
+  static String settingsCategoryKey(String category) =>
+      'settings_category_$category';
+
+  // School Cache Keys
+  static const String schoolsListKey = 'schools_list';
+  static const String selectedSchoolKey = 'selected_school';
+
+  // Parent Link Cache Keys
+  static const String parentLinkStatusKey = 'parent_link_status';
+  static const String parentTokenKey = 'parent_token';
+
+  // Video Cache Keys
+  static String videosByChapterKey(int chapterId) =>
+      'videos_chapter_$chapterId';
+  static const String downloadedVideosKey = 'downloaded_videos';
+  static const String downloadQualitiesKey = 'download_qualities';
+
+  // Question Cache Keys
+  static String questionsChapterKey(int chapterId) =>
+      'questions_chapter_$chapterId';
+  static String answerResultKey(int questionId) => 'answer_result_$questionId';
+  static String selectedAnswerKey(int questionId) =>
+      'selected_answer_$questionId';
+
+  // Note Cache Keys
+  static String notesChapterKey(int chapterId) => 'notes_chapter_$chapterId';
+  static String noteViewedKey(int noteId) => 'note_viewed_$noteId';
+
+  // Subscription Cache Keys
+  static const String subscriptionsCacheKey = 'subscriptions';
+  static String categoryAccessKey(int categoryId) =>
+      'category_access_$categoryId';
+
+  // Payment Cache Keys
+  static const String paymentsCacheKey = 'payments';
+
+  // Device Cache Keys
+  static const String persistentDeviceIdKey = 'persistent_device_id';
+  static const String tvDeviceIdCacheKey = 'tv_device_id';
+  static const String pairingCodeKey = 'pairing_code';
+  static const String pairingExpiresAtKey = 'pairing_expires_at';
+
+  // Notification Cache Keys
+  static const String notificationsCacheKey = 'notifications';
+  static const String fcmTokenCacheKey = 'fcm_token';
+
+  // Streak Cache Keys
+  static String streakKey(String userId) => 'streak_$userId';
+
+  // Server Time Cache Keys
+  static const String serverTimeInfoKey = 'server_time_info';
 
   // Constants
   static const int apiTimeoutSeconds = 30;
