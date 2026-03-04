@@ -24,10 +24,26 @@ class NoteProvider with ChangeNotifier {
   StreamController<Map<String, dynamic>> _noteUpdateController =
       StreamController<Map<String, dynamic>>.broadcast();
 
-  static const Duration cacheDuration = Duration(minutes: 15);
+  static const Duration cacheDuration =
+      Duration(hours: 24); // Increased to 24 hours
   static const Duration viewedCacheDuration = Duration(days: 30);
 
-  NoteProvider({required this.apiService, required this.deviceService});
+  NoteProvider({required this.apiService, required this.deviceService}) {
+    // Pre-load commonly used chapters in background
+    _preloadCommonChapters();
+  }
+
+  Future<void> _preloadCommonChapters() async {
+    // This runs in background, doesn't block UI
+    Future.delayed(Duration.zero, () async {
+      try {
+        final userId = await UserSession().getCurrentUserId();
+        if (userId != null) {
+          // Passive preload - just checks for any cached notes
+        }
+      } catch (e) {}
+    });
+  }
 
   List<Note> get notes => _notes;
   bool get isLoading => _isLoading;
@@ -46,7 +62,7 @@ class NoteProvider with ChangeNotifier {
 
   Future<void> loadNotesByChapter(int chapterId,
       {bool forceRefresh = false}) async {
-    if (_isLoadingForChapter[chapterId] == true) {
+    if (_isLoadingForChapter[chapterId] == true && !forceRefresh) {
       return;
     }
 
@@ -60,12 +76,61 @@ class NoteProvider with ChangeNotifier {
       return;
     }
 
+    // Try cache first
+    if (!forceRefresh) {
+      try {
+        final cachedNotes = await deviceService.getCacheItem<List<dynamic>>(
+            AppConstants.notesChapterKey(chapterId));
+
+        if (cachedNotes != null) {
+          final noteList = <Note>[];
+          for (final noteJson in cachedNotes) {
+            try {
+              noteList.add(Note.fromJson(noteJson));
+            } catch (e) {
+              debugLog('NoteProvider', 'Error parsing note from cache: $e');
+            }
+          }
+
+          if (noteList.isNotEmpty) {
+            _notesByChapter[chapterId] = noteList;
+            _hasLoadedForChapter[chapterId] = true;
+            _lastLoadedTime[chapterId] = DateTime.now();
+
+            for (final note in noteList) {
+              if (!_notes.any((n) => n.id == note.id)) {
+                _notes.add(note);
+              }
+            }
+
+            await _loadViewedStatus(chapterId);
+
+            debugLog('NoteProvider',
+                '✅ Loaded ${noteList.length} notes from cache for chapter $chapterId');
+
+            _noteUpdateController.add({
+              'type': 'notes_loaded_cached',
+              'chapter_id': chapterId,
+              'count': noteList.length
+            });
+
+            // Background refresh
+            unawaited(_refreshInBackground(chapterId));
+            return;
+          }
+        }
+      } catch (e) {
+        debugLog('NoteProvider', 'Error loading cache: $e');
+      }
+    }
+
     _isLoadingForChapter[chapterId] = true;
+    _isLoading = true;
     _error = null;
-    notifyListeners();
+    _notifySafely();
 
     try {
-      debugLog('NoteProvider', '📝 Loading notes for chapter: $chapterId');
+      debugLog('NoteProvider', '📥 Loading notes for chapter: $chapterId');
       final response = await apiService.getNotesByChapter(chapterId);
 
       final responseData = response.data ?? {};
@@ -100,7 +165,7 @@ class NoteProvider with ChangeNotifier {
         await _loadViewedStatus(chapterId);
 
         debugLog('NoteProvider',
-            '✅ Loaded ${noteList.length} notes for chapter $chapterId');
+            '✅ Loaded ${noteList.length} notes for chapter $chapterId from API');
 
         _noteUpdateController.add({
           'type': 'notes_loaded',
@@ -111,40 +176,82 @@ class NoteProvider with ChangeNotifier {
         _notesByChapter[chapterId] = [];
         _hasLoadedForChapter[chapterId] = true;
         _lastLoadedTime[chapterId] = DateTime.now();
+
+        _noteUpdateController
+            .add({'type': 'notes_loaded', 'chapter_id': chapterId, 'count': 0});
       }
     } catch (e) {
       _error = e.toString();
       debugLog('NoteProvider', '❌ loadNotesByChapter error: $e');
 
-      try {
-        final cachedNotes = await deviceService.getCacheItem<List<dynamic>>(
-            AppConstants.notesChapterKey(chapterId));
-        if (cachedNotes != null) {
-          final noteList = <Note>[];
-          for (final noteJson in cachedNotes) {
-            try {
-              noteList.add(Note.fromJson(noteJson));
-            } catch (e) {
-              debugLog('NoteProvider', 'Error parsing note from cache: $e');
-            }
-          }
-          _notesByChapter[chapterId] = noteList;
-          _hasLoadedForChapter[chapterId] = true;
-          _lastLoadedTime[chapterId] = DateTime.now();
-
-          await _loadViewedStatus(chapterId);
-        }
-      } catch (cacheError) {
-        debugLog('NoteProvider', 'Cache load error: $cacheError');
-      }
-
-      if (!_hasLoadedForChapter[chapterId]!) {
+      // Keep existing data on error
+      if (!_hasLoadedForChapter.containsKey(chapterId)) {
         _notesByChapter[chapterId] = [];
+        _hasLoadedForChapter[chapterId] = true;
+        _lastLoadedTime[chapterId] = DateTime.now();
       }
+
+      _noteUpdateController.add({
+        'type': 'notes_load_error',
+        'chapter_id': chapterId,
+        'error': _error
+      });
     } finally {
       _isLoadingForChapter[chapterId] = false;
       _isLoading = false;
-      notifyListeners();
+      _notifySafely();
+    }
+  }
+
+  Future<void> _refreshInBackground(int chapterId) async {
+    try {
+      debugLog('NoteProvider', '🔄 Background refresh for chapter $chapterId');
+
+      final response = await apiService.getNotesByChapter(chapterId);
+
+      final responseData = response.data ?? {};
+      final notesData = responseData['notes'] ?? [];
+
+      if (notesData is List) {
+        final noteList = <Note>[];
+        for (final noteJson in notesData) {
+          try {
+            noteList.add(Note.fromJson(noteJson));
+          } catch (e) {}
+        }
+
+        if (noteList.isNotEmpty) {
+          _notesByChapter[chapterId] = noteList;
+          _lastLoadedTime[chapterId] = DateTime.now();
+
+          for (final note in noteList) {
+            if (!_notes.any((n) => n.id == note.id)) {
+              _notes.add(note);
+            }
+          }
+
+          await deviceService.saveCacheItem(
+            AppConstants.notesChapterKey(chapterId),
+            noteList.map((n) => n.toJson()).toList(),
+            ttl: cacheDuration,
+          );
+
+          await _loadViewedStatus(chapterId);
+
+          _noteUpdateController.add({
+            'type': 'notes_refreshed',
+            'chapter_id': chapterId,
+            'count': noteList.length
+          });
+
+          _notifySafely();
+
+          debugLog('NoteProvider',
+              '✅ Background refresh completed for chapter $chapterId');
+        }
+      }
+    } catch (e) {
+      debugLog('NoteProvider', '⚠️ Background refresh failed: $e');
     }
   }
 
@@ -180,7 +287,7 @@ class NoteProvider with ChangeNotifier {
 
     _noteUpdateController.add({'type': 'note_viewed', 'note_id': noteId});
 
-    notifyListeners();
+    _notifySafely();
   }
 
   Future<void> markNotesAsViewedForChapter(int chapterId) async {
@@ -214,7 +321,7 @@ class NoteProvider with ChangeNotifier {
     _noteUpdateController
         .add({'type': 'notes_cleared', 'chapter_id': chapterId});
 
-    notifyListeners();
+    _notifySafely();
   }
 
   /// 🔵 FIX: Clear user data ONLY for different user logout
@@ -246,7 +353,7 @@ class NoteProvider with ChangeNotifier {
 
     _noteUpdateController.add({'type': 'all_notes_cleared'});
 
-    notifyListeners();
+    _notifySafely();
   }
 
   Future<bool> _isLoggingOut() async {
@@ -256,12 +363,22 @@ class NoteProvider with ChangeNotifier {
 
   void clearError() {
     _error = null;
-    notifyListeners();
+    _notifySafely();
   }
 
   @override
   void dispose() {
     _noteUpdateController.close();
     super.dispose();
+  }
+
+  void _notifySafely() {
+    if (hasListeners) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (hasListeners) {
+          notifyListeners();
+        }
+      });
+    }
   }
 }

@@ -13,6 +13,7 @@ import 'package:pull_to_refresh/pull_to_refresh.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
+import 'package:familyacademyclient/utils/responsive_values.dart';
 import 'package:familyacademyclient/themes/app_themes.dart';
 import '../../providers/category_provider.dart';
 import '../../providers/course_provider.dart';
@@ -22,6 +23,7 @@ import '../../widgets/course/course_card.dart';
 import '../../widgets/common/empty_state.dart';
 import '../../utils/helpers.dart';
 import 'package:shimmer/shimmer.dart';
+import '../../widgets/common/responsive_widgets.dart';
 
 class CategoryDetailScreen extends StatefulWidget {
   final int categoryId;
@@ -70,6 +72,113 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     });
   }
 
+  Widget _buildGlassContainer({required Widget child}) {
+    return ClipRRect(
+      borderRadius:
+          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
+              ],
+            ),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
+            border: Border.all(
+              color: AppColors.telegramBlue.withValues(alpha: 0.2),
+            ),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGradientButton({
+    required String label,
+    required VoidCallback onPressed,
+    required List<Color> gradient,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(colors: gradient),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+        boxShadow: [
+          BoxShadow(
+            color: gradient.first.withValues(alpha: 0.3),
+            blurRadius: ResponsiveValues.spacingS(context),
+            offset: Offset(0, ResponsiveValues.spacingXS(context)),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+          child: Container(
+            padding: EdgeInsets.symmetric(
+              vertical: ResponsiveValues.spacingM(context),
+            ),
+            alignment: Alignment.center,
+            child: ResponsiveText(
+              label,
+              style: AppTextStyles.labelLarge(context).copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGlassButton({
+    required String label,
+    required VoidCallback onPressed,
+    required Color color,
+  }) {
+    return ClipRRect(
+      borderRadius:
+          BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+      child: Material(
+        color: color.withValues(alpha: 0.1),
+        child: InkWell(
+          onTap: onPressed,
+          child: Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: ResponsiveValues.spacingL(context),
+              vertical: ResponsiveValues.spacingS(context),
+            ),
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: color.withValues(alpha: 0.3),
+              ),
+              borderRadius:
+                  BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+            ),
+            child: ResponsiveText(
+              label,
+              style: AppTextStyles.labelMedium(context).copyWith(
+                color: color,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildLocalPlaceholder() {
     if (_category == null) return const SizedBox.shrink();
 
@@ -85,32 +194,36 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
         ),
       ),
       child: Center(
-        child: Column(
+        child: ResponsiveColumn(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 80,
-              height: 80,
+              width: ResponsiveValues.avatarSizeLarge(context),
+              height: ResponsiveValues.avatarSizeLarge(context),
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.2),
                 shape: BoxShape.circle,
               ),
               child: Center(
-                child: Text(
+                child: ResponsiveText(
                   _category!.initials,
                   style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold),
+                    color: Colors.white,
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ),
-            const SizedBox(height: 16),
-            Text(_category!.name,
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold)),
+            ResponsiveSizedBox(height: AppSpacing.l),
+            ResponsiveText(
+              _category!.name,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ],
         ),
       ),
@@ -132,15 +245,20 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     await _loadFromCache();
 
     if (_category != null && _hasCachedData) {
+      // Show cached data immediately, then refresh in background
       setState(() {
         _isLoading = false;
       });
-      // Then refresh in background if online
+
       if (!_isOffline) {
         _refreshInBackground();
       }
     } else {
-      // If no cache, load fresh data (will show error if offline)
+      // No cache, show shimmer while loading fresh data
+      setState(() {
+        _isLoading = true;
+      });
+
       await _loadFreshData();
       setState(() {
         _isLoading = false;
@@ -206,17 +324,28 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
       final categoryProvider =
           Provider.of<CategoryProvider>(context, listen: false);
       await categoryProvider.loadCategories(forceRefresh: true);
+
+      if (!mounted) return;
+
       final freshCategory = categoryProvider.getCategoryById(widget.categoryId);
       if (freshCategory != null) _category = freshCategory;
 
       await _checkAccessStatus(forceCheck: true);
+      if (!mounted) return;
+
       await _loadPaymentInfo(forceRefresh: true);
+      if (!mounted) return;
+
       await _loadCourses(forceRefresh: true);
+      if (!mounted) return;
+
       await _saveToCache();
 
       if (mounted) setState(() {});
     } finally {
-      _isRefreshing = false;
+      if (mounted) {
+        _isRefreshing = false;
+      }
     }
   }
 
@@ -225,33 +354,51 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
 
     final hasConnection = await hasInternetConnection();
     if (!hasConnection) {
-      setState(() => _isOffline = true);
+      setState(() {
+        _isOffline = true;
+        _isRefreshing = false;
+      });
       _refreshController.refreshFailed();
+      showTopSnackBar(context, 'You are offline. Using cached data.',
+          isError: true);
       return;
     }
 
+    if (!mounted) return;
     setState(() => _isRefreshing = true);
 
     try {
       final categoryProvider =
           Provider.of<CategoryProvider>(context, listen: false);
       await categoryProvider.loadCategories(forceRefresh: true);
+
+      if (!mounted) return;
+
       final freshCategory = categoryProvider.getCategoryById(widget.categoryId);
       if (freshCategory != null) _category = freshCategory;
 
       await _checkAccessStatus(forceCheck: true);
+      if (!mounted) return;
+
       await _loadPaymentInfo(forceRefresh: true);
+      if (!mounted) return;
+
       await _loadCourses(forceRefresh: true);
+      if (!mounted) return;
+
       await _saveToCache();
 
       setState(() => _isOffline = false);
       showTopSnackBar(context, 'Category updated');
     } catch (e) {
+      if (!mounted) return;
       setState(() => _isOffline = true);
       showTopSnackBar(context, 'Refresh failed, using cached data',
           isError: true);
     } finally {
-      setState(() => _isRefreshing = false);
+      if (mounted) {
+        setState(() => _isRefreshing = false);
+      }
       _refreshController.refreshCompleted();
     }
   }
@@ -335,12 +482,6 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     } catch (e) {}
   }
 
-  // ... rest of the UI methods (_handlePaymentAction, _showPendingPaymentDialog,
-  // _showRejectedPaymentDialog, _buildGlassBottomSheet, _buildBottomSheetHandle,
-  // _buildDialogContent, _buildGradientButton, _buildAccessBanner, _buildStatusBanner,
-  // _buildGlassButton, _buildHeader, _buildHeaderShimmer, _buildSkeletonLoader,
-  // _buildCourseCardShimmer, etc.) remain the same as in your original file
-
   void _handlePaymentAction() {
     if (_category == null) return;
     if (_hasPendingPayment) {
@@ -366,115 +507,6 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
         extra: {'category': _category, 'paymentType': paymentType});
   }
 
-  void _showPendingPaymentDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    AppColors.getCard(context).withValues(alpha: 0.4),
-                    AppColors.getCard(context).withValues(alpha: 0.2),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(
-                  color: AppColors.statusPending.withValues(alpha: 0.3),
-                ),
-              ),
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: AppColors.statusPending.withValues(alpha: 0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.schedule_rounded,
-                      color: AppColors.statusPending,
-                      size: 32,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Payment Pending',
-                    style: AppTextStyles.titleLarge.copyWith(
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.5,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'You have a pending payment for ${_category?.name}. Please wait for admin verification (1-3 working days).',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: AppColors.getTextSecondary(context),
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    child: _buildGradientButton(
-                      label: 'OK',
-                      onPressed: () => Navigator.pop(context),
-                      gradient: const [Color(0xFF2AABEE), Color(0xFF5856D6)],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showRejectedPaymentDialog() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _buildGlassBottomSheet(
-        context,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildBottomSheetHandle(context),
-            const SizedBox(height: 20),
-            _buildDialogContent(
-              context,
-              icon: Icons.error_outline_rounded,
-              iconColor: AppColors.telegramRed,
-              title: 'Payment Rejected',
-              message: _rejectionReason != null
-                  ? 'Reason: $_rejectionReason'
-                  : 'Your previous payment was rejected.',
-              buttonText: 'Pay Now',
-              onButtonPressed: () {
-                Navigator.pop(context);
-                context.push('/payment', extra: {
-                  'category': _category,
-                  'paymentType': 'first_time',
-                });
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildGlassBottomSheet(BuildContext context, {required Widget child}) {
     return ClipRRect(
       borderRadius: const BorderRadius.only(
@@ -498,7 +530,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
             ),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(20),
+            padding: ResponsiveValues.dialogPadding(context),
             child: child,
           ),
         ),
@@ -509,11 +541,12 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
   Widget _buildBottomSheetHandle(BuildContext context) {
     return Center(
       child: Container(
-        width: 40,
-        height: 4,
+        width: ResponsiveValues.spacingXXL(context),
+        height: ResponsiveValues.spacingXS(context),
         decoration: BoxDecoration(
           color: AppColors.getTextSecondary(context).withValues(alpha: 0.3),
-          borderRadius: BorderRadius.circular(2),
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusSmall(context)),
         ),
       ),
     );
@@ -528,34 +561,38 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     required String buttonText,
     required VoidCallback onButtonPressed,
   }) {
-    return Column(
+    return ResponsiveColumn(
       children: [
-        Row(
+        ResponsiveRow(
           children: [
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
               decoration: BoxDecoration(
                 color: iconColor.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: iconColor, size: 28),
+              child: ResponsiveIcon(
+                icon,
+                size: ResponsiveValues.iconSizeL(context),
+                color: iconColor,
+              ),
             ),
-            const SizedBox(width: 16),
+            ResponsiveSizedBox(width: AppSpacing.l),
             Expanded(
-              child: Column(
+              child: ResponsiveColumn(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  ResponsiveText(
                     title,
-                    style: AppTextStyles.titleMedium.copyWith(
+                    style: AppTextStyles.titleMedium(context).copyWith(
                       fontWeight: FontWeight.w600,
                       letterSpacing: -0.3,
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
+                  ResponsiveSizedBox(height: AppSpacing.xs),
+                  ResponsiveText(
                     message,
-                    style: AppTextStyles.bodySmall.copyWith(
+                    style: AppTextStyles.bodySmall(context).copyWith(
                       color: AppColors.getTextSecondary(context),
                     ),
                   ),
@@ -564,32 +601,36 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
             ),
           ],
         ),
-        const SizedBox(height: 24),
-        Row(
+        ResponsiveSizedBox(height: AppSpacing.xl),
+        ResponsiveRow(
           children: [
             Expanded(
               child: TextButton(
                 onPressed: () => Navigator.pop(context),
                 style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  padding: EdgeInsets.symmetric(
+                    vertical: ResponsiveValues.spacingM(context),
+                  ),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(
+                      ResponsiveValues.radiusMedium(context),
+                    ),
                   ),
                 ),
-                child: Text(
+                child: ResponsiveText(
                   'Cancel',
-                  style: AppTextStyles.labelLarge.copyWith(
+                  style: AppTextStyles.labelLarge(context).copyWith(
                     color: AppColors.getTextSecondary(context),
                   ),
                 ),
               ),
             ),
-            const SizedBox(width: 12),
+            ResponsiveSizedBox(width: AppSpacing.m),
             Expanded(
               child: _buildGradientButton(
                 label: buttonText,
                 onPressed: onButtonPressed,
-                gradient: const [Color(0xFF2AABEE), Color(0xFF5856D6)],
+                gradient: AppColors.blueGradient,
               ),
             ),
           ],
@@ -598,39 +639,112 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     );
   }
 
-  Widget _buildGradientButton({
-    required String label,
-    required VoidCallback onPressed,
-    required List<Color> gradient,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(colors: gradient),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: gradient.first.withValues(alpha: 0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onPressed,
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            alignment: Alignment.center,
-            child: Text(
-              label,
-              style: AppTextStyles.labelLarge.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
+  void _showPendingPaymentDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: ClipRRect(
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    AppColors.getCard(context).withValues(alpha: 0.4),
+                    AppColors.getCard(context).withValues(alpha: 0.2),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(
+                    ResponsiveValues.radiusXLarge(context)),
+                border: Border.all(
+                  color: AppColors.statusPending.withValues(alpha: 0.3),
+                ),
+              ),
+              padding: ResponsiveValues.dialogPadding(context),
+              child: ResponsiveColumn(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
+                    decoration: BoxDecoration(
+                      color: AppColors.statusPending.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: ResponsiveIcon(
+                      Icons.schedule_rounded,
+                      size: ResponsiveValues.iconSizeXL(context),
+                      color: AppColors.statusPending,
+                    ),
+                  ),
+                  ResponsiveSizedBox(height: AppSpacing.l),
+                  ResponsiveText(
+                    'Payment Pending',
+                    style: AppTextStyles.titleLarge(context).copyWith(
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                  ResponsiveSizedBox(height: AppSpacing.s),
+                  ResponsiveText(
+                    'You have a pending payment for ${_category?.name}. Please wait for admin verification (1-3 working days).',
+                    style: AppTextStyles.bodyMedium(context).copyWith(
+                      color: AppColors.getTextSecondary(context),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  ResponsiveSizedBox(height: AppSpacing.xl),
+                  SizedBox(
+                    width: double.infinity,
+                    child: _buildGradientButton(
+                      label: 'OK',
+                      onPressed: () => Navigator.pop(context),
+                      gradient: AppColors.blueGradient,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  void _showRejectedPaymentDialog() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _buildGlassBottomSheet(
+        context,
+        child: ResponsiveColumn(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildBottomSheetHandle(context),
+            ResponsiveSizedBox(height: AppSpacing.xl),
+            _buildDialogContent(
+              context,
+              icon: Icons.error_outline_rounded,
+              iconColor: AppColors.telegramRed,
+              title: 'Payment Rejected',
+              message: _rejectionReason != null
+                  ? 'Reason: $_rejectionReason'
+                  : 'Your previous payment was rejected.',
+              buttonText: 'Pay Now',
+              onButtonPressed: () {
+                Navigator.pop(context);
+                context.push('/payment', extra: {
+                  'category': _category,
+                  'paymentType': 'first_time',
+                });
+              },
+            ),
+          ],
         ),
       ),
     );
@@ -709,59 +823,57 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
   }) {
     return Container(
       margin: EdgeInsets.symmetric(
-        horizontal: ScreenSize.responsiveValue(
-          context: context,
-          mobile: 16,
-          tablet: 20,
-          desktop: 24,
-        ),
-        vertical: 8,
+        horizontal: ResponsiveValues.sectionPadding(context),
+        vertical: ResponsiveValues.spacingS(context),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
           child: Container(
-            padding: EdgeInsets.all(ScreenSize.responsiveValue(
-              context: context,
-              mobile: 16,
-              tablet: 20,
-              desktop: 24,
-            )),
+            padding: EdgeInsets.all(ResponsiveValues.sectionPadding(context)),
             decoration: BoxDecoration(
               color: backgroundColor ?? color.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(20),
+              borderRadius:
+                  BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
               border: Border.all(
                 color: borderColor ?? color.withValues(alpha: 0.3),
               ),
             ),
-            child: Row(
+            child: ResponsiveRow(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
                   decoration: BoxDecoration(
                     color: color.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(
+                      ResponsiveValues.radiusMedium(context),
+                    ),
                   ),
-                  child: Icon(icon, color: color, size: 24),
+                  child: ResponsiveIcon(
+                    icon,
+                    size: ResponsiveValues.iconSizeL(context),
+                    color: color,
+                  ),
                 ),
-                const SizedBox(width: 16),
+                ResponsiveSizedBox(width: AppSpacing.l),
                 Expanded(
-                  child: Column(
+                  child: ResponsiveColumn(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
+                      ResponsiveText(
                         title,
-                        style: AppTextStyles.titleSmall.copyWith(
+                        style: AppTextStyles.titleSmall(context).copyWith(
                           color: color,
                           fontWeight: FontWeight.w600,
                           letterSpacing: -0.3,
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
+                      ResponsiveSizedBox(height: AppSpacing.xs),
+                      ResponsiveText(
                         message,
-                        style: AppTextStyles.bodySmall.copyWith(
+                        style: AppTextStyles.bodySmall(context).copyWith(
                           color: AppColors.getTextSecondary(context),
                         ),
                       ),
@@ -769,7 +881,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                   ),
                 ),
                 if (actionText != null && onAction != null) ...[
-                  const SizedBox(width: 12),
+                  ResponsiveSizedBox(width: AppSpacing.m),
                   _buildGlassButton(
                     label: actionText,
                     onPressed: onAction,
@@ -784,43 +896,15 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     );
   }
 
-  Widget _buildGlassButton({
-    required String label,
-    required VoidCallback onPressed,
-    required Color color,
-  }) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: Material(
-        color: color.withValues(alpha: 0.1),
-        child: InkWell(
-          onTap: onPressed,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: color.withValues(alpha: 0.3),
-              ),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              label,
-              style: AppTextStyles.labelMedium.copyWith(
-                color: color,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildHeader() {
     if (_category == null) return const SizedBox.shrink();
 
-    final headerHeight = ScreenSize.responsiveValue(
-        context: context, mobile: 200.0, tablet: 250.0, desktop: 300.0);
+    final headerHeight = ScreenSize.responsiveDouble(
+      context: context,
+      mobile: 200.0,
+      tablet: 250.0,
+      desktop: 300.0,
+    );
 
     return Stack(
       children: [
@@ -845,87 +929,101 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
           child: Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.transparent,
-                    Colors.black.withValues(alpha: 0.7)
-                  ]),
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.transparent,
+                  Colors.black.withValues(alpha: 0.7),
+                ],
+              ),
             ),
           ),
         ),
 
         // Content
         Positioned(
-          bottom: AppThemes.spacingXL,
-          left: ScreenSize.responsiveValue(
-              context: context,
-              mobile: AppThemes.spacingL,
-              tablet: AppThemes.spacingXL,
-              desktop: AppThemes.spacingXXL),
-          right: ScreenSize.responsiveValue(
-              context: context,
-              mobile: AppThemes.spacingL,
-              tablet: AppThemes.spacingXL,
-              desktop: AppThemes.spacingXXL),
-          child: Column(
+          bottom: ResponsiveValues.spacingXL(context),
+          left: ResponsiveValues.spacingL(context),
+          right: ResponsiveValues.spacingL(context),
+          child: ResponsiveColumn(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(_category!.name,
-                  style: AppTextStyles.displaySmall.copyWith(
-                      color: Colors.white, fontWeight: FontWeight.w700)),
+              ResponsiveText(
+                _category!.name,
+                style: AppTextStyles.displaySmall(context).copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
               if (_category!.description != null &&
                   _category!.description!.isNotEmpty)
                 Padding(
-                  padding: const EdgeInsets.only(top: AppThemes.spacingS),
-                  child: Text(_category!.description!,
-                      style: AppTextStyles.bodyLarge
-                          .copyWith(color: Colors.white.withValues(alpha: 0.9)),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis),
+                  padding: EdgeInsets.only(
+                    top: ResponsiveValues.spacingS(context),
+                  ),
+                  child: ResponsiveText(
+                    _category!.description!,
+                    style: AppTextStyles.bodyLarge(context).copyWith(
+                      color: Colors.white.withValues(alpha: 0.9),
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-              const SizedBox(height: AppThemes.spacingM),
-              Row(
+              ResponsiveSizedBox(height: AppSpacing.m),
+              ResponsiveRow(
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: AppThemes.spacingM,
-                        vertical: AppThemes.spacingXS),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: ResponsiveValues.spacingM(context),
+                      vertical: ResponsiveValues.spacingXS(context),
+                    ),
                     decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.2),
-                        borderRadius:
-                            BorderRadius.circular(AppThemes.borderRadiusFull)),
-                    child: Row(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(
+                        ResponsiveValues.radiusFull(context),
+                      ),
+                    ),
+                    child: ResponsiveRow(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const Icon(Icons.menu_book_rounded,
                             size: 16, color: Colors.white),
-                        const SizedBox(width: AppThemes.spacingXS),
-                        Text('${_category!.courseCount} courses',
-                            style: AppTextStyles.labelSmall
-                                .copyWith(color: Colors.white)),
+                        ResponsiveSizedBox(width: AppSpacing.xs),
+                        ResponsiveText(
+                          '${_category!.courseCount} courses',
+                          style: AppTextStyles.labelSmall(context).copyWith(
+                            color: Colors.white,
+                          ),
+                        ),
                       ],
                     ),
                   ),
                   if (_category!.price != null && _category!.price! > 0) ...[
-                    const SizedBox(width: AppThemes.spacingM),
+                    ResponsiveSizedBox(width: AppSpacing.m),
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: AppThemes.spacingM,
-                          vertical: AppThemes.spacingXS),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: ResponsiveValues.spacingM(context),
+                        vertical: ResponsiveValues.spacingXS(context),
+                      ),
                       decoration: BoxDecoration(
-                          color: AppColors.telegramBlue,
-                          borderRadius: BorderRadius.circular(
-                              AppThemes.borderRadiusFull)),
-                      child: Row(
+                        color: AppColors.telegramBlue,
+                        borderRadius: BorderRadius.circular(
+                          ResponsiveValues.radiusFull(context),
+                        ),
+                      ),
+                      child: ResponsiveRow(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           const Icon(Icons.attach_money,
                               size: 16, color: Colors.white),
-                          Text(_category!.priceDisplay,
-                              style: AppTextStyles.labelSmall.copyWith(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700)),
+                          ResponsiveText(
+                            _category!.priceDisplay,
+                            style: AppTextStyles.labelSmall(context).copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -938,36 +1036,43 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
 
         // Back Button
         Positioned(
-          top: MediaQuery.of(context).padding.top + AppThemes.spacingM,
-          left: AppThemes.spacingL,
+          top: MediaQuery.of(context).padding.top +
+              ResponsiveValues.spacingM(context),
+          left: ResponsiveValues.spacingL(context),
           child: Container(
             decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.3),
-                shape: BoxShape.circle),
+              color: Colors.black.withValues(alpha: 0.3),
+              shape: BoxShape.circle,
+            ),
             child: IconButton(
-                icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-                onPressed: () => context.pop()),
+              icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+              onPressed: () => context.pop(),
+            ),
           ),
         ),
 
         // Refresh Indicator
         if (_isRefreshing)
           Positioned(
-            top: MediaQuery.of(context).padding.top + AppThemes.spacingM,
-            right: AppThemes.spacingL,
+            top: MediaQuery.of(context).padding.top +
+                ResponsiveValues.spacingM(context),
+            right: ResponsiveValues.spacingL(context),
             child: Container(
-              width: 40,
-              height: 40,
+              width: ResponsiveValues.iconSizeXL(context),
+              height: ResponsiveValues.iconSizeXL(context),
               decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.3),
-                  shape: BoxShape.circle),
-              child: const Center(
+                color: Colors.black.withValues(alpha: 0.3),
+                shape: BoxShape.circle,
+              ),
+              child: Center(
                 child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation(Colors.white))),
+                  width: ResponsiveValues.iconSizeS(context),
+                  height: ResponsiveValues.iconSizeS(context),
+                  child: const CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation(Colors.white),
+                  ),
+                ),
               ),
             ),
           ),
@@ -993,20 +1098,26 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
   }
 
   Widget _buildSkeletonLoader() {
+    final columns = ResponsiveValues.gridColumns(context);
+
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       body: CustomScrollView(
         physics: const NeverScrollableScrollPhysics(),
         slivers: [
           SliverAppBar(
-            expandedHeight: ScreenSize.responsiveValue(
-                context: context, mobile: 200, tablet: 250, desktop: 300),
+            expandedHeight: ScreenSize.responsiveDouble(
+              context: context,
+              mobile: 200,
+              tablet: 250,
+              desktop: 300,
+            ),
             pinned: true,
             flexibleSpace: FlexibleSpaceBar(
               background: _buildHeaderShimmer(),
             ),
             leading: Container(
-              margin: const EdgeInsets.all(8),
+              margin: EdgeInsets.all(ResponsiveValues.spacingS(context)),
               decoration: BoxDecoration(
                 color: Colors.black.withValues(alpha: 0.3),
                 shape: BoxShape.circle,
@@ -1018,16 +1129,17 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
           ),
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.all(AppThemes.spacingL),
-              child: Column(
+              padding: ResponsiveValues.screenPadding(context),
+              child: ResponsiveColumn(
                 children: [
                   // Banner Shimmer
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(
+                        ResponsiveValues.radiusLarge(context)),
                     child: BackdropFilter(
                       filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
                       child: Container(
-                        height: 80,
+                        height: ResponsiveValues.spacingXXL(context) * 3,
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
@@ -1039,18 +1151,20 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  ResponsiveSizedBox(height: AppSpacing.xl),
                   // Title Shimmer
-                  Row(
+                  ResponsiveRow(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(
+                          ResponsiveValues.radiusSmall(context),
+                        ),
                         child: BackdropFilter(
                           filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
                           child: Container(
-                            width: 100,
-                            height: 24,
+                            width: ResponsiveValues.spacingXXXL(context) * 2,
+                            height: ResponsiveValues.spacingXL(context),
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: [
@@ -1065,12 +1179,13 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                         ),
                       ),
                       ClipRRect(
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: BorderRadius.circular(
+                            ResponsiveValues.radiusFull(context)),
                         child: BackdropFilter(
                           filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
                           child: Container(
-                            width: 40,
-                            height: 24,
+                            width: ResponsiveValues.spacingXXL(context),
+                            height: ResponsiveValues.spacingXL(context),
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: [
@@ -1086,17 +1201,19 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  ResponsiveSizedBox(height: AppSpacing.l),
                 ],
               ),
             ),
           ),
           SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: AppThemes.spacingL),
+            padding: ResponsiveValues.screenPadding(context),
             sliver: SliverList(
               delegate: SliverChildBuilderDelegate(
                 (context, index) => Padding(
-                  padding: const EdgeInsets.only(bottom: AppThemes.spacingL),
+                  padding: EdgeInsets.only(
+                    bottom: ResponsiveValues.spacingL(context),
+                  ),
                   child: _buildCourseCardShimmer(index: index),
                 ),
                 childCount: 5,
@@ -1109,21 +1226,16 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
   }
 
   Widget _buildCourseCardShimmer({required int index}) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = screenWidth < 600;
-    final isTablet = screenWidth >= 600 && screenWidth < 1024;
-
-    final iconSize = isMobile ? 48.0 : (isTablet ? 56.0 : 64.0);
-    final padding = isMobile
-        ? AppThemes.spacingL
-        : (isTablet ? AppThemes.spacingXL : AppThemes.spacingXXL);
+    final iconSize = ResponsiveValues.iconSizeXXL(context);
+    final padding = ResponsiveValues.cardPadding(context);
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
+      borderRadius:
+          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
         child: Container(
-          padding: EdgeInsets.all(padding),
+          padding: padding,
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
@@ -1133,12 +1245,13 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                 AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
-            borderRadius: BorderRadius.circular(24),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
             border: Border.all(
               color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
             ),
           ),
-          child: Row(
+          child: ResponsiveRow(
             children: [
               // Icon shimmer
               Shimmer.fromColors(
@@ -1149,15 +1262,17 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                   height: iconSize,
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(
+                      ResponsiveValues.radiusLarge(context),
+                    ),
                   ),
                 ),
               ),
-              const SizedBox(width: 16),
+              ResponsiveSizedBox(width: AppSpacing.l),
 
               // Content shimmer
               Expanded(
-                child: Column(
+                child: ResponsiveColumn(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Shimmer.fromColors(
@@ -1165,53 +1280,61 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                       highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                       child: Container(
                         width: double.infinity,
-                        height: 20,
+                        height: ResponsiveValues.spacingXL(context),
                         decoration: BoxDecoration(
                           color: Colors.white,
-                          borderRadius: BorderRadius.circular(4),
+                          borderRadius: BorderRadius.circular(
+                            ResponsiveValues.radiusSmall(context),
+                          ),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    ResponsiveSizedBox(height: AppSpacing.m),
                     Shimmer.fromColors(
                       baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
                       highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                       child: Container(
-                        width: 150,
-                        height: 16,
+                        width: ResponsiveValues.spacingXXXL(context) * 3,
+                        height: ResponsiveValues.spacingL(context),
                         decoration: BoxDecoration(
                           color: Colors.white,
-                          borderRadius: BorderRadius.circular(4),
+                          borderRadius: BorderRadius.circular(
+                            ResponsiveValues.radiusSmall(context),
+                          ),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    Row(
+                    ResponsiveSizedBox(height: AppSpacing.l),
+                    ResponsiveRow(
                       children: [
                         Shimmer.fromColors(
                           baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
                           highlightColor:
                               Colors.grey[100]!.withValues(alpha: 0.6),
                           child: Container(
-                            width: 80,
-                            height: 24,
+                            width: ResponsiveValues.spacingXXL(context) * 2,
+                            height: ResponsiveValues.spacingXL(context),
                             decoration: BoxDecoration(
                               color: Colors.white,
-                              borderRadius: BorderRadius.circular(20),
+                              borderRadius: BorderRadius.circular(
+                                ResponsiveValues.radiusFull(context),
+                              ),
                             ),
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        ResponsiveSizedBox(width: AppSpacing.m),
                         Shimmer.fromColors(
                           baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
                           highlightColor:
                               Colors.grey[100]!.withValues(alpha: 0.6),
                           child: Container(
-                            width: 70,
-                            height: 24,
+                            width: ResponsiveValues.spacingXXL(context) * 2,
+                            height: ResponsiveValues.spacingXL(context),
                             decoration: BoxDecoration(
                               color: Colors.white,
-                              borderRadius: BorderRadius.circular(20),
+                              borderRadius: BorderRadius.circular(
+                                ResponsiveValues.radiusFull(context),
+                              ),
                             ),
                           ),
                         ),
@@ -1226,8 +1349,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                 baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
                 highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                 child: Container(
-                  width: 24,
-                  height: 24,
+                  width: ResponsiveValues.iconSizeL(context),
+                  height: ResponsiveValues.iconSizeL(context),
                   decoration: const BoxDecoration(
                     color: Colors.white,
                     shape: BoxShape.circle,
@@ -1239,70 +1362,93 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
         ),
       ),
     ).animate().fadeIn(
-        duration: AppThemes.animationDurationMedium, delay: (index * 50).ms);
+          duration: AppThemes.animationDurationMedium,
+          delay: (index * 50).ms,
+        );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    // Show skeleton loader immediately on first load
-    if (_isLoading) return _buildSkeletonLoader();
+  int _getChildCount(List courses, bool isLoadingCourses, bool isLoading) {
+    // If we have courses, show all of them
+    if (courses.isNotEmpty) {
+      return courses.length;
+    }
+
+    // If we're loading and have no courses, show 5 shimmer items
+    if (isLoading || isLoadingCourses) {
+      return 5;
+    }
+
+    // If we're done loading and have no courses, show 1 item (the empty state)
+    return 1;
+  }
+
+  Widget _buildMobileLayout() {
+    if (_isLoading && !_hasCachedData) {
+      return _buildSkeletonLoader(); // Show shimmer immediately if no cache
+    }
 
     if (_category == null) {
+      // Only show this if we have no cache AND no data after loading attempt
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
         appBar: AppBar(
           backgroundColor: AppColors.getBackground(context),
           elevation: 0,
           leading: IconButton(
-              icon: Icon(Icons.arrow_back_rounded,
-                  color: AppColors.getTextPrimary(context)),
-              onPressed: () => context.pop()),
+            icon: ResponsiveIcon(
+              Icons.arrow_back_rounded,
+              color: AppColors.getTextPrimary(context),
+            ),
+            onPressed: () => context.pop(),
+          ),
         ),
         body: Center(
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(30),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusXXLarge(context)),
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
               child: Container(
-                padding: const EdgeInsets.all(32),
+                padding: ResponsiveValues.dialogPadding(context),
                 decoration: BoxDecoration(
                   color: AppColors.getCard(context).withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(30),
+                  borderRadius: BorderRadius.circular(
+                      ResponsiveValues.radiusXXLarge(context)),
                   border: Border.all(
                     color: AppColors.telegramRed.withValues(alpha: 0.2),
                   ),
                 ),
-                child: Column(
+                child: ResponsiveColumn(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
+                    ResponsiveIcon(
                       Icons.error_outline_rounded,
-                      size: 64,
+                      size: ResponsiveValues.iconSizeXXL(context),
                       color: AppColors.telegramRed.withValues(alpha: 0.5),
                     ),
-                    const SizedBox(height: 16),
-                    Text(
+                    ResponsiveSizedBox(height: AppSpacing.l),
+                    ResponsiveText(
                       'Category not found',
-                      style: AppTextStyles.titleLarge.copyWith(
+                      style: AppTextStyles.titleLarge(context).copyWith(
                         fontWeight: FontWeight.w600,
                         letterSpacing: -0.5,
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _isOffline
+                    ResponsiveSizedBox(height: AppSpacing.s),
+                    ResponsiveText(
+                      _isOffline && !_hasCachedData
                           ? 'No cached data available. Please check your connection.'
                           : 'The category you\'re looking for doesn\'t exist.',
-                      style: AppTextStyles.bodyMedium.copyWith(
+                      style: AppTextStyles.bodyMedium(context).copyWith(
                         color: AppColors.getTextSecondary(context),
                       ),
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 24),
+                    ResponsiveSizedBox(height: AppSpacing.xl),
                     _buildGradientButton(
                       label: 'Retry',
                       onPressed: _manualRefresh,
-                      gradient: const [Color(0xFF2AABEE), Color(0xFF5856D6)],
+                      gradient: AppColors.blueGradient,
                     ),
                   ],
                 ),
@@ -1334,15 +1480,16 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
         child: SmartRefresher(
           controller: _refreshController,
           onRefresh: _manualRefresh,
-          header: const WaterDropHeader(
+          header: WaterDropHeader(
             waterDropColor: AppColors.telegramBlue,
             refresh: SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor:
-                        AlwaysStoppedAnimation(AppColors.telegramBlue))),
+              width: ResponsiveValues.iconSizeL(context),
+              height: ResponsiveValues.iconSizeL(context),
+              child: const CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation(AppColors.telegramBlue),
+              ),
+            ),
           ),
           child: CustomScrollView(
             physics: const BouncingScrollPhysics(),
@@ -1350,59 +1497,74 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
               SliverToBoxAdapter(child: _buildHeader()),
               SliverToBoxAdapter(child: _buildAccessBanner()),
               SliverPadding(
-                padding: EdgeInsets.all(ScreenSize.responsiveValue(
-                    context: context,
-                    mobile: AppThemes.spacingL,
-                    tablet: AppThemes.spacingXL,
-                    desktop: AppThemes.spacingXXL)),
+                padding: ResponsiveValues.screenPadding(context),
                 sliver: SliverToBoxAdapter(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: ResponsiveRow(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('Courses',
-                              style: AppTextStyles.titleLarge.copyWith(
-                                  color: AppColors.getTextPrimary(context),
-                                  fontWeight: FontWeight.w700)),
-                          if (!isLoadingCourses && courses.isNotEmpty)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: AppThemes.spacingM,
-                                  vertical: AppThemes.spacingXS),
-                              decoration: BoxDecoration(
-                                  color: AppColors.blueFaded,
-                                  borderRadius: BorderRadius.circular(
-                                      AppThemes.borderRadiusFull),
-                                  border: Border.all(
-                                      color: AppColors.telegramBlue
-                                          .withValues(alpha: 0.3))),
-                              child: Text('${courses.length}',
-                                  style: AppTextStyles.labelMedium.copyWith(
-                                      color: AppColors.telegramBlue,
-                                      fontWeight: FontWeight.w600)),
-                            ),
-                        ],
+                      ResponsiveText(
+                        'Courses',
+                        style: AppTextStyles.titleLarge(context).copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
+                      if (!isLoadingCourses && courses.isNotEmpty)
+                        Container(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: ResponsiveValues.spacingM(context),
+                            vertical: ResponsiveValues.spacingXS(context),
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.blueFaded,
+                            borderRadius: BorderRadius.circular(
+                              ResponsiveValues.radiusFull(context),
+                            ),
+                            border: Border.all(
+                              color:
+                                  AppColors.telegramBlue.withValues(alpha: 0.3),
+                            ),
+                          ),
+                          child: ResponsiveText(
+                            '${courses.length}',
+                            style: AppTextStyles.labelMedium(context).copyWith(
+                              color: AppColors.telegramBlue,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
               ),
               SliverPadding(
-                padding: EdgeInsets.symmetric(
-                    horizontal: ScreenSize.responsiveValue(
-                        context: context,
-                        mobile: AppThemes.spacingL,
-                        tablet: AppThemes.spacingXL,
-                        desktop: AppThemes.spacingXXL)),
+                padding: ResponsiveValues.screenPadding(context),
                 sliver: SliverList(
                   delegate: SliverChildBuilderDelegate(
                     (context, index) {
-                      // Show shimmer while loading and no courses
-                      if (isLoadingCourses && courses.isEmpty) {
+                      // If we're still loading initial data (first load) and have no courses, show shimmer
+                      if (_isLoading && courses.isEmpty) {
                         return _buildCourseCardShimmer(index: index);
                       }
+
+                      // If we're loading more (background refresh) but have courses, show actual courses
+                      if (isLoadingCourses && courses.isNotEmpty) {
+                        if (index < courses.length) {
+                          final course = courses[index];
+                          return CourseCard(
+                            course: course,
+                            categoryId: widget.categoryId,
+                            onTap: () => context.push('/course/${course.id}',
+                                extra: {
+                                  'course': course,
+                                  'category': _category,
+                                  'hasAccess': _hasAccess
+                                }),
+                            index: index,
+                          );
+                        }
+                        return null;
+                      }
+
                       // Show actual courses
                       if (index < courses.length) {
                         final course = courses[index];
@@ -1418,38 +1580,62 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                           index: index,
                         );
                       }
+
+                      // Show empty state only when not loading and no courses
+                      if (!_isLoading &&
+                          !isLoadingCourses &&
+                          courses.isEmpty &&
+                          index == 0) {
+                        return Center(
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(
+                                vertical: ResponsiveValues.spacingXXL(context)),
+                            child: EmptyState(
+                              icon: Icons.menu_book_rounded,
+                              title: 'No Courses Yet',
+                              message: _isOffline
+                                  ? 'No cached courses available. Connect to load courses.'
+                                  : 'Courses will appear here when available.',
+                              type: EmptyStateType.noData,
+                              actionText: 'Retry',
+                              onAction: _manualRefresh,
+                            ),
+                          ),
+                        );
+                      }
+
                       return null;
                     },
-                    childCount: isLoadingCourses && courses.isEmpty
-                        ? 5
-                        : courses.isEmpty
-                            ? 1
-                            : courses.length,
+                    childCount:
+                        _getChildCount(courses, isLoadingCourses, _isLoading),
                   ),
                 ),
               ),
-              if (!isLoadingCourses && courses.isEmpty)
-                SliverFillRemaining(
-                  child: Center(
-                    child: EmptyState(
-                      icon: Icons.menu_book_rounded,
-                      title: 'No Courses Yet',
-                      message: _isOffline
-                          ? 'No cached courses available. Connect to load courses.'
-                          : 'Courses will appear here when available.',
-                      type: EmptyStateType.noData,
-                      actionText: 'Retry',
-                      onAction: _manualRefresh,
-                    ),
-                  ),
-                ),
-              const SliverToBoxAdapter(
-                  child: SizedBox(height: AppThemes.spacingXXL)),
+              SliverToBoxAdapter(
+                child: ResponsiveSizedBox(height: AppSpacing.xxl),
+              ),
             ],
           ),
         ),
       ),
     ).animate().fadeIn(duration: AppThemes.animationDurationMedium);
+  }
+
+  Widget _buildTabletLayout() {
+    return _buildMobileLayout();
+  }
+
+  Widget _buildDesktopLayout() {
+    return _buildMobileLayout();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ResponsiveLayout(
+      mobile: _buildMobileLayout(),
+      tablet: _buildTabletLayout(),
+      desktop: _buildDesktopLayout(),
+    );
   }
 
   @override

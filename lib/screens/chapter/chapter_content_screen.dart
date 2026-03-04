@@ -24,6 +24,7 @@ import 'package:familyacademyclient/providers/progress_provider.dart';
 import 'package:familyacademyclient/services/user_session.dart';
 import 'package:familyacademyclient/themes/app_themes.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
+import 'package:familyacademyclient/utils/responsive_values.dart';
 import 'package:familyacademyclient/utils/helpers.dart';
 import 'package:familyacademyclient/widgets/common/loading_indicator.dart';
 import 'package:familyacademyclient/widgets/common/empty_state.dart';
@@ -42,6 +43,7 @@ import 'package:media_kit/media_kit.dart' as media_kit;
 import 'package:media_kit_video/media_kit_video.dart' as media_kit_video;
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../widgets/common/error_widget.dart' as custom;
+import '../../widgets/common/responsive_widgets.dart';
 
 enum VideoQuality {
   low(360, '360p'),
@@ -147,6 +149,94 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     super.didChangeDependencies();
     _setupStreamListeners();
     _getCurrentUserId();
+  }
+
+  Widget _buildGlassContainer({required Widget child}) {
+    return ClipRRect(
+      borderRadius:
+          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
+              ],
+            ),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
+            border: Border.all(
+              color: AppColors.telegramBlue.withValues(alpha: 0.2),
+            ),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGradientButton({
+    required String label,
+    required VoidCallback? onPressed,
+    required List<Color> gradient,
+    bool isLoading = false,
+    bool isEnabled = true,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: isEnabled ? LinearGradient(colors: gradient) : null,
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+        boxShadow: isEnabled
+            ? [
+                BoxShadow(
+                  color: gradient.first.withValues(alpha: 0.3),
+                  blurRadius: ResponsiveValues.spacingS(context),
+                  offset: Offset(0, ResponsiveValues.spacingXS(context)),
+                ),
+              ]
+            : null,
+      ),
+      child: Material(
+        color: isEnabled
+            ? Colors.transparent
+            : AppColors.getSurface(context).withValues(alpha: 0.1),
+        child: InkWell(
+          onTap: isEnabled ? onPressed : null,
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+          child: Container(
+            padding: EdgeInsets.symmetric(
+              vertical: ResponsiveValues.spacingM(context),
+            ),
+            alignment: Alignment.center,
+            child: isLoading
+                ? SizedBox(
+                    width: ResponsiveValues.iconSizeM(context),
+                    height: ResponsiveValues.iconSizeM(context),
+                    child: const CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation(Colors.white),
+                    ),
+                  )
+                : ResponsiveText(
+                    label,
+                    style: AppTextStyles.buttonMedium(context).copyWith(
+                      color: isEnabled
+                          ? Colors.white
+                          : AppColors.getTextSecondary(context)
+                              .withValues(alpha: 0.5),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _getCurrentUserId() async {
@@ -556,28 +646,34 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         child: Container(
           decoration: BoxDecoration(
             color: AppColors.getCard(context),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            borderRadius: BorderRadius.vertical(
+              top: Radius.circular(ResponsiveValues.radiusXLarge(context)),
+            ),
           ),
-          child: Column(
+          child: ResponsiveColumn(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                margin: const EdgeInsets.only(top: 12),
-                width: 40,
-                height: 4,
+                margin:
+                    EdgeInsets.only(top: ResponsiveValues.spacingM(context)),
+                width: ResponsiveValues.spacingXXL(context),
+                height: ResponsiveValues.spacingXS(context),
                 decoration: BoxDecoration(
-                  color: Colors.grey[400],
-                  borderRadius: BorderRadius.circular(2),
+                  color: AppColors.getTextSecondary(context)
+                      .withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(
+                    ResponsiveValues.radiusSmall(context),
+                  ),
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
+                padding: ResponsiveValues.cardPadding(context),
+                child: ResponsiveRow(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
+                    ResponsiveText(
                       forPlayback ? 'Select Quality' : 'Download Quality',
-                      style: AppTextStyles.titleMedium.copyWith(
+                      style: AppTextStyles.titleMedium(context).copyWith(
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -623,30 +719,34 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   },
                 ),
               ),
-              const SizedBox(height: 16),
+              ResponsiveSizedBox(height: AppSpacing.l),
               Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: ResponsiveValues.screenPadding(context),
                 child: TextButton(
                   onPressed: () {
                     Navigator.pop(context);
                     completer.complete(null);
                   },
                   style: TextButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 48),
+                    minimumSize: Size(
+                      double.infinity,
+                      ResponsiveValues.buttonHeightMedium(context),
+                    ),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(
+                        ResponsiveValues.radiusMedium(context),
+                      ),
                     ),
                   ),
-                  child: Text(
+                  child: ResponsiveText(
                     'Cancel',
-                    style: AppTextStyles.labelLarge.copyWith(
+                    style: AppTextStyles.labelLarge(context).copyWith(
                       color: AppColors.getTextSecondary(context),
                     ),
                   ),
                 ),
               ),
-              const SizedBox(height: 8),
+              ResponsiveSizedBox(height: AppSpacing.s),
             ],
           ),
         ),
@@ -673,12 +773,12 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Row(
+          padding: ResponsiveValues.listItemPadding(context),
+          child: ResponsiveRow(
             children: [
               Container(
-                width: 40,
-                height: 40,
+                width: ResponsiveValues.iconSizeXL(context),
+                height: ResponsiveValues.iconSizeXL(context),
                 decoration: BoxDecoration(
                   color: isSelected
                       ? AppColors.telegramBlue.withValues(alpha: 0.1)
@@ -686,9 +786,9 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   shape: BoxShape.circle,
                 ),
                 child: Center(
-                  child: Text(
+                  child: ResponsiveText(
                     quality?.height.toString() ?? 'A',
-                    style: AppTextStyles.labelMedium.copyWith(
+                    style: AppTextStyles.labelMedium(context).copyWith(
                       color: isSelected
                           ? AppColors.telegramBlue
                           : AppColors.getTextSecondary(context),
@@ -697,14 +797,14 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
+              ResponsiveSizedBox(width: AppSpacing.m),
               Expanded(
-                child: Column(
+                child: ResponsiveColumn(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    ResponsiveText(
                       label,
-                      style: AppTextStyles.bodyLarge.copyWith(
+                      style: AppTextStyles.bodyLarge(context).copyWith(
                         fontWeight:
                             isSelected ? FontWeight.w600 : FontWeight.normal,
                         color: isSelected
@@ -712,10 +812,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                             : AppColors.getTextPrimary(context),
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
+                    ResponsiveSizedBox(height: AppSpacing.xxs),
+                    ResponsiveText(
                       subtitle,
-                      style: AppTextStyles.caption.copyWith(
+                      style: AppTextStyles.caption(context).copyWith(
                         color: AppColors.getTextSecondary(context),
                       ),
                     ),
@@ -724,8 +824,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
               ),
               if (isSelected)
                 Container(
-                  width: 24,
-                  height: 24,
+                  width: ResponsiveValues.iconSizeL(context),
+                  height: ResponsiveValues.iconSizeL(context),
                   decoration: const BoxDecoration(
                     color: AppColors.telegramBlue,
                     shape: BoxShape.circle,
@@ -843,11 +943,18 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       context: context,
       barrierDismissible: false,
       builder: (context) => Dialog(
-        insetPadding: EdgeInsets.all(ScreenSize.responsiveValue(
-            context: context, mobile: 16, tablet: 32, desktop: 64)),
+        insetPadding: EdgeInsets.all(
+          ScreenSize.responsiveDouble(
+            context: context,
+            mobile: 16,
+            tablet: 32,
+            desktop: 64,
+          ),
+        ),
         backgroundColor: Colors.transparent,
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
           child: Stack(
             children: [
               AspectRatio(
@@ -859,12 +966,13 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                 ),
               ),
               Positioned(
-                top: 16,
-                right: 16,
+                top: ResponsiveValues.spacingL(context),
+                right: ResponsiveValues.spacingL(context),
                 child: Container(
                   decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.5),
-                      shape: BoxShape.circle),
+                    color: Colors.black.withValues(alpha: 0.5),
+                    shape: BoxShape.circle,
+                  ),
                   child: IconButton(
                     icon: const Icon(Icons.close, color: Colors.white),
                     onPressed: () async {
@@ -920,30 +1028,37 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         placeholder: Container(
           color: Theme.of(context).colorScheme.surface,
           child: Center(
-            child: Column(
+            child: ResponsiveColumn(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const CircularProgressIndicator(
-                    valueColor:
-                        AlwaysStoppedAnimation<Color>(AppColors.telegramBlue)),
-                const SizedBox(height: 16),
-                Text('Loading video...',
-                    style: AppTextStyles.bodySmall
-                        .copyWith(color: AppColors.getTextSecondary(context))),
+                  valueColor:
+                      AlwaysStoppedAnimation<Color>(AppColors.telegramBlue),
+                ),
+                ResponsiveSizedBox(height: AppSpacing.l),
+                ResponsiveText(
+                  'Loading video...',
+                  style: AppTextStyles.bodySmall(context).copyWith(
+                    color: AppColors.getTextSecondary(context),
+                  ),
+                ),
               ],
             ),
           ),
         ),
         errorBuilder: (context, errorMessage) => Center(
-          child: Column(
+          child: ResponsiveColumn(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const Icon(Icons.error_outline_rounded,
                   color: AppColors.telegramRed, size: 48),
-              const SizedBox(height: 16),
-              Text('Error loading video: $errorMessage',
-                  style: AppTextStyles.bodyMedium
-                      .copyWith(color: AppColors.getTextPrimary(context))),
+              ResponsiveSizedBox(height: AppSpacing.l),
+              ResponsiveText(
+                'Error loading video: $errorMessage',
+                style: AppTextStyles.bodyMedium(context).copyWith(
+                  color: AppColors.getTextPrimary(context),
+                ),
+              ),
             ],
           ),
         ),
@@ -960,23 +1075,32 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         context: context,
         barrierDismissible: false,
         builder: (context) => Dialog(
-          insetPadding: EdgeInsets.all(ScreenSize.responsiveValue(
-              context: context, mobile: 16, tablet: 32, desktop: 64)),
+          insetPadding: EdgeInsets.all(
+            ScreenSize.responsiveDouble(
+              context: context,
+              mobile: 16,
+              tablet: 32,
+              desktop: 64,
+            ),
+          ),
           backgroundColor: Colors.transparent,
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(AppThemes.borderRadiusLarge),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
             child: Stack(
               children: [
                 AspectRatio(
-                    aspectRatio: 16 / 9,
-                    child: Chewie(controller: _chewieController!)),
+                  aspectRatio: 16 / 9,
+                  child: Chewie(controller: _chewieController!),
+                ),
                 Positioned(
-                  top: 16,
-                  right: 16,
+                  top: ResponsiveValues.spacingL(context),
+                  right: ResponsiveValues.spacingL(context),
                   child: Container(
                     decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.5),
-                        shape: BoxShape.circle),
+                      color: Colors.black.withValues(alpha: 0.5),
+                      shape: BoxShape.circle,
+                    ),
                     child: IconButton(
                       icon: const Icon(Icons.close, color: Colors.white),
                       onPressed: () {
@@ -1159,8 +1283,9 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         fullFilePath,
         filePath,
         options: Options(
-            receiveTimeout: const Duration(minutes: 5),
-            sendTimeout: const Duration(minutes: 5)),
+          receiveTimeout: const Duration(minutes: 5),
+          sendTimeout: const Duration(minutes: 5),
+        ),
         onReceiveProgress: (received, total) {
           if (total != -1 && mounted)
             setState(() => _downloadProgress[note.id] = received / total);
@@ -1209,18 +1334,23 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         downloadQualities[entry.key.toString()] = entry.value.label;
 
       await deviceService.saveCacheItem(
-          'cached_videos_chapter_${widget.chapterId}_$_currentUserId',
-          videoPaths,
-          isUserSpecific: true,
-          ttl: const Duration(days: 30));
+        'cached_videos_chapter_${widget.chapterId}_$_currentUserId',
+        videoPaths,
+        isUserSpecific: true,
+        ttl: const Duration(days: 30),
+      );
       await deviceService.saveCacheItem(
-          'cached_notes_chapter_${widget.chapterId}_$_currentUserId', notePaths,
-          isUserSpecific: true, ttl: const Duration(days: 30));
+        'cached_notes_chapter_${widget.chapterId}_$_currentUserId',
+        notePaths,
+        isUserSpecific: true,
+        ttl: const Duration(days: 30),
+      );
       await deviceService.saveCacheItem(
-          'download_qualities_chapter_${widget.chapterId}_$_currentUserId',
-          downloadQualities,
-          isUserSpecific: true,
-          ttl: const Duration(days: 30));
+        'download_qualities_chapter_${widget.chapterId}_$_currentUserId',
+        downloadQualities,
+        isUserSpecific: true,
+        ttl: const Duration(days: 30),
+      );
     } catch (e) {}
   }
 
@@ -1243,10 +1373,11 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       };
 
       await deviceService.saveCacheItem(
-          'question_progress_chapter_${widget.chapterId}_$_currentUserId',
-          progressData,
-          isUserSpecific: true,
-          ttl: const Duration(days: 365));
+        'question_progress_chapter_${widget.chapterId}_$_currentUserId',
+        progressData,
+        isUserSpecific: true,
+        ttl: const Duration(days: 365),
+      );
     } catch (e) {}
   }
 
@@ -1404,59 +1535,68 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: AppBar(
-        title: Text(_chapter?.name ?? 'Chapter',
-            style: AppTextStyles.titleMedium
-                .copyWith(color: AppColors.getTextPrimary(context))),
+        title: ResponsiveText(
+          _chapter?.name ?? 'Chapter',
+          style: AppTextStyles.titleMedium(context),
+        ),
         backgroundColor: AppColors.getBackground(context),
         elevation: 0,
         leading: IconButton(
-            icon: Icon(Icons.arrow_back_rounded,
-                color: AppColors.getTextPrimary(context)),
-            onPressed: () => context.pop()),
+          icon: ResponsiveIcon(
+            Icons.arrow_back_rounded,
+            color: AppColors.getTextPrimary(context),
+          ),
+          onPressed: () => context.pop(),
+        ),
       ),
       body: Center(
         child: Padding(
-          padding: EdgeInsets.all(ScreenSize.responsiveValue(
-              context: context, mobile: 24, tablet: 32, desktop: 48)),
-          child: Column(
+          padding: EdgeInsets.all(
+            ResponsiveValues.sectionPadding(context),
+          ),
+          child: ResponsiveColumn(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                padding: const EdgeInsets.all(AppThemes.spacingXL),
+                padding: EdgeInsets.all(ResponsiveValues.spacingXL(context)),
                 decoration: BoxDecoration(
                   color: isFree
                       ? AppColors.telegramYellow.withValues(alpha: 0.1)
                       : AppColors.telegramRed.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(
-                    isFree ? Icons.schedule_rounded : Icons.lock_rounded,
-                    size: 64,
-                    color: isFree
-                        ? AppColors.telegramYellow
-                        : AppColors.telegramRed),
+                child: ResponsiveIcon(
+                  isFree ? Icons.schedule_rounded : Icons.lock_rounded,
+                  size: ResponsiveValues.iconSizeXXL(context),
+                  color:
+                      isFree ? AppColors.telegramYellow : AppColors.telegramRed,
+                ),
               ),
-              const SizedBox(height: AppThemes.spacingXXL),
-              Text(isFree ? 'Coming Soon' : 'Chapter Locked',
-                  style: AppTextStyles.headlineMedium.copyWith(
-                      color: AppColors.getTextPrimary(context),
-                      fontWeight: FontWeight.w700)),
-              const SizedBox(height: AppThemes.spacingL),
+              ResponsiveSizedBox(height: AppSpacing.xxl),
+              ResponsiveText(
+                isFree ? 'Coming Soon' : 'Chapter Locked',
+                style: AppTextStyles.headlineMedium(context).copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              ResponsiveSizedBox(height: AppSpacing.l),
               Padding(
                 padding: EdgeInsets.symmetric(
-                    horizontal: ScreenSize.responsiveValue(
-                        context: context, mobile: 32, tablet: 64, desktop: 96)),
-                child: Text(
+                  horizontal: ResponsiveValues.sectionPadding(context) * 2,
+                ),
+                child: ResponsiveText(
                   isFree
                       ? 'This chapter will be available soon. Stay tuned for updates!'
                       : 'Access to "${_chapter?.name ?? "this chapter"}" requires a subscription to "${_category?.name ?? "the category"}".',
                   textAlign: TextAlign.center,
-                  style: AppTextStyles.bodyLarge.copyWith(
-                      color: AppColors.getTextSecondary(context), height: 1.6),
+                  style: AppTextStyles.bodyLarge(context).copyWith(
+                    color: AppColors.getTextSecondary(context),
+                    height: 1.6,
+                  ),
                 ),
               ),
               if (!isFree) ...[
-                const SizedBox(height: AppThemes.spacingXXXL),
+                ResponsiveSizedBox(height: AppSpacing.xxxl),
                 ElevatedButton(
                   onPressed: () => context.push('/payment', extra: {
                     'category': _category,
@@ -1466,52 +1606,70 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                     backgroundColor: AppColors.telegramBlue,
                     foregroundColor: Colors.white,
                     minimumSize: Size(
-                        ScreenSize.responsiveValue(
-                            context: context,
-                            mobile: 200,
-                            tablet: 240,
-                            desktop: 280),
-                        AppThemes.buttonHeightLarge),
+                      ScreenSize.responsiveDouble(
+                        context: context,
+                        mobile: 200,
+                        tablet: 240,
+                        desktop: 280,
+                      ),
+                      ResponsiveValues.buttonHeightLarge(context),
+                    ),
                     shape: RoundedRectangleBorder(
-                        borderRadius:
-                            BorderRadius.circular(AppThemes.borderRadiusLarge)),
+                      borderRadius: BorderRadius.circular(
+                        ResponsiveValues.radiusLarge(context),
+                      ),
+                    ),
                   ),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                        vertical: AppThemes.spacingM,
-                        horizontal: AppThemes.spacingXL),
-                    child: Text('Purchase Access',
-                        style: AppTextStyles.titleMedium.copyWith(
-                            color: Colors.white, fontWeight: FontWeight.w600)),
+                    padding: EdgeInsets.symmetric(
+                      vertical: ResponsiveValues.spacingM(context),
+                      horizontal: ResponsiveValues.spacingXL(context),
+                    ),
+                    child: ResponsiveText(
+                      'Purchase Access',
+                      style: AppTextStyles.titleMedium(context).copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
                 ),
               ],
-              const SizedBox(height: AppThemes.spacingXL),
+              ResponsiveSizedBox(height: AppSpacing.xl),
               OutlinedButton(
                 onPressed: () => context.pop(),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppColors.getTextPrimary(context),
                   side: BorderSide(
-                      color: Theme.of(context).dividerColor, width: 1.5),
+                    color: AppColors.getDivider(context),
+                    width: 1.5,
+                  ),
                   shape: RoundedRectangleBorder(
-                      borderRadius:
-                          BorderRadius.circular(AppThemes.borderRadiusLarge)),
+                    borderRadius: BorderRadius.circular(
+                      ResponsiveValues.radiusLarge(context),
+                    ),
+                  ),
                   minimumSize: Size(
-                      ScreenSize.responsiveValue(
-                          context: context,
-                          mobile: 200,
-                          tablet: 240,
-                          desktop: 280),
-                      AppThemes.buttonHeightMedium),
+                    ScreenSize.responsiveDouble(
+                      context: context,
+                      mobile: 200,
+                      tablet: 240,
+                      desktop: 280,
+                    ),
+                    ResponsiveValues.buttonHeightMedium(context),
+                  ),
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                      vertical: AppThemes.spacingM,
-                      horizontal: AppThemes.spacingXL),
-                  child: Text('Go Back',
-                      style: AppTextStyles.titleMedium.copyWith(
-                          color: AppColors.getTextPrimary(context),
-                          fontWeight: FontWeight.w600)),
+                  padding: EdgeInsets.symmetric(
+                    vertical: ResponsiveValues.spacingM(context),
+                    horizontal: ResponsiveValues.spacingXL(context),
+                  ),
+                  child: ResponsiveText(
+                    'Go Back',
+                    style: AppTextStyles.titleMedium(context).copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -1553,23 +1711,13 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         backgroundColor: AppColors.getBackground(context),
         child: ListView.builder(
           controller: _scrollController,
-          padding: EdgeInsets.all(ScreenSize.responsiveValue(
-            context: context,
-            mobile: 16,
-            tablet: 20,
-            desktop: 24,
-          )),
+          padding: ResponsiveValues.screenPadding(context),
           itemCount: videos.length,
           itemBuilder: (context, index) {
             final video = videos[index];
             return Padding(
               padding: EdgeInsets.only(
-                bottom: ScreenSize.responsiveValue(
-                  context: context,
-                  mobile: 16,
-                  tablet: 20,
-                  desktop: 24,
-                ),
+                bottom: ResponsiveValues.spacingL(context),
               ),
               child: _buildVideoCard(video, index),
             );
@@ -1581,49 +1729,51 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
   Widget _buildEmptyVideos() {
     return Center(
-      child: Column(
+      child: ResponsiveColumn(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           ClipRRect(
-            borderRadius: BorderRadius.circular(30),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusXXLarge(context)),
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
               child: Container(
-                padding: const EdgeInsets.all(32),
+                padding: ResponsiveValues.dialogPadding(context),
                 decoration: BoxDecoration(
                   color: AppColors.getCard(context).withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(30),
+                  borderRadius: BorderRadius.circular(
+                      ResponsiveValues.radiusXXLarge(context)),
                   border: Border.all(
                     color: AppColors.telegramBlue.withValues(alpha: 0.2),
                     width: 1,
                   ),
                 ),
-                child: Column(
+                child: ResponsiveColumn(
                   children: [
-                    Icon(
+                    ResponsiveIcon(
                       Icons.videocam_off_rounded,
-                      size: 80,
+                      size: ResponsiveValues.iconSizeXXL(context),
                       color: AppColors.telegramBlue.withValues(alpha: 0.5),
                     ),
-                    const SizedBox(height: 24),
-                    Text(
+                    ResponsiveSizedBox(height: AppSpacing.xl),
+                    ResponsiveText(
                       'No Videos Available',
-                      style: AppTextStyles.headlineSmall.copyWith(
+                      style: AppTextStyles.headlineSmall(context).copyWith(
                         fontWeight: FontWeight.w600,
                         letterSpacing: -0.5,
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    Text(
+                    ResponsiveSizedBox(height: AppSpacing.m),
+                    ResponsiveText(
                       _isOffline
                           ? 'No cached videos available. Connect to load videos.'
                           : 'There are no videos for this chapter yet.',
-                      style: AppTextStyles.bodyLarge.copyWith(
+                      style: AppTextStyles.bodyLarge(context).copyWith(
                         color: AppColors.getTextSecondary(context),
                       ),
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 24),
+                    ResponsiveSizedBox(height: AppSpacing.xl),
                     if (!_isOffline)
                       _buildGlassButton(
                         context,
@@ -1644,6 +1794,59 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     );
   }
 
+  Widget _buildGlassButton(
+    BuildContext context, {
+    required String label,
+    required IconData icon,
+    required VoidCallback onPressed,
+  }) {
+    return ClipRRect(
+      borderRadius:
+          BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Material(
+          color: AppColors.getCard(context).withValues(alpha: 0.2),
+          child: InkWell(
+            onTap: onPressed,
+            child: Container(
+              padding: EdgeInsets.symmetric(
+                vertical: ResponsiveValues.spacingM(context),
+                horizontal: ResponsiveValues.spacingXL(context),
+              ),
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: AppColors.telegramBlue.withValues(alpha: 0.2),
+                  width: 1,
+                ),
+                borderRadius: BorderRadius.circular(
+                    ResponsiveValues.radiusMedium(context)),
+              ),
+              child: ResponsiveRow(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ResponsiveIcon(
+                    icon,
+                    size: ResponsiveValues.iconSizeS(context),
+                    color: AppColors.telegramBlue,
+                  ),
+                  ResponsiveSizedBox(width: AppSpacing.s),
+                  ResponsiveText(
+                    label,
+                    style: AppTextStyles.labelMedium(context).copyWith(
+                      color: AppColors.telegramBlue,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildVideoCard(Video video, int index) {
     final isDownloaded = _cachedVideoPaths.containsKey(video.id);
     final isDownloading = _isDownloading[video.id] == true;
@@ -1655,7 +1858,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeOutCubic,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
           child: Container(
@@ -1668,7 +1872,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   AppColors.getCard(context).withValues(alpha: 0.2),
                 ],
               ),
-              borderRadius: BorderRadius.circular(24),
+              borderRadius:
+                  BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
               border: Border.all(
                 color: isDownloaded
                     ? AppColors.telegramGreen.withValues(alpha: 0.3)
@@ -1677,7 +1882,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                 width: 1.5,
               ),
             ),
-            child: Column(
+            child: ResponsiveColumn(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Stack(
@@ -1704,9 +1909,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                                     ),
                                   ),
                                   child: Center(
-                                    child: Icon(
+                                    child: ResponsiveIcon(
                                       Icons.movie,
-                                      size: 40,
+                                      size:
+                                          ResponsiveValues.iconSizeXL(context),
                                       color:
                                           Colors.white.withValues(alpha: 0.3),
                                     ),
@@ -1724,9 +1930,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                                     ),
                                   ),
                                   child: Center(
-                                    child: Icon(
+                                    child: ResponsiveIcon(
                                       Icons.broken_image,
-                                      size: 40,
+                                      size:
+                                          ResponsiveValues.iconSizeXL(context),
                                       color:
                                           Colors.white.withValues(alpha: 0.3),
                                     ),
@@ -1745,9 +1952,9 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                                   ),
                                 ),
                                 child: Center(
-                                  child: Icon(
+                                  child: ResponsiveIcon(
                                     Icons.play_circle_outline,
-                                    size: 60,
+                                    size: ResponsiveValues.iconSizeXXL(context),
                                     color: Colors.white.withValues(alpha: 0.3),
                                   ),
                                 ),
@@ -1773,8 +1980,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                       ),
                     ),
                     Positioned(
-                      top: 12,
-                      right: 12,
+                      top: ResponsiveValues.spacingM(context),
+                      right: ResponsiveValues.spacingM(context),
                       child: _buildVideoBadge(
                         context,
                         icon: Icons.access_time,
@@ -1785,34 +1992,28 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                     ),
                     if (hasMultipleQualities)
                       Positioned(
-                        bottom: 12,
-                        left: 12,
+                        bottom: ResponsiveValues.spacingM(context),
+                        left: ResponsiveValues.spacingM(context),
                         child: _buildVideoBadge(
                           context,
                           icon: Icons.hd,
                           label: 'HD',
                           color: Colors.white,
                           backgroundColor: AppColors.telegramBlue,
-                          gradient: const [
-                            Color(0xFF2AABEE),
-                            Color(0xFF5856D6)
-                          ],
+                          gradient: AppColors.blueGradient,
                         ),
                       ),
                     if (isDownloaded && !isDownloading)
                       Positioned(
-                        bottom: 12,
-                        right: 12,
+                        bottom: ResponsiveValues.spacingM(context),
+                        right: ResponsiveValues.spacingM(context),
                         child: _buildVideoBadge(
                           context,
                           icon: Icons.check_circle,
                           label: quality.label,
                           color: Colors.white,
                           backgroundColor: AppColors.telegramGreen,
-                          gradient: const [
-                            Color(0xFF34C759),
-                            Color(0xFF2CAE4A)
-                          ],
+                          gradient: AppColors.greenGradient,
                         ),
                       ),
                     Positioned.fill(
@@ -1825,22 +2026,23 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                           ),
                           child: Center(
                             child: Container(
-                              width: 70,
-                              height: 70,
+                              width:
+                                  ResponsiveValues.iconSizeXXL(context) * 1.5,
+                              height:
+                                  ResponsiveValues.iconSizeXXL(context) * 1.5,
                               decoration: BoxDecoration(
                                 gradient: const LinearGradient(
-                                  colors: [
-                                    Color(0xFF2AABEE),
-                                    Color(0xFF5856D6)
-                                  ],
+                                  colors: AppColors.blueGradient,
                                 ),
                                 shape: BoxShape.circle,
                                 boxShadow: [
                                   BoxShadow(
                                     color: AppColors.telegramBlue
                                         .withValues(alpha: 0.5),
-                                    blurRadius: 20,
-                                    spreadRadius: 2,
+                                    blurRadius:
+                                        ResponsiveValues.spacingXL(context),
+                                    spreadRadius:
+                                        ResponsiveValues.spacingXS(context),
                                   ),
                                 ],
                               ),
@@ -1857,29 +2059,28 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   ],
                 ),
                 Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
+                  padding: ResponsiveValues.cardPadding(context),
+                  child: ResponsiveColumn(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
+                      ResponsiveText(
                         video.title,
-                        style: AppTextStyles.titleMedium.copyWith(
+                        style: AppTextStyles.titleMedium(context).copyWith(
                           fontWeight: FontWeight.w600,
-                          fontSize: 16,
                           letterSpacing: -0.3,
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 12),
-                      Row(
+                      ResponsiveSizedBox(height: AppSpacing.m),
+                      ResponsiveRow(
                         children: [
                           _buildMetadataChip(
                             context,
                             icon: Icons.visibility_rounded,
                             label: '${video.viewCount} views',
                           ),
-                          const SizedBox(width: 8),
+                          ResponsiveSizedBox(width: AppSpacing.s),
                           _buildMetadataChip(
                             context,
                             icon: Icons.calendar_today_rounded,
@@ -1891,7 +2092,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                         ],
                       ),
                       if (isDownloading) ...[
-                        const SizedBox(height: 16),
+                        ResponsiveSizedBox(height: AppSpacing.l),
                         _buildDownloadProgress(context, progress),
                       ],
                     ],
@@ -1900,12 +2101,14 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                 Divider(
                   height: 1,
                   thickness: 1,
-                  color: Theme.of(context).dividerColor.withValues(alpha: 0.2),
+                  color: AppColors.getDivider(context).withValues(alpha: 0.2),
                 ),
                 Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  child: Row(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: ResponsiveValues.spacingS(context),
+                    vertical: ResponsiveValues.spacingXS(context),
+                  ),
+                  child: ResponsiveRow(
                     children: [
                       Expanded(
                         child: _buildVideoActionButton(
@@ -1913,18 +2116,14 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                           label: 'Play',
                           icon: Icons.play_arrow_rounded,
                           color: AppColors.telegramBlue,
-                          gradient: const [
-                            Color(0xFF2AABEE),
-                            Color(0xFF5856D6)
-                          ],
+                          gradient: AppColors.blueGradient,
                           onPressed: () => _playVideo(video),
                         ),
                       ),
                       Container(
                         width: 1,
-                        height: 32,
-                        color: Theme.of(context)
-                            .dividerColor
+                        height: ResponsiveValues.spacingXL(context),
+                        color: AppColors.getDivider(context)
                             .withValues(alpha: 0.2),
                       ),
                       Expanded(
@@ -1946,8 +2145,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                                   ? AppColors.telegramBlue
                                   : AppColors.telegramBlue,
                           gradient: isDownloaded
-                              ? const [Color(0xFF34C759), Color(0xFF2CAE4A)]
-                              : const [Color(0xFF2AABEE), Color(0xFF5856D6)],
+                              ? AppColors.greenGradient
+                              : AppColors.blueGradient,
                           onPressed: () => _showDownloadQualityDialog(video),
                           isEnabled: !isDownloading,
                         ),
@@ -1985,31 +2184,35 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     List<Color>? gradient,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: EdgeInsets.symmetric(
+        horizontal: ResponsiveValues.spacingS(context),
+        vertical: ResponsiveValues.spacingXS(context),
+      ),
       decoration: BoxDecoration(
         gradient: gradient != null ? LinearGradient(colors: gradient) : null,
         color: gradient == null ? backgroundColor : null,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusFull(context)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.2),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            blurRadius: ResponsiveValues.spacingS(context),
+            offset: Offset(0, ResponsiveValues.spacingXXS(context)),
           ),
         ],
       ),
-      child: Row(
+      child: ResponsiveRow(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
             icon,
-            size: 14,
+            size: ResponsiveValues.iconSizeXXS(context),
             color: color,
           ),
-          const SizedBox(width: 4),
-          Text(
+          ResponsiveSizedBox(width: AppSpacing.xs),
+          ResponsiveText(
             label,
-            style: AppTextStyles.caption.copyWith(
+            style: AppTextStyles.caption(context).copyWith(
               color: color,
               fontWeight: FontWeight.w600,
             ),
@@ -2035,9 +2238,12 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         color: Colors.transparent,
         child: InkWell(
           onTap: isEnabled ? onPressed : null,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
           child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 12),
+            padding: EdgeInsets.symmetric(
+              vertical: ResponsiveValues.spacingM(context),
+            ),
             decoration: BoxDecoration(
               gradient: isEnabled
                   ? LinearGradient(colors: gradient)
@@ -2047,32 +2253,33 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                         AppColors.getSurface(context).withValues(alpha: 0.3),
                       ],
                     ),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius:
+                  BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
               boxShadow: isEnabled
                   ? [
                       BoxShadow(
                         color: gradient.first.withValues(alpha: 0.3),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
+                        blurRadius: ResponsiveValues.spacingS(context),
+                        offset: Offset(0, ResponsiveValues.spacingXXS(context)),
                       ),
                     ]
                   : null,
             ),
-            child: Row(
+            child: ResponsiveRow(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(
+                ResponsiveIcon(
                   icon,
-                  size: 18,
+                  size: ResponsiveValues.iconSizeS(context),
                   color: isEnabled
                       ? Colors.white
                       : AppColors.getTextSecondary(context)
                           .withValues(alpha: 0.5),
                 ),
-                const SizedBox(width: 6),
-                Text(
+                ResponsiveSizedBox(width: AppSpacing.xs),
+                ResponsiveText(
                   label,
-                  style: AppTextStyles.labelMedium.copyWith(
+                  style: AppTextStyles.labelMedium(context).copyWith(
                     color: isEnabled
                         ? Colors.white
                         : AppColors.getTextSecondary(context)
@@ -2088,13 +2295,57 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     );
   }
 
+  Widget _buildMetadataChip(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    Color? color,
+  }) {
+    final effectiveColor = color ?? AppColors.getTextSecondary(context);
+
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: ResponsiveValues.spacingS(context),
+        vertical: ResponsiveValues.spacingXXS(context),
+      ),
+      decoration: BoxDecoration(
+        color: effectiveColor.withValues(alpha: 0.1),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusFull(context)),
+        border: Border.all(
+          color: effectiveColor.withValues(alpha: 0.2),
+          width: 1,
+        ),
+      ),
+      child: ResponsiveRow(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: ResponsiveValues.iconSizeXXS(context),
+            color: effectiveColor,
+          ),
+          ResponsiveSizedBox(width: AppSpacing.xs),
+          ResponsiveText(
+            label,
+            style: AppTextStyles.caption(context).copyWith(
+              color: effectiveColor,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showDeleteDownloadDialog(Video video) {
     showDialog(
       context: context,
       builder: (context) => Dialog(
         backgroundColor: Colors.transparent,
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
             child: Container(
@@ -2107,65 +2358,70 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                     AppColors.getCard(context).withValues(alpha: 0.2),
                   ],
                 ),
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: BorderRadius.circular(
+                    ResponsiveValues.radiusXLarge(context)),
                 border: Border.all(
                   color: AppColors.telegramRed.withValues(alpha: 0.3),
                   width: 1,
                 ),
               ),
-              padding: const EdgeInsets.all(24),
-              child: Column(
+              padding: ResponsiveValues.dialogPadding(context),
+              child: ResponsiveColumn(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(16),
+                    padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
                     decoration: BoxDecoration(
                       color: AppColors.telegramRed.withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(
+                    child: ResponsiveIcon(
                       Icons.delete_outline_rounded,
+                      size: ResponsiveValues.iconSizeXL(context),
                       color: AppColors.telegramRed,
-                      size: 32,
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  Text(
+                  ResponsiveSizedBox(height: AppSpacing.l),
+                  ResponsiveText(
                     'Remove Download',
-                    style: AppTextStyles.titleMedium.copyWith(
+                    style: AppTextStyles.titleMedium(context).copyWith(
                       fontWeight: FontWeight.w700,
                       letterSpacing: -0.5,
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
+                  ResponsiveSizedBox(height: AppSpacing.s),
+                  ResponsiveText(
                     'Remove downloaded video "${video.title}"?',
-                    style: AppTextStyles.bodyMedium.copyWith(
+                    style: AppTextStyles.bodyMedium(context).copyWith(
                       color: AppColors.getTextSecondary(context),
                     ),
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 24),
-                  Row(
+                  ResponsiveSizedBox(height: AppSpacing.xl),
+                  ResponsiveRow(
                     children: [
                       Expanded(
                         child: TextButton(
                           onPressed: () => Navigator.pop(context),
                           style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            padding: EdgeInsets.symmetric(
+                              vertical: ResponsiveValues.spacingM(context),
+                            ),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
+                              borderRadius: BorderRadius.circular(
+                                ResponsiveValues.radiusMedium(context),
+                              ),
                             ),
                           ),
-                          child: Text(
+                          child: ResponsiveText(
                             'Cancel',
-                            style: AppTextStyles.labelLarge.copyWith(
+                            style: AppTextStyles.labelLarge(context).copyWith(
                               color: AppColors.getTextSecondary(context),
                             ),
                           ),
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      ResponsiveSizedBox(width: AppSpacing.m),
                       Expanded(
                         child: ElevatedButton(
                           onPressed: () {
@@ -2180,9 +2436,13 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.telegramRed,
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            padding: EdgeInsets.symmetric(
+                              vertical: ResponsiveValues.spacingM(context),
+                            ),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
+                              borderRadius: BorderRadius.circular(
+                                ResponsiveValues.radiusMedium(context),
+                              ),
                             ),
                             elevation: 0,
                           ),
@@ -2232,23 +2492,13 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         backgroundColor: AppColors.getBackground(context),
         child: ListView.builder(
           controller: _scrollController,
-          padding: EdgeInsets.all(ScreenSize.responsiveValue(
-            context: context,
-            mobile: 16,
-            tablet: 20,
-            desktop: 24,
-          )),
+          padding: ResponsiveValues.screenPadding(context),
           itemCount: notes.length,
           itemBuilder: (context, index) {
             final note = notes[index];
             return Padding(
               padding: EdgeInsets.only(
-                bottom: ScreenSize.responsiveValue(
-                  context: context,
-                  mobile: 16,
-                  tablet: 20,
-                  desktop: 24,
-                ),
+                bottom: ResponsiveValues.spacingL(context),
               ),
               child: _buildNoteCard(note, index),
             );
@@ -2260,49 +2510,51 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
   Widget _buildEmptyNotes() {
     return Center(
-      child: Column(
+      child: ResponsiveColumn(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           ClipRRect(
-            borderRadius: BorderRadius.circular(30),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusXXLarge(context)),
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
               child: Container(
-                padding: const EdgeInsets.all(32),
+                padding: ResponsiveValues.dialogPadding(context),
                 decoration: BoxDecoration(
                   color: AppColors.getCard(context).withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(30),
+                  borderRadius: BorderRadius.circular(
+                      ResponsiveValues.radiusXXLarge(context)),
                   border: Border.all(
                     color: AppColors.telegramBlue.withValues(alpha: 0.2),
                     width: 1,
                   ),
                 ),
-                child: Column(
+                child: ResponsiveColumn(
                   children: [
-                    Icon(
+                    ResponsiveIcon(
                       Icons.note_alt_outlined,
-                      size: 80,
+                      size: ResponsiveValues.iconSizeXXL(context),
                       color: AppColors.telegramBlue.withValues(alpha: 0.5),
                     ),
-                    const SizedBox(height: 24),
-                    Text(
+                    ResponsiveSizedBox(height: AppSpacing.xl),
+                    ResponsiveText(
                       'No Notes Available',
-                      style: AppTextStyles.headlineSmall.copyWith(
+                      style: AppTextStyles.headlineSmall(context).copyWith(
                         fontWeight: FontWeight.w600,
                         letterSpacing: -0.5,
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    Text(
+                    ResponsiveSizedBox(height: AppSpacing.m),
+                    ResponsiveText(
                       _isOffline
                           ? 'No cached notes available. Connect to load notes.'
                           : 'There are no notes for this chapter yet.',
-                      style: AppTextStyles.bodyLarge.copyWith(
+                      style: AppTextStyles.bodyLarge(context).copyWith(
                         color: AppColors.getTextSecondary(context),
                       ),
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 24),
+                    ResponsiveSizedBox(height: AppSpacing.xl),
                     if (!_isOffline)
                       _buildGlassButton(
                         context,
@@ -2333,7 +2585,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeOutCubic,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
           child: Container(
@@ -2346,7 +2599,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   AppColors.getCard(context).withValues(alpha: 0.2),
                 ],
               ),
-              borderRadius: BorderRadius.circular(24),
+              borderRadius:
+                  BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
               border: Border.all(
                 color: isDownloaded
                     ? AppColors.telegramGreen.withValues(alpha: 0.3)
@@ -2374,15 +2628,16 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                     ),
                   );
                 },
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: BorderRadius.circular(
+                    ResponsiveValues.radiusXLarge(context)),
                 child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Row(
+                  padding: ResponsiveValues.cardPadding(context),
+                  child: ResponsiveRow(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Container(
-                        width: 64,
-                        height: 64,
+                        width: ResponsiveValues.iconSizeXXL(context),
+                        height: ResponsiveValues.iconSizeXXL(context),
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: isPdf
@@ -2397,50 +2652,52 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                           ),
-                          borderRadius: BorderRadius.circular(20),
+                          borderRadius: BorderRadius.circular(
+                              ResponsiveValues.radiusLarge(context)),
                           boxShadow: [
                             BoxShadow(
                               color: (isPdf
                                       ? AppColors.telegramRed
                                       : AppColors.telegramBlue)
                                   .withValues(alpha: 0.3),
-                              blurRadius: 12,
-                              offset: const Offset(0, 4),
+                              blurRadius: ResponsiveValues.spacingM(context),
+                              offset: Offset(
+                                  0, ResponsiveValues.spacingXS(context)),
                             ),
                           ],
                         ),
-                        child: Icon(
+                        child: ResponsiveIcon(
                           isPdf
                               ? Icons.picture_as_pdf_rounded
                               : Icons.note_alt_rounded,
+                          size: ResponsiveValues.iconSizeXL(context),
                           color: Colors.white,
-                          size: 32,
                         ),
                       ),
-                      const SizedBox(width: 20),
+                      ResponsiveSizedBox(width: AppSpacing.xl),
                       Expanded(
-                        child: Column(
+                        child: ResponsiveColumn(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
+                            ResponsiveText(
                               note.title,
-                              style: AppTextStyles.titleMedium.copyWith(
+                              style:
+                                  AppTextStyles.titleMedium(context).copyWith(
                                 fontWeight: FontWeight.w600,
-                                fontSize: 16,
                                 letterSpacing: -0.3,
                               ),
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                             ),
-                            const SizedBox(height: 12),
-                            Row(
+                            ResponsiveSizedBox(height: AppSpacing.m),
+                            ResponsiveRow(
                               children: [
                                 _buildMetadataChip(
                                   context,
                                   icon: Icons.calendar_today_rounded,
                                   label: note.formattedDate,
                                 ),
-                                const SizedBox(width: 8),
+                                ResponsiveSizedBox(width: AppSpacing.s),
                                 _buildMetadataChip(
                                   context,
                                   icon: isPdf
@@ -2454,11 +2711,11 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                               ],
                             ),
                             if (isDownloading) ...[
-                              const SizedBox(height: 16),
+                              ResponsiveSizedBox(height: AppSpacing.l),
                               _buildDownloadProgress(context, progress),
                             ],
                             if (isDownloaded && !isDownloading) ...[
-                              const SizedBox(height: 16),
+                              ResponsiveSizedBox(height: AppSpacing.l),
                               _buildDownloadedBadge(context),
                             ],
                           ],
@@ -2495,93 +2752,57 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         );
   }
 
-  Widget _buildMetadataChip(
-    BuildContext context, {
-    required IconData icon,
-    required String label,
-    Color? color,
-  }) {
-    final effectiveColor = color ?? AppColors.getTextSecondary(context);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: effectiveColor.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: effectiveColor.withValues(alpha: 0.2),
-          width: 1,
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            icon,
-            size: 12,
-            color: effectiveColor,
-          ),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: AppTextStyles.caption.copyWith(
-              color: effectiveColor,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildDownloadProgress(BuildContext context, double progress) {
-    return Column(
+    return ResponsiveColumn(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
+        ResponsiveRow(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
+            ResponsiveText(
               'Downloading...',
-              style: AppTextStyles.caption.copyWith(
+              style: AppTextStyles.caption(context).copyWith(
                 color: AppColors.telegramBlue,
                 fontWeight: FontWeight.w600,
               ),
             ),
-            Text(
+            ResponsiveText(
               '${(progress * 100).toInt()}%',
-              style: AppTextStyles.caption.copyWith(
+              style: AppTextStyles.caption(context).copyWith(
                 color: AppColors.getTextSecondary(context),
                 fontWeight: FontWeight.w600,
               ),
             ),
           ],
         ),
-        const SizedBox(height: 6),
+        ResponsiveSizedBox(height: AppSpacing.xs),
         ClipRRect(
-          borderRadius: BorderRadius.circular(4),
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusSmall(context)),
           child: Stack(
             children: [
               Container(
-                height: 6,
+                height: ResponsiveValues.progressBarHeight(context),
                 decoration: BoxDecoration(
                   color: AppColors.getSurface(context).withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(4),
+                  borderRadius: BorderRadius.circular(
+                      ResponsiveValues.radiusSmall(context)),
                 ),
               ),
               FractionallySizedBox(
                 widthFactor: progress,
                 child: Container(
-                  height: 6,
+                  height: ResponsiveValues.progressBarHeight(context),
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
-                      colors: [Color(0xFF2AABEE), Color(0xFF5856D6)],
+                      colors: AppColors.blueGradient,
                     ),
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: BorderRadius.circular(
+                        ResponsiveValues.radiusSmall(context)),
                     boxShadow: [
                       BoxShadow(
                         color: AppColors.telegramBlue.withValues(alpha: 0.5),
-                        blurRadius: 4,
+                        blurRadius: ResponsiveValues.spacingXS(context),
                       ),
                     ],
                   ),
@@ -2596,7 +2817,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
   Widget _buildDownloadedBadge(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: EdgeInsets.symmetric(
+        horizontal: ResponsiveValues.spacingS(context),
+        vertical: ResponsiveValues.spacingXXS(context),
+      ),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
@@ -2604,13 +2828,14 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
             AppColors.telegramGreen.withValues(alpha: 0.05),
           ],
         ),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusFull(context)),
         border: Border.all(
           color: AppColors.telegramGreen.withValues(alpha: 0.3),
           width: 1,
         ),
       ),
-      child: Row(
+      child: ResponsiveRow(
         mainAxisSize: MainAxisSize.min,
         children: [
           const Icon(
@@ -2618,10 +2843,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
             size: 14,
             color: AppColors.telegramGreen,
           ),
-          const SizedBox(width: 4),
-          Text(
+          ResponsiveSizedBox(width: AppSpacing.xs),
+          ResponsiveText(
             'Downloaded',
-            style: AppTextStyles.caption.copyWith(
+            style: AppTextStyles.caption(context).copyWith(
               color: AppColors.telegramGreen,
               fontWeight: FontWeight.w600,
             ),
@@ -2647,16 +2872,18 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
             _downloadNote(note);
           }
         },
-        borderRadius: BorderRadius.circular(16),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
         child: Container(
-          padding: const EdgeInsets.all(12),
+          padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
           decoration: BoxDecoration(
             color: isDownloaded
                 ? AppColors.telegramGreen.withValues(alpha: 0.1)
                 : isDownloading
                     ? AppColors.telegramBlue.withValues(alpha: 0.1)
                     : AppColors.getSurface(context).withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(16),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
             border: Border.all(
               color: isDownloaded
                   ? AppColors.telegramGreen.withValues(alpha: 0.3)
@@ -2667,18 +2894,18 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
               width: 1,
             ),
           ),
-          child: Icon(
+          child: ResponsiveIcon(
             isDownloaded
                 ? Icons.check_circle_rounded
                 : isDownloading
                     ? Icons.hourglass_empty_rounded
                     : Icons.cloud_download_rounded,
+            size: ResponsiveValues.iconSizeL(context),
             color: isDownloaded
                 ? AppColors.telegramGreen
                 : isDownloading
                     ? AppColors.telegramBlue
                     : AppColors.getTextSecondary(context),
-            size: 24,
           ),
         ),
       ),
@@ -2691,7 +2918,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       builder: (context) => Dialog(
         backgroundColor: Colors.transparent,
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
             child: Container(
@@ -2704,65 +2932,70 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                     AppColors.getCard(context).withValues(alpha: 0.2),
                   ],
                 ),
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: BorderRadius.circular(
+                    ResponsiveValues.radiusXLarge(context)),
                 border: Border.all(
                   color: AppColors.telegramRed.withValues(alpha: 0.3),
                   width: 1,
                 ),
               ),
-              padding: const EdgeInsets.all(24),
-              child: Column(
+              padding: ResponsiveValues.dialogPadding(context),
+              child: ResponsiveColumn(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(16),
+                    padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
                     decoration: BoxDecoration(
                       color: AppColors.telegramRed.withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(
+                    child: ResponsiveIcon(
                       Icons.delete_outline_rounded,
+                      size: ResponsiveValues.iconSizeXL(context),
                       color: AppColors.telegramRed,
-                      size: 32,
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  Text(
+                  ResponsiveSizedBox(height: AppSpacing.l),
+                  ResponsiveText(
                     'Remove Download',
-                    style: AppTextStyles.titleMedium.copyWith(
+                    style: AppTextStyles.titleMedium(context).copyWith(
                       fontWeight: FontWeight.w700,
                       letterSpacing: -0.5,
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
+                  ResponsiveSizedBox(height: AppSpacing.s),
+                  ResponsiveText(
                     'Remove downloaded note "${note.title}"?',
-                    style: AppTextStyles.bodyMedium.copyWith(
+                    style: AppTextStyles.bodyMedium(context).copyWith(
                       color: AppColors.getTextSecondary(context),
                     ),
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 24),
-                  Row(
+                  ResponsiveSizedBox(height: AppSpacing.xl),
+                  ResponsiveRow(
                     children: [
                       Expanded(
                         child: TextButton(
                           onPressed: () => Navigator.pop(context),
                           style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            padding: EdgeInsets.symmetric(
+                              vertical: ResponsiveValues.spacingM(context),
+                            ),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
+                              borderRadius: BorderRadius.circular(
+                                ResponsiveValues.radiusMedium(context),
+                              ),
                             ),
                           ),
-                          child: Text(
+                          child: ResponsiveText(
                             'Cancel',
-                            style: AppTextStyles.labelLarge.copyWith(
+                            style: AppTextStyles.labelLarge(context).copyWith(
                               color: AppColors.getTextSecondary(context),
                             ),
                           ),
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      ResponsiveSizedBox(width: AppSpacing.m),
                       Expanded(
                         child: ElevatedButton(
                           onPressed: () {
@@ -2776,9 +3009,13 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.telegramRed,
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            padding: EdgeInsets.symmetric(
+                              vertical: ResponsiveValues.spacingM(context),
+                            ),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
+                              borderRadius: BorderRadius.circular(
+                                ResponsiveValues.radiusMedium(context),
+                              ),
                             ),
                             elevation: 0,
                           ),
@@ -2786,54 +3023,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                         ),
                       ),
                     ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGlassButton(
-    BuildContext context, {
-    required String label,
-    required IconData icon,
-    required VoidCallback onPressed,
-  }) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Material(
-          color: AppColors.getCard(context).withValues(alpha: 0.2),
-          child: InkWell(
-            onTap: onPressed,
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
-              decoration: BoxDecoration(
-                border: Border.all(
-                  color: AppColors.telegramBlue.withValues(alpha: 0.2),
-                  width: 1,
-                ),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    icon,
-                    color: AppColors.telegramBlue,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    label,
-                    style: AppTextStyles.labelMedium.copyWith(
-                      color: AppColors.telegramBlue,
-                      fontWeight: FontWeight.w600,
-                    ),
                   ),
                 ],
               ),
@@ -2892,64 +3081,65 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         slivers: [
           SliverToBoxAdapter(
             child: Container(
-              margin: EdgeInsets.all(ScreenSize.responsiveValue(
-                context: context,
-                mobile: 16,
-                tablet: 20,
-                desktop: 24,
-              )),
+              margin: ResponsiveValues.screenPadding(context),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: BorderRadius.circular(
+                    ResponsiveValues.radiusXLarge(context)),
                 child: BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                   child: Container(
                     decoration: BoxDecoration(
                       color: AppColors.getCard(context).withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(24),
+                      borderRadius: BorderRadius.circular(
+                          ResponsiveValues.radiusXLarge(context)),
                       border: Border.all(
                         color: AppColors.telegramBlue.withValues(alpha: 0.1),
                         width: 1,
                       ),
                     ),
                     child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
+                      padding: ResponsiveValues.cardPadding(context),
+                      child: ResponsiveColumn(
                         children: [
-                          Row(
+                          ResponsiveRow(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text(
+                              ResponsiveText(
                                 'Practice Progress',
-                                style: AppTextStyles.titleMedium.copyWith(
+                                style:
+                                    AppTextStyles.titleMedium(context).copyWith(
                                   fontWeight: FontWeight.w600,
                                   letterSpacing: -0.5,
                                 ),
                               ),
                               Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 6,
+                                padding: EdgeInsets.symmetric(
+                                  horizontal:
+                                      ResponsiveValues.spacingM(context),
+                                  vertical:
+                                      ResponsiveValues.spacingXXS(context),
                                 ),
                                 decoration: BoxDecoration(
                                   gradient: const LinearGradient(
-                                    colors: [
-                                      AppColors.telegramBlue,
-                                      AppColors.telegramPurple,
-                                    ],
+                                    colors: AppColors.blueGradient,
                                   ),
-                                  borderRadius: BorderRadius.circular(20),
+                                  borderRadius: BorderRadius.circular(
+                                      ResponsiveValues.radiusFull(context)),
                                   boxShadow: [
                                     BoxShadow(
                                       color: AppColors.telegramBlue
                                           .withValues(alpha: 0.3),
-                                      blurRadius: 8,
-                                      offset: const Offset(0, 2),
+                                      blurRadius:
+                                          ResponsiveValues.spacingS(context),
+                                      offset: Offset(0,
+                                          ResponsiveValues.spacingXXS(context)),
                                     ),
                                   ],
                                 ),
-                                child: Text(
+                                child: ResponsiveText(
                                   '$answeredCount/$totalCount',
-                                  style: AppTextStyles.labelSmall.copyWith(
+                                  style: AppTextStyles.labelSmall(context)
+                                      .copyWith(
                                     color: Colors.white,
                                     fontWeight: FontWeight.w700,
                                   ),
@@ -2957,34 +3147,36 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                               ),
                             ],
                           ),
-                          const SizedBox(height: 16),
+                          ResponsiveSizedBox(height: AppSpacing.l),
                           Stack(
                             children: [
                               Container(
-                                height: 8,
+                                height:
+                                    ResponsiveValues.progressBarHeight(context),
                                 decoration: BoxDecoration(
                                   color: AppColors.getSurface(context)
                                       .withValues(alpha: 0.3),
-                                  borderRadius: BorderRadius.circular(4),
+                                  borderRadius: BorderRadius.circular(
+                                      ResponsiveValues.radiusSmall(context)),
                                 ),
                               ),
                               FractionallySizedBox(
                                 widthFactor: progress,
                                 child: Container(
-                                  height: 8,
+                                  height: ResponsiveValues.progressBarHeight(
+                                      context),
                                   decoration: BoxDecoration(
                                     gradient: const LinearGradient(
-                                      colors: [
-                                        AppColors.telegramBlue,
-                                        AppColors.telegramPurple,
-                                      ],
+                                      colors: AppColors.blueGradient,
                                     ),
-                                    borderRadius: BorderRadius.circular(4),
+                                    borderRadius: BorderRadius.circular(
+                                        ResponsiveValues.radiusSmall(context)),
                                     boxShadow: [
                                       BoxShadow(
                                         color: AppColors.telegramBlue
                                             .withValues(alpha: 0.5),
-                                        blurRadius: 4,
+                                        blurRadius:
+                                            ResponsiveValues.spacingXS(context),
                                       ),
                                     ],
                                   ),
@@ -3002,15 +3194,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           ),
           SliverToBoxAdapter(
             child: Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: ScreenSize.responsiveValue(
-                  context: context,
-                  mobile: 16,
-                  tablet: 20,
-                  desktop: 24,
-                ),
-              ),
-              child: Row(
+              padding: ResponsiveValues.screenPadding(context),
+              child: ResponsiveRow(
                 children: [
                   Expanded(
                     child: _buildActionButton(
@@ -3019,18 +3204,18 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                       icon: Icons.checklist_rounded,
                       isEnabled: _selectedAnswers.values
                           .any((v) => v != null && v.isNotEmpty),
-                      gradient: const [Color(0xFF2AABEE), Color(0xFF5856D6)],
+                      gradient: AppColors.blueGradient,
                       onPressed: () => _checkAllAnswers(questions),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  ResponsiveSizedBox(width: AppSpacing.m),
                   Expanded(
                     child: _buildActionButton(
                       context,
                       label: answeredCount > 0 ? 'Reset All' : 'Reset',
                       icon: Icons.refresh_rounded,
                       isEnabled: answeredCount > 0,
-                      gradient: const [Color(0xFFFF9500), Color(0xFFFF2D55)],
+                      gradient: AppColors.orangeGradient,
                       onPressed: _resetAllQuestions,
                     ),
                   ),
@@ -3041,15 +3226,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           if (answeredCount == totalCount && totalCount > 0)
             SliverToBoxAdapter(
               child: Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: ScreenSize.responsiveValue(
-                    context: context,
-                    mobile: 16,
-                    tablet: 20,
-                    desktop: 24,
-                  ),
-                  vertical: 8,
-                ),
+                padding: ResponsiveValues.screenPadding(context),
                 child: _buildGlassButton(
                   context,
                   label: _showAllExplanations
@@ -3062,28 +3239,20 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                 ),
               ),
             ),
-          const SliverToBoxAdapter(child: SizedBox(height: 8)),
+          SliverToBoxAdapter(child: ResponsiveSizedBox(height: AppSpacing.s)),
           SliverList(
             delegate: SliverChildBuilderDelegate(
               (context, index) {
                 final question = questions[index];
                 return Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: ScreenSize.responsiveValue(
-                      context: context,
-                      mobile: 16,
-                      tablet: 20,
-                      desktop: 24,
-                    ),
-                    vertical: 8,
-                  ),
+                  padding: ResponsiveValues.screenPadding(context),
                   child: _buildPracticeQuestionCard(question, index),
                 );
               },
               childCount: questions.length,
             ),
           ),
-          const SliverToBoxAdapter(child: SizedBox(height: 24)),
+          SliverToBoxAdapter(child: ResponsiveSizedBox(height: AppSpacing.xl)),
         ],
       ),
     );
@@ -3104,9 +3273,12 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         color: Colors.transparent,
         child: InkWell(
           onTap: isEnabled ? onPressed : null,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
           child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 14),
+            padding: EdgeInsets.symmetric(
+              vertical: ResponsiveValues.spacingM(context),
+            ),
             decoration: BoxDecoration(
               gradient: isEnabled
                   ? LinearGradient(colors: gradient)
@@ -3116,7 +3288,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                         AppColors.getSurface(context).withValues(alpha: 0.3),
                       ],
                     ),
-              borderRadius: BorderRadius.circular(16),
+              borderRadius:
+                  BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
               border: Border.all(
                 color: isEnabled
                     ? Colors.transparent
@@ -3128,27 +3301,27 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   ? [
                       BoxShadow(
                         color: gradient.first.withValues(alpha: 0.3),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
+                        blurRadius: ResponsiveValues.spacingM(context),
+                        offset: Offset(0, ResponsiveValues.spacingXS(context)),
                       ),
                     ]
                   : null,
             ),
-            child: Row(
+            child: ResponsiveRow(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(
+                ResponsiveIcon(
                   icon,
+                  size: ResponsiveValues.iconSizeS(context),
                   color: isEnabled
                       ? Colors.white
                       : AppColors.getTextSecondary(context)
                           .withValues(alpha: 0.5),
-                  size: 20,
                 ),
-                const SizedBox(width: 8),
-                Text(
+                ResponsiveSizedBox(width: AppSpacing.s),
+                ResponsiveText(
                   label,
-                  style: AppTextStyles.labelLarge.copyWith(
+                  style: AppTextStyles.labelLarge(context).copyWith(
                     color: isEnabled
                         ? Colors.white
                         : AppColors.getTextSecondary(context)
@@ -3178,7 +3351,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeOutCubic,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
           child: Container(
@@ -3191,7 +3365,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   AppColors.getCard(context).withValues(alpha: 0.2),
                 ],
               ),
-              borderRadius: BorderRadius.circular(24),
+              borderRadius:
+                  BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
               border: Border.all(
                 color: isAnswered
                     ? (isCorrect
@@ -3203,11 +3378,11 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
               ),
             ),
             child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
+              padding: ResponsiveValues.cardPadding(context),
+              child: ResponsiveColumn(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
+                  ResponsiveRow(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       _buildDifficultyBadge(question.difficulty),
@@ -3215,7 +3390,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                           index + 1, isAnswered, isCorrect),
                     ],
                   ),
-                  const SizedBox(height: 20),
+                  ResponsiveSizedBox(height: AppSpacing.xl),
                   ShaderMask(
                     shaderCallback: (bounds) => LinearGradient(
                       colors: [
@@ -3226,18 +3401,18 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                       begin: Alignment.centerLeft,
                       end: Alignment.centerRight,
                     ).createShader(bounds),
-                    child: Text(
+                    child: ResponsiveText(
                       question.questionText,
-                      style: AppTextStyles.titleMedium.copyWith(
+                      style: AppTextStyles.titleMedium(context).copyWith(
                         fontWeight: FontWeight.w600,
                         height: 1.5,
                         letterSpacing: -0.3,
                       ),
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  ResponsiveSizedBox(height: AppSpacing.xl),
                   ..._buildPracticeQuestionOptions(question, questionId),
-                  const SizedBox(height: 24),
+                  ResponsiveSizedBox(height: AppSpacing.xl),
                   _buildCheckAnswerButton(question, questionId),
                   if (_showExplanation[questionId]!)
                     _buildExplanationSection(question, questionId),
@@ -3267,7 +3442,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     final color = _getDifficultyColor(difficulty);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: EdgeInsets.symmetric(
+        horizontal: ResponsiveValues.spacingM(context),
+        vertical: ResponsiveValues.spacingXXS(context),
+      ),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
@@ -3277,33 +3455,34 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(30),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusXXLarge(context)),
         border: Border.all(
           color: color.withValues(alpha: 0.3),
           width: 1,
         ),
       ),
-      child: Row(
+      child: ResponsiveRow(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 6,
-            height: 6,
+            width: ResponsiveValues.spacingXS(context),
+            height: ResponsiveValues.spacingXS(context),
             decoration: BoxDecoration(
               color: color,
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
                   color: color.withValues(alpha: 0.5),
-                  blurRadius: 4,
+                  blurRadius: ResponsiveValues.spacingXS(context),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 8),
-          Text(
+          ResponsiveSizedBox(width: AppSpacing.s),
+          ResponsiveText(
             difficulty.toUpperCase(),
-            style: AppTextStyles.labelSmall.copyWith(
+            style: AppTextStyles.labelSmall(context).copyWith(
               color: color,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.5,
@@ -3337,27 +3516,31 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: EdgeInsets.symmetric(
+        horizontal: ResponsiveValues.spacingM(context),
+        vertical: ResponsiveValues.spacingXXS(context),
+      ),
       decoration: BoxDecoration(
         color: backgroundColor,
-        borderRadius: BorderRadius.circular(30),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusXXLarge(context)),
         border: Border.all(color: borderColor, width: 1),
       ),
-      child: Row(
+      child: ResponsiveRow(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
             Icon(
               icon,
-              size: 14,
+              size: ResponsiveValues.iconSizeXXS(context),
               color:
                   isCorrect ? AppColors.telegramGreen : AppColors.telegramRed,
             ),
-            const SizedBox(width: 6),
+            ResponsiveSizedBox(width: AppSpacing.xs),
           ],
-          Text(
+          ResponsiveText(
             'Q$number',
-            style: AppTextStyles.labelSmall.copyWith(
+            style: AppTextStyles.labelSmall(context).copyWith(
               color: isAnswered
                   ? (isCorrect
                       ? AppColors.telegramGreen
@@ -3427,30 +3610,29 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
             onTap: showExplanation
                 ? null
                 : () => _selectAnswer(questionId, optionLetter),
-            borderRadius: BorderRadius.circular(16),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
             child: Container(
-              padding: const EdgeInsets.all(16),
+              padding: ResponsiveValues.cardPadding(context),
               decoration: BoxDecoration(
                 color: optionColor,
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(
+                    ResponsiveValues.radiusMedium(context)),
                 border: Border.all(
                   color: borderColor,
                   width: isSelected ? 2 : 1,
                 ),
               ),
-              child: Row(
+              child: ResponsiveRow(
                 children: [
                   Container(
-                    width: 32,
-                    height: 32,
+                    width: ResponsiveValues.iconSizeL(context),
+                    height: ResponsiveValues.iconSizeL(context),
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       gradient: isSelected && !showExplanation
                           ? const LinearGradient(
-                              colors: [
-                                AppColors.telegramBlue,
-                                AppColors.telegramPurple,
-                              ],
+                              colors: AppColors.blueGradient,
                             )
                           : null,
                       color: isSelected && !showExplanation
@@ -3472,14 +3654,15 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                       child: icon != null
                           ? Icon(
                               icon,
-                              size: 16,
+                              size: ResponsiveValues.iconSizeXS(context),
                               color: isCorrectAnswer
                                   ? AppColors.telegramGreen
                                   : AppColors.telegramRed,
                             )
-                          : Text(
+                          : ResponsiveText(
                               optionLetter,
-                              style: AppTextStyles.labelMedium.copyWith(
+                              style:
+                                  AppTextStyles.labelMedium(context).copyWith(
                                 color: isSelected && !showExplanation
                                     ? Colors.white
                                     : showExplanation && isCorrectAnswer
@@ -3493,11 +3676,11 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                             ),
                     ),
                   ),
-                  const SizedBox(width: 16),
+                  ResponsiveSizedBox(width: AppSpacing.l),
                   Expanded(
-                    child: Text(
+                    child: ResponsiveText(
                       option,
-                      style: AppTextStyles.bodyMedium.copyWith(
+                      style: AppTextStyles.bodyMedium(context).copyWith(
                         color: showExplanation && isCorrectAnswer
                             ? AppColors.telegramGreen
                             : showExplanation &&
@@ -3528,7 +3711,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
     if (showExplanation) {
       return Container(
-        padding: const EdgeInsets.all(16),
+        padding: ResponsiveValues.cardPadding(context),
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: isCorrect
@@ -3541,7 +3724,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                     AppColors.telegramRed.withValues(alpha: 0.05),
                   ],
           ),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
           border: Border.all(
             color: isCorrect
                 ? AppColors.telegramGreen.withValues(alpha: 0.3)
@@ -3549,10 +3733,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
             width: 1,
           ),
         ),
-        child: Row(
+        child: ResponsiveRow(
           children: [
             Container(
-              padding: const EdgeInsets.all(8),
+              padding: EdgeInsets.all(ResponsiveValues.spacingS(context)),
               decoration: BoxDecoration(
                 color: isCorrect
                     ? AppColors.telegramGreen.withValues(alpha: 0.2)
@@ -3563,17 +3747,17 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                 isCorrect ? Icons.check_rounded : Icons.close_rounded,
                 color:
                     isCorrect ? AppColors.telegramGreen : AppColors.telegramRed,
-                size: 20,
+                size: ResponsiveValues.iconSizeS(context),
               ),
             ),
-            const SizedBox(width: 12),
+            ResponsiveSizedBox(width: AppSpacing.m),
             Expanded(
-              child: Column(
+              child: ResponsiveColumn(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  ResponsiveText(
                     isCorrect ? 'Correct Answer!' : 'Incorrect',
-                    style: AppTextStyles.titleSmall.copyWith(
+                    style: AppTextStyles.titleSmall(context).copyWith(
                       color: isCorrect
                           ? AppColors.telegramGreen
                           : AppColors.telegramRed,
@@ -3581,9 +3765,9 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                     ),
                   ),
                   if (!isCorrect)
-                    Text(
+                    ResponsiveText(
                       'The correct answer is option ${question.correctOption.toUpperCase()}',
-                      style: AppTextStyles.caption.copyWith(
+                      style: AppTextStyles.caption(context).copyWith(
                         color: AppColors.getTextSecondary(context),
                       ),
                     ),
@@ -3603,16 +3787,16 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           onTap: isSelected
               ? () => _checkAnswer(questionId, _selectedAnswers[questionId]!)
               : null,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
           child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 16),
+            padding: EdgeInsets.symmetric(
+              vertical: ResponsiveValues.spacingL(context),
+            ),
             decoration: BoxDecoration(
               gradient: isSelected
                   ? const LinearGradient(
-                      colors: [
-                        AppColors.telegramBlue,
-                        AppColors.telegramPurple,
-                      ],
+                      colors: AppColors.blueGradient,
                     )
                   : LinearGradient(
                       colors: [
@@ -3620,7 +3804,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                         AppColors.getSurface(context).withValues(alpha: 0.3),
                       ],
                     ),
-              borderRadius: BorderRadius.circular(16),
+              borderRadius:
+                  BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
               border: Border.all(
                 color: isSelected
                     ? Colors.transparent
@@ -3632,16 +3817,16 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   ? [
                       BoxShadow(
                         color: AppColors.telegramBlue.withValues(alpha: 0.3),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
+                        blurRadius: ResponsiveValues.spacingM(context),
+                        offset: Offset(0, ResponsiveValues.spacingXS(context)),
                       ),
                     ]
                   : null,
             ),
             child: Center(
-              child: Text(
+              child: ResponsiveText(
                 'Check Answer',
-                style: AppTextStyles.labelLarge.copyWith(
+                style: AppTextStyles.labelLarge(context).copyWith(
                   color: isSelected
                       ? Colors.white
                       : AppColors.getTextSecondary(context),
@@ -3664,7 +3849,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       curve: Curves.easeOutCubic,
       margin: const EdgeInsets.only(top: 20),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
           child: Container(
@@ -3677,7 +3863,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   AppColors.getCard(context).withValues(alpha: 0.1),
                 ],
               ),
-              borderRadius: BorderRadius.circular(20),
+              borderRadius:
+                  BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
               border: Border.all(
                 color: isCorrect
                     ? AppColors.telegramGreen.withValues(alpha: 0.3)
@@ -3685,14 +3872,15 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                 width: 1,
               ),
             ),
-            padding: const EdgeInsets.all(20),
-            child: Column(
+            padding: ResponsiveValues.cardPadding(context),
+            child: ResponsiveColumn(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
+                ResponsiveRow(
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(6),
+                      padding:
+                          EdgeInsets.all(ResponsiveValues.spacingXS(context)),
                       decoration: BoxDecoration(
                         color: isCorrect
                             ? AppColors.telegramGreen.withValues(alpha: 0.2)
@@ -3706,50 +3894,51 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                         color: isCorrect
                             ? AppColors.telegramGreen
                             : AppColors.telegramBlue,
-                        size: 16,
+                        size: ResponsiveValues.iconSizeXS(context),
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    Text(
+                    ResponsiveSizedBox(width: AppSpacing.s),
+                    ResponsiveText(
                       'Explanation',
-                      style: AppTextStyles.titleSmall.copyWith(
+                      style: AppTextStyles.titleSmall(context).copyWith(
                         fontWeight: FontWeight.w700,
                         letterSpacing: -0.3,
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                Text(
+                ResponsiveSizedBox(height: AppSpacing.l),
+                ResponsiveText(
                   question.explanation ?? 'No explanation provided.',
-                  style: AppTextStyles.bodyMedium.copyWith(
+                  style: AppTextStyles.bodyMedium(context).copyWith(
                     color: AppColors.getTextSecondary(context),
                     height: 1.6,
                   ),
                 ),
                 if (!isCorrect) ...[
-                  const SizedBox(height: 16),
+                  ResponsiveSizedBox(height: AppSpacing.l),
                   Container(
-                    padding: const EdgeInsets.all(16),
+                    padding: ResponsiveValues.cardPadding(context),
                     decoration: BoxDecoration(
                       color: AppColors.telegramGreen.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(
+                          ResponsiveValues.radiusMedium(context)),
                       border: Border.all(
                         color: AppColors.telegramGreen.withValues(alpha: 0.2),
                       ),
                     ),
-                    child: Row(
+                    child: ResponsiveRow(
                       children: [
                         const Icon(
                           Icons.check_circle_rounded,
                           color: AppColors.telegramGreen,
                           size: 20,
                         ),
-                        const SizedBox(width: 12),
+                        ResponsiveSizedBox(width: AppSpacing.m),
                         Expanded(
-                          child: Text(
+                          child: ResponsiveText(
                             'Correct answer: Option ${question.correctOption.toUpperCase()}',
-                            style: AppTextStyles.bodyMedium.copyWith(
+                            style: AppTextStyles.bodyMedium(context).copyWith(
                               color: AppColors.telegramGreen,
                               fontWeight: FontWeight.w600,
                             ),
@@ -3769,12 +3958,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
   Widget _buildSkeletonList({required int itemCount, String type = 'video'}) {
     return ListView.builder(
-      padding: EdgeInsets.all(ScreenSize.responsiveValue(
-        context: context,
-        mobile: 16,
-        tablet: 20,
-        desktop: 24,
-      )),
+      padding: ResponsiveValues.screenPadding(context),
       itemCount: itemCount,
       itemBuilder: (context, index) {
         return Padding(
@@ -3786,21 +3970,23 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
             child: Container(
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: BorderRadius.circular(
+                    ResponsiveValues.radiusXLarge(context)),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
+                    blurRadius: ResponsiveValues.spacingS(context),
+                    offset: Offset(0, ResponsiveValues.spacingXS(context)),
                   ),
                 ],
               ),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: BorderRadius.circular(
+                    ResponsiveValues.radiusXLarge(context)),
                 child: BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
                   child: Container(
-                    padding: const EdgeInsets.all(20),
+                    padding: ResponsiveValues.cardPadding(context),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topLeft,
@@ -3811,52 +3997,68 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                         ],
                       ),
                     ),
-                    child: Row(
+                    child: ResponsiveRow(
                       children: [
                         Container(
-                          width: type == 'video' ? 100 : 64,
-                          height: type == 'video' ? 70 : 64,
+                          width: type == 'video'
+                              ? ResponsiveValues.spacingXXXL(context) * 3
+                              : ResponsiveValues.iconSizeXXL(context),
+                          height: type == 'video'
+                              ? ResponsiveValues.spacingXXL(context) * 2
+                              : ResponsiveValues.iconSizeXXL(context),
                           decoration: BoxDecoration(
                             color: Colors.grey[300]!.withValues(alpha: 0.5),
                             borderRadius: BorderRadius.circular(
-                              type == 'video' ? 16 : 20,
+                              type == 'video'
+                                  ? ResponsiveValues.radiusMedium(context)
+                                  : ResponsiveValues.radiusLarge(context),
                             ),
                           ),
                         ),
-                        const SizedBox(width: 20),
+                        ResponsiveSizedBox(width: AppSpacing.xl),
                         Expanded(
-                          child: Column(
+                          child: ResponsiveColumn(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Container(
                                 width: double.infinity,
-                                height: 20,
+                                height: ResponsiveValues.spacingXL(context),
                                 decoration: BoxDecoration(
                                   color:
                                       Colors.grey[300]!.withValues(alpha: 0.5),
-                                  borderRadius: BorderRadius.circular(4),
+                                  borderRadius: BorderRadius.circular(
+                                    ResponsiveValues.radiusSmall(context),
+                                  ),
                                 ),
                               ),
-                              const SizedBox(height: 12),
-                              Row(
+                              ResponsiveSizedBox(height: AppSpacing.m),
+                              ResponsiveRow(
                                 children: [
                                   Container(
-                                    width: 80,
-                                    height: 16,
+                                    width:
+                                        ResponsiveValues.spacingXXL(context) *
+                                            2,
+                                    height: ResponsiveValues.spacingL(context),
                                     decoration: BoxDecoration(
                                       color: Colors.grey[300]!
                                           .withValues(alpha: 0.5),
-                                      borderRadius: BorderRadius.circular(12),
+                                      borderRadius: BorderRadius.circular(
+                                        ResponsiveValues.radiusMedium(context),
+                                      ),
                                     ),
                                   ),
-                                  const SizedBox(width: 8),
+                                  ResponsiveSizedBox(width: AppSpacing.s),
                                   Container(
-                                    width: 60,
-                                    height: 16,
+                                    width:
+                                        ResponsiveValues.spacingXXL(context) *
+                                            1.5,
+                                    height: ResponsiveValues.spacingL(context),
                                     decoration: BoxDecoration(
                                       color: Colors.grey[300]!
                                           .withValues(alpha: 0.5),
-                                      borderRadius: BorderRadius.circular(12),
+                                      borderRadius: BorderRadius.circular(
+                                        ResponsiveValues.radiusMedium(context),
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -3907,8 +4109,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     if (state == AppLifecycleState.resumed) _resumeVideoIfNeeded();
   }
 
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildMobileLayout() {
     if (_isLoading && !_hasCachedData) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
@@ -3917,8 +4118,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
             baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
             highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
             child: Container(
-              width: 200,
-              height: 24,
+              width: ResponsiveValues.spacingXXXL(context) * 4,
+              height: ResponsiveValues.spacingXL(context),
               color: Colors.white,
             ),
           ),
@@ -3933,15 +4134,19 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
         appBar: AppBar(
-          title: Text('Error',
-              style: AppTextStyles.titleMedium
-                  .copyWith(color: AppColors.getTextPrimary(context))),
+          title: ResponsiveText(
+            'Error',
+            style: AppTextStyles.titleMedium(context),
+          ),
           backgroundColor: AppColors.getBackground(context),
           elevation: 0,
           leading: IconButton(
-              icon: Icon(Icons.arrow_back_rounded,
-                  color: AppColors.getTextPrimary(context)),
-              onPressed: () => context.pop()),
+            icon: ResponsiveIcon(
+              Icons.arrow_back_rounded,
+              color: AppColors.getTextPrimary(context),
+            ),
+            onPressed: () => context.pop(),
+          ),
         ),
         body: Center(
           child: custom.ErrorWidget(
@@ -3959,15 +4164,19 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
         appBar: AppBar(
-          title: Text('Not Found',
-              style: AppTextStyles.titleMedium
-                  .copyWith(color: AppColors.getTextPrimary(context))),
+          title: ResponsiveText(
+            'Not Found',
+            style: AppTextStyles.titleMedium(context),
+          ),
           backgroundColor: AppColors.getBackground(context),
           elevation: 0,
           leading: IconButton(
-              icon: Icon(Icons.arrow_back_rounded,
-                  color: AppColors.getTextPrimary(context)),
-              onPressed: () => context.pop()),
+            icon: ResponsiveIcon(
+              Icons.arrow_back_rounded,
+              color: AppColors.getTextPrimary(context),
+            ),
+            onPressed: () => context.pop(),
+          ),
         ),
         body: Center(
           child: EmptyState(
@@ -3989,57 +4198,71 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: AppBar(
-        title: Text(_chapter!.name,
-            style: AppTextStyles.titleMedium
-                .copyWith(color: AppColors.getTextPrimary(context)),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis),
+        title: ResponsiveText(
+          _chapter!.name,
+          style: AppTextStyles.titleMedium(context),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         backgroundColor: AppColors.getBackground(context),
         elevation: 0,
         leading: IconButton(
-            icon: Icon(Icons.arrow_back_rounded,
-                color: AppColors.getTextPrimary(context)),
-            onPressed: () => context.pop()),
+          icon: ResponsiveIcon(
+            Icons.arrow_back_rounded,
+            color: AppColors.getTextPrimary(context),
+          ),
+          onPressed: () => context.pop(),
+        ),
         actions: [
           PopupMenuButton<String>(
-            icon: Icon(Icons.more_vert_rounded,
-                color: AppColors.getTextPrimary(context)),
+            icon: ResponsiveIcon(
+              Icons.more_vert_rounded,
+              color: AppColors.getTextPrimary(context),
+            ),
             onSelected: (value) {
               if (value == 'clear_downloads') _clearAllDownloads();
             },
             itemBuilder: (context) => [
               const PopupMenuItem(
-                  value: 'clear_downloads', child: Text('Clear Downloads')),
+                value: 'clear_downloads',
+                child: Text('Clear Downloads'),
+              ),
             ],
           ),
           if (_isRefreshing)
-            const Padding(
-              padding: EdgeInsets.all(16),
+            Padding(
+              padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
               child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor:
-                          AlwaysStoppedAnimation(AppColors.telegramBlue))),
+                width: ResponsiveValues.iconSizeS(context),
+                height: ResponsiveValues.iconSizeS(context),
+                child: const CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation(AppColors.telegramBlue),
+                ),
+              ),
             ),
         ],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(48),
+          preferredSize:
+              Size.fromHeight(ResponsiveValues.appBarHeight(context)),
           child: Container(
             decoration: BoxDecoration(
-                border: Border(
-                    bottom: BorderSide(
-                        color: Theme.of(context).dividerColor, width: 0.5))),
+              border: Border(
+                bottom: BorderSide(
+                  color: AppColors.getDivider(context),
+                  width: 0.5,
+                ),
+              ),
+            ),
             child: TabBar(
               controller: _tabController,
               tabs: const [
                 Tab(icon: Icon(Icons.videocam_rounded), text: 'Videos'),
                 Tab(icon: Icon(Icons.note_alt_rounded), text: 'Notes'),
-                Tab(icon: Icon(Icons.quiz_rounded), text: 'Practice')
+                Tab(icon: Icon(Icons.quiz_rounded), text: 'Practice'),
               ],
-              labelStyle: AppTextStyles.labelMedium,
-              unselectedLabelStyle: AppTextStyles.labelMedium,
+              labelStyle: AppTextStyles.labelMedium(context),
+              unselectedLabelStyle: AppTextStyles.labelMedium(context),
               indicatorColor: AppColors.telegramBlue,
               indicatorWeight: 3,
               labelColor: AppColors.telegramBlue,
@@ -4048,7 +4271,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           ),
         ),
       ),
-      body: Column(
+      body: ResponsiveColumn(
         children: [
           Expanded(
             child: TabBarView(
@@ -4056,13 +4279,30 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
               children: [
                 _buildVideosTab(),
                 _buildNotesTab(),
-                _buildPracticeTab()
+                _buildPracticeTab(),
               ],
             ),
           ),
         ],
       ),
     ).animate().fadeIn(duration: AppThemes.animationDurationMedium);
+  }
+
+  Widget _buildTabletLayout() {
+    return _buildMobileLayout();
+  }
+
+  Widget _buildDesktopLayout() {
+    return _buildMobileLayout();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ResponsiveLayout(
+      mobile: _buildMobileLayout(),
+      tablet: _buildTabletLayout(),
+      desktop: _buildDesktopLayout(),
+    );
   }
 }
 
@@ -4092,15 +4332,12 @@ class NoteDetailScreen extends StatelessWidget {
 
   Widget _buildTextContent(BuildContext context, String content) {
     return SingleChildScrollView(
-      padding: EdgeInsets.all(ScreenSize.responsiveValue(
-          context: context,
-          mobile: AppThemes.spacingL,
-          tablet: AppThemes.spacingXL,
-          desktop: AppThemes.spacingXXL)),
+      padding: ResponsiveValues.screenPadding(context),
       child: HtmlWidget(
         content,
-        textStyle: AppTextStyles.bodyLarge
-            .copyWith(height: 1.6, color: AppColors.getTextPrimary(context)),
+        textStyle: AppTextStyles.bodyLarge(context).copyWith(
+          height: 1.6,
+        ),
         onTapUrl: (url) async {
           final uri = Uri.parse(url);
           if (await canLaunchUrl(uri)) {
@@ -4121,75 +4358,88 @@ class NoteDetailScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: AppBar(
-        title: Text(note.title,
-            style: AppTextStyles.titleMedium.copyWith(
-                color: AppColors.getTextPrimary(context),
-                fontWeight: FontWeight.w600),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis),
+        title: ResponsiveText(
+          note.title,
+          style: AppTextStyles.titleMedium(context).copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         backgroundColor: AppColors.getBackground(context),
         elevation: 0,
         leading: IconButton(
-            icon: Icon(Icons.arrow_back_rounded,
-                color: AppColors.getTextPrimary(context)),
-            onPressed: () => Navigator.pop(context)),
+          icon: ResponsiveIcon(
+            Icons.arrow_back_rounded,
+            color: AppColors.getTextPrimary(context),
+          ),
+          onPressed: () => Navigator.pop(context),
+        ),
         actions: [
           if (hasFile && cachedPath != null)
             IconButton(
-                icon: const Icon(Icons.open_in_new_rounded,
-                    color: AppColors.telegramBlue),
-                onPressed: () => _openFile(context, cachedPath!),
-                tooltip: 'Open File'),
+              icon: const Icon(Icons.open_in_new_rounded,
+                  color: AppColors.telegramBlue),
+              onPressed: () => _openFile(context, cachedPath!),
+              tooltip: 'Open File',
+            ),
         ],
       ),
-      body: Column(
+      body: ResponsiveColumn(
         children: [
           if (hasFile)
             Container(
-              padding: EdgeInsets.all(ScreenSize.responsiveValue(
-                  context: context,
-                  mobile: AppThemes.spacingL,
-                  tablet: AppThemes.spacingXL,
-                  desktop: AppThemes.spacingXXL)),
+              padding: ResponsiveValues.screenPadding(context),
               decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceVariant,
-                  border: Border(
-                      bottom: BorderSide(
-                          color: Theme.of(context).dividerColor, width: 0.5))),
-              child: Row(
+                color: AppColors.getSurface(context),
+                border: Border(
+                  bottom: BorderSide(
+                    color: AppColors.getDivider(context),
+                    width: 0.5,
+                  ),
+                ),
+              ),
+              child: ResponsiveRow(
                 children: [
                   Container(
-                    width: 48,
-                    height: 48,
+                    width: ResponsiveValues.iconSizeXL(context) * 1.5,
+                    height: ResponsiveValues.iconSizeXL(context) * 1.5,
                     decoration: BoxDecoration(
-                        color: AppColors.telegramBlue.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(
-                            AppThemes.borderRadiusMedium)),
-                    child: Icon(
-                        isPdf
-                            ? Icons.picture_as_pdf_rounded
-                            : Icons.note_alt_rounded,
-                        color: AppColors.telegramBlue,
-                        size: 24),
+                      color: AppColors.telegramBlue.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(
+                        ResponsiveValues.radiusMedium(context),
+                      ),
+                    ),
+                    child: ResponsiveIcon(
+                      isPdf
+                          ? Icons.picture_as_pdf_rounded
+                          : Icons.note_alt_rounded,
+                      size: ResponsiveValues.iconSizeL(context),
+                      color: AppColors.telegramBlue,
+                    ),
                   ),
-                  const SizedBox(width: AppThemes.spacingL),
+                  ResponsiveSizedBox(width: AppSpacing.l),
                   Expanded(
-                    child: Column(
+                    child: ResponsiveColumn(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(isPdf ? 'PDF Document' : 'Text Document',
-                            style: AppTextStyles.titleSmall.copyWith(
-                                color: AppColors.getTextPrimary(context))),
+                        ResponsiveText(
+                          isPdf ? 'PDF Document' : 'Text Document',
+                          style: AppTextStyles.titleSmall(context),
+                        ),
                         if (cachedPath != null)
-                          Row(
+                          ResponsiveRow(
                             children: [
                               const Icon(Icons.check_circle_rounded,
                                   size: 14, color: AppColors.telegramGreen),
-                              const SizedBox(width: AppThemes.spacingXS),
-                              Text('Available Offline',
-                                  style: AppTextStyles.caption.copyWith(
-                                      color: AppColors.telegramGreen,
-                                      fontWeight: FontWeight.w600)),
+                              ResponsiveSizedBox(width: AppSpacing.xs),
+                              ResponsiveText(
+                                'Available Offline',
+                                style: AppTextStyles.caption(context).copyWith(
+                                  color: AppColors.telegramGreen,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                             ],
                           ),
                       ],

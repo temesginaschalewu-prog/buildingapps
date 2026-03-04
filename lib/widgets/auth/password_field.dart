@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:familyacademyclient/utils/responsive.dart';
-import '../../themes/app_themes.dart';
+import 'package:familyacademyclient/utils/responsive_values.dart';
+import '../../themes/app_colors.dart';
+import '../../themes/app_text_styles.dart';
+import '../common/responsive_widgets.dart';
 
 class PasswordField extends StatefulWidget {
   final TextEditingController controller;
@@ -62,9 +64,9 @@ class _PasswordFieldState extends State<PasswordField> {
   }
 
   Color _getStrengthColor(double strength, BuildContext context) {
-    if (strength < 0.4) return Theme.of(context).colorScheme.error;
-    if (strength < 0.7) return Theme.of(context).colorScheme.secondary;
-    return Theme.of(context).colorScheme.tertiary;
+    if (strength < 0.4) return AppColors.telegramRed;
+    if (strength < 0.7) return AppColors.telegramYellow;
+    return AppColors.telegramGreen;
   }
 
   String _getStrengthText(double strength) {
@@ -78,17 +80,15 @@ class _PasswordFieldState extends State<PasswordField> {
     final password = widget.controller.text;
     final strength = _getPasswordStrength(password);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return ResponsiveColumn(
       children: [
-        Text(
+        ResponsiveText(
           widget.label,
-          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: Theme.of(context).colorScheme.onSurface,
-                fontWeight: FontWeight.w500,
-              ),
+          style: AppTextStyles.labelLarge(context).copyWith(
+            fontWeight: FontWeight.w500,
+          ),
         ),
-        const SizedBox(height: AppThemes.spacingXS),
+        const ResponsiveSizedBox(height: AppSpacing.xs),
         TextFormField(
           controller: widget.controller,
           obscureText: _obscureText,
@@ -96,42 +96,32 @@ class _PasswordFieldState extends State<PasswordField> {
           validator: _validatePassword,
           onTap: widget.onTap,
           readOnly: widget.readOnly,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurface,
-              ),
+          style: AppTextStyles.bodyMedium(context),
           decoration: InputDecoration(
             hintText: widget.hintText,
-            hintStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+            hintStyle: AppTextStyles.bodyMedium(context).copyWith(
+              color: AppColors.getTextSecondary(context),
+            ),
             prefixIcon: Padding(
-              padding: const EdgeInsets.only(
-                left: AppThemes.spacingM,
-                right: AppThemes.spacingS,
+              padding: EdgeInsets.only(
+                left: ResponsiveValues.spacingM(context),
+                right: ResponsiveValues.spacingS(context),
               ),
-              child: Icon(
+              child: ResponsiveIcon(
                 Icons.lock,
-                size: ScreenSize.responsiveValue(
-                  context: context,
-                  mobile: 20,
-                  tablet: 22,
-                  desktop: 24,
-                ),
-                color: Theme.of(context).colorScheme.primary,
+                size: ResponsiveValues.iconSizeS(context),
+                color: AppColors.telegramBlue,
               ),
             ),
             suffixIcon: Padding(
-              padding: const EdgeInsets.only(right: AppThemes.spacingS),
+              padding: EdgeInsets.only(
+                right: ResponsiveValues.spacingS(context),
+              ),
               child: IconButton(
-                icon: Icon(
+                icon: ResponsiveIcon(
                   _obscureText ? Icons.visibility : Icons.visibility_off,
-                  size: ScreenSize.responsiveValue(
-                    context: context,
-                    mobile: 20,
-                    tablet: 22,
-                    desktop: 24,
-                  ),
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  size: ResponsiveValues.iconSizeS(context),
+                  color: AppColors.getTextSecondary(context),
                 ),
                 onPressed: () {
                   setState(() => _obscureText = !_obscureText);
@@ -139,84 +129,92 @@ class _PasswordFieldState extends State<PasswordField> {
               ),
             ),
             filled: true,
-            fillColor: Theme.of(context).colorScheme.surface,
+            fillColor: AppColors.getSurface(context),
             contentPadding: EdgeInsets.symmetric(
-              vertical: ScreenSize.responsiveValue(
-                context: context,
-                mobile: AppThemes.spacingM,
-                tablet: AppThemes.spacingL,
-                desktop: AppThemes.spacingXL,
-              ),
-              horizontal: AppThemes.spacingL,
+              vertical: ResponsiveValues.spacingM(context),
+              horizontal: ResponsiveValues.spacingL(context),
             ),
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
+              borderRadius: BorderRadius.circular(
+                ResponsiveValues.radiusMedium(context),
+              ),
               borderSide: BorderSide(
-                color: Theme.of(context).colorScheme.outline,
+                color: AppColors.getDivider(context),
               ),
             ),
             enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
+              borderRadius: BorderRadius.circular(
+                ResponsiveValues.radiusMedium(context),
+              ),
               borderSide: BorderSide(
-                color: Theme.of(context).colorScheme.outline,
+                color: AppColors.getDivider(context),
               ),
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
-              borderSide: BorderSide(
-                color: Theme.of(context).colorScheme.primary,
+              borderRadius: BorderRadius.circular(
+                ResponsiveValues.radiusMedium(context),
+              ),
+              borderSide: const BorderSide(
+                color: AppColors.telegramBlue,
                 width: 2.0,
               ),
             ),
             disabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
+              borderRadius: BorderRadius.circular(
+                ResponsiveValues.radiusMedium(context),
+              ),
               borderSide: BorderSide(
-                color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
+                color: AppColors.getDivider(context).withValues(alpha: 0.3),
               ),
             ),
             errorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
-              borderSide: BorderSide(
-                color: Theme.of(context).colorScheme.error,
+              borderRadius: BorderRadius.circular(
+                ResponsiveValues.radiusMedium(context),
+              ),
+              borderSide: const BorderSide(
+                color: AppColors.telegramRed,
                 width: 1.5,
               ),
             ),
             focusedErrorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
-              borderSide: BorderSide(
-                color: Theme.of(context).colorScheme.error,
+              borderRadius: BorderRadius.circular(
+                ResponsiveValues.radiusMedium(context),
+              ),
+              borderSide: const BorderSide(
+                color: AppColors.telegramRed,
                 width: 2.0,
               ),
             ),
-            errorStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.error,
-                ),
+            errorStyle: AppTextStyles.bodySmall(context).copyWith(
+              color: AppColors.telegramRed,
+            ),
           ),
         ),
         if (widget.showStrengthIndicator && password.isNotEmpty)
-          Column(
+          ResponsiveColumn(
             children: [
-              const SizedBox(height: AppThemes.spacingS),
-              Row(
+              const ResponsiveSizedBox(height: AppSpacing.s),
+              ResponsiveRow(
                 children: [
                   Expanded(
                     child: LinearProgressIndicator(
                       value: strength,
                       backgroundColor:
-                          Theme.of(context).colorScheme.surfaceContainerHighest,
+                          AppColors.getSurface(context).withValues(alpha: 0.3),
                       valueColor: AlwaysStoppedAnimation<Color>(
                         _getStrengthColor(strength, context),
                       ),
-                      borderRadius:
-                          BorderRadius.circular(AppThemes.borderRadiusSmall),
-                      minHeight: 4,
+                      borderRadius: BorderRadius.circular(
+                        ResponsiveValues.radiusSmall(context),
+                      ),
+                      minHeight: ResponsiveValues.progressBarHeight(context),
                     ),
                   ),
-                  const SizedBox(width: AppThemes.spacingM),
-                  Text(
+                  const ResponsiveSizedBox(width: AppSpacing.m),
+                  ResponsiveText(
                     _getStrengthText(strength),
                     style: TextStyle(
-                      fontSize: 12,
+                      fontSize: ResponsiveValues.fontLabelSmall(context),
                       fontWeight: FontWeight.w500,
                       color: _getStrengthColor(strength, context),
                     ),
@@ -251,8 +249,6 @@ class ConfirmPasswordField extends StatefulWidget {
 }
 
 class _ConfirmPasswordFieldState extends State<ConfirmPasswordField> {
-  final bool _obscureText = true;
-
   String? _validateConfirmPassword(String? value) {
     if (value == null || value.isEmpty) {
       return 'Please confirm your password';

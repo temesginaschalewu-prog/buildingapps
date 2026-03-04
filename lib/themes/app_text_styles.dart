@@ -1,186 +1,187 @@
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:flutter/material.dart';
+import '../utils/responsive_values.dart';
 
 class AppTextStyles {
-  // Display
-  static const TextStyle displayLarge = TextStyle(
-    fontSize: 32,
-    fontWeight: FontWeight.w800,
-    height: 1.2,
-    letterSpacing: -0.5,
-  );
+  static TextStyle displayLarge(BuildContext context) => TextStyle(
+        fontSize: ResponsiveValues.fontDisplayLarge(context),
+        fontWeight: FontWeight.w800,
+        height: 1.2,
+        letterSpacing: -0.5,
+        color: AppColors.getTextPrimary(context),
+      );
 
-  static const TextStyle displayMedium = TextStyle(
-    fontSize: 28,
-    fontWeight: FontWeight.w700,
-    height: 1.2,
-    letterSpacing: -0.25,
-  );
+  static TextStyle displayMedium(BuildContext context) => TextStyle(
+        fontSize: ResponsiveValues.fontDisplayMedium(context),
+        fontWeight: FontWeight.w700,
+        height: 1.2,
+        letterSpacing: -0.25,
+        color: AppColors.getTextPrimary(context),
+      );
 
-  static const TextStyle displaySmall = TextStyle(
-    fontSize: 24,
-    fontWeight: FontWeight.w700,
-    height: 1.3,
-  );
+  static TextStyle displaySmall(BuildContext context) => TextStyle(
+        fontSize: ResponsiveValues.fontDisplaySmall(context),
+        fontWeight: FontWeight.w700,
+        height: 1.3,
+        color: AppColors.getTextPrimary(context),
+      );
 
-  // Headline
-  static const TextStyle headlineLarge = TextStyle(
-    fontSize: 22,
-    fontWeight: FontWeight.w700,
-    height: 1.3,
-  );
+  static TextStyle headlineLarge(BuildContext context) => TextStyle(
+        fontSize: ResponsiveValues.fontHeadlineLarge(context),
+        fontWeight: FontWeight.w700,
+        height: 1.3,
+        color: AppColors.getTextPrimary(context),
+      );
 
-  static const TextStyle headlineMedium = TextStyle(
-    fontSize: 20,
-    fontWeight: FontWeight.w600,
-    height: 1.3,
-  );
+  static TextStyle headlineMedium(BuildContext context) => TextStyle(
+        fontSize: ResponsiveValues.fontHeadlineMedium(context),
+        fontWeight: FontWeight.w600,
+        height: 1.3,
+        color: AppColors.getTextPrimary(context),
+      );
 
-  static const TextStyle headlineSmall = TextStyle(
-    fontSize: 18,
-    fontWeight: FontWeight.w600,
-    height: 1.3,
-  );
+  static TextStyle headlineSmall(BuildContext context) => TextStyle(
+        fontSize: ResponsiveValues.fontHeadlineSmall(context),
+        fontWeight: FontWeight.w600,
+        height: 1.3,
+        color: AppColors.getTextPrimary(context),
+      );
 
-  // Title
-  static const TextStyle titleLarge = TextStyle(
-    fontSize: 18,
-    fontWeight: FontWeight.w600,
-    height: 1.4,
-  );
+  static TextStyle titleLarge(BuildContext context) => TextStyle(
+        fontSize: ResponsiveValues.fontTitleLarge(context),
+        fontWeight: FontWeight.w600,
+        height: 1.4,
+        color: AppColors.getTextPrimary(context),
+      );
 
-  static const TextStyle titleMedium = TextStyle(
-    fontSize: 16,
-    fontWeight: FontWeight.w600,
-    height: 1.4,
-  );
+  static TextStyle titleMedium(BuildContext context) => TextStyle(
+        fontSize: ResponsiveValues.fontTitleMedium(context),
+        fontWeight: FontWeight.w600,
+        height: 1.4,
+        color: AppColors.getTextPrimary(context),
+      );
 
-  static const TextStyle titleSmall = TextStyle(
-    fontSize: 14,
-    fontWeight: FontWeight.w600,
-    height: 1.4,
-  );
+  static TextStyle titleSmall(BuildContext context) => TextStyle(
+        fontSize: ResponsiveValues.fontTitleSmall(context),
+        fontWeight: FontWeight.w600,
+        height: 1.4,
+        color: AppColors.getTextPrimary(context),
+      );
 
-  // Body
-  static const TextStyle bodyLarge = TextStyle(
-    fontSize: 16,
-    fontWeight: FontWeight.w400,
-    height: 1.5,
-  );
+  static TextStyle bodyLarge(BuildContext context) => TextStyle(
+        fontSize: ResponsiveValues.fontBodyLarge(context),
+        fontWeight: FontWeight.w400,
+        height: 1.5,
+        color: AppColors.getTextPrimary(context),
+      );
 
-  static const TextStyle bodyMedium = TextStyle(
-    fontSize: 14,
-    fontWeight: FontWeight.w400,
-    height: 1.5,
-  );
+  static TextStyle bodyMedium(BuildContext context) => TextStyle(
+        fontSize: ResponsiveValues.fontBodyMedium(context),
+        fontWeight: FontWeight.w400,
+        height: 1.5,
+        color: AppColors.getTextPrimary(context),
+      );
 
-  static const TextStyle bodySmall = TextStyle(
-    fontSize: 12,
-    fontWeight: FontWeight.w400,
-    height: 1.5,
-  );
+  static TextStyle bodySmall(BuildContext context) => TextStyle(
+        fontSize: ResponsiveValues.fontBodySmall(context),
+        fontWeight: FontWeight.w400,
+        height: 1.5,
+        color: AppColors.getTextSecondary(context),
+      );
 
-  // Label
-  static const TextStyle labelLarge = TextStyle(
-    fontSize: 14,
-    fontWeight: FontWeight.w600,
-    height: 1.4,
-    letterSpacing: 0.1,
-  );
+  static TextStyle labelLarge(BuildContext context) => TextStyle(
+        fontSize: ResponsiveValues.fontLabelLarge(context),
+        fontWeight: FontWeight.w600,
+        height: 1.4,
+        letterSpacing: 0.1,
+        color: AppColors.getTextPrimary(context),
+      );
 
-  static const TextStyle labelMedium = TextStyle(
-    fontSize: 12,
-    fontWeight: FontWeight.w600,
-    height: 1.4,
-    letterSpacing: 0.1,
-  );
+  static TextStyle labelMedium(BuildContext context) => TextStyle(
+        fontSize: ResponsiveValues.fontLabelMedium(context),
+        fontWeight: FontWeight.w600,
+        height: 1.4,
+        letterSpacing: 0.1,
+        color: AppColors.getTextSecondary(context),
+      );
 
-  static const TextStyle labelSmall = TextStyle(
-    fontSize: 10,
-    fontWeight: FontWeight.w600,
-    height: 1.4,
-    letterSpacing: 0.2,
-  );
+  static TextStyle labelSmall(BuildContext context) => TextStyle(
+        fontSize: ResponsiveValues.fontLabelSmall(context),
+        fontWeight: FontWeight.w600,
+        height: 1.4,
+        letterSpacing: 0.2,
+        color: AppColors.getTextTertiary(context),
+      );
 
-  // Button
-  static const TextStyle buttonLarge = TextStyle(
-    fontSize: 16,
-    fontWeight: FontWeight.w600,
-    height: 1.4,
-  );
+  static TextStyle buttonLarge(BuildContext context) => TextStyle(
+        fontSize: ResponsiveValues.fontButtonLarge(context),
+        fontWeight: FontWeight.w600,
+        height: 1.4,
+        color: AppColors.getTextPrimary(context),
+      );
 
-  static const TextStyle buttonMedium = TextStyle(
-    fontSize: 14,
-    fontWeight: FontWeight.w600,
-    height: 1.4,
-  );
+  static TextStyle buttonMedium(BuildContext context) => TextStyle(
+        fontSize: ResponsiveValues.fontButtonMedium(context),
+        fontWeight: FontWeight.w600,
+        height: 1.4,
+        color: AppColors.getTextPrimary(context),
+      );
 
-  static const TextStyle buttonSmall = TextStyle(
-    fontSize: 12,
-    fontWeight: FontWeight.w600,
-    height: 1.4,
-  );
+  static TextStyle buttonSmall(BuildContext context) => TextStyle(
+        fontSize: ResponsiveValues.fontButtonSmall(context),
+        fontWeight: FontWeight.w600,
+        height: 1.4,
+        color: AppColors.getTextPrimary(context),
+      );
 
-  // Caption
-  static const TextStyle caption = TextStyle(
-    fontSize: 11,
-    fontWeight: FontWeight.w400,
-    height: 1.4,
-  );
+  static TextStyle caption(BuildContext context) => TextStyle(
+        fontSize: ResponsiveValues.fontCaption(context),
+        fontWeight: FontWeight.w400,
+        height: 1.4,
+        color: AppColors.getTextSecondary(context),
+      );
 
-  // Overline
-  static const TextStyle overline = TextStyle(
-    fontSize: 10,
-    fontWeight: FontWeight.w600,
-    height: 1.4,
-    letterSpacing: 1.5,
-  );
+  static TextStyle overline(BuildContext context) => TextStyle(
+        fontSize: ResponsiveValues.fontOverline(context),
+        fontWeight: FontWeight.w600,
+        height: 1.4,
+        letterSpacing: 1.5,
+        color: AppColors.getTextSecondary(context),
+      );
 
-  // Chat Text Styles
-  static const TextStyle chatMessage = TextStyle(
-    fontSize: 15,
-    fontWeight: FontWeight.w400,
-    height: 1.4,
-  );
+  static TextStyle statusBadge(BuildContext context) => TextStyle(
+        fontSize: ResponsiveValues.fontStatusBadge(context),
+        fontWeight: FontWeight.w600,
+        height: 1.2,
+        letterSpacing: 0.3,
+        color: AppColors.getTextPrimary(context),
+      );
 
-  static const TextStyle chatTime = TextStyle(
-    fontSize: 11,
-    fontWeight: FontWeight.w400,
-    height: 1.4,
-  );
+  static TextStyle appBarTitle(BuildContext context) => TextStyle(
+        fontSize: ResponsiveValues.fontAppBarTitle(context),
+        fontWeight: FontWeight.w600,
+        height: 1.2,
+        color: AppColors.getTextPrimary(context),
+      );
 
-  // Status Text Styles
-  static const TextStyle statusBadge = TextStyle(
-    fontSize: 11,
-    fontWeight: FontWeight.w600,
-    height: 1.2,
-    letterSpacing: 0.3,
-  );
+  static TextStyle bottomNavLabel(BuildContext context) => TextStyle(
+        fontSize: ResponsiveValues.fontBottomNavLabel(context),
+        fontWeight: FontWeight.w500,
+        height: 1.2,
+        color: AppColors.getTextSecondary(context),
+      );
 
-  // App Bar
-  static const TextStyle appBarTitle = TextStyle(
-    fontSize: 18,
-    fontWeight: FontWeight.w600,
-    height: 1.2,
-  );
+  static TextStyle chatMessage(BuildContext context) => TextStyle(
+        fontSize: ResponsiveValues.fontBodyLarge(context),
+        fontWeight: FontWeight.w400,
+        height: 1.4,
+        color: AppColors.getTextPrimary(context),
+      );
 
-  // Bottom Navigation
-  static const TextStyle bottomNavLabel = TextStyle(
-    fontSize: 10,
-    fontWeight: FontWeight.w500,
-    height: 1.2,
-  );
-
-  // Helper method to get text color based on context
-  static Color getTextColor(BuildContext context) {
-    return Theme.of(context).brightness == Brightness.dark
-        ? AppColors.darkTextPrimary
-        : AppColors.lightTextPrimary;
-  }
-
-  static Color getTextSecondaryColor(BuildContext context) {
-    return Theme.of(context).brightness == Brightness.dark
-        ? AppColors.darkTextSecondary
-        : AppColors.lightTextSecondary;
-  }
+  static TextStyle chatTime(BuildContext context) => TextStyle(
+        fontSize: ResponsiveValues.fontCaption(context),
+        fontWeight: FontWeight.w400,
+        height: 1.4,
+        color: AppColors.getTextSecondary(context),
+      );
 }

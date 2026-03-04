@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class ChatbotConversation {
   final int id;
   final String title;
@@ -30,6 +32,20 @@ class ChatbotConversation {
       messageCount: json['message_count'] ?? 0,
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'created_at': createdAt.toIso8601String(),
+      'updated_at': updatedAt.toIso8601String(),
+      'last_message': lastMessage,
+      'last_message_role': lastMessageRole,
+      'message_count': messageCount,
+    };
+  }
+
+  String toJsonString() => jsonEncode(toJson());
 }
 
 class ChatbotMessage {
@@ -54,6 +70,17 @@ class ChatbotMessage {
           DateTime.parse(json['timestamp'] ?? DateTime.now().toIso8601String()),
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'role': role,
+      'content': content,
+      'timestamp': timestamp.toIso8601String(),
+    };
+  }
+
+  String toJsonString() => jsonEncode(toJson());
 
   bool get isUser => role == 'user';
 }
@@ -86,4 +113,22 @@ class ChatbotUsageStats {
       weeklyUsage: List<Map<String, dynamic>>.from(json['weekly_usage'] ?? []),
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'daily': {
+        'remaining': remaining,
+        'limit': limit,
+        'used': used,
+      },
+      'total_messages': totalMessages,
+      'total_conversations': totalConversations,
+      'weekly_usage': weeklyUsage,
+    };
+  }
+
+  String toJsonString() => jsonEncode(toJson());
+
+  double get usagePercentage => limit > 0 ? used / limit : 0;
+  bool get hasRemaining => remaining > 0;
 }

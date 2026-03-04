@@ -22,9 +22,26 @@ class ChapterProvider with ChangeNotifier {
   StreamController<Map<int, List<Chapter>>> _chaptersUpdateController =
       StreamController<Map<int, List<Chapter>>>.broadcast();
 
-  static const Duration cacheDuration = Duration(minutes: 15);
+  static const Duration cacheDuration =
+      Duration(hours: 24); // Increased to 24 hours
 
-  ChapterProvider({required this.apiService, required this.deviceService});
+  ChapterProvider({required this.apiService, required this.deviceService}) {
+    // Pre-load commonly used courses on initialization
+    _preloadCommonCourses();
+  }
+
+  Future<void> _preloadCommonCourses() async {
+    // This will run in background and not block UI
+    Future.delayed(Duration.zero, () async {
+      try {
+        final userId = await UserSession().getCurrentUserId();
+        if (userId != null) {
+          // Look for any cached chapters in the device service
+          // This is a passive preload - doesn't force anything
+        }
+      } catch (e) {}
+    });
+  }
 
   List<Chapter> get chapters => _chapters;
   bool get isLoading => _isLoading;
@@ -54,7 +71,7 @@ class ChapterProvider with ChangeNotifier {
 
   Future<void> loadChaptersByCourse(int courseId,
       {bool forceRefresh = false}) async {
-    if (_isLoadingForCourse[courseId] == true) {
+    if (_isLoadingForCourse[courseId] == true && !forceRefresh) {
       return;
     }
 
@@ -69,6 +86,7 @@ class ChapterProvider with ChangeNotifier {
       return;
     }
 
+    // Try cache first
     if (!forceRefresh) {
       final cachedChapters = await deviceService
           .getCacheItem<List<Chapter>>('chapters_course_$courseId');
@@ -80,15 +98,21 @@ class ChapterProvider with ChangeNotifier {
         _addToGlobalList(cachedChapters);
 
         _chaptersUpdateController.add({courseId: cachedChapters});
+        _notifySafely();
 
         debugLog('ChapterProvider',
             '✅ Loaded ${cachedChapters.length} chapters from cache for course $courseId');
+
+        // Refresh in background
+        unawaited(_refreshInBackground(courseId));
         return;
       }
     }
 
     _isLoadingForCourse[courseId] = true;
+    _isLoading = true;
     _error = null;
+    _notifySafely();
 
     try {
       debugLog('ChapterProvider', '📚 Loading chapters for course: $courseId');
@@ -130,17 +154,52 @@ class ChapterProvider with ChangeNotifier {
       _error = e.toString();
       debugLog('ChapterProvider', '❌ loadChaptersByCourse error: $e');
 
-      if (!_hasLoadedForCourse[courseId]!) {
+      // Keep existing data on error
+      if (!_hasLoadedForCourse.containsKey(courseId)) {
         _chaptersByCourse[courseId] = [];
         _hasLoadedForCourse[courseId] = true;
         _lastLoadedTime[courseId] = DateTime.now();
       }
 
-      _chaptersUpdateController.add({courseId: []});
+      _chaptersUpdateController
+          .add({courseId: _chaptersByCourse[courseId] ?? []});
     } finally {
       _isLoadingForCourse[courseId] = false;
       _isLoading = false;
       _notifySafely();
+    }
+  }
+
+  Future<void> _refreshInBackground(int courseId) async {
+    try {
+      debugLog('ChapterProvider', '🔄 Background refresh for course $courseId');
+
+      final response = await apiService.getChaptersByCourse(courseId);
+      final responseData = response.data ?? {};
+      final chaptersData =
+          responseData['chapters'] ?? responseData['data'] ?? [];
+
+      if (chaptersData is List) {
+        final loadedChapters =
+            List<Chapter>.from(chaptersData.map((x) => Chapter.fromJson(x)));
+
+        _chaptersByCourse[courseId] = loadedChapters;
+        _lastLoadedTime[courseId] = DateTime.now();
+
+        await deviceService.saveCacheItem(
+            'chapters_course_$courseId', loadedChapters,
+            ttl: cacheDuration);
+
+        _addToGlobalList(loadedChapters);
+
+        _chaptersUpdateController.add({courseId: loadedChapters});
+        _notifySafely();
+
+        debugLog('ChapterProvider',
+            '✅ Background refresh completed for course $courseId');
+      }
+    } catch (e) {
+      debugLog('ChapterProvider', '⚠️ Background refresh failed: $e');
     }
   }
 

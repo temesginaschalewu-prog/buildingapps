@@ -1,22 +1,25 @@
 import 'dart:async';
 import 'dart:ui';
+import 'package:familyacademyclient/themes/app_themes.dart';
 import 'package:familyacademyclient/utils/api_response.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:pull_to_refresh/pull_to_refresh.dart' hide RefreshIndicator;
 import 'package:familyacademyclient/utils/responsive.dart';
+import 'package:familyacademyclient/utils/responsive_values.dart';
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/themes/app_text_styles.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../providers/category_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../providers/notification_provider.dart';
-import '../../providers/auth_provider.dart';
 import '../../widgets/category/category_card.dart';
 import '../../widgets/common/empty_state.dart';
 import '../../widgets/common/app_bar.dart';
 import '../../utils/helpers.dart';
+import '../../widgets/common/responsive_widgets.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -29,20 +32,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   late CategoryProvider _categoryProvider;
   late SubscriptionProvider _subscriptionProvider;
   late NotificationProvider _notificationProvider;
-  late AuthProvider _authProvider;
   late RefreshController _refreshController;
 
   bool _isFirstLoad = true;
   bool _hasCachedCategories = false;
-  bool _isOffline = false;
   bool _isRefreshing = false;
-  String? _errorMessage;
+  String _refreshSubtitle = '';
   final Map<int, bool> _categorySubscriptionCache = {};
   StreamSubscription? _subscriptionUpdatesSubscription;
   Timer? _refreshTimer;
-  int _unreadNotifications = 0;
   String _greeting = '';
-  String _timeBasedEmoji = '';
   String _ethiopianTime = '';
 
   @override
@@ -58,7 +57,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _loadHomeScreen();
       _setupStreamListeners();
 
-      // Start timer to update Ethiopian time every minute
       Timer.periodic(const Duration(minutes: 1), (_) {
         if (mounted) _setEthiopianTime();
       });
@@ -67,7 +65,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Widget _buildGlassContainer({required Widget child}) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
+      borderRadius:
+          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
         child: Container(
@@ -80,7 +79,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
-            borderRadius: BorderRadius.circular(24),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
             border: Border.all(
               color: AppColors.telegramBlue.withValues(alpha: 0.2),
             ),
@@ -92,89 +92,101 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildSkeletonGrid() {
+    final columns = ResponsiveValues.gridColumns(context);
+
     return CustomScrollView(
       physics: const NeverScrollableScrollPhysics(),
       slivers: [
+        // App bar is NOT shimmered - shows immediately
+        SliverToBoxAdapter(
+          child: CustomAppBar(
+            title: _greeting,
+            subtitle:
+                _refreshSubtitle.isNotEmpty ? _refreshSubtitle : _ethiopianTime,
+          ),
+        ),
         SliverPadding(
-          padding: const EdgeInsets.all(16),
+          padding: ResponsiveValues.screenPadding(context),
           sliver: SliverToBoxAdapter(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    _buildGlassContainer(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 4),
-                        child: Row(
-                          children: [
-                            Shimmer.fromColors(
-                              baseColor:
-                                  Colors.grey[300]!.withValues(alpha: 0.3),
-                              highlightColor:
-                                  Colors.grey[100]!.withValues(alpha: 0.6),
-                              child: Container(
-                                  width: 18,
-                                  height: 18,
-                                  decoration: const BoxDecoration(
-                                      color: Colors.white,
-                                      shape: BoxShape.circle)),
-                            ),
-                            const SizedBox(width: 4),
-                            Shimmer.fromColors(
-                              baseColor:
-                                  Colors.grey[300]!.withValues(alpha: 0.3),
-                              highlightColor:
-                                  Colors.grey[100]!.withValues(alpha: 0.6),
-                              child: Container(
-                                  width: 100,
-                                  height: 16,
-                                  decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      borderRadius: BorderRadius.circular(4))),
-                            ),
-                          ],
-                        ),
-                      ),
+                _buildGlassContainer(
+                  child: Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: ResponsiveValues.spacingM(context),
+                      vertical: ResponsiveValues.spacingXS(context),
                     ),
-                    _buildGlassContainer(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 4),
-                        child: Shimmer.fromColors(
+                    child: Row(
+                      children: [
+                        Shimmer.fromColors(
                           baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
                           highlightColor:
                               Colors.grey[100]!.withValues(alpha: 0.6),
                           child: Container(
-                              width: 30,
-                              height: 16,
-                              decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(4))),
+                            width: ResponsiveValues.iconSizeS(context),
+                            height: ResponsiveValues.iconSizeS(context),
+                            decoration: const BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Shimmer.fromColors(
+                          baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                          highlightColor:
+                              Colors.grey[100]!.withValues(alpha: 0.6),
+                          child: Container(
+                            width: 100,
+                            height: 16,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                _buildGlassContainer(
+                  child: Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: ResponsiveValues.spacingM(context),
+                      vertical: ResponsiveValues.spacingXS(context),
+                    ),
+                    child: Shimmer.fromColors(
+                      baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                      highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
+                      child: Container(
+                        width: 30,
+                        height: 16,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(4),
                         ),
                       ),
                     ),
-                  ],
+                  ),
                 ),
-                const SizedBox(height: 16),
               ],
             ),
           ),
         ),
         SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
+          padding: EdgeInsets.symmetric(
+            horizontal: ResponsiveValues.spacingS(context),
+          ),
           sliver: SliverGrid(
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: ScreenSize.isMobile(context)
-                  ? 1
-                  : ScreenSize.isTablet(context)
-                      ? 2
-                      : 4,
-              crossAxisSpacing: 8,
-              mainAxisSpacing: 8,
-              childAspectRatio: ScreenSize.isMobile(context) ? 1.2 : 0.7,
+              crossAxisCount: columns,
+              crossAxisSpacing: ResponsiveValues.gridSpacing(context),
+              mainAxisSpacing: ResponsiveValues.gridRunSpacing(context),
+              childAspectRatio: ScreenSize.cardAspectRatio(
+                context: context,
+                columns: columns,
+              ),
             ),
             delegate: SliverChildBuilderDelegate(
               (context, index) => CategoryCardShimmer(index: index),
@@ -192,16 +204,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     if (hour >= 5 && hour < 12) {
       _greeting = 'Good Morning';
-      _timeBasedEmoji = '🌅';
     } else if (hour >= 12 && hour < 17) {
       _greeting = 'Good Afternoon';
-      _timeBasedEmoji = '☀️';
     } else if (hour >= 17 && hour < 20) {
       _greeting = 'Good Evening';
-      _timeBasedEmoji = '🌆';
     } else {
       _greeting = 'Good Night';
-      _timeBasedEmoji = '🌙';
     }
   }
 
@@ -221,7 +229,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _initializeProviders() {
-    _authProvider = Provider.of<AuthProvider>(context, listen: false);
     _categoryProvider = Provider.of<CategoryProvider>(context, listen: false);
     _subscriptionProvider =
         Provider.of<SubscriptionProvider>(context, listen: false);
@@ -250,7 +257,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       setState(() {
         _hasCachedCategories = true;
         _isFirstLoad = false;
-        _isOffline = false;
       });
 
       final activeCategories = _categoryProvider.activeCategories;
@@ -260,7 +266,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _categorySubscriptionCache[category.id] = status;
       }
 
-      _refreshInBackground();
+      await _refreshInBackground();
       return;
     }
 
@@ -278,16 +284,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             .checkSubscriptionsForCategories(categoryIds);
         if (mounted) setState(() => _categorySubscriptionCache.addAll(results));
       }
-    } on ApiError catch (e) {
-      setState(() {
-        _errorMessage = e.message;
-        _isOffline = true;
-      });
+    } on ApiError {
+      setState(() {});
     } catch (e) {
-      setState(() {
-        _errorMessage = 'Failed to load content';
-        _isOffline = true;
-      });
+      setState(() {});
     } finally {
       if (mounted) setState(() => _isFirstLoad = false);
     }
@@ -317,7 +317,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _manualRefresh() async {
     if (_isRefreshing) return;
-    setState(() => _isRefreshing = true);
+
+    setState(() {
+      _isRefreshing = true;
+      _refreshSubtitle = 'Refreshing...';
+    });
 
     try {
       await _subscriptionProvider.loadSubscriptions(forceRefresh: true);
@@ -332,19 +336,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         if (mounted) {
           setState(() {
             _categorySubscriptionCache.addAll(results);
-            _isOffline = false;
           });
         }
       }
 
-      _setEthiopianTime(); // Refresh time
+      _setEthiopianTime();
       showTopSnackBar(context, 'Content refreshed');
     } catch (e) {
-      setState(() => _isOffline = true);
       showTopSnackBar(context, 'Refresh failed, using cached data',
           isError: true);
     } finally {
-      setState(() => _isRefreshing = false);
+      setState(() {
+        _isRefreshing = false;
+        _refreshSubtitle = '';
+      });
       _refreshController.refreshCompleted();
     }
   }
@@ -370,10 +375,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _loadNotifications() async {
     try {
       await _notificationProvider.loadNotifications();
-      if (mounted) {
-        setState(
-            () => _unreadNotifications = _notificationProvider.unreadCount);
-      }
     } catch (e) {}
   }
 
@@ -397,36 +398,50 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return NoDataState(dataType: 'Categories', onRefresh: _manualRefresh);
     }
 
+    final columns = ResponsiveValues.gridColumns(context);
+
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
         SliverToBoxAdapter(
           child: CustomAppBar(
             title: _greeting,
-            subtitle: _ethiopianTime,
+            subtitle:
+                _refreshSubtitle.isNotEmpty ? _refreshSubtitle : _ethiopianTime,
           ),
         ),
         if (activeCategories.isNotEmpty) ...[
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            padding: EdgeInsets.fromLTRB(
+              ResponsiveValues.spacingL(context),
+              ResponsiveValues.spacingL(context),
+              ResponsiveValues.spacingL(context),
+              ResponsiveValues.spacingS(context),
+            ),
             sliver: SliverToBoxAdapter(
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   _buildGlassContainer(
                     child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 4),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: ResponsiveValues.spacingM(context),
+                        vertical: ResponsiveValues.spacingXS(context),
+                      ),
                       child: Row(
                         children: [
-                          const Icon(Icons.star_rounded,
-                              color: AppColors.telegramBlue, size: 18),
+                          Icon(
+                            Icons.star_rounded,
+                            size: ResponsiveValues.iconSizeS(context),
+                            color: AppColors.telegramBlue,
+                          ),
                           const SizedBox(width: 4),
                           Text(
                             'Your Categories',
-                            style: AppTextStyles.titleSmall.copyWith(
-                                color: AppColors.telegramBlue,
-                                fontWeight: FontWeight.w600),
+                            style: AppTextStyles.titleSmall(context).copyWith(
+                              color: AppColors.telegramBlue,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ],
                       ),
@@ -434,13 +449,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   ),
                   _buildGlassContainer(
                     child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 4),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: ResponsiveValues.spacingM(context),
+                        vertical: ResponsiveValues.spacingXS(context),
+                      ),
                       child: Text(
                         '${activeCategories.length}',
-                        style: AppTextStyles.labelLarge.copyWith(
-                            color: AppColors.telegramPurple,
-                            fontWeight: FontWeight.w600),
+                        style: AppTextStyles.labelLarge(context).copyWith(
+                          color: AppColors.telegramPurple,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ),
@@ -449,17 +467,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
           ),
           SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+            padding: EdgeInsets.symmetric(
+              horizontal: ResponsiveValues.spacingS(context),
+            ),
             sliver: SliverGrid(
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: ScreenSize.isMobile(context)
-                    ? 1
-                    : ScreenSize.isTablet(context)
-                        ? 2
-                        : 4,
-                crossAxisSpacing: 8,
-                mainAxisSpacing: 8,
-                childAspectRatio: ScreenSize.isMobile(context) ? 1.2 : 0.7,
+                crossAxisCount: columns,
+                crossAxisSpacing: ResponsiveValues.gridSpacing(context),
+                mainAxisSpacing: ResponsiveValues.gridRunSpacing(context),
+                childAspectRatio: ScreenSize.cardAspectRatio(
+                  context: context,
+                  columns: columns,
+                ),
               ),
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
@@ -487,49 +506,61 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ],
         if (comingSoonCategories.isNotEmpty) ...[
           SliverPadding(
-            padding: const EdgeInsets.all(16),
+            padding: ResponsiveValues.screenPadding(context),
             sliver: SliverToBoxAdapter(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildGlassContainer(
                     child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 4),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: ResponsiveValues.spacingM(context),
+                        vertical: ResponsiveValues.spacingXS(context),
+                      ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.timer_rounded,
-                              color: AppColors.telegramOrange, size: 18),
+                          Icon(
+                            Icons.timer_rounded,
+                            size: ResponsiveValues.iconSizeS(context),
+                            color: AppColors.telegramOrange,
+                          ),
                           const SizedBox(width: 4),
-                          Text('Coming Soon',
-                              style: AppTextStyles.titleSmall.copyWith(
-                                  color: AppColors.telegramOrange,
-                                  fontWeight: FontWeight.w600)),
+                          Text(
+                            'Coming Soon',
+                            style: AppTextStyles.titleSmall(context).copyWith(
+                              color: AppColors.telegramOrange,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ],
                       ),
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Text('Exciting new content is on the way!',
-                      style: AppTextStyles.bodyMedium.copyWith(
-                          color: AppColors.getTextSecondary(context))),
+                  Text(
+                    'Exciting new content is on the way!',
+                    style: AppTextStyles.bodyMedium(context).copyWith(
+                      color: AppColors.getTextSecondary(context),
+                    ),
+                  ),
                 ],
               ),
             ),
           ),
           SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+            padding: EdgeInsets.symmetric(
+              horizontal: ResponsiveValues.spacingS(context),
+            ),
             sliver: SliverGrid(
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: ScreenSize.isMobile(context)
-                    ? 1
-                    : ScreenSize.isTablet(context)
-                        ? 2
-                        : 4,
-                crossAxisSpacing: 8,
-                mainAxisSpacing: 8,
-                childAspectRatio: ScreenSize.isMobile(context) ? 1.2 : 0.7,
+                crossAxisCount: columns,
+                crossAxisSpacing: ResponsiveValues.gridSpacing(context),
+                mainAxisSpacing: ResponsiveValues.gridRunSpacing(context),
+                childAspectRatio: ScreenSize.cardAspectRatio(
+                  context: context,
+                  columns: columns,
+                ),
               ),
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
@@ -545,7 +576,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
           ),
         ],
-        const SliverToBoxAdapter(child: SizedBox(height: 32)),
+        SliverToBoxAdapter(
+          child: SizedBox(height: ResponsiveValues.spacingXXL(context)),
+        ),
       ],
     );
   }
@@ -568,8 +601,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildMobileLayout() {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       body: RefreshIndicator(
@@ -579,5 +611,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         child: _buildContent(),
       ),
     );
+  }
+
+  Widget _buildTabletLayout() {
+    return _buildMobileLayout();
+  }
+
+  Widget _buildDesktopLayout() {
+    return _buildMobileLayout();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ResponsiveLayout(
+      mobile: _buildMobileLayout(),
+      tablet: _buildTabletLayout(),
+      desktop: _buildDesktopLayout(),
+    ).animate().fadeIn(duration: AppThemes.animationDurationMedium);
   }
 }

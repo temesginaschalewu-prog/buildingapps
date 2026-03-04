@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
@@ -18,13 +19,20 @@ class CourseProvider with ChangeNotifier {
   bool _isLoading = false;
   String? _error;
 
-  static const Duration _cacheDuration = Duration(minutes: 10);
+  static const Duration _cacheDuration =
+      Duration(hours: 24); // Increased to 24 hours
+
+  StreamController<Map<int, List<Course>>> _coursesUpdateController =
+      StreamController<Map<int, List<Course>>>.broadcast();
 
   CourseProvider({required this.apiService, required this.deviceService});
 
   List<Course> get courses => List.unmodifiable(_courses);
   bool get isLoading => _isLoading;
   String? get error => _error;
+
+  Stream<Map<int, List<Course>>> get coursesUpdates =>
+      _coursesUpdateController.stream;
 
   List<Course> getCoursesByCategory(int categoryId) {
     return _coursesByCategory[categoryId] ?? [];
@@ -40,16 +48,20 @@ class CourseProvider with ChangeNotifier {
 
   Future<void> loadCoursesByCategory(int categoryId,
       {bool forceRefresh = false, bool? hasAccess}) async {
+    // Prevent multiple simultaneous loads for same category
     if (_isLoadingCategory[categoryId] == true && !forceRefresh) {
+      debugLog('CourseProvider',
+          '⏳ Already loading courses for category $categoryId');
       return;
     }
 
+    // Check if we have valid cached data
     if (!forceRefresh && _hasLoadedCategory[categoryId] == true) {
       final lastLoaded = _lastLoadedTime[categoryId];
       if (lastLoaded != null &&
           DateTime.now().difference(lastLoaded) < _cacheDuration) {
         debugLog('CourseProvider',
-            '✅ Using cached courses for category: $categoryId');
+            '✅ Using cached courses for category: $categoryId (${_coursesByCategory[categoryId]?.length ?? 0} courses)');
         return;
       }
     }
@@ -60,23 +72,41 @@ class CourseProvider with ChangeNotifier {
     _notifySafely();
 
     try {
-      debugLog('CourseProvider', 'Loading courses for category: $categoryId');
+      debugLog(
+          'CourseProvider', '📥 Loading courses for category: $categoryId');
 
+      // Try to load from cache first if not forcing refresh
       if (!forceRefresh) {
         final cachedCourses = await deviceService
             .getCacheItem<List<Course>>('courses_$categoryId');
-        if (cachedCourses != null) {
+
+        if (cachedCourses != null && cachedCourses.isNotEmpty) {
           _coursesByCategory[categoryId] = cachedCourses;
           _hasLoadedCategory[categoryId] = true;
           _lastLoadedTime[categoryId] = DateTime.now();
           _updateMainCoursesList(cachedCourses);
+
+          _isLoadingCategory[categoryId] = false;
+          _isLoading = false;
+
+          _coursesUpdateController.add({categoryId: cachedCourses});
+          _notifySafely();
+
           debugLog('CourseProvider',
               '✅ Loaded ${cachedCourses.length} courses from cache for category $categoryId');
+
+          // Refresh in background
+          unawaited(_refreshInBackground(categoryId, hasAccess));
           return;
         }
       }
 
+      // No cache or force refresh, load from API
       final response = await apiService.getCoursesByCategory(categoryId);
+
+      if (!response.success) {
+        throw Exception(response.message);
+      }
 
       final responseData = response.data ?? {};
       final categoryData = responseData['category'] ?? {};
@@ -112,6 +142,7 @@ class CourseProvider with ChangeNotifier {
           }
         }
 
+        // Save to cache
         await deviceService.saveCacheItem('courses_$categoryId', parsedCourses,
             ttl: _cacheDuration);
 
@@ -120,6 +151,8 @@ class CourseProvider with ChangeNotifier {
         _lastLoadedTime[categoryId] = DateTime.now();
 
         _updateMainCoursesList(parsedCourses);
+
+        _coursesUpdateController.add({categoryId: parsedCourses});
 
         debugLog('CourseProvider',
             '✅ Parsed ${parsedCourses.length} courses for category $categoryId, access: $categoryHasAccess');
@@ -134,20 +167,85 @@ class CourseProvider with ChangeNotifier {
         _coursesByCategory[categoryId] = [];
         _hasLoadedCategory[categoryId] = true;
         _lastLoadedTime[categoryId] = DateTime.now();
+
+        _coursesUpdateController.add({categoryId: []});
       }
     } catch (e) {
       _error = e.toString();
-      debugLog('CourseProvider', 'loadCoursesByCategory error: $e');
+      debugLog('CourseProvider', '❌ loadCoursesByCategory error: $e');
 
-      if (!(_hasLoadedCategory[categoryId] ?? false)) {
+      // If we have cached data, keep it even on error
+      if (!_hasLoadedCategory.containsKey(categoryId) ||
+          _coursesByCategory[categoryId]?.isEmpty == true) {
         _coursesByCategory[categoryId] = [];
         _hasLoadedCategory[categoryId] = true;
         _lastLoadedTime[categoryId] = DateTime.now();
+        _coursesUpdateController.add({categoryId: []});
       }
     } finally {
       _isLoadingCategory[categoryId] = false;
       _isLoading = false;
       _notifySafely();
+    }
+  }
+
+  Future<void> _refreshInBackground(int categoryId, bool? hasAccess) async {
+    try {
+      debugLog(
+          'CourseProvider', '🔄 Background refresh for category $categoryId');
+
+      final response = await apiService.getCoursesByCategory(categoryId);
+
+      if (response.success && response.data != null) {
+        final responseData = response.data ?? {};
+        final categoryData = responseData['category'] ?? {};
+        final coursesData = responseData['courses'] ?? [];
+
+        final bool categoryHasAccess =
+            hasAccess ?? (categoryData['has_access'] ?? false);
+
+        if (coursesData is List) {
+          final List<Course> parsedCourses = [];
+
+          for (final courseData in coursesData) {
+            try {
+              if (courseData is Map<String, dynamic>) {
+                final course = Course.fromJson(courseData);
+                parsedCourses.add(Course(
+                  id: course.id,
+                  name: course.name,
+                  categoryId: course.categoryId,
+                  description: course.description,
+                  chapterCount: course.chapterCount,
+                  access: categoryHasAccess ? 'full' : 'limited',
+                  message: categoryHasAccess
+                      ? 'Full access to all content'
+                      : 'Limited access to free chapters only',
+                  requiresPayment: !categoryHasAccess,
+                ));
+              }
+            } catch (e) {}
+          }
+
+          if (parsedCourses.isNotEmpty) {
+            await deviceService.saveCacheItem(
+                'courses_$categoryId', parsedCourses,
+                ttl: _cacheDuration);
+
+            _coursesByCategory[categoryId] = parsedCourses;
+            _lastLoadedTime[categoryId] = DateTime.now();
+            _updateMainCoursesList(parsedCourses);
+
+            _coursesUpdateController.add({categoryId: parsedCourses});
+            _notifySafely();
+
+            debugLog('CourseProvider',
+                '✅ Background refresh completed for category $categoryId');
+          }
+        }
+      }
+    } catch (e) {
+      debugLog('CourseProvider', '⚠️ Background refresh failed: $e');
     }
   }
 
@@ -214,6 +312,11 @@ class CourseProvider with ChangeNotifier {
     _isLoadingCategory.clear();
     _lastLoadedTime.clear();
 
+    await _coursesUpdateController.close();
+    _coursesUpdateController =
+        StreamController<Map<int, List<Course>>>.broadcast();
+    _coursesUpdateController.add({});
+
     _notifySafely();
   }
 
@@ -234,12 +337,19 @@ class CourseProvider with ChangeNotifier {
     _isLoadingCategory.remove(categoryId);
     _lastLoadedTime.remove(categoryId);
 
+    _coursesUpdateController.add({categoryId: []});
     _notifySafely();
   }
 
   void clearError() {
     _error = null;
     _notifySafely();
+  }
+
+  @override
+  void dispose() {
+    _coursesUpdateController.close();
+    super.dispose();
   }
 
   void _notifySafely() {

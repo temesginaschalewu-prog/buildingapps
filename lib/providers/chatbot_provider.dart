@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
@@ -28,9 +29,12 @@ class ChatbotProvider extends ChangeNotifier {
   bool _isLoadingMore = false;
 
   ChatbotProvider({required this.apiService}) {
+    _loadCachedData();
     loadConversations();
     loadUsageStats();
   }
+
+  // ===== GETTERS =====
 
   List<ChatbotMessage> get messages => List.unmodifiable(_messages);
   List<ChatbotConversation> get conversations =>
@@ -49,12 +53,105 @@ class ChatbotProvider extends ChangeNotifier {
   int get totalConversations => _totalConversations;
 
   bool get hasMoreConversations => _hasMoreConversations;
+  bool get isLoadingMore => _isLoadingMore;
+
+  // ===== CACHE METHODS =====
+
+  Future<void> _loadCachedData() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = await UserSession().getCurrentUserId();
+      if (userId == null) return;
+
+      final messagesKey = 'chatbot_messages_$userId';
+      final conversationsKey = 'chatbot_conversations_$userId';
+      final currentConvKey = 'chatbot_current_$userId';
+      final usageKey = 'chatbot_usage_$userId';
+
+      final messagesJson = prefs.getString(messagesKey);
+      if (messagesJson != null) {
+        final List<dynamic> messagesList =
+            jsonDecode(messagesJson) as List<dynamic>;
+        _messages = messagesList
+            .map((m) => ChatbotMessage.fromJson(m as Map<String, dynamic>))
+            .toList();
+      }
+
+      final conversationsJson = prefs.getString(conversationsKey);
+      if (conversationsJson != null) {
+        final List<dynamic> convList =
+            jsonDecode(conversationsJson) as List<dynamic>;
+        _conversations = convList
+            .map((c) => ChatbotConversation.fromJson(c as Map<String, dynamic>))
+            .toList();
+      }
+
+      final currentConvJson = prefs.getString(currentConvKey);
+      if (currentConvJson != null) {
+        final Map<String, dynamic> convMap =
+            jsonDecode(currentConvJson) as Map<String, dynamic>;
+        _currentConversation = ChatbotConversation.fromJson(convMap);
+      }
+
+      final usageJson = prefs.getString(usageKey);
+      if (usageJson != null) {
+        final Map<String, dynamic> usageMap =
+            jsonDecode(usageJson) as Map<String, dynamic>;
+        _remainingMessages = usageMap['remaining'] as int? ?? 30;
+        _dailyLimit = usageMap['daily_limit'] as int? ?? 30;
+        _totalMessages = usageMap['total_messages'] as int? ?? 0;
+        _totalConversations = usageMap['total_conversations'] as int? ?? 0;
+      }
+
+      debugLog('ChatbotProvider', '📦 Loaded cached data for user $userId');
+    } catch (e) {
+      debugLog('ChatbotProvider', 'Error loading cache: $e');
+    }
+  }
+
+  Future<void> _saveToCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = await UserSession().getCurrentUserId();
+      if (userId == null) return;
+
+      final messagesKey = 'chatbot_messages_$userId';
+      final conversationsKey = 'chatbot_conversations_$userId';
+      final currentConvKey = 'chatbot_current_$userId';
+      final usageKey = 'chatbot_usage_$userId';
+
+      await prefs.setString(
+          messagesKey, jsonEncode(_messages.map((m) => m.toJson()).toList()));
+      await prefs.setString(conversationsKey,
+          jsonEncode(_conversations.map((c) => c.toJson()).toList()));
+
+      if (_currentConversation != null) {
+        await prefs.setString(
+            currentConvKey, jsonEncode(_currentConversation!.toJson()));
+      }
+
+      final usage = {
+        'remaining': _remainingMessages,
+        'daily_limit': _dailyLimit,
+        'total_messages': _totalMessages,
+        'total_conversations': _totalConversations,
+      };
+      await prefs.setString(usageKey, jsonEncode(usage));
+
+      debugLog('ChatbotProvider', '💾 Saved chatbot data to cache');
+    } catch (e) {
+      debugLog('ChatbotProvider', 'Error saving to cache: $e');
+    }
+  }
+
+  // ===== DATA LOADING =====
 
   Future<void> loadUsageStats() async {
     try {
       final response = await apiService.dio.get('/chatbot/usage');
       if (response.statusCode == 200 && response.data['success'] == true) {
-        final stats = ChatbotUsageStats.fromJson(response.data['data']);
+        final stats = ChatbotUsageStats.fromJson(
+            response.data['data'] as Map<String, dynamic>);
         _remainingMessages = stats.remaining;
         _dailyLimit = stats.limit;
         _totalMessages = stats.totalMessages;
@@ -62,14 +159,15 @@ class ChatbotProvider extends ChangeNotifier {
         debugLog('ChatbotProvider',
             '📊 Usage stats loaded: $_remainingMessages/$_dailyLimit');
         notifyListeners();
+        await _saveToCache();
       }
     } catch (e) {
       debugLog('ChatbotProvider', 'Error loading usage stats: $e');
     }
   }
 
-  Future<void> loadConversations({bool refresh = false}) async {
-    if (refresh) {
+  Future<void> loadConversations({bool forceRefresh = false}) async {
+    if (forceRefresh) {
       _currentPage = 1;
       _hasMoreConversations = true;
       _conversations.clear();
@@ -88,18 +186,21 @@ class ChatbotProvider extends ChangeNotifier {
       );
 
       if (response.statusCode == 200 && response.data['success'] == true) {
-        final List<dynamic> data = response.data['data'];
-        final newConversations =
-            data.map((json) => ChatbotConversation.fromJson(json)).toList();
+        final List<dynamic> data = response.data['data'] as List<dynamic>;
+        final newConversations = data
+            .map((json) =>
+                ChatbotConversation.fromJson(json as Map<String, dynamic>))
+            .toList();
 
-        if (refresh) {
+        if (forceRefresh) {
           _conversations = newConversations;
         } else {
           _conversations.addAll(newConversations);
         }
 
-        final pagination = response.data['pagination'] ?? {};
-        final totalPages = pagination['pages'] ?? 1;
+        final pagination =
+            response.data['pagination'] as Map<String, dynamic>? ?? {};
+        final totalPages = pagination['pages'] as int? ?? 1;
         _hasMoreConversations = _currentPage < totalPages;
 
         if (_hasMoreConversations) {
@@ -108,6 +209,7 @@ class ChatbotProvider extends ChangeNotifier {
 
         debugLog('ChatbotProvider',
             '📋 Loaded ${newConversations.length} conversations');
+        await _saveToCache();
       }
     } catch (e) {
       _error = 'Failed to load conversations';
@@ -119,7 +221,8 @@ class ChatbotProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> loadMessages(int conversationId) async {
+  Future<void> loadMessages(int conversationId,
+      {bool forceRefresh = false}) async {
     _isLoadingMessages = true;
     _error = null;
     notifyListeners();
@@ -130,8 +233,11 @@ class ChatbotProvider extends ChangeNotifier {
       );
 
       if (response.statusCode == 200 && response.data['success'] == true) {
-        final List<dynamic> data = response.data['data'];
-        _messages = data.map((json) => ChatbotMessage.fromJson(json)).toList();
+        final List<dynamic> data = response.data['data'] as List<dynamic>;
+        _messages = data
+            .map(
+                (json) => ChatbotMessage.fromJson(json as Map<String, dynamic>))
+            .toList();
 
         _currentConversation = _conversations.firstWhere(
           (c) => c.id == conversationId,
@@ -145,10 +251,7 @@ class ChatbotProvider extends ChangeNotifier {
         );
 
         debugLog('ChatbotProvider', '💬 Loaded ${_messages.length} messages');
-
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          notifyListeners();
-        });
+        await _saveToCache();
       }
     } catch (e) {
       _error = 'Failed to load messages';
@@ -177,6 +280,7 @@ class ChatbotProvider extends ChangeNotifier {
     _isLoading = true;
     _error = null;
 
+    // Add user message immediately for better UX
     final tempUserMessage = ChatbotMessage(
       id: DateTime.now().millisecondsSinceEpoch,
       role: 'user',
@@ -187,6 +291,7 @@ class ChatbotProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      // Build conversation history
       final List<String> history = [];
       if (_messages.length > 1) {
         for (int i = 0; i < _messages.length - 1; i++) {
@@ -195,6 +300,7 @@ class ChatbotProvider extends ChangeNotifier {
           }
         }
 
+        // Keep only last 10 messages for context
         if (history.length > 10) {
           history.removeRange(0, history.length - 10);
         }
@@ -210,28 +316,33 @@ class ChatbotProvider extends ChangeNotifier {
       );
 
       if (response.statusCode == 200 && response.data['success'] == true) {
-        final data = response.data['data'];
+        final Map<String, dynamic> data =
+            response.data['data'] as Map<String, dynamic>;
 
+        // Add AI response
         final aiMessage = ChatbotMessage(
           id: DateTime.now().millisecondsSinceEpoch + 1,
           role: 'assistant',
-          content: data['reply'],
+          content: data['reply'] as String,
           timestamp: DateTime.now(),
         );
         _messages.add(aiMessage);
 
+        // Update remaining messages
         if (data['remaining'] != null) {
-          _remainingMessages = data['remaining'];
+          _remainingMessages = data['remaining'] as int;
           debugLog(
               'ChatbotProvider', ' Updated remaining: $_remainingMessages');
         }
 
         await loadUsageStats();
 
+        // Refresh conversations list if this is a new conversation
         if (conversationId == null && data['conversation_id'] != null) {
-          await loadConversations(refresh: true);
+          await loadConversations(forceRefresh: true);
         }
 
+        await _saveToCache();
         notifyListeners();
 
         return {
@@ -244,10 +355,12 @@ class ChatbotProvider extends ChangeNotifier {
         throw Exception(response.data['message'] ?? 'Failed to send message');
       }
     } catch (e) {
+      // Remove the temporary user message on error
       _messages.remove(tempUserMessage);
 
       _error = 'Failed to send message: $e';
       debugLog('ChatbotProvider', 'Error sending message: $e');
+      notifyListeners();
 
       return {'success': false, 'error': _error};
     } finally {
@@ -289,6 +402,7 @@ class ChatbotProvider extends ChangeNotifier {
           );
         }
 
+        await _saveToCache();
         notifyListeners();
         return true;
       }
@@ -313,6 +427,7 @@ class ChatbotProvider extends ChangeNotifier {
           _messages.clear();
         }
 
+        await _saveToCache();
         notifyListeners();
         return true;
       }
@@ -327,6 +442,7 @@ class ChatbotProvider extends ChangeNotifier {
     _messages.clear();
     _currentConversation = null;
     notifyListeners();
+    _saveToCache();
   }
 
   Future<void> loadMoreConversations() async {
@@ -334,20 +450,30 @@ class ChatbotProvider extends ChangeNotifier {
     await loadConversations();
   }
 
-  /// 🔵 FIX: Clear user data ONLY for different user logout
-  Future<void> clearUserData() async {
-    debugLog('ChatbotProvider', 'Clearing chatbot data');
+  // ===== USER DATA CLEARING =====
 
-    // Only clear if this is a different user logout
+  /// Clear user data ONLY for different user logout
+  Future<void> clearUserData() async {
+    debugLog(
+        'ChatbotProvider', '🔍 Checking if chatbot data should be cleared');
+
+    // Get session info
     final session = UserSession();
-    final isDifferentUser = !await session.isSameUser();
+    final currentUserId = await session.getCurrentUserId();
+    final lastUserId = await session.getLastUserId();
+    final isDifferentUser = currentUserId != lastUserId;
     final isLoggingOut = await _isLoggingOut();
 
+    // Only clear if this is a different user logout
     if (!isDifferentUser || !isLoggingOut) {
       debugLog('ChatbotProvider', '✅ Same user - preserving chatbot cache');
       return;
     }
 
+    debugLog(
+        'ChatbotProvider', '🔄 Different user logout - clearing chatbot data');
+
+    // Clear all data
     _messages.clear();
     _conversations.clear();
     _currentConversation = null;
@@ -357,12 +483,36 @@ class ChatbotProvider extends ChangeNotifier {
     _currentPage = 1;
     _hasMoreConversations = true;
 
+    // Clear cache for old user
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (lastUserId != null) {
+        final keysToRemove = prefs
+            .getKeys()
+            .where(
+                (key) => key.startsWith('chatbot_') && key.contains(lastUserId))
+            .toList();
+
+        for (final key in keysToRemove) {
+          await prefs.remove(key);
+        }
+        debugLog(
+            'ChatbotProvider', '🧹 Cleared cache for old user $lastUserId');
+      }
+    } catch (e) {
+      debugLog('ChatbotProvider', 'Error clearing cache: $e');
+    }
+
     notifyListeners();
   }
 
   Future<bool> _isLoggingOut() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
+    } catch (e) {
+      return false;
+    }
   }
 
   void clearError() {

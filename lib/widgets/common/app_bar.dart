@@ -1,10 +1,14 @@
 import 'dart:ui';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:familyacademyclient/providers/theme_provider.dart';
 import 'package:familyacademyclient/widgets/common/notification_button.dart';
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/themes/app_text_styles.dart';
+import 'package:familyacademyclient/utils/responsive.dart';
+import 'package:familyacademyclient/utils/responsive_values.dart';
+import 'package:familyacademyclient/utils/app_enums.dart';
 
 class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String title;
@@ -13,12 +17,7 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   final List<Widget>? actions;
   final bool showThemeToggle;
   final bool showNotification;
-  final bool showRefresh;
-  final bool isLoading;
-  final VoidCallback? onRefresh;
-  final double expandedHeight;
   final Widget? customTrailing;
-  final bool useSliver;
 
   const CustomAppBar({
     super.key,
@@ -28,168 +27,258 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.actions,
     this.showThemeToggle = true,
     this.showNotification = true,
-    this.showRefresh = false,
-    this.isLoading = false,
-    this.onRefresh,
-    this.expandedHeight = 80.0,
     this.customTrailing,
-    this.useSliver = false,
   });
 
   @override
-  Size get preferredSize => Size.fromHeight(expandedHeight);
-
-  Widget _buildGlassContainer(BuildContext context, {required Widget child}) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.getCard(context).withValues(alpha: 0.4),
-                AppColors.getCard(context).withValues(alpha: 0.2),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: AppColors.telegramBlue.withValues(alpha: 0.2),
-            ),
-          ),
-          child: child,
-        ),
-      ),
-    );
+  Size get preferredSize {
+    // Using a builder to get context would be complicated, so we use a reasonable default
+    return const Size.fromHeight(kToolbarHeight + 32);
   }
 
   @override
   Widget build(BuildContext context) {
     return Consumer<ThemeProvider>(
       builder: (context, themeProvider, child) {
-        final Widget appBarContent = Container(
-          padding: EdgeInsets.only(
-            left: 16,
-            right: 16,
-            top: MediaQuery.of(context).padding.top + 8,
-            bottom: 8,
-          ),
-          child: Row(
-            children: [
-              if (leading != null) leading!,
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        title,
-                        style: AppTextStyles.headlineSmall.copyWith(
-                          color: AppColors.getTextPrimary(context),
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+
+        // Use AppColors for all colors
+        final backgroundColor = isDark
+            ? AppColors.darkSurface.withValues(alpha: 0.95)
+            : AppColors.lightSurface.withValues(alpha: 0.95);
+
+        final gradientStart = isDark ? AppColors.darkCard : AppColors.lightCard;
+
+        final gradientEnd =
+            isDark ? AppColors.darkBackground : AppColors.lightBackground;
+
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ClipRRect(
+              borderRadius: const BorderRadius.only(
+                bottomLeft: Radius.circular(24),
+                bottomRight: Radius.circular(24),
+              ),
+              child: Container(
+                height: kToolbarHeight + 24,
+                padding: EdgeInsets.only(
+                  left: ResponsiveValues.spacingL(context),
+                  right: ResponsiveValues.spacingL(context),
+                  top: MediaQuery.of(context).padding.top + 8,
+                  bottom: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: backgroundColor,
+                  boxShadow: [
+                    BoxShadow(
+                      color: isDark
+                          ? Colors.black.withValues(alpha: 0.3)
+                          : AppColors.telegramBlue.withValues(alpha: 0.15),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                      spreadRadius: 1,
                     ),
-                    if (subtitle != null) ...[
-                      const SizedBox(height: 2),
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          subtitle!,
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.getTextSecondary(context),
+                  ],
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      gradientStart,
+                      gradientEnd,
+                    ],
+                  ),
+                  border: Border(
+                    bottom: BorderSide(
+                      color: AppColors.telegramBlue.withValues(alpha: 0.15),
+                      width: 1,
+                    ),
+                  ),
+                ),
+                child: Stack(
+                  children: [
+                    // Sparkle/fleck overlay
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: CustomPaint(
+                          painter: SparklePainter(
+                            color: AppColors.telegramBlue,
+                            density: 0.15,
+                            minOpacity: 0.1,
+                            maxOpacity: 0.25,
                           ),
                         ),
                       ),
-                    ],
+                    ),
+                    // Main content
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        if (leading != null) leading!,
+                        Expanded(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                title,
+                                style: AppTextStyles.headlineSmall(context)
+                                    .copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              if (subtitle != null) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  subtitle!,
+                                  style:
+                                      AppTextStyles.bodySmall(context).copyWith(
+                                    color: AppColors.getTextSecondary(context),
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        _buildButtonRow(context, themeProvider),
+                      ],
+                    ),
                   ],
                 ),
               ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (showRefresh)
-                    if (isLoading)
-                      const Padding(
-                        padding: EdgeInsets.only(right: 8.0),
-                        child: SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor:
-                                AlwaysStoppedAnimation(AppColors.telegramBlue),
-                          ),
-                        ),
-                      )
-                    else
-                      GestureDetector(
-                        onTap: onRefresh,
-                        child: _buildGlassContainer(
-                          context,
-                          child: const SizedBox(
-                            width: 40,
-                            height: 40,
-                            child: Center(
-                              child: Icon(
-                                Icons.refresh_rounded,
-                                color: AppColors.telegramBlue,
-                                size: 22,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                  if (showThemeToggle) ...[
-                    const SizedBox(width: 4),
-                    GestureDetector(
-                      onTap: themeProvider.toggleTheme,
-                      child: _buildGlassContainer(
-                        context,
-                        child: SizedBox(
-                          width: 40,
-                          height: 40,
-                          child: Center(
-                            child: Icon(
-                              themeProvider.themeMode == ThemeMode.dark
-                                  ? Icons.light_mode_outlined
-                                  : Icons.dark_mode_outlined,
-                              size: 22,
-                              color: AppColors.getTextPrimary(context),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                  if (showNotification) ...[
-                    const SizedBox(width: 4),
-                    const NotificationButton(),
-                  ],
-                  if (customTrailing != null) ...[
-                    const SizedBox(width: 4),
-                    customTrailing!,
-                  ],
-                  if (actions != null) ...actions!,
-                ],
-              ),
-            ],
-          ),
+            ),
+            // Small bottom padding to separate from content
+            SizedBox(height: ResponsiveValues.spacingXS(context)),
+          ],
         );
-
-        // If using sliver, wrap in SliverToBoxAdapter
-        if (useSliver) {
-          return SliverToBoxAdapter(child: appBarContent);
-        }
-
-        return appBarContent;
       },
     );
   }
+
+  Widget _buildButtonRow(BuildContext context, ThemeProvider themeProvider) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (showThemeToggle) ...[
+          Padding(
+            padding: EdgeInsets.only(
+              right: ResponsiveValues.appBarButtonSpacing(context),
+            ),
+            child: _buildIconButton(
+              context: context,
+              onTap: themeProvider.toggleTheme,
+              icon: themeProvider.themeMode == ThemeMode.dark
+                  ? Icons.light_mode_outlined
+                  : Icons.dark_mode_outlined,
+              color: AppColors.getTextPrimary(context),
+            ),
+          ),
+        ],
+        if (showNotification) ...[
+          Padding(
+            padding: EdgeInsets.only(
+              right: ResponsiveValues.appBarButtonSpacing(context),
+            ),
+            child: const NotificationButton(),
+          ),
+        ],
+        if (customTrailing != null) ...[
+          Padding(
+            padding: EdgeInsets.only(
+              right: ResponsiveValues.appBarButtonSpacing(context),
+            ),
+            child: customTrailing!,
+          ),
+        ],
+        if (actions != null) ...actions!,
+      ],
+    );
+  }
+
+  Widget _buildIconButton({
+    required BuildContext context,
+    required VoidCallback? onTap,
+    IconData? icon,
+    Color? color,
+    Widget? customChild,
+  }) {
+    return Container(
+      width: ResponsiveValues.appBarButtonSize(context),
+      height: ResponsiveValues.appBarButtonSize(context),
+      decoration: BoxDecoration(
+        color: AppColors.getSurface(context).withValues(alpha: 0.2),
+        shape: BoxShape.circle,
+      ),
+      child: ClipOval(
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(
+              ResponsiveValues.radiusFull(context) / 2,
+            ),
+            splashColor: AppColors.telegramBlue.withValues(alpha: 0.3),
+            highlightColor: Colors.transparent,
+            child: Center(
+              child: customChild ??
+                  Icon(
+                    icon,
+                    size: ResponsiveValues.appBarIconSize(context),
+                    color: color,
+                  ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class SparklePainter extends CustomPainter {
+  final Color color;
+  final double density;
+  final double minOpacity;
+  final double maxOpacity;
+  final math.Random _random = math.Random(42);
+
+  SparklePainter({
+    required this.color,
+    required this.density,
+    this.minOpacity = 0.1,
+    this.maxOpacity = 0.3,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..style = PaintingStyle.fill;
+    final area = size.width * size.height;
+    final sparkleCount = (area * density / 1000).round();
+
+    for (int i = 0; i < sparkleCount; i++) {
+      final x = _random.nextDouble() * size.width;
+      final y = _random.nextDouble() * size.height;
+      final sparkleSize = 1.0 + _random.nextDouble() * 2.0;
+      final opacity =
+          minOpacity + _random.nextDouble() * (maxOpacity - minOpacity);
+
+      paint.color = color.withValues(alpha: opacity);
+      canvas.drawCircle(Offset(x, y), sparkleSize, paint);
+
+      if (_random.nextDouble() < 0.2) {
+        final biggerSize = sparkleSize * 1.5;
+        final biggerOpacity = opacity * 1.2;
+        paint.color =
+            color.withValues(alpha: biggerOpacity.clamp(0.0, maxOpacity));
+        canvas.drawCircle(Offset(x + 1, y - 1), biggerSize, paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

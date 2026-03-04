@@ -7,6 +7,10 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../themes/app_themes.dart';
+import '../../utils/responsive.dart';
+import '../../utils/responsive_values.dart';
+import '../../utils/app_enums.dart';
+import '../common/responsive_widgets.dart';
 
 class CategoryCard extends StatelessWidget {
   final Category category;
@@ -30,7 +34,8 @@ class CategoryCard extends StatelessWidget {
 
   Widget _buildGlassContainer(BuildContext context, {required Widget child}) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
+      borderRadius:
+          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
         child: Container(
@@ -43,7 +48,8 @@ class CategoryCard extends StatelessWidget {
                 AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
-            borderRadius: BorderRadius.circular(24),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
             border: Border.all(
               color: AppColors.telegramBlue.withValues(alpha: 0.2),
             ),
@@ -54,7 +60,9 @@ class CategoryCard extends StatelessWidget {
     );
   }
 
-  Widget _buildImage() {
+  Widget _buildImage(BuildContext context) {
+    final imageFontSize = ResponsiveValues.iconSizeXXL(context);
+
     if (category.imageUrl == null || category.imageUrl!.isEmpty) {
       return Container(
         decoration: const BoxDecoration(
@@ -67,9 +75,9 @@ class CategoryCard extends StatelessWidget {
         child: Center(
           child: Text(
             category.initials,
-            style: const TextStyle(
+            style: TextStyle(
               color: Colors.white,
-              fontSize: 32,
+              fontSize: imageFontSize,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -91,9 +99,9 @@ class CategoryCard extends StatelessWidget {
         child: Center(
           child: Text(
             category.initials,
-            style: const TextStyle(
+            style: TextStyle(
               color: Colors.white,
-              fontSize: 32,
+              fontSize: imageFontSize,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -110,9 +118,9 @@ class CategoryCard extends StatelessWidget {
         child: Center(
           child: Text(
             category.initials,
-            style: const TextStyle(
+            style: TextStyle(
               color: Colors.white,
-              fontSize: 32,
+              fontSize: imageFontSize,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -123,268 +131,109 @@ class CategoryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = screenWidth < 600;
-    final isTablet = screenWidth >= 600 && screenWidth < 1024;
-
-    // FIXED: Calculate card height based on screen size
-    final cardHeight = isMobile ? 280.0 : (isTablet ? 320.0 : 360.0);
-    final imageHeight = cardHeight * 0.45; // 45% of card height for image
-    final contentPadding = isMobile ? 12.0 : (isTablet ? 16.0 : 20.0);
+    final isDesktop = ScreenSize.isDesktop(context);
+    final titleSize = ResponsiveValues.categoryCardTitleSize(context);
+    final priceSize = ResponsiveValues.categoryCardPriceSize(context);
+    final badgeTextSize = ResponsiveValues.categoryCardBadgeTextSize(context);
+    final badgeIconSize = ResponsiveValues.categoryCardBadgeIconSize(context);
+    final badgePadding = ResponsiveValues.categoryCardBadgePadding(context);
+    final spacing = ResponsiveValues.spacingM(context);
 
     return GestureDetector(
       onTap: onTap,
       child: _buildGlassContainer(
         context,
-        child: SizedBox(
-          height: cardHeight, // FIXED: Fixed height to prevent overflow
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        child: ClipRRect(
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
+          child: Stack(
             children: [
-              // Image section with fixed height
-              ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(24),
-                ),
-                child: SizedBox(
-                  height: imageHeight,
-                  width: double.infinity,
-                  child: _buildImage(),
+              // Full image covering entire card
+              Positioned.fill(
+                child: _buildImage(context),
+              ),
+
+              // Gradient overlay for better text visibility
+              Positioned.fill(
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withValues(alpha: 0.3),
+                        Colors.transparent,
+                        Colors.black.withValues(alpha: 0.5),
+                      ],
+                      stops: const [0.0, 0.5, 1.0],
+                    ),
+                  ),
                 ),
               ),
 
-              // Content section with remaining space
-              Expanded(
-                child: Padding(
-                  padding: EdgeInsets.all(contentPadding),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Title
-                      Text(
-                        category.name,
-                        style: AppTextStyles.titleMedium.copyWith(
-                          color: AppColors.getTextPrimary(context),
-                          fontSize: isMobile ? 16 : (isTablet ? 18 : 20),
-                          fontWeight: FontWeight.w600,
+              // Category Name at top left
+              Positioned(
+                top: spacing,
+                left: spacing,
+                child: Container(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isDesktop ? 6.0 : 8.0,
+                    vertical: isDesktop ? 2.0 : 4.0,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(
+                        ResponsiveValues.radiusSmall(context)),
+                  ),
+                  child: Text(
+                    category.name,
+                    style: TextStyle(
+                      fontSize: titleSize,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                      shadows: [
+                        Shadow(
+                          color: Colors.black.withValues(alpha: 0.5),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
                         ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      ],
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
 
-                      const SizedBox(height: 4),
+              // Status badge at top right
+              Positioned(
+                top: spacing,
+                right: spacing,
+                child: _buildStatusBadge(
+                    context, badgeIconSize, badgeTextSize, badgePadding),
+              ),
 
-                      // Course count
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.menu_book_rounded,
-                            size: 14,
-                            color: AppColors.getTextSecondary(context),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${category.courseCount} courses',
-                            style: AppTextStyles.labelSmall.copyWith(
-                              color: AppColors.getTextSecondary(context),
-                            ),
-                          ),
-                        ],
-                      ),
+              // Price at bottom left
+              if (category.price != null &&
+                  category.price! > 0 &&
+                  !category.isFree)
+                Positioned(
+                  bottom: spacing,
+                  left: spacing,
+                  child: _buildPriceBadge(
+                      context, priceSize, badgeTextSize - 1.5, badgePadding),
+                ),
 
-                      const Spacer(),
-
-                      // Price/Status section
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          // Price or Free badge
-                          if (category.isFree) ...[
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.telegramGreen.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color:
-                                      AppColors.telegramGreen.withValues(alpha: 0.3),
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(
-                                    Icons.lock_open_rounded,
-                                    size: 12,
-                                    color: AppColors.telegramGreen,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    'FREE',
-                                    style: AppTextStyles.labelSmall.copyWith(
-                                      color: AppColors.telegramGreen,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ] else if (category.price != null &&
-                              category.price! > 0) ...[
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.telegramBlue.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color:
-                                      AppColors.telegramBlue.withValues(alpha: 0.3),
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(
-                                    Icons.attach_money_rounded,
-                                    size: 12,
-                                    color: AppColors.telegramBlue,
-                                  ),
-                                  const SizedBox(width: 2),
-                                  Text(
-                                    '${category.price!.toStringAsFixed(0)} ETB',
-                                    style: AppTextStyles.labelSmall.copyWith(
-                                      color: AppColors.telegramBlue,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  Text(
-                                    '/${category.billingCycle == 'semester' ? 'sem' : 'mo'}',
-                                    style: AppTextStyles.labelSmall.copyWith(
-                                      color:
-                                          AppColors.getTextSecondary(context),
-                                      fontSize: 8,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-
-                          // Subscription status badge
-                          if (!category.isFree) ...[
-                            if (hasSubscription)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color:
-                                      AppColors.telegramGreen.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: AppColors.telegramGreen
-                                        .withValues(alpha: 0.3),
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(
-                                      Icons.check_circle_rounded,
-                                      size: 12,
-                                      color: AppColors.telegramGreen,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      'ACTIVE',
-                                      style: AppTextStyles.labelSmall.copyWith(
-                                        color: AppColors.telegramGreen,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              )
-                            else if (category.status == 'coming_soon')
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color:
-                                      AppColors.telegramYellow.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: AppColors.telegramYellow
-                                        .withValues(alpha: 0.3),
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(
-                                      Icons.schedule_rounded,
-                                      size: 12,
-                                      color: AppColors.telegramYellow,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      'SOON',
-                                      style: AppTextStyles.labelSmall.copyWith(
-                                        color: AppColors.telegramYellow,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              )
-                            else
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color:
-                                      AppColors.telegramBlue.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color:
-                                        AppColors.telegramBlue.withValues(alpha: 0.3),
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(
-                                      Icons.lock_rounded,
-                                      size: 12,
-                                      color: AppColors.telegramBlue,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      'LOCKED',
-                                      style: AppTextStyles.labelSmall.copyWith(
-                                        color: AppColors.telegramBlue,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                          ],
-                        ],
-                      ),
-                    ],
+              // Subtle border overlay
+              Positioned.fill(
+                child: Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.1),
+                      width: 0.5,
+                    ),
+                    borderRadius: BorderRadius.circular(
+                        ResponsiveValues.radiusXLarge(context)),
                   ),
                 ),
               ),
@@ -405,6 +254,184 @@ class CategoryCard extends StatelessWidget {
           delay: Duration(milliseconds: index * 50),
         );
   }
+
+  Widget _buildStatusBadge(
+      BuildContext context, double iconSize, double textSize, double padding) {
+    if (category.isFree) {
+      return _buildBadge(
+        context,
+        icon: Icons.lock_open_rounded,
+        label: 'FREE',
+        color: AppColors.telegramGreen,
+        iconSize: iconSize,
+        textSize: textSize,
+        padding: padding,
+      );
+    }
+
+    if (hasSubscription) {
+      return _buildBadge(
+        context,
+        icon: Icons.check_circle_rounded,
+        label: 'SUBSCIRBED',
+        color: AppColors.telegramGreen,
+        iconSize: iconSize,
+        textSize: textSize,
+        padding: padding,
+      );
+    }
+
+    if (category.status == 'coming_soon') {
+      return _buildBadge(
+        context,
+        icon: Icons.schedule_rounded,
+        label: 'SOON',
+        color: AppColors.telegramYellow,
+        iconSize: iconSize,
+        textSize: textSize,
+        padding: padding,
+      );
+    }
+
+    return _buildBadge(
+      context,
+      icon: Icons.book,
+      label: 'ACTIVE',
+      color: AppColors.telegramBlue,
+      iconSize: iconSize,
+      textSize: textSize,
+      padding: padding,
+    );
+  }
+
+  Widget _buildBadge(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required Color color,
+    required double iconSize,
+    required double textSize,
+    required double padding,
+  }) {
+    final isDesktop = ScreenSize.isDesktop(context);
+
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: padding,
+        vertical: padding / 2,
+      ),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.2),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusSmall(context)),
+        border: Border.all(
+          color: color.withValues(alpha: 0.4),
+          width: 0.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.2),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: iconSize,
+            color: Colors.white,
+          ),
+          SizedBox(width: isDesktop ? 2 : 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: textSize,
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+              shadows: [
+                Shadow(
+                  color: Colors.black.withValues(alpha: 0.3),
+                  blurRadius: 2,
+                  offset: const Offset(0, 1),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPriceBadge(BuildContext context, double priceSize,
+      double smallTextSize, double padding) {
+    final isDesktop = ScreenSize.isDesktop(context);
+
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: padding,
+        vertical: padding / 2,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.telegramBlue.withValues(alpha: 0.2),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusSmall(context)),
+        border: Border.all(
+          color: AppColors.telegramBlue.withValues(alpha: 0.4),
+          width: 0.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.2),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.attach_money_rounded,
+            size: 8,
+            color: Colors.white,
+          ),
+          SizedBox(width: isDesktop ? 1 : 2),
+          Text(
+            '${category.price!.toStringAsFixed(0)}',
+            style: TextStyle(
+              fontSize: priceSize,
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+              shadows: [
+                Shadow(
+                  color: Colors.black.withValues(alpha: 0.3),
+                  blurRadius: 2,
+                  offset: const Offset(0, 1),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            '/${category.billingCycle == 'semester' ? 'sem' : 'mo'}',
+            style: TextStyle(
+              fontSize: smallTextSize,
+              color: Colors.white.withValues(alpha: 0.8),
+              shadows: [
+                Shadow(
+                  color: Colors.black.withValues(alpha: 0.3),
+                  blurRadius: 2,
+                  offset: const Offset(0, 1),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class CategoryCardShimmer extends StatelessWidget {
@@ -414,14 +441,11 @@ class CategoryCardShimmer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = screenWidth < 600;
-    final isTablet = screenWidth >= 600 && screenWidth < 1024;
-
-    // FIXED: Match the same height as the actual card
-    final cardHeight = isMobile ? 280.0 : (isTablet ? 320.0 : 360.0);
-    final imageHeight = cardHeight * 0.45;
-    final contentPadding = isMobile ? 12.0 : (isTablet ? 16.0 : 20.0);
+    final isDesktop = ScreenSize.isDesktop(context);
+    final cardHeight = ResponsiveValues.categoryCardHeight(context);
+    final spacing = ResponsiveValues.spacingM(context);
+    final titleSize = ResponsiveValues.categoryCardTitleSize(context);
+    final priceSize = ResponsiveValues.categoryCardPriceSize(context);
 
     return Container(
       height: cardHeight,
@@ -429,7 +453,8 @@ class CategoryCardShimmer extends StatelessWidget {
         color: Theme.of(context).brightness == Brightness.dark
             ? AppColors.darkSurface
             : AppColors.lightSurface,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
         border: Border.all(
           color: Theme.of(context).brightness == Brightness.dark
               ? AppColors.darkDivider.withValues(alpha: 0.3)
@@ -439,60 +464,83 @@ class CategoryCardShimmer extends StatelessWidget {
       child: Shimmer.fromColors(
         baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
         highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Stack(
           children: [
-            // Image shimmer
+            // Full image shimmer
             Container(
-              height: imageHeight,
               decoration: const BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.vertical(
-                  top: Radius.circular(24),
+              ),
+            ),
+
+            // Gradient overlay shimmer
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.white.withValues(alpha: 0.3),
+                      Colors.transparent,
+                      Colors.white.withValues(alpha: 0.5),
+                    ],
+                    stops: const [0.0, 0.5, 1.0],
+                  ),
                 ),
               ),
             ),
-            // Content shimmer
-            Expanded(
-              child: Padding(
-                padding: EdgeInsets.all(contentPadding),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: double.infinity,
-                      height: 20,
-                      color: Colors.white,
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      width: 100,
-                      height: 16,
-                      color: Colors.white,
-                    ),
-                    const Spacer(),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Container(
-                          width: 80,
-                          height: 24,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        Container(
-                          width: 60,
-                          height: 24,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+
+            // Name shimmer at top left
+            Positioned(
+              top: spacing,
+              left: spacing,
+              child: Container(
+                width: isDesktop ? 80 : 100,
+                height: titleSize * 1.5,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+
+            // Status badge shimmer at top right
+            Positioned(
+              top: spacing,
+              right: spacing,
+              child: Container(
+                width: isDesktop ? 60 : 70,
+                height: isDesktop ? 18 : 22,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+
+            // Price shimmer at bottom left
+            Positioned(
+              bottom: spacing,
+              left: spacing,
+              child: Container(
+                width: isDesktop ? 50 : 60,
+                height: priceSize * 1.5,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+
+            // Subtle border overlay
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.1),
+                    width: 0.5,
+                  ),
                 ),
               ),
             ),

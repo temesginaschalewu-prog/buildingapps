@@ -2,10 +2,21 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:lottie/lottie.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:familyacademyclient/utils/responsive.dart';
+import 'package:familyacademyclient/utils/responsive_values.dart';
 import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
+import 'responsive_widgets.dart';
+
+enum EmptyStateType {
+  general,
+  error,
+  noInternet,
+  noResults,
+  noData,
+  success,
+  offline,
+}
 
 class EmptyState extends StatelessWidget {
   final IconData? icon;
@@ -40,7 +51,8 @@ class EmptyState extends StatelessWidget {
 
   Widget _buildGlassContainer(BuildContext context, {required Widget child}) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
+      borderRadius:
+          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
         child: Container(
@@ -53,7 +65,8 @@ class EmptyState extends StatelessWidget {
                 AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
-            borderRadius: BorderRadius.circular(24),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
             border: Border.all(
               color: _getBorderColor(context).withValues(alpha: 0.2),
             ),
@@ -73,12 +86,13 @@ class EmptyState extends StatelessWidget {
         gradient: LinearGradient(
           colors: _getButtonGradient(type),
         ),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
         boxShadow: [
           BoxShadow(
             color: _getIconColor(context).withValues(alpha: 0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            blurRadius: ResponsiveValues.spacingS(context),
+            offset: Offset(0, ResponsiveValues.spacingXS(context)),
           ),
         ],
       ),
@@ -86,17 +100,23 @@ class EmptyState extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: onPressed,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
           child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-            child: Row(
+            padding: EdgeInsets.symmetric(
+              vertical: ResponsiveValues.spacingM(context),
+              horizontal: ResponsiveValues.spacingL(context),
+            ),
+            child: ResponsiveRow(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon, color: Colors.white, size: 18),
-                const SizedBox(width: 8),
-                Text(
+                Icon(icon,
+                    color: Colors.white,
+                    size: ResponsiveValues.iconSizeS(context)),
+                ResponsiveSizedBox(width: AppSpacing.s),
+                ResponsiveText(
                   label,
-                  style: AppTextStyles.buttonMedium.copyWith(
+                  style: AppTextStyles.buttonMedium(context).copyWith(
                     color: Colors.white,
                   ),
                 ),
@@ -111,27 +131,26 @@ class EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final content = Container(
-      constraints: BoxConstraints(maxWidth: maxWidth ?? 400),
+      constraints: BoxConstraints(
+        maxWidth: maxWidth ?? 400,
+        maxHeight: MediaQuery.of(context).size.height *
+            0.8, // Add max height constraint
+      ),
       padding: padding,
       child: _buildGlassContainer(
         context,
         child: Padding(
-          padding: EdgeInsets.all(ScreenSize.responsiveValue(
-            context: context,
-            mobile: AppThemes.spacingL,
-            tablet: AppThemes.spacingXL,
-            desktop: AppThemes.spacingXXL,
-          )),
+          padding: EdgeInsets.all(ResponsiveValues.spacingXL(context)),
           child: LayoutBuilder(
             builder: (context, constraints) {
               return SingleChildScrollView(
-                physics: const NeverScrollableScrollPhysics(),
+                physics: const BouncingScrollPhysics(),
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
-                    minHeight: constraints.maxHeight,
-                    maxHeight: double.infinity,
+                    minHeight: 0, // Remove minHeight constraint
+                    maxWidth: constraints.maxWidth,
                   ),
-                  child: Column(
+                  child: ResponsiveColumn(
                     mainAxisAlignment: MainAxisAlignment.center,
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: centerContent
@@ -139,15 +158,15 @@ class EmptyState extends StatelessWidget {
                         : CrossAxisAlignment.start,
                     children: [
                       if (showAnimation) _buildAnimatedIcon(context),
-                      const SizedBox(height: AppThemes.spacingL),
+                      ResponsiveSizedBox(height: AppSpacing.l),
                       _buildTitle(context),
-                      const SizedBox(height: AppThemes.spacingM),
+                      ResponsiveSizedBox(height: AppSpacing.m),
                       _buildMessage(context),
                       if (actionText != null && onAction != null) ...[
-                        const SizedBox(height: AppThemes.spacingXL),
+                        ResponsiveSizedBox(height: AppSpacing.xl),
                         _buildActionButton(context),
                       ],
-                      const SizedBox(height: AppThemes.spacingS),
+                      ResponsiveSizedBox(height: AppSpacing.s),
                     ],
                   ),
                 ),
@@ -159,12 +178,7 @@ class EmptyState extends StatelessWidget {
     );
 
     return Padding(
-      padding: EdgeInsets.all(ScreenSize.responsiveValue(
-        context: context,
-        mobile: AppThemes.spacingL,
-        tablet: AppThemes.spacingXL,
-        desktop: AppThemes.spacingXXL,
-      )),
+      padding: ResponsiveValues.screenPadding(context),
       child: centerContent ? Center(child: content) : content,
     ).animate().fadeIn(duration: AppThemes.animationDurationMedium);
   }
@@ -189,23 +203,22 @@ class EmptyState extends StatelessWidget {
   List<Color> _getButtonGradient(EmptyStateType type) {
     switch (type) {
       case EmptyStateType.error:
-        return const [Color(0xFFFF3B30), Color(0xFFE6204A)];
+        return AppColors.pinkGradient;
       case EmptyStateType.noInternet:
       case EmptyStateType.offline:
-        return const [Color(0xFFFF9500), Color(0xFFFF2D55)];
+        return [AppColors.telegramOrange, AppColors.telegramRed];
       case EmptyStateType.noResults:
       case EmptyStateType.noData:
-        return const [Color(0xFF2AABEE), Color(0xFF5856D6)];
+        return AppColors.blueGradient;
       case EmptyStateType.success:
-        return const [Color(0xFF34C759), Color(0xFF2CAE4A)];
+        return AppColors.greenGradient;
       default:
-        return const [Color(0xFF2AABEE), Color(0xFF5856D6)];
+        return AppColors.blueGradient;
     }
   }
 
   Widget _buildAnimatedIcon(BuildContext context) {
-    final iconSize = ScreenSize.responsiveValue(
-        context: context, mobile: 80.0, tablet: 100.0, desktop: 120.0);
+    final iconSize = ResponsiveValues.iconSizeXXL(context) * 2;
 
     if (lottieAsset != null) {
       return SizedBox(
@@ -236,9 +249,15 @@ class EmptyState extends StatelessWidget {
         ),
         shape: BoxShape.circle,
         border: Border.all(
-            color: _getIconColor(context).withValues(alpha: 0.3), width: 2),
+          color: _getIconColor(context).withValues(alpha: 0.3),
+          width: 2,
+        ),
       ),
-      child: Icon(icon, size: iconSize * 0.5, color: _getIconColor(context)),
+      child: ResponsiveIcon(
+        icon!,
+        size: iconSize * 0.5,
+        color: _getIconColor(context),
+      ),
     );
   }
 
@@ -261,12 +280,14 @@ class EmptyState extends StatelessWidget {
 
   Widget _buildTitle(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppThemes.spacingL),
-      child: Text(
+      padding: EdgeInsets.symmetric(
+        horizontal: ResponsiveValues.spacingL(context),
+      ),
+      child: ResponsiveText(
         title,
-        style: AppTextStyles.titleLarge.copyWith(
-            color: AppColors.getTextPrimary(context),
-            fontWeight: FontWeight.w600),
+        style: AppTextStyles.titleLarge(context).copyWith(
+          fontWeight: FontWeight.w600,
+        ),
         textAlign: centerContent ? TextAlign.center : TextAlign.start,
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
@@ -276,11 +297,15 @@ class EmptyState extends StatelessWidget {
 
   Widget _buildMessage(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppThemes.spacingL),
-      child: Text(
+      padding: EdgeInsets.symmetric(
+        horizontal: ResponsiveValues.spacingL(context),
+      ),
+      child: ResponsiveText(
         message,
-        style: AppTextStyles.bodyMedium
-            .copyWith(color: AppColors.getTextSecondary(context), height: 1.5),
+        style: AppTextStyles.bodyMedium(context).copyWith(
+          color: AppColors.getTextSecondary(context),
+          height: 1.5,
+        ),
         textAlign: centerContent ? TextAlign.center : TextAlign.start,
         maxLines: 4,
         overflow: TextOverflow.ellipsis,
@@ -315,16 +340,6 @@ class EmptyState extends StatelessWidget {
   }
 }
 
-enum EmptyStateType {
-  general,
-  error,
-  noInternet,
-  noResults,
-  noData,
-  success,
-  offline,
-}
-
 class NoDataState extends StatelessWidget {
   final String dataType;
   final String? customMessage;
@@ -355,7 +370,7 @@ class NoDataState extends StatelessWidget {
 
 class NoInternetState extends StatelessWidget {
   final VoidCallback onRetry;
-  final String? message; // 🔵 FIX: Added message parameter
+  final String? message;
 
   const NoInternetState({super.key, required this.onRetry, this.message});
 
@@ -376,13 +391,13 @@ class NoInternetState extends StatelessWidget {
 class OfflineState extends StatelessWidget {
   final String? dataType;
   final VoidCallback? onRetry;
-  final String? message; // 🔵 FIX: Added message parameter
+  final String? message;
 
   const OfflineState({
     super.key,
     this.dataType,
     this.onRetry,
-    this.message, // 🔵 FIX: Added message parameter
+    this.message,
   });
 
   @override

@@ -88,7 +88,7 @@ void showSimpleSnackBar(BuildContext context, String message,
   showTopSnackBar(context, message, isError: isError);
 }
 
-// 🔵 NEW: Show offline message
+// Show offline message with appropriate styling
 void showOfflineMessage(BuildContext context) {
   showTopSnackBar(
     context,
@@ -97,7 +97,18 @@ void showOfflineMessage(BuildContext context) {
   );
 }
 
-// 🔵 NEW: Check internet connectivity
+// Show offline error for actions that require connection
+void showOfflineError(BuildContext context, {String? action}) {
+  showTopSnackBar(
+    context,
+    action != null
+        ? 'Cannot $action while offline. Please check your connection.'
+        : 'You are offline. Please check your internet connection.',
+    isError: true,
+  );
+}
+
+// Check internet connectivity
 Future<bool> hasInternetConnection() async {
   try {
     final connectivityResult = await Connectivity().checkConnectivity();
@@ -107,7 +118,7 @@ Future<bool> hasInternetConnection() async {
   }
 }
 
-// 🔵 NEW: Stream connectivity changes
+// Stream connectivity changes
 Stream<bool> connectivityStream() {
   return Connectivity().onConnectivityChanged.map((result) {
     return result != ConnectivityResult.none;
@@ -237,28 +248,48 @@ String generateCacheKey(String base, List<String> parameters) {
   return '${base}_$params';
 }
 
-// 🔵 FIX: Better error message formatting for offline scenarios
+// Improved error message formatting for offline scenarios
 String formatErrorMessage(dynamic error) {
+  // Check for network-related errors
   if (error is String) {
-    if (error.contains('Network') || error.contains('connection')) {
+    if (error.contains('Network') ||
+        error.contains('connection') ||
+        error.contains('Failed host lookup') ||
+        error.contains('SocketException') ||
+        error.contains('Connection refused')) {
       return 'Network error. Please check your internet connection.';
     }
     return error;
   }
+
   if (error is Map<String, dynamic>) {
     if (error.containsKey('offline') && error['offline'] == true) {
       return 'You are offline. Showing cached data.';
     }
     return error['message']?.toString() ?? 'An error occurred';
   }
+
   if (error is Exception) {
     final message = error.toString();
-    if (message.contains('Network') || message.contains('connection')) {
+    if (message.contains('Network') ||
+        message.contains('connection') ||
+        message.contains('Failed host lookup') ||
+        message.contains('SocketException') ||
+        message.contains('Connection refused')) {
       return 'Network error. Please check your internet connection.';
     }
     return message;
   }
+
   return error?.toString() ?? 'An unknown error occurred';
+}
+
+// Check if error is a network error
+bool isNetworkError(dynamic error) {
+  final message = formatErrorMessage(error);
+  return message.contains('Network error') ||
+      message.contains('offline') ||
+      message.contains('internet connection');
 }
 
 Function debounce(Function func, [int delay = 500]) {

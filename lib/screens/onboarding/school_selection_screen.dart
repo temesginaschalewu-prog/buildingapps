@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:ui';
 import 'package:familyacademyclient/models/school_model.dart';
-import 'package:familyacademyclient/services/user_session.dart';
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/themes/app_text_styles.dart';
 import 'package:flutter/material.dart';
@@ -9,13 +8,14 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
+import 'package:familyacademyclient/utils/responsive_values.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../services/api_service.dart';
 import '../../providers/school_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../themes/app_themes.dart';
 import '../../utils/helpers.dart';
-import '../../widgets/common/empty_state.dart';
+import '../../widgets/common/responsive_widgets.dart';
 
 class SchoolSelectionScreen extends StatefulWidget {
   const SchoolSelectionScreen({super.key});
@@ -60,17 +60,10 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
     super.dispose();
   }
 
-  Future<void> _checkConnectivity() async {
-    final hasConnection = await hasInternetConnection();
-    if (!hasConnection) {
-      setState(() => _isOffline = true);
-      showOfflineMessage(context);
-    }
-  }
-
   Widget _buildGlassContainer({required Widget child}) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
+      borderRadius:
+          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
         child: Container(
@@ -83,7 +76,8 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                 AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
-            borderRadius: BorderRadius.circular(24),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
             border: Border.all(
               color: AppColors.telegramBlue.withValues(alpha: 0.2),
             ),
@@ -94,6 +88,88 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
     );
   }
 
+  Widget _buildGradientButton({
+    required String label,
+    required VoidCallback? onPressed,
+    required List<Color> gradient,
+    IconData? icon,
+    bool isLoading = false,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: onPressed != null ? LinearGradient(colors: gradient) : null,
+        color: onPressed == null
+            ? AppColors.telegramGray.withValues(alpha: 0.2)
+            : null,
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+        boxShadow: onPressed != null
+            ? [
+                BoxShadow(
+                  color: gradient.first.withValues(alpha: 0.3),
+                  blurRadius: ResponsiveValues.spacingS(context),
+                  offset: Offset(0, ResponsiveValues.spacingXS(context)),
+                ),
+              ]
+            : null,
+      ),
+      child: Material(
+        color: onPressed != null ? Colors.transparent : Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+          child: Container(
+            padding: EdgeInsets.symmetric(
+              vertical: ResponsiveValues.spacingL(context),
+            ),
+            alignment: Alignment.center,
+            child: isLoading
+                ? SizedBox(
+                    width: ResponsiveValues.iconSizeM(context),
+                    height: ResponsiveValues.iconSizeM(context),
+                    child: const CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation(Colors.white),
+                    ),
+                  )
+                : ResponsiveRow(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (icon != null) ...[
+                        Icon(
+                          icon,
+                          size: ResponsiveValues.iconSizeS(context),
+                          color: onPressed != null
+                              ? Colors.white
+                              : AppColors.getTextSecondary(context),
+                        ),
+                        const ResponsiveSizedBox(width: AppSpacing.s),
+                      ],
+                      ResponsiveText(
+                        label,
+                        style: AppTextStyles.buttonMedium(context).copyWith(
+                          color: onPressed != null
+                              ? Colors.white
+                              : AppColors.getTextSecondary(context),
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _checkConnectivity() async {
+    final hasConnection = await hasInternetConnection();
+    if (!hasConnection) {
+      setState(() => _isOffline = true);
+      showOfflineMessage(context);
+    }
+  }
+
   Widget _buildSkeletonLoader() {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
@@ -102,8 +178,8 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
           baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
           highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
           child: Container(
-            width: 150,
-            height: 24,
+            width: ResponsiveValues.spacingXXXL(context) * 3,
+            height: ResponsiveValues.spacingXL(context),
             color: Colors.white,
           ),
         ),
@@ -111,56 +187,61 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
         elevation: 0,
       ),
       body: ListView.builder(
-        padding: const EdgeInsets.all(16),
+        padding: ResponsiveValues.screenPadding(context),
         itemCount: 5,
         itemBuilder: (context, index) => Padding(
-          padding: const EdgeInsets.only(bottom: 16),
+          padding: EdgeInsets.only(
+            bottom: ResponsiveValues.spacingL(context),
+          ),
           child: _buildGlassContainer(
             child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
+              padding: ResponsiveValues.cardPadding(context),
+              child: ResponsiveRow(
                 children: [
                   Shimmer.fromColors(
                     baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
                     highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                     child: Container(
-                      width: 48,
-                      height: 48,
+                      width: ResponsiveValues.iconSizeXL(context) * 1.5,
+                      height: ResponsiveValues.iconSizeXL(context) * 1.5,
                       decoration: const BoxDecoration(
                         color: Colors.white,
                         shape: BoxShape.circle,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 16),
+                  const ResponsiveSizedBox(width: AppSpacing.l),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: ResponsiveColumn(
                       children: [
                         Shimmer.fromColors(
                           baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
                           highlightColor:
                               Colors.grey[100]!.withValues(alpha: 0.6),
                           child: Container(
-                            height: 20,
+                            height: ResponsiveValues.spacingXL(context),
                             width: double.infinity,
                             decoration: BoxDecoration(
                               color: Colors.white,
-                              borderRadius: BorderRadius.circular(4),
+                              borderRadius: BorderRadius.circular(
+                                ResponsiveValues.radiusSmall(context),
+                              ),
                             ),
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        const ResponsiveSizedBox(height: AppSpacing.s),
                         Shimmer.fromColors(
                           baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
                           highlightColor:
                               Colors.grey[100]!.withValues(alpha: 0.6),
                           child: Container(
-                            height: 16,
-                            width: 150,
+                            height: ResponsiveValues.spacingL(context),
+                            width: ResponsiveValues.spacingXXXL(context) * 3,
                             decoration: BoxDecoration(
                               color: Colors.white,
-                              borderRadius: BorderRadius.circular(4),
+                              borderRadius: BorderRadius.circular(
+                                ResponsiveValues.radiusSmall(context),
+                              ),
                             ),
                           ),
                         ),
@@ -257,7 +338,7 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
       if (!mounted) return;
 
       if (response.success) {
-        schoolProvider.selectSchool(_selectedSchoolId!);
+        await schoolProvider.selectSchool(_selectedSchoolId!);
 
         final currentUser = authProvider.currentUser;
         if (currentUser != null) {
@@ -301,7 +382,7 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
     setState(() => _isLoading = true);
 
     try {
-      schoolProvider.selectSchool(0);
+      await schoolProvider.selectSchool(0);
       showTopSnackBar(context, 'Proceeding without specific school selection');
       await Future.delayed(const Duration(milliseconds: 100));
       if (mounted) context.go('/');
@@ -322,23 +403,17 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
         color: Colors.transparent,
         child: InkWell(
           onTap: () => _handleSchoolSelection(school.id),
-          borderRadius: BorderRadius.circular(24),
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
           splashColor: AppColors.telegramBlue.withValues(alpha: 0.1),
           highlightColor: Colors.transparent,
           child: Padding(
-            padding: EdgeInsets.all(ScreenSize.responsiveValue(
-              context: context,
-              mobile: 16,
-              tablet: 20,
-              desktop: 24,
-            )),
-            child: Row(
+            padding: ResponsiveValues.cardPadding(context),
+            child: ResponsiveRow(
               children: [
                 Container(
-                  width: ScreenSize.responsiveValue(
-                      context: context, mobile: 48, tablet: 56, desktop: 64),
-                  height: ScreenSize.responsiveValue(
-                      context: context, mobile: 48, tablet: 56, desktop: 64),
+                  width: ResponsiveValues.iconSizeXL(context) * 1.5,
+                  height: ResponsiveValues.iconSizeXL(context) * 1.5,
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: isSelected
@@ -353,46 +428,47 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                                   .withValues(alpha: 0.1),
                             ],
                     ),
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(
+                      ResponsiveValues.radiusMedium(context),
+                    ),
                   ),
-                  child: Icon(
+                  child: ResponsiveIcon(
                     Icons.school_rounded,
-                    size: ScreenSize.responsiveValue(
-                        context: context, mobile: 24, tablet: 28, desktop: 32),
+                    size: ResponsiveValues.iconSizeL(context),
                     color: isSelected
                         ? AppColors.telegramBlue
                         : AppColors.telegramBlue.withValues(alpha: 0.5),
                   ),
                 ),
-                const SizedBox(width: 16),
+                const ResponsiveSizedBox(width: AppSpacing.l),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: ResponsiveColumn(
                     children: [
-                      Text(
+                      ResponsiveText(
                         school.name,
-                        style: AppTextStyles.titleMedium.copyWith(
-                          color: AppColors.getTextPrimary(context),
-                          fontSize: ScreenSize.responsiveFontSize(
-                              context: context,
-                              mobile: 16,
-                              tablet: 18,
-                              desktop: 20),
+                        style: AppTextStyles.titleMedium(context).copyWith(
+                          fontSize: ScreenSize.fontSize(
+                            context: context,
+                            base: 16,
+                            tablet: 18,
+                            desktop: 20,
+                          ),
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 4),
-                      Row(
+                      const ResponsiveSizedBox(height: AppSpacing.xs),
+                      ResponsiveRow(
                         children: [
                           Icon(Icons.calendar_today_rounded,
-                              size: 12,
+                              size: ResponsiveValues.iconSizeXXS(context),
                               color: AppColors.getTextSecondary(context)),
-                          const SizedBox(width: 4),
-                          Text(
+                          const ResponsiveSizedBox(width: AppSpacing.xs),
+                          ResponsiveText(
                             'Added: ${formatDate(school.createdAt)}',
-                            style: AppTextStyles.caption.copyWith(
-                                color: AppColors.getTextSecondary(context)),
+                            style: AppTextStyles.caption(context).copyWith(
+                              color: AppColors.getTextSecondary(context),
+                            ),
                           ),
                         ],
                       ),
@@ -400,13 +476,13 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                   ),
                 ),
                 Container(
-                  width: 24,
-                  height: 24,
+                  width: ResponsiveValues.iconSizeL(context),
+                  height: ResponsiveValues.iconSizeL(context),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     gradient: isSelected
                         ? const LinearGradient(
-                            colors: [Color(0xFF2AABEE), Color(0xFF5856D6)],
+                            colors: AppColors.blueGradient,
                           )
                         : null,
                     border: Border.all(
@@ -446,23 +522,17 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
         color: Colors.transparent,
         child: InkWell(
           onTap: () => _handleSchoolSelection(0),
-          borderRadius: BorderRadius.circular(24),
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
           splashColor: AppColors.telegramBlue.withValues(alpha: 0.1),
           highlightColor: Colors.transparent,
           child: Padding(
-            padding: EdgeInsets.all(ScreenSize.responsiveValue(
-              context: context,
-              mobile: 16,
-              tablet: 20,
-              desktop: 24,
-            )),
-            child: Row(
+            padding: ResponsiveValues.cardPadding(context),
+            child: ResponsiveRow(
               children: [
                 Container(
-                  width: ScreenSize.responsiveValue(
-                      context: context, mobile: 48, tablet: 56, desktop: 64),
-                  height: ScreenSize.responsiveValue(
-                      context: context, mobile: 48, tablet: 56, desktop: 64),
+                  width: ResponsiveValues.iconSizeXL(context) * 1.5,
+                  height: ResponsiveValues.iconSizeXL(context) * 1.5,
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: isSelected
@@ -477,50 +547,51 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                                   .withValues(alpha: 0.1),
                             ],
                     ),
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(
+                      ResponsiveValues.radiusMedium(context),
+                    ),
                   ),
-                  child: Icon(
+                  child: ResponsiveIcon(
                     Icons.help_outline_rounded,
-                    size: ScreenSize.responsiveValue(
-                        context: context, mobile: 24, tablet: 28, desktop: 32),
+                    size: ResponsiveValues.iconSizeL(context),
                     color: isSelected
                         ? AppColors.telegramBlue
                         : AppColors.telegramGray,
                   ),
                 ),
-                const SizedBox(width: 16),
+                const ResponsiveSizedBox(width: AppSpacing.l),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: ResponsiveColumn(
                     children: [
-                      Text(
+                      ResponsiveText(
                         'Other School',
-                        style: AppTextStyles.titleMedium.copyWith(
-                          color: AppColors.getTextPrimary(context),
-                          fontSize: ScreenSize.responsiveFontSize(
-                              context: context,
-                              mobile: 16,
-                              tablet: 18,
-                              desktop: 20),
+                        style: AppTextStyles.titleMedium(context).copyWith(
+                          fontSize: ScreenSize.fontSize(
+                            context: context,
+                            base: 16,
+                            tablet: 18,
+                            desktop: 20,
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
+                      const ResponsiveSizedBox(height: AppSpacing.xs),
+                      ResponsiveText(
                         'My school is not listed',
-                        style: AppTextStyles.caption.copyWith(
-                            color: AppColors.getTextSecondary(context)),
+                        style: AppTextStyles.caption(context).copyWith(
+                          color: AppColors.getTextSecondary(context),
+                        ),
                       ),
                     ],
                   ),
                 ),
                 Container(
-                  width: 24,
-                  height: 24,
+                  width: ResponsiveValues.iconSizeL(context),
+                  height: ResponsiveValues.iconSizeL(context),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     gradient: isSelected
                         ? const LinearGradient(
-                            colors: [Color(0xFF2AABEE), Color(0xFF5856D6)],
+                            colors: AppColors.blueGradient,
                           )
                         : null,
                     border: Border.all(
@@ -552,64 +623,7 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
             delay: (index * 50).ms);
   }
 
-  Widget _buildHeader(BuildContext context) {
-    return _buildGlassContainer(
-      child: Container(
-        padding: EdgeInsets.all(ScreenSize.responsiveValue(
-          context: context,
-          mobile: 24,
-          tablet: 32,
-          desktop: 40,
-        )),
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-              colors: AppColors.blueGradient,
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight),
-          borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
-        ),
-        child: Column(
-          children: [
-            AnimatedBuilder(
-              animation: _headerAnimationController,
-              builder: (context, child) {
-                return Transform.scale(
-                  scale: 0.8 + (0.2 * _headerAnimationController.value),
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.2),
-                        shape: BoxShape.circle),
-                    child: Icon(Icons.school_rounded,
-                        size: ScreenSize.responsiveValue(
-                            context: context,
-                            mobile: 48,
-                            tablet: 56,
-                            desktop: 64),
-                        color: Colors.white),
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 16),
-            Text('Select Your School',
-                style: AppTextStyles.headlineMedium
-                    .copyWith(color: Colors.white, fontWeight: FontWeight.w700),
-                textAlign: TextAlign.center),
-            const SizedBox(height: 8),
-            Text('This helps personalize your learning experience',
-                style: AppTextStyles.bodyMedium
-                    .copyWith(color: Colors.white.withValues(alpha: 0.9)),
-                textAlign: TextAlign.center),
-          ],
-        ),
-      ),
-    ).animate().fadeIn(duration: AppThemes.animationDurationMedium).slideY(
-        begin: -0.1, end: 0, duration: AppThemes.animationDurationMedium);
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildMobileLayout() {
     final schoolProvider = Provider.of<SchoolProvider>(context);
 
     if (schoolProvider.isLoading && !_schoolsLoaded) {
@@ -619,34 +633,40 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: AppBar(
-        title: Text('Select School',
-            style: AppTextStyles.appBarTitle
-                .copyWith(color: AppColors.getTextPrimary(context))),
+        title: ResponsiveText(
+          'Select School',
+          style: AppTextStyles.appBarTitle(context),
+        ),
         backgroundColor: AppColors.getBackground(context),
         elevation: 0,
         leading: IconButton(
-            icon: Icon(Icons.arrow_back_rounded,
-                color: AppColors.getTextPrimary(context)),
-            onPressed: () => context.go('/')),
+          icon: ResponsiveIcon(
+            Icons.arrow_back_rounded,
+            color: AppColors.getTextPrimary(context),
+          ),
+          onPressed: () => context.go('/'),
+        ),
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(70),
+          preferredSize:
+              Size.fromHeight(ResponsiveValues.appBarHeight(context) + 16),
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: ResponsiveValues.screenPadding(context),
             child: _buildGlassContainer(
               child: TextField(
                 controller: _searchController,
                 decoration: InputDecoration(
                   hintText: 'Search schools...',
-                  hintStyle: AppTextStyles.bodyMedium.copyWith(
-                      color: AppColors.getTextSecondary(context)
-                          .withValues(alpha: 0.5)),
+                  hintStyle: AppTextStyles.bodyMedium(context).copyWith(
+                    color: AppColors.getTextSecondary(context)
+                        .withValues(alpha: 0.5),
+                  ),
                   prefixIcon: Icon(Icons.search_rounded,
-                      color: AppColors.getTextSecondary(context)),
+                      color: AppColors.getTextSecondary(context),
+                      size: ResponsiveValues.iconSizeS(context)),
                   border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                  contentPadding: ResponsiveValues.listItemPadding(context),
                 ),
-                style: AppTextStyles.bodyMedium
-                    .copyWith(color: AppColors.getTextPrimary(context)),
+                style: AppTextStyles.bodyMedium(context),
                 enabled: !_isOffline,
               ),
             ),
@@ -656,8 +676,7 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
       body: CustomScrollView(
         slivers: [
           SliverPadding(
-            padding: EdgeInsets.all(ScreenSize.responsiveValue(
-                context: context, mobile: 16, tablet: 20, desktop: 24)),
+            padding: ResponsiveValues.screenPadding(context),
             sliver: SliverList.separated(
               itemCount: _filteredSchools.length + 1,
               itemBuilder: (context, index) {
@@ -667,19 +686,21 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                 return _buildSchoolCard(
                     context, _filteredSchools[index], index);
               },
-              separatorBuilder: (context, index) => const SizedBox(height: 16),
+              separatorBuilder: (context, index) =>
+                  const ResponsiveSizedBox(height: AppSpacing.l),
             ),
           ),
           SliverToBoxAdapter(
             child: Padding(
-              padding: EdgeInsets.all(ScreenSize.responsiveValue(
-                  context: context, mobile: 16, tablet: 20, desktop: 24)),
-              child: Column(
+              padding: ResponsiveValues.screenPadding(context),
+              child: ResponsiveColumn(
                 children: [
                   if (_isOffline)
                     Container(
-                      padding: const EdgeInsets.all(12),
-                      margin: const EdgeInsets.only(bottom: 16),
+                      padding: ResponsiveValues.cardPadding(context),
+                      margin: EdgeInsets.only(
+                        bottom: ResponsiveValues.spacingL(context),
+                      ),
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
@@ -687,21 +708,23 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                             AppColors.telegramYellow.withValues(alpha: 0.1),
                           ],
                         ),
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(
+                          ResponsiveValues.radiusMedium(context),
+                        ),
                         border: Border.all(
                           color:
                               AppColors.telegramYellow.withValues(alpha: 0.3),
                         ),
                       ),
-                      child: Row(
+                      child: ResponsiveRow(
                         children: [
                           const Icon(Icons.wifi_off_rounded,
                               color: AppColors.telegramYellow, size: 20),
-                          const SizedBox(width: 12),
+                          const ResponsiveSizedBox(width: AppSpacing.m),
                           Expanded(
-                            child: Text(
+                            child: ResponsiveText(
                               'You are offline. Showing cached schools.',
-                              style: AppTextStyles.bodySmall.copyWith(
+                              style: AppTextStyles.bodySmall(context).copyWith(
                                 color: AppColors.telegramYellow,
                               ),
                             ),
@@ -709,100 +732,60 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                         ],
                       ),
                     ),
-                  const SizedBox(height: 16),
+                  const ResponsiveSizedBox(height: AppSpacing.l),
                   SizedBox(
                     width: double.infinity,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        gradient: _selectedSchoolId == null || _isOffline
-                            ? null
-                            : const LinearGradient(
-                                colors: [Color(0xFF2AABEE), Color(0xFF5856D6)],
-                              ),
-                        borderRadius:
-                            BorderRadius.circular(AppThemes.borderRadiusMedium),
-                        boxShadow: _selectedSchoolId != null && !_isOffline
-                            ? [
-                                BoxShadow(
-                                  color: AppColors.telegramBlue
-                                      .withValues(alpha: 0.3),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ]
-                            : null,
-                      ),
-                      child: ElevatedButton(
-                        onPressed: _isLoading ||
-                                _selectedSchoolId == null ||
-                                _isOffline
-                            ? null
-                            : _selectSchool,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.transparent,
-                          foregroundColor: _isOffline
-                              ? AppColors.getTextSecondary(context)
-                              : Colors.white,
-                          shadowColor: Colors.transparent,
-                          disabledBackgroundColor: _selectedSchoolId == null
-                              ? AppColors.telegramGray.withValues(alpha: 0.2)
-                              : Colors.transparent,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(
-                                  AppThemes.borderRadiusMedium)),
-                        ),
-                        child: _isLoading
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor:
-                                        AlwaysStoppedAnimation(Colors.white)))
-                            : Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                      _isOffline
-                                          ? Icons.wifi_off_rounded
-                                          : (_selectedSchoolId == 0
-                                              ? Icons.arrow_forward_rounded
-                                              : Icons.check_rounded),
-                                      size: 20),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    _isOffline
-                                        ? 'Offline'
-                                        : (_selectedSchoolId == 0
-                                            ? 'Continue with Other School'
-                                            : 'Continue to Learning'),
-                                    style: AppTextStyles.buttonMedium.copyWith(
-                                        color: _isOffline
-                                            ? AppColors.getTextSecondary(
-                                                context)
-                                            : Colors.white),
-                                  ),
-                                ],
-                              ),
-                      ),
-                    ),
-                  )
-                      .animate()
-                      .fadeIn(
-                          duration: AppThemes.animationDurationMedium,
-                          delay: 600.ms)
-                      .slideY(
-                          begin: 0.1,
-                          end: 0,
-                          duration: AppThemes.animationDurationMedium),
-                  const SizedBox(height: 32),
+                    child: _buildGradientButton(
+                      label: _isOffline
+                          ? 'Offline'
+                          : (_selectedSchoolId == 0
+                              ? 'Continue with Other School'
+                              : 'Continue to Learning'),
+                      onPressed:
+                          _isLoading || _selectedSchoolId == null || _isOffline
+                              ? null
+                              : _selectSchool,
+                      gradient: AppColors.blueGradient,
+                      icon: _isOffline
+                          ? Icons.wifi_off_rounded
+                          : (_selectedSchoolId == 0
+                              ? Icons.arrow_forward_rounded
+                              : Icons.check_rounded),
+                      isLoading: _isLoading,
+                    )
+                        .animate()
+                        .fadeIn(
+                            duration: AppThemes.animationDurationMedium,
+                            delay: 600.ms)
+                        .slideY(
+                            begin: 0.1,
+                            end: 0,
+                            duration: AppThemes.animationDurationMedium),
+                  ),
+                  const ResponsiveSizedBox(height: AppSpacing.xxl),
                 ],
               ),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildTabletLayout() {
+    return _buildMobileLayout();
+  }
+
+  Widget _buildDesktopLayout() {
+    return _buildMobileLayout();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ResponsiveLayout(
+      mobile: _buildMobileLayout(),
+      tablet: _buildTabletLayout(),
+      desktop: _buildDesktopLayout(),
     );
   }
 }

@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:familyacademyclient/providers/auth_provider.dart';
 import 'package:familyacademyclient/services/user_session.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
+import 'package:familyacademyclient/utils/responsive_values.dart';
 import 'package:familyacademyclient/utils/helpers.dart';
 import 'package:familyacademyclient/services/device_service.dart';
 import 'package:familyacademyclient/services/notification_service.dart';
@@ -16,6 +17,7 @@ import 'package:familyacademyclient/utils/router.dart';
 import 'package:familyacademyclient/widgets/common/empty_state.dart';
 import 'package:familyacademyclient/widgets/auth/auth_form_field.dart';
 import 'package:familyacademyclient/widgets/auth/password_field.dart';
+import 'package:familyacademyclient/widgets/common/responsive_widgets.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -48,10 +50,15 @@ class _RegisterScreenState extends State<RegisterScreen>
   void initState() {
     super.initState();
 
-    _logoAnimationController =
-        AnimationController(vsync: this, duration: 600.ms)..forward();
+    _logoAnimationController = AnimationController(
+      vsync: this,
+      duration: 600.ms,
+    )..forward();
+
     _logoScaleAnimation = CurvedAnimation(
-        parent: _logoAnimationController, curve: Curves.elasticOut);
+      parent: _logoAnimationController,
+      curve: Curves.elasticOut,
+    );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_mounted) _checkConnectivity();
@@ -79,7 +86,8 @@ class _RegisterScreenState extends State<RegisterScreen>
 
   Widget _buildGlassContainer({required Widget child}) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
+      borderRadius:
+          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
         child: Container(
@@ -92,7 +100,8 @@ class _RegisterScreenState extends State<RegisterScreen>
                 AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
-            borderRadius: BorderRadius.circular(24),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
             border: Border.all(
               color: AppColors.telegramBlue.withValues(alpha: 0.2),
             ),
@@ -116,13 +125,14 @@ class _RegisterScreenState extends State<RegisterScreen>
         color: isEnabled
             ? null
             : AppColors.getTextSecondary(context).withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
         boxShadow: isEnabled
             ? [
                 BoxShadow(
                   color: gradient.first.withValues(alpha: 0.3),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
+                  blurRadius: ResponsiveValues.spacingS(context),
+                  offset: Offset(0, ResponsiveValues.spacingXS(context)),
                 ),
               ]
             : null,
@@ -131,21 +141,25 @@ class _RegisterScreenState extends State<RegisterScreen>
         color: Colors.transparent,
         child: InkWell(
           onTap: isEnabled ? onPressed : null,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
           child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 16),
+            padding: EdgeInsets.symmetric(
+              vertical: ResponsiveValues.spacingL(context),
+            ),
             alignment: Alignment.center,
             child: isLoading
-                ? const SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation(Colors.white)),
+                ? SizedBox(
+                    width: ResponsiveValues.iconSizeM(context),
+                    height: ResponsiveValues.iconSizeM(context),
+                    child: const CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation(Colors.white),
+                    ),
                   )
-                : Text(
+                : ResponsiveText(
                     label,
-                    style: AppTextStyles.buttonLarge.copyWith(
+                    style: AppTextStyles.buttonLarge(context).copyWith(
                       color: isEnabled
                           ? Colors.white
                           : AppColors.getTextSecondary(context),
@@ -186,8 +200,10 @@ class _RegisterScreenState extends State<RegisterScreen>
         setState(() => _isInitializing = false);
         if (Platform.isAndroid || Platform.isIOS) {
           showTopSnackBar(
-              context, 'Service initialization failed. Please restart the app.',
-              isError: true);
+            context,
+            'Service initialization failed. Please restart the app.',
+            isError: true,
+          );
         }
       }
     }
@@ -204,19 +220,13 @@ class _RegisterScreenState extends State<RegisterScreen>
 
   String? _validatePassword(String? value) {
     if (value == null || value.isEmpty) return 'Password is required';
-    if (value.length < 8) {
-      return 'Password must be at least 8 characters';
-    }
+    if (value.length < 8) return 'Password must be at least 8 characters';
     return null;
   }
 
   String? _validateConfirmPassword(String? value) {
-    if (value == null || value.isEmpty) {
-      return 'Please confirm your password';
-    }
-    if (value != _passwordController.text) {
-      return 'Passwords do not match';
-    }
+    if (value == null || value.isEmpty) return 'Please confirm your password';
+    if (value != _passwordController.text) return 'Passwords do not match';
     return null;
   }
 
@@ -235,8 +245,11 @@ class _RegisterScreenState extends State<RegisterScreen>
     }
 
     if (_deviceId == null || _deviceId!.isEmpty) {
-      showTopSnackBar(context, 'Device not ready. Please restart the app.',
-          isError: true);
+      showTopSnackBar(
+        context,
+        'Device not ready. Please restart the app.',
+        isError: true,
+      );
       return;
     }
 
@@ -255,7 +268,11 @@ class _RegisterScreenState extends State<RegisterScreen>
 
     try {
       final result = await authProvider.register(
-          username, password, _deviceId!, _fcmToken);
+        username,
+        password,
+        _deviceId!,
+        _fcmToken,
+      );
 
       if (result['success'] == true && _mounted) {
         showTopSnackBar(context, 'Registration successful!');
@@ -273,8 +290,11 @@ class _RegisterScreenState extends State<RegisterScreen>
           }
         }
       } else if (_mounted) {
-        showTopSnackBar(context, result['message'] ?? 'Registration failed',
-            isError: true);
+        showTopSnackBar(
+          context,
+          result['message'] ?? 'Registration failed',
+          isError: true,
+        );
       }
     } catch (e) {
       if (_mounted) {
@@ -286,40 +306,56 @@ class _RegisterScreenState extends State<RegisterScreen>
   }
 
   Widget _buildHeader() {
-    return Column(
+    return ResponsiveColumn(
       children: [
-        SizedBox(height: ScreenSize.isDesktop(context) ? 40 : 20),
+        ResponsiveSizedBox(
+          height:
+              ScreenSize.isDesktop(context) ? AppSpacing.xxxl : AppSpacing.xl,
+        ),
         ScaleTransition(
           scale: _logoScaleAnimation,
           child: Container(
-            width: 80,
-            height: 80,
+            width: ResponsiveValues.avatarSizeLarge(context),
+            height: ResponsiveValues.avatarSizeLarge(context),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                  colors: AppColors.blueGradient,
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight),
-              borderRadius: BorderRadius.circular(20),
+                colors: AppColors.blueGradient,
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius:
+                  BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
               boxShadow: [
                 BoxShadow(
-                    color: AppColors.telegramBlue.withValues(alpha: 0.3),
-                    blurRadius: 20,
-                    spreadRadius: 2)
+                  color: AppColors.telegramBlue.withValues(alpha: 0.3),
+                  blurRadius: ResponsiveValues.spacingXL(context),
+                  spreadRadius: ResponsiveValues.spacingXS(context),
+                ),
               ],
             ),
-            child:
-                const Icon(Icons.school_rounded, size: 40, color: Colors.white),
+            child: Center(
+              child: ResponsiveIcon(
+                Icons.school_rounded,
+                size: ResponsiveValues.iconSizeXL(context),
+                color: Colors.white,
+              ),
+            ),
           ),
         ),
-        const SizedBox(height: 24),
-        Text('Create Account',
-            style: AppTextStyles.displaySmall.copyWith(
-                color: AppColors.getTextPrimary(context),
-                fontWeight: FontWeight.w800)),
-        const SizedBox(height: 8),
-        Text('Join Family Academy',
-            style: AppTextStyles.bodyLarge
-                .copyWith(color: AppColors.getTextSecondary(context))),
+        const ResponsiveSizedBox(height: AppSpacing.xl),
+        ResponsiveText(
+          'Create Account',
+          style: AppTextStyles.displaySmall(context).copyWith(
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const ResponsiveSizedBox(height: AppSpacing.s),
+        ResponsiveText(
+          'Join Family Academy',
+          style: AppTextStyles.bodyLarge(context).copyWith(
+            color: AppColors.getTextSecondary(context),
+          ),
+        ),
       ],
     );
   }
@@ -330,17 +366,23 @@ class _RegisterScreenState extends State<RegisterScreen>
         controller: _usernameController,
         decoration: InputDecoration(
           hintText: 'Username',
-          hintStyle: AppTextStyles.bodyMedium
-              .copyWith(color: AppColors.getTextSecondary(context)),
+          hintStyle: AppTextStyles.bodyMedium(context).copyWith(
+            color: AppColors.getTextSecondary(context),
+          ),
           border: InputBorder.none,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          prefixIcon: Icon(Icons.person_outline_rounded,
-              color: AppColors.getTextSecondary(context), size: 20),
+          contentPadding: ResponsiveValues.listItemPadding(context),
+          prefixIcon: ResponsiveIcon(
+            Icons.person_outline_rounded,
+            size: ResponsiveValues.iconSizeS(context),
+            color: AppColors.getTextSecondary(context),
+          ),
           suffixIcon: _usernameController.text.isNotEmpty
               ? IconButton(
-                  icon: Icon(Icons.clear_rounded,
-                      color: AppColors.getTextSecondary(context), size: 20),
+                  icon: ResponsiveIcon(
+                    Icons.clear_rounded,
+                    size: ResponsiveValues.iconSizeS(context),
+                    color: AppColors.getTextSecondary(context),
+                  ),
                   onPressed: () {
                     _usernameController.clear();
                     setState(() {});
@@ -348,16 +390,17 @@ class _RegisterScreenState extends State<RegisterScreen>
                 )
               : null,
         ),
-        style: AppTextStyles.bodyLarge
-            .copyWith(color: AppColors.getTextPrimary(context)),
-        validator: _validateUsername, // 🔵 FIX: Using proper method
+        style: AppTextStyles.bodyLarge(context),
+        validator: _validateUsername,
         onChanged: (value) => setState(() {}),
         enabled: !_isLoading,
       ),
-    )
-        .animate()
-        .fadeIn(duration: 300.ms, delay: 100.ms)
-        .slideX(begin: -0.1, end: 0, duration: 300.ms, delay: 100.ms);
+    ).animate().fadeIn(duration: 300.ms, delay: 100.ms).slideX(
+          begin: -0.1,
+          end: 0,
+          duration: 300.ms,
+          delay: 100.ms,
+        );
   }
 
   Widget _buildPasswordField() {
@@ -371,34 +414,39 @@ class _RegisterScreenState extends State<RegisterScreen>
             obscureText: obscureText,
             decoration: InputDecoration(
               hintText: 'Password',
-              hintStyle: AppTextStyles.bodyMedium
-                  .copyWith(color: AppColors.getTextSecondary(context)),
+              hintStyle: AppTextStyles.bodyMedium(context).copyWith(
+                color: AppColors.getTextSecondary(context),
+              ),
               border: InputBorder.none,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-              prefixIcon: Icon(Icons.lock_outline_rounded,
-                  color: AppColors.getTextSecondary(context), size: 20),
+              contentPadding: ResponsiveValues.listItemPadding(context),
+              prefixIcon: ResponsiveIcon(
+                Icons.lock_outline_rounded,
+                size: ResponsiveValues.iconSizeS(context),
+                color: AppColors.getTextSecondary(context),
+              ),
               suffixIcon: IconButton(
-                icon: Icon(
-                    obscureText
-                        ? Icons.visibility_off_rounded
-                        : Icons.visibility_rounded,
-                    color: AppColors.getTextSecondary(context),
-                    size: 20),
+                icon: ResponsiveIcon(
+                  obscureText
+                      ? Icons.visibility_off_rounded
+                      : Icons.visibility_rounded,
+                  size: ResponsiveValues.iconSizeS(context),
+                  color: AppColors.getTextSecondary(context),
+                ),
                 onPressed: () => setState(() => obscureText = !obscureText),
               ),
             ),
-            style: AppTextStyles.bodyLarge
-                .copyWith(color: AppColors.getTextPrimary(context)),
-            validator: _validatePassword, // 🔵 FIX: Using proper method
+            style: AppTextStyles.bodyLarge(context),
+            validator: _validatePassword,
             enabled: !_isLoading,
           ),
         );
       },
-    )
-        .animate()
-        .fadeIn(duration: 300.ms, delay: 200.ms)
-        .slideX(begin: -0.1, end: 0, duration: 300.ms, delay: 200.ms);
+    ).animate().fadeIn(duration: 300.ms, delay: 200.ms).slideX(
+          begin: -0.1,
+          end: 0,
+          duration: 300.ms,
+          delay: 200.ms,
+        );
   }
 
   Widget _buildConfirmPasswordField() {
@@ -412,37 +460,42 @@ class _RegisterScreenState extends State<RegisterScreen>
             obscureText: obscureText,
             decoration: InputDecoration(
               hintText: 'Confirm Password',
-              hintStyle: AppTextStyles.bodyMedium
-                  .copyWith(color: AppColors.getTextSecondary(context)),
+              hintStyle: AppTextStyles.bodyMedium(context).copyWith(
+                color: AppColors.getTextSecondary(context),
+              ),
               border: InputBorder.none,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-              prefixIcon: Icon(Icons.lock_outline_rounded,
-                  color: AppColors.getTextSecondary(context), size: 20),
+              contentPadding: ResponsiveValues.listItemPadding(context),
+              prefixIcon: ResponsiveIcon(
+                Icons.lock_outline_rounded,
+                size: ResponsiveValues.iconSizeS(context),
+                color: AppColors.getTextSecondary(context),
+              ),
               suffixIcon: IconButton(
-                icon: Icon(
-                    obscureText
-                        ? Icons.visibility_off_rounded
-                        : Icons.visibility_rounded,
-                    color: AppColors.getTextSecondary(context),
-                    size: 20),
+                icon: ResponsiveIcon(
+                  obscureText
+                      ? Icons.visibility_off_rounded
+                      : Icons.visibility_rounded,
+                  size: ResponsiveValues.iconSizeS(context),
+                  color: AppColors.getTextSecondary(context),
+                ),
                 onPressed: () => setState(() => obscureText = !obscureText),
               ),
             ),
-            style: AppTextStyles.bodyLarge
-                .copyWith(color: AppColors.getTextPrimary(context)),
-            validator: _validateConfirmPassword, // 🔵 FIX: Using proper method
+            style: AppTextStyles.bodyLarge(context),
+            validator: _validateConfirmPassword,
             enabled: !_isLoading,
           ),
         );
       },
-    )
-        .animate()
-        .fadeIn(duration: 300.ms, delay: 300.ms)
-        .slideX(begin: -0.1, end: 0, duration: 300.ms, delay: 300.ms);
+    ).animate().fadeIn(duration: 300.ms, delay: 300.ms).slideX(
+          begin: -0.1,
+          end: 0,
+          duration: 300.ms,
+          delay: 300.ms,
+        );
   }
 
-  Widget _buildForm() {
+  Widget _buildFormContent() {
     if (_isOffline) {
       return OfflineState(
         dataType: 'registration',
@@ -456,17 +509,17 @@ class _RegisterScreenState extends State<RegisterScreen>
 
     return Form(
       key: _formKey,
-      child: Column(
+      child: ResponsiveColumn(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildHeader(),
-          const SizedBox(height: 40),
+          const ResponsiveSizedBox(height: AppSpacing.xxxl),
           _buildUsernameField(),
-          const SizedBox(height: 16),
+          const ResponsiveSizedBox(height: AppSpacing.l),
           _buildPasswordField(),
-          const SizedBox(height: 16),
+          const ResponsiveSizedBox(height: AppSpacing.l),
           _buildConfirmPasswordField(),
-          const SizedBox(height: 32),
+          const ResponsiveSizedBox(height: AppSpacing.xxl),
           _buildGlassButton(
             label: _deviceId == null
                 ? 'Initializing...'
@@ -475,27 +528,38 @@ class _RegisterScreenState extends State<RegisterScreen>
             gradient: const [Color(0xFF2AABEE), Color(0xFF5856D6)],
             isLoading: _isLoading,
             isEnabled: !_isLoading && _deviceId != null,
-          )
-              .animate()
-              .scale(duration: 300.ms, curve: Curves.easeOut, delay: 400.ms),
-          const SizedBox(height: 24),
-          Row(
+          ).animate().scale(
+                duration: 300.ms,
+                curve: Curves.easeOut,
+                delay: 400.ms,
+              ),
+          const ResponsiveSizedBox(height: AppSpacing.xl),
+          ResponsiveRow(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text('Already have an account?',
-                  style: AppTextStyles.bodyMedium
-                      .copyWith(color: AppColors.getTextSecondary(context))),
-              const SizedBox(width: 4),
+              ResponsiveText(
+                'Already have an account?',
+                style: AppTextStyles.bodyMedium(context).copyWith(
+                  color: AppColors.getTextSecondary(context),
+                ),
+              ),
+              const ResponsiveSizedBox(width: AppSpacing.xs),
               GestureDetector(
                 onTap: _isLoading ? null : () => context.go('/auth/login'),
-                child: Text('Sign in',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                        color: AppColors.telegramBlue,
-                        fontWeight: FontWeight.w600)),
+                child: ResponsiveText(
+                  'Sign in',
+                  style: AppTextStyles.bodyMedium(context).copyWith(
+                    color: AppColors.telegramBlue,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
             ],
           ).animate().fadeIn(duration: 300.ms, delay: 500.ms),
-          SizedBox(height: MediaQuery.of(context).viewInsets.bottom + 20),
+          SizedBox(
+            height: MediaQuery.of(context).viewInsets.bottom +
+                ResponsiveValues.spacingXL(context),
+          ),
         ],
       ),
     );
@@ -506,8 +570,8 @@ class _RegisterScreenState extends State<RegisterScreen>
       backgroundColor: AppColors.getBackground(context),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-          child: _buildForm(),
+          padding: ResponsiveValues.screenPadding(context),
+          child: _buildFormContent(),
         ),
       ),
     );
@@ -518,14 +582,14 @@ class _RegisterScreenState extends State<RegisterScreen>
       backgroundColor: AppColors.getBackground(context),
       body: SafeArea(
         child: Center(
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 500),
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 40),
+          child: SingleChildScrollView(
+            padding: ResponsiveValues.screenPadding(context),
+            child: ResponsiveContainer(
+              maxWidth: 500,
               child: _buildGlassContainer(
                 child: Padding(
-                  padding: const EdgeInsets.all(32),
-                  child: _buildForm(),
+                  padding: ResponsiveValues.dialogPadding(context),
+                  child: _buildFormContent(),
                 ),
               ),
             ),
@@ -540,44 +604,59 @@ class _RegisterScreenState extends State<RegisterScreen>
       backgroundColor: AppColors.getBackground(context),
       body: SafeArea(
         child: Center(
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 1000, maxHeight: 700),
+          child: ResponsiveContainer(
+            maxWidth: 1000,
             child: Row(
               children: [
                 Expanded(
                   child: Container(
-                    padding: const EdgeInsets.all(48),
+                    padding: ResponsiveValues.dialogPadding(context),
                     decoration: const BoxDecoration(
                       gradient: LinearGradient(
-                          colors: AppColors.blueGradient,
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight),
-                      borderRadius:
-                          BorderRadius.horizontal(left: Radius.circular(24)),
+                        colors: AppColors.blueGradient,
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.horizontal(
+                        left: Radius.circular(24),
+                      ),
                     ),
-                    child: Column(
+                    child: ResponsiveColumn(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Container(
-                          width: 120,
-                          height: 120,
+                          width:
+                              ResponsiveValues.avatarSizeLarge(context) * 1.2,
+                          height:
+                              ResponsiveValues.avatarSizeLarge(context) * 1.2,
                           decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(20)),
-                          child: const Icon(Icons.school_rounded,
-                              size: 60, color: Colors.white),
+                            color: Colors.white.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(
+                              ResponsiveValues.radiusLarge(context),
+                            ),
+                          ),
+                          child: Center(
+                            child: ResponsiveIcon(
+                              Icons.school_rounded,
+                              size: ResponsiveValues.iconSizeXXL(context),
+                              color: Colors.white,
+                            ),
+                          ),
                         ),
-                        const SizedBox(height: 40),
-                        const Text('Welcome to\nFamily Academy',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 32,
-                                fontWeight: FontWeight.w800),
-                            textAlign: TextAlign.center),
-                        const SizedBox(height: 16),
-                        const Text(
+                        const ResponsiveSizedBox(height: AppSpacing.xxxl),
+                        ResponsiveText(
+                          'Welcome to\nFamily Academy',
+                          style: AppTextStyles.displayLarge(context).copyWith(
+                            color: Colors.white,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const ResponsiveSizedBox(height: AppSpacing.l),
+                        ResponsiveText(
                           'Join thousands of students learning with our comprehensive educational platform',
-                          style: TextStyle(color: Colors.white, fontSize: 16),
+                          style: AppTextStyles.bodyLarge(context).copyWith(
+                            color: Colors.white.withValues(alpha: 0.9),
+                          ),
                           textAlign: TextAlign.center,
                         ),
                       ],
@@ -589,11 +668,12 @@ class _RegisterScreenState extends State<RegisterScreen>
                     decoration: BoxDecoration(
                       color: AppColors.getCard(context),
                       borderRadius: const BorderRadius.horizontal(
-                          right: Radius.circular(24)),
+                        right: Radius.circular(24),
+                      ),
                     ),
                     child: SingleChildScrollView(
-                      padding: const EdgeInsets.all(48),
-                      child: _buildForm(),
+                      padding: ResponsiveValues.dialogPadding(context),
+                      child: _buildFormContent(),
                     ),
                   ),
                 ),

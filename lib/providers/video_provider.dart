@@ -33,6 +33,7 @@ class VideoProvider with ChangeNotifier {
   final Map<int, bool> _hasLoadedForChapter = {};
   final Map<int, bool> _isLoadingForChapter = {};
   final Map<int, int> _videoViewCounts = {};
+  final Map<int, DateTime> _lastLoadedTime = {};
 
   // Download management - SINGLE source of truth
   final Map<int, String> _downloadedVideoPaths = {};
@@ -46,7 +47,8 @@ class VideoProvider with ChangeNotifier {
   bool _isLoading = false;
   String? _error;
 
-  static const Duration _cacheDuration = Duration(minutes: 10);
+  static const Duration _cacheDuration =
+      Duration(hours: 24); // Increased to 24 hours
   static const Duration _downloadMetadataCache = Duration(days: 30);
 
   VideoProvider({required this.apiService, required this.deviceService}) {
@@ -187,21 +189,78 @@ class VideoProvider with ChangeNotifier {
   /// Load videos for a chapter (uses SINGLE endpoint)
   Future<void> loadVideosByChapter(int chapterId,
       {bool forceRefresh = false}) async {
-    if (_isLoadingForChapter[chapterId] == true) return;
+    if (_isLoadingForChapter[chapterId] == true && !forceRefresh) return;
 
-    // Check cache
-    if (!forceRefresh && _hasLoadedForChapter[chapterId] == true) {
+    // Check if we have valid cached data
+    final lastLoaded = _lastLoadedTime[chapterId];
+    final hasCache = _hasLoadedForChapter[chapterId] == true;
+    final isCacheValid = lastLoaded != null &&
+        DateTime.now().difference(lastLoaded) < _cacheDuration;
+
+    if (hasCache && !forceRefresh && isCacheValid) {
+      debugLog(
+          'VideoProvider', '✅ Using cached videos for chapter: $chapterId');
       return;
     }
 
+    // Try cache first
+    if (!forceRefresh) {
+      try {
+        final cached = await deviceService.getCacheItem<List<dynamic>>(
+          AppConstants.videosByChapterKey(chapterId),
+          isUserSpecific: true,
+        );
+
+        if (cached != null) {
+          final list = <Video>[];
+          for (final json in cached) {
+            try {
+              list.add(Video.fromJson(json));
+            } catch (e) {
+              debugLog('VideoProvider', 'Error parsing cached video: $e');
+            }
+          }
+
+          if (list.isNotEmpty) {
+            _videosByChapter[chapterId] = list;
+            _hasLoadedForChapter[chapterId] = true;
+            _lastLoadedTime[chapterId] = DateTime.now();
+
+            // Update global videos list
+            for (final video in list) {
+              if (!_videos.any((v) => v.id == video.id)) {
+                _videos.add(video);
+              }
+              _videoViewCounts[video.id] = video.viewCount;
+            }
+
+            _videoUpdateController.add({
+              'type': 'videos_loaded_cached',
+              'chapter_id': chapterId,
+              'count': list.length
+            });
+
+            debugLog('VideoProvider',
+                '✅ Loaded ${list.length} videos from cache for chapter $chapterId');
+
+            // Background refresh
+            unawaited(_refreshInBackground(chapterId));
+            return;
+          }
+        }
+      } catch (e) {
+        debugLog('VideoProvider', 'Error loading cache: $e');
+      }
+    }
+
     _isLoadingForChapter[chapterId] = true;
+    _isLoading = true;
     _error = null;
-    notifyListeners();
+    _notifySafely();
 
     try {
-      debugLog('VideoProvider', 'Loading videos for chapter: $chapterId');
+      debugLog('VideoProvider', '📥 Loading videos for chapter: $chapterId');
 
-      // SINGLE endpoint: /chapters/$chapterId/videos
       final response = await apiService.getVideosByChapter(chapterId);
 
       if (!response.success) {
@@ -224,6 +283,7 @@ class VideoProvider with ChangeNotifier {
 
       _videosByChapter[chapterId] = list;
       _hasLoadedForChapter[chapterId] = true;
+      _lastLoadedTime[chapterId] = DateTime.now();
 
       // Update global videos list
       for (final video in list) {
@@ -232,7 +292,7 @@ class VideoProvider with ChangeNotifier {
         }
       }
 
-      // Cache in DeviceService only
+      // Cache in DeviceService
       await deviceService.saveCacheItem(
         AppConstants.videosByChapterKey(chapterId),
         list.map((v) => v.toJson()).toList(),
@@ -247,41 +307,80 @@ class VideoProvider with ChangeNotifier {
       });
 
       debugLog('VideoProvider',
-          'Loaded ${list.length} videos for chapter $chapterId');
+          '✅ Loaded ${list.length} videos for chapter $chapterId from API');
     } catch (e) {
       _error = e.toString();
-      debugLog('VideoProvider', 'Error loading videos: $e');
+      debugLog('VideoProvider', '❌ Error loading videos: $e');
 
-      // Try cache
-      final cached = await deviceService.getCacheItem<List<dynamic>>(
-        AppConstants.videosByChapterKey(chapterId),
-        isUserSpecific: true,
-      );
-
-      if (cached != null) {
-        final list = <Video>[];
-        for (final json in cached) {
-          try {
-            list.add(Video.fromJson(json));
-          } catch (e) {
-            debugLog('VideoProvider', 'Error loading downloaded videos: $e');
-          }
-        }
-        _videosByChapter[chapterId] = list;
-        _hasLoadedForChapter[chapterId] = true;
-
-        _videoUpdateController.add({
-          'type': 'videos_loaded_cached',
-          'chapter_id': chapterId,
-          'count': list.length
-        });
-      } else {
+      // Keep existing data on error
+      if (!_hasLoadedForChapter.containsKey(chapterId)) {
         _videosByChapter[chapterId] = [];
+        _hasLoadedForChapter[chapterId] = true;
+        _lastLoadedTime[chapterId] = DateTime.now();
       }
+
+      _videoUpdateController.add({
+        'type': 'videos_load_error',
+        'chapter_id': chapterId,
+        'error': _error
+      });
     } finally {
       _isLoadingForChapter[chapterId] = false;
       _isLoading = false;
-      notifyListeners();
+      _notifySafely();
+    }
+  }
+
+  Future<void> _refreshInBackground(int chapterId) async {
+    try {
+      debugLog('VideoProvider', '🔄 Background refresh for chapter $chapterId');
+
+      final response = await apiService.getVideosByChapter(chapterId);
+
+      if (response.success) {
+        final responseData = response.data;
+        final videosData = responseData?['videos'] ?? [];
+
+        final list = <Video>[];
+        for (final json in videosData) {
+          try {
+            list.add(Video.fromJson(json));
+          } catch (e) {}
+        }
+
+        if (list.isNotEmpty) {
+          _videosByChapter[chapterId] = list;
+          _lastLoadedTime[chapterId] = DateTime.now();
+
+          // Update global videos list
+          for (final video in list) {
+            if (!_videos.any((v) => v.id == video.id)) {
+              _videos.add(video);
+            }
+            _videoViewCounts[video.id] = video.viewCount;
+          }
+
+          await deviceService.saveCacheItem(
+            AppConstants.videosByChapterKey(chapterId),
+            list.map((v) => v.toJson()).toList(),
+            ttl: _cacheDuration,
+            isUserSpecific: true,
+          );
+
+          _videoUpdateController.add({
+            'type': 'videos_refreshed',
+            'chapter_id': chapterId,
+            'count': list.length
+          });
+
+          _notifySafely();
+
+          debugLog('VideoProvider',
+              '✅ Background refresh completed for chapter $chapterId');
+        }
+      }
+    } catch (e) {
+      debugLog('VideoProvider', '⚠️ Background refresh failed: $e');
     }
   }
 
@@ -314,7 +413,7 @@ class VideoProvider with ChangeNotifier {
     _isDownloading[video.id] = true;
     _downloadProgress[video.id] = 0.0;
     _downloadedQualities[video.id] = quality;
-    notifyListeners();
+    _notifySafely();
 
     try {
       final cacheDir = await _getCacheDirectory();
@@ -332,7 +431,7 @@ class VideoProvider with ChangeNotifier {
         onReceiveProgress: (received, total) {
           if (total != -1) {
             _downloadProgress[video.id] = received / total;
-            notifyListeners();
+            _notifySafely();
           }
         },
       );
@@ -351,18 +450,18 @@ class VideoProvider with ChangeNotifier {
         'quality': quality.label,
       });
 
-      debugLog('VideoProvider', 'Download complete for video ${video.id}');
-      notifyListeners();
+      debugLog('VideoProvider', '✅ Download complete for video ${video.id}');
+      _notifySafely();
     } catch (e) {
       if (e is DioException && e.type == DioExceptionType.cancel) {
         debugLog('VideoProvider', 'Download cancelled');
       } else {
-        debugLog('VideoProvider', 'Download error: $e');
+        debugLog('VideoProvider', '❌ Download error: $e');
       }
       _isDownloading[video.id] = false;
       _downloadProgress.remove(video.id);
       _downloadedQualities.remove(video.id);
-      notifyListeners();
+      _notifySafely();
       rethrow;
     }
   }
@@ -391,7 +490,7 @@ class VideoProvider with ChangeNotifier {
       'video_id': videoId,
     });
 
-    notifyListeners();
+    _notifySafely();
   }
 
   /// Clear all downloaded videos
@@ -402,11 +501,11 @@ class VideoProvider with ChangeNotifier {
           final file = File(path);
           if (await file.exists()) await file.delete();
         } catch (e) {
-          debugLog('VideoProvider', 'Error parsing cached video: $e');
+          debugLog('VideoProvider', 'Error deleting file: $e');
         }
       }
     } catch (e) {
-      debugLog('VideoProvider', 'Error in catch block: $e');
+      debugLog('VideoProvider', 'Error clearing downloads: $e');
     }
 
     _downloadedVideoPaths.clear();
@@ -414,7 +513,7 @@ class VideoProvider with ChangeNotifier {
     await _saveDownloadMetadata();
 
     _videoUpdateController.add({'type': 'all_downloads_cleared'});
-    notifyListeners();
+    _notifySafely();
   }
 
   Future<Directory> _getCacheDirectory() async {
@@ -472,7 +571,7 @@ class VideoProvider with ChangeNotifier {
           'view_count': newCount
         });
 
-        notifyListeners();
+        _notifySafely();
       }
     } catch (e) {
       debugLog('VideoProvider', 'Error incrementing view count: $e');
@@ -505,13 +604,14 @@ class VideoProvider with ChangeNotifier {
     _hasLoadedForChapter.clear();
     _isLoadingForChapter.clear();
     _videoViewCounts.clear();
+    _lastLoadedTime.clear();
 
     // Keep downloads (user might want to keep them after logout)
     // If you want to clear downloads on logout, uncomment:
     // await clearAllDownloads();
 
     _videoUpdateController.add({'type': 'all_videos_cleared'});
-    notifyListeners();
+    _notifySafely();
   }
 
   Future<bool> _isLoggingOut() async {
@@ -521,7 +621,7 @@ class VideoProvider with ChangeNotifier {
 
   void clearError() {
     _error = null;
-    notifyListeners();
+    _notifySafely();
   }
 
   @override
@@ -529,5 +629,15 @@ class VideoProvider with ChangeNotifier {
     _videoUpdateController.close();
     _dio.close();
     super.dispose();
+  }
+
+  void _notifySafely() {
+    if (hasListeners) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (hasListeners) {
+          notifyListeners();
+        }
+      });
+    }
   }
 }

@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'dart:ui';
+import 'package:familyacademyclient/models/user_model.dart';
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
+import 'package:familyacademyclient/utils/responsive_values.dart';
+import 'package:familyacademyclient/widgets/common/responsive_widgets.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/subscription_provider.dart';
@@ -29,9 +32,7 @@ class _MainNavigationState extends State<MainNavigation>
   late NotificationProvider _notificationProvider;
   final List<int> _navigationHistory = [0];
   late AnimationController _tabAnimationController;
-  late Animation<double> _tabAnimation;
   Timer? _labelTimer;
-  final double _bottomNavBarHeight = 70.0;
   bool _showLabels = true;
 
   @override
@@ -39,9 +40,9 @@ class _MainNavigationState extends State<MainNavigation>
     super.initState();
 
     _tabAnimationController = AnimationController(
-        duration: const Duration(milliseconds: 300), vsync: this);
-    _tabAnimation = CurvedAnimation(
-        parent: _tabAnimationController, curve: Curves.easeInOut);
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeUserDataInBackground();
@@ -143,7 +144,8 @@ class _MainNavigationState extends State<MainNavigation>
   Widget _buildGlassContainer(
       {required Widget child, double? width, double? height}) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
+      borderRadius:
+          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
         child: Container(
@@ -158,7 +160,8 @@ class _MainNavigationState extends State<MainNavigation>
                 AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
-            borderRadius: BorderRadius.circular(24),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
             border: Border.all(
               color: AppColors.telegramBlue.withValues(alpha: 0.2),
             ),
@@ -170,10 +173,8 @@ class _MainNavigationState extends State<MainNavigation>
   }
 
   Widget _buildMobileNavigation() {
-    final notificationProvider =
-        Provider.of<NotificationProvider>(context);
+    final notificationProvider = Provider.of<NotificationProvider>(context);
     final unreadCount = notificationProvider.unreadCount;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       body: widget.child,
@@ -188,38 +189,45 @@ class _MainNavigationState extends State<MainNavigation>
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 300),
             curve: Curves.easeInOut,
-            height: _showLabels ? 72 : 64,
+            height: _showLabels
+                ? ResponsiveValues.bottomNavBarHeight(context) * 1.2
+                : ResponsiveValues.bottomNavBarHeight(context),
             padding: EdgeInsets.only(
               bottom: MediaQuery.of(context).viewInsets.bottom > 0
                   ? MediaQuery.of(context).viewInsets.bottom
                   : 0,
             ),
             child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 _buildMobileNavItem(
-                    index: 0,
-                    icon: Icons.home_outlined,
-                    activeIcon: Icons.home_rounded,
-                    label: 'Home',
-                    unreadCount: 0),
+                  index: 0,
+                  icon: Icons.home_outlined,
+                  activeIcon: Icons.home_rounded,
+                  label: 'Home',
+                  unreadCount: 0,
+                ),
                 _buildMobileNavItem(
-                    index: 1,
-                    icon: Icons.chat_bubble_outline_rounded,
-                    activeIcon: Icons.chat_bubble_rounded,
-                    label: 'Chat',
-                    unreadCount: 0),
+                  index: 1,
+                  icon: Icons.chat_bubble_outline_rounded,
+                  activeIcon: Icons.chat_bubble_rounded,
+                  label: 'Chat',
+                  unreadCount: 0,
+                ),
                 _buildMobileNavItem(
-                    index: 2,
-                    icon: Icons.auto_graph_outlined,
-                    activeIcon: Icons.auto_graph_rounded,
-                    label: 'Progress',
-                    unreadCount: 0),
+                  index: 2,
+                  icon: Icons.auto_graph_outlined,
+                  activeIcon: Icons.auto_graph_rounded,
+                  label: 'Progress',
+                  unreadCount: 0,
+                ),
                 _buildMobileNavItem(
-                    index: 3,
-                    icon: Icons.person_outline_rounded,
-                    activeIcon: Icons.person_rounded,
-                    label: 'Profile',
-                    unreadCount: unreadCount),
+                  index: 3,
+                  icon: Icons.person_outline_rounded,
+                  activeIcon: Icons.person_rounded,
+                  label: 'Profile',
+                  unreadCount: unreadCount,
+                ),
               ],
             ),
           ),
@@ -228,14 +236,14 @@ class _MainNavigationState extends State<MainNavigation>
     );
   }
 
-  Widget _buildMobileNavItem(
-      {required int index,
-      required IconData icon,
-      required IconData activeIcon,
-      required String label,
-      required int unreadCount}) {
+  Widget _buildMobileNavItem({
+    required int index,
+    required IconData icon,
+    required IconData activeIcon,
+    required String label,
+    required int unreadCount,
+  }) {
     final isSelected = _currentIndex == index;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Expanded(
       child: GestureDetector(
@@ -250,8 +258,8 @@ class _MainNavigationState extends State<MainNavigation>
                 children: [
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
-                    width: 32,
-                    height: 32,
+                    width: ResponsiveValues.iconSizeL(context),
+                    height: ResponsiveValues.iconSizeL(context),
                     decoration: BoxDecoration(
                       gradient: isSelected
                           ? LinearGradient(
@@ -264,58 +272,68 @@ class _MainNavigationState extends State<MainNavigation>
                       shape: BoxShape.circle,
                     ),
                     child: Center(
-                      child: Icon(
+                      child: ResponsiveIcon(
                         isSelected ? activeIcon : icon,
+                        size: isSelected
+                            ? ResponsiveValues.iconSizeM(context)
+                            : ResponsiveValues.iconSizeS(context),
                         color: isSelected
                             ? AppColors.telegramBlue
-                            : (isDark
-                                ? AppColors.darkTextSecondary
-                                : AppColors.lightTextSecondary),
-                        size: isSelected ? 22 : 20,
+                            : AppColors.getTextSecondary(context),
                       ),
                     ),
                   ),
                   if (unreadCount > 0)
                     Positioned(
-                      top: -2,
-                      right: 6,
+                      top: -ResponsiveValues.spacingXXS(context),
+                      right: ResponsiveValues.spacingS(context),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 4, vertical: 1),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: ResponsiveValues.spacingXXS(context),
+                          vertical: 1,
+                        ),
                         decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFFFF3B30), Color(0xFFE6204A)],
-                            ),
-                            borderRadius: BorderRadius.circular(8)),
-                        constraints:
-                            const BoxConstraints(minWidth: 16, minHeight: 16),
-                        child: Text(
-                          unreadCount > 9 ? '9+' : unreadCount.toString(),
-                          style: const TextStyle(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFFF3B30), Color(0xFFE6204A)],
+                          ),
+                          borderRadius: BorderRadius.circular(
+                            ResponsiveValues.radiusSmall(context),
+                          ),
+                        ),
+                        constraints: BoxConstraints(
+                          minWidth: ResponsiveValues.spacingL(context),
+                          minHeight: ResponsiveValues.spacingL(context),
+                        ),
+                        child: Center(
+                          child: Text(
+                            unreadCount > 9 ? '9+' : unreadCount.toString(),
+                            style: TextStyle(
                               color: Colors.white,
-                              fontSize: 9,
+                              fontSize:
+                                  ResponsiveValues.fontLabelSmall(context) *
+                                      0.9,
                               fontWeight: FontWeight.bold,
-                              height: 1.0),
-                          textAlign: TextAlign.center,
+                              height: 1.0,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
                         ),
                       ),
                     ),
                 ],
               ),
-              const SizedBox(height: 4),
+              ResponsiveSizedBox(height: AppSpacing.xs),
               AnimatedOpacity(
                 duration: const Duration(milliseconds: 200),
                 opacity: _showLabels ? 1.0 : 0.0,
                 child: Text(
                   label,
                   style: TextStyle(
-                    fontSize: 10,
+                    fontSize: ResponsiveValues.fontBottomNavLabel(context),
                     fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                     color: isSelected
                         ? AppColors.telegramBlue
-                        : (isDark
-                            ? AppColors.darkTextSecondary
-                            : AppColors.lightTextSecondary),
+                        : AppColors.getTextSecondary(context),
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -329,55 +347,68 @@ class _MainNavigationState extends State<MainNavigation>
   }
 
   Widget _buildTabletNavigation() {
-    final notificationProvider =
-        Provider.of<NotificationProvider>(context);
+    final notificationProvider = Provider.of<NotificationProvider>(context);
     final unreadCount = notificationProvider.unreadCount;
     final authProvider = Provider.of<AuthProvider>(context);
     final user = authProvider.currentUser;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       body: Row(
         children: [
           _buildGlassContainer(
-            width: 88,
+            width: ResponsiveValues.spacingXXXXL(context) * 2,
             child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 16),
+              padding: EdgeInsets.symmetric(
+                vertical: ResponsiveValues.spacingL(context),
+              ),
               child: Column(
                 children: [
-                  const SizedBox(height: 32),
+                  ResponsiveSizedBox(height: AppSpacing.xxl),
                   Container(
-                    width: 48,
-                    height: 48,
-                    margin: const EdgeInsets.only(bottom: 32),
+                    width: ResponsiveValues.iconSizeXL(context) * 1.5,
+                    height: ResponsiveValues.iconSizeXL(context) * 1.5,
+                    margin: EdgeInsets.only(
+                      bottom: ResponsiveValues.spacingXXL(context),
+                    ),
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
-                          colors: AppColors.blueGradient,
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight),
-                      borderRadius: BorderRadius.circular(12),
+                        colors: AppColors.blueGradient,
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(
+                        ResponsiveValues.radiusMedium(context),
+                      ),
                     ),
-                    child: const Icon(Icons.school_rounded,
-                        color: Colors.white, size: 24),
+                    child: Center(
+                      child: ResponsiveIcon(
+                        Icons.school_rounded,
+                        size: ResponsiveValues.iconSizeL(context),
+                        color: Colors.white,
+                      ),
+                    ),
                   ),
                   _buildTabletNavItem(
-                      index: 0,
-                      icon: Icons.home_outlined,
-                      activeIcon: Icons.home_rounded,
-                      label: 'Home'),
-                  const SizedBox(height: 12),
+                    index: 0,
+                    icon: Icons.home_outlined,
+                    activeIcon: Icons.home_rounded,
+                    label: 'Home',
+                  ),
+                  ResponsiveSizedBox(height: AppSpacing.m),
                   _buildTabletNavItem(
-                      index: 1,
-                      icon: Icons.chat_bubble_outline_rounded,
-                      activeIcon: Icons.chat_bubble_rounded,
-                      label: 'Chat'),
-                  const SizedBox(height: 12),
+                    index: 1,
+                    icon: Icons.chat_bubble_outline_rounded,
+                    activeIcon: Icons.chat_bubble_rounded,
+                    label: 'Chat',
+                  ),
+                  ResponsiveSizedBox(height: AppSpacing.m),
                   _buildTabletNavItem(
-                      index: 2,
-                      icon: Icons.auto_graph_outlined,
-                      activeIcon: Icons.auto_graph_rounded,
-                      label: 'Progress'),
-                  const SizedBox(height: 12),
+                    index: 2,
+                    icon: Icons.auto_graph_outlined,
+                    activeIcon: Icons.auto_graph_rounded,
+                    label: 'Progress',
+                  ),
+                  ResponsiveSizedBox(height: AppSpacing.m),
                   _buildTabletNavItem(
                     index: 3,
                     icon: Icons.person_outline_rounded,
@@ -388,31 +419,15 @@ class _MainNavigationState extends State<MainNavigation>
                   const Spacer(),
                   if (user != null)
                     Padding(
-                      padding: const EdgeInsets.all(16),
+                      padding: EdgeInsets.all(
+                        ResponsiveValues.spacingL(context),
+                      ),
                       child: Tooltip(
                         message: user.username,
-                        child: Container(
-                          width: 48,
-                          height: 48,
-                          decoration: const BoxDecoration(
-                            gradient: LinearGradient(
-                                colors: AppColors.purpleGradient,
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Center(
-                            child: Text(
-                                user.username.substring(0, 2).toUpperCase(),
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14)),
-                          ),
-                        ),
+                        child: _buildSidebarAvatar(user),
                       ),
                     ),
-                  const SizedBox(height: 16),
+                  ResponsiveSizedBox(height: AppSpacing.l),
                 ],
               ),
             ),
@@ -423,29 +438,31 @@ class _MainNavigationState extends State<MainNavigation>
     );
   }
 
-  Widget _buildTabletNavItem(
-      {required int index,
-      required IconData icon,
-      required IconData activeIcon,
-      required String label,
-      int unreadCount = 0}) {
+  Widget _buildTabletNavItem({
+    required int index,
+    required IconData icon,
+    required IconData activeIcon,
+    required String label,
+    int unreadCount = 0,
+  }) {
     final isSelected = _currentIndex == index;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Tooltip(
       message: label,
       child: GestureDetector(
         onTap: () => _onNavigationItemTapped(index),
         child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 8),
+          margin: EdgeInsets.symmetric(
+            horizontal: ResponsiveValues.spacingS(context),
+          ),
           child: Column(
             children: [
               Stack(
                 clipBehavior: Clip.none,
                 children: [
                   Container(
-                    width: 48,
-                    height: 48,
+                    width: ResponsiveValues.iconSizeXL(context) * 1.5,
+                    height: ResponsiveValues.iconSizeXL(context) * 1.5,
                     decoration: BoxDecoration(
                       gradient: isSelected
                           ? LinearGradient(
@@ -455,45 +472,51 @@ class _MainNavigationState extends State<MainNavigation>
                               ],
                             )
                           : null,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(
+                        ResponsiveValues.radiusMedium(context),
+                      ),
                     ),
                     child: Center(
                       child: Stack(
                         children: [
-                          Icon(isSelected ? activeIcon : icon,
-                              color: isSelected
-                                  ? AppColors.telegramBlue
-                                  : (isDark
-                                      ? AppColors.darkTextSecondary
-                                      : AppColors.lightTextSecondary),
-                              size: isSelected ? 24 : 22),
+                          ResponsiveIcon(
+                            isSelected ? activeIcon : icon,
+                            size: isSelected
+                                ? ResponsiveValues.iconSizeL(context)
+                                : ResponsiveValues.iconSizeM(context),
+                            color: isSelected
+                                ? AppColors.telegramBlue
+                                : AppColors.getTextSecondary(context),
+                          ),
                           if (unreadCount > 0)
                             Positioned(
-                                top: 4,
-                                right: 4,
-                                child: Container(
-                                    width: 8,
-                                    height: 8,
-                                    decoration: const BoxDecoration(
-                                        color: Color(0xFFFF3B30),
-                                        shape: BoxShape.circle))),
+                              top: ResponsiveValues.spacingXXS(context),
+                              right: ResponsiveValues.spacingXXS(context),
+                              child: Container(
+                                width: ResponsiveValues.spacingS(context),
+                                height: ResponsiveValues.spacingS(context),
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFFFF3B30),
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ),
                         ],
                       ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
+              ResponsiveSizedBox(height: AppSpacing.xs),
               Text(
                 label,
                 style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w500,
-                    color: isSelected
-                        ? AppColors.telegramBlue
-                        : (isDark
-                            ? AppColors.darkTextSecondary
-                            : AppColors.lightTextSecondary)),
+                  fontSize: ResponsiveValues.fontBottomNavLabel(context),
+                  fontWeight: FontWeight.w500,
+                  color: isSelected
+                      ? AppColors.telegramBlue
+                      : AppColors.getTextSecondary(context),
+                ),
               ),
             ],
           ),
@@ -502,59 +525,114 @@ class _MainNavigationState extends State<MainNavigation>
     );
   }
 
+  Widget _buildSidebarAvatar(User user) {
+    final avatarSize = ResponsiveValues.iconSizeXL(context) * 2.3;
+    final hasImage = user.profileImage != null && user.profileImage!.isNotEmpty;
+
+    return Container(
+      width: avatarSize,
+      height: avatarSize,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        image: hasImage
+            ? DecorationImage(
+                image: NetworkImage(user.profileImage!),
+                fit: BoxFit.cover,
+              )
+            : null,
+        gradient: !hasImage
+            ? const LinearGradient(
+                colors: AppColors.purpleGradient,
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              )
+            : null,
+      ),
+      child: !hasImage
+          ? Center(
+              child: Text(
+                user.username.substring(0, 2).toUpperCase(),
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: ResponsiveValues.fontTitleMedium(context) * 0.10,
+                ),
+              ),
+            )
+          : null,
+    );
+  }
+
   Widget _buildDesktopNavigation() {
-    final notificationProvider =
-        Provider.of<NotificationProvider>(context);
+    final notificationProvider = Provider.of<NotificationProvider>(context);
     final unreadCount = notificationProvider.unreadCount;
     final authProvider = Provider.of<AuthProvider>(context);
     final user = authProvider.currentUser;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       body: Row(
         children: [
           _buildGlassContainer(
-            width: 260,
+            width: ResponsiveValues.desktopSidebarWidth(context),
             child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 16),
+              padding: EdgeInsets.symmetric(
+                vertical: ResponsiveValues.spacingL(context),
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Padding(
-                    padding:
-                        const EdgeInsets.only(left: 24, top: 32, bottom: 32),
+                    padding: EdgeInsets.only(
+                      left: ResponsiveValues.spacingXL(context),
+                      top: ResponsiveValues.spacingXXL(context),
+                      bottom: ResponsiveValues.spacingXXL(context),
+                    ),
                     child: Row(
                       children: [
                         Container(
-                          width: 40,
-                          height: 40,
-                          margin: const EdgeInsets.only(right: 12),
+                          width: ResponsiveValues.iconSizeXL(context) * 1.5,
+                          height: ResponsiveValues.iconSizeXL(context) * 1.5,
+                          margin: EdgeInsets.only(
+                            right: ResponsiveValues.spacingM(context),
+                          ),
                           decoration: BoxDecoration(
                             gradient: const LinearGradient(
-                                colors: AppColors.blueGradient,
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight),
-                            borderRadius: BorderRadius.circular(10),
+                              colors: AppColors.blueGradient,
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(
+                              ResponsiveValues.radiusSmall(context),
+                            ),
                           ),
-                          child: const Icon(Icons.school_rounded,
-                              color: Colors.white, size: 20),
+                          child: Center(
+                            child: ResponsiveIcon(
+                              Icons.school_rounded,
+                              size: ResponsiveValues.iconSizeS(context),
+                              color: Colors.white,
+                            ),
+                          ),
                         ),
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Family Academy',
-                                style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                    color: isDark
-                                        ? Colors.white
-                                        : AppColors.lightTextPrimary)),
-                            Text('Learning Platform',
-                                style: TextStyle(
-                                    fontSize: 12,
-                                    color: isDark
-                                        ? AppColors.darkTextSecondary
-                                        : AppColors.lightTextSecondary)),
+                            Text(
+                              'Family Academy',
+                              style: TextStyle(
+                                fontSize:
+                                    ResponsiveValues.fontTitleLarge(context),
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.getTextPrimary(context),
+                              ),
+                            ),
+                            Text(
+                              'Learning Platform',
+                              style: TextStyle(
+                                fontSize:
+                                    ResponsiveValues.fontBodySmall(context),
+                                color: AppColors.getTextSecondary(context),
+                              ),
+                            ),
                           ],
                         ),
                       ],
@@ -565,23 +643,26 @@ class _MainNavigationState extends State<MainNavigation>
                       child: Column(
                         children: [
                           _buildDesktopNavItem(
-                              index: 0,
-                              icon: Icons.home_outlined,
-                              activeIcon: Icons.home_rounded,
-                              label: 'Home',
-                              description: 'Discover courses and content'),
+                            index: 0,
+                            icon: Icons.home_outlined,
+                            activeIcon: Icons.home_rounded,
+                            label: 'Home',
+                            description: 'Discover courses and content',
+                          ),
                           _buildDesktopNavItem(
-                              index: 1,
-                              icon: Icons.chat_bubble_outline_rounded,
-                              activeIcon: Icons.chat_bubble_rounded,
-                              label: 'Chat Assistant',
-                              description: 'AI-powered learning help'),
+                            index: 1,
+                            icon: Icons.chat_bubble_outline_rounded,
+                            activeIcon: Icons.chat_bubble_rounded,
+                            label: 'Chat Assistant',
+                            description: 'AI-powered learning help',
+                          ),
                           _buildDesktopNavItem(
-                              index: 2,
-                              icon: Icons.auto_graph_outlined,
-                              activeIcon: Icons.auto_graph_rounded,
-                              label: 'Progress',
-                              description: 'Track your learning journey'),
+                            index: 2,
+                            icon: Icons.auto_graph_outlined,
+                            activeIcon: Icons.auto_graph_rounded,
+                            label: 'Progress',
+                            description: 'Track your learning journey',
+                          ),
                           _buildDesktopNavItem(
                             index: 3,
                             icon: Icons.person_outline_rounded,
@@ -596,8 +677,10 @@ class _MainNavigationState extends State<MainNavigation>
                   ),
                   if (user != null)
                     Container(
-                      margin: const EdgeInsets.all(16),
-                      padding: const EdgeInsets.all(12),
+                      margin: EdgeInsets.all(
+                        ResponsiveValues.spacingL(context),
+                      ),
+                      padding: ResponsiveValues.cardPadding(context),
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
@@ -605,53 +688,42 @@ class _MainNavigationState extends State<MainNavigation>
                             AppColors.getCard(context).withValues(alpha: 0.2),
                           ],
                         ),
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(
+                          ResponsiveValues.radiusMedium(context),
+                        ),
                       ),
                       child: Row(
                         children: [
-                          Container(
-                            width: 40,
-                            height: 40,
-                            decoration: const BoxDecoration(
-                              gradient: LinearGradient(
-                                  colors: AppColors.purpleGradient,
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Center(
-                              child: Text(
-                                  user.username.substring(0, 2).toUpperCase(),
-                                  style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14)),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
+                          _buildSidebarAvatar(user),
+                          ResponsiveSizedBox(width: AppSpacing.m),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(user.username,
-                                    style: TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                        color: isDark
-                                            ? Colors.white
-                                            : AppColors.lightTextPrimary),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis),
+                                Text(
+                                  user.username,
+                                  style: TextStyle(
+                                    fontSize: ResponsiveValues.fontTitleMedium(
+                                        context),
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.getTextPrimary(context),
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                                 if (user.email != null &&
                                     user.email!.isNotEmpty)
-                                  Text(user.email!,
-                                      style: TextStyle(
-                                          fontSize: 12,
-                                          color: isDark
-                                              ? AppColors.darkTextSecondary
-                                              : AppColors.lightTextSecondary),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis),
+                                  Text(
+                                    user.email!,
+                                    style: TextStyle(
+                                      fontSize: ResponsiveValues.fontBodySmall(
+                                          context),
+                                      color:
+                                          AppColors.getTextSecondary(context),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                               ],
                             ),
                           ),
@@ -668,15 +740,15 @@ class _MainNavigationState extends State<MainNavigation>
     );
   }
 
-  Widget _buildDesktopNavItem(
-      {required int index,
-      required IconData icon,
-      required IconData activeIcon,
-      required String label,
-      required String description,
-      int unreadCount = 0}) {
+  Widget _buildDesktopNavItem({
+    required int index,
+    required IconData icon,
+    required IconData activeIcon,
+    required String label,
+    required String description,
+    int unreadCount = 0,
+  }) {
     final isSelected = _currentIndex == index;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return GestureDetector(
       onTap: () => _onNavigationItemTapped(index),
@@ -696,8 +768,7 @@ class _MainNavigationState extends State<MainNavigation>
               : null,
           borderRadius: BorderRadius.circular(12),
           border: isSelected
-              ? Border.all(
-                  color: AppColors.telegramBlue.withValues(alpha: 0.3))
+              ? Border.all(color: AppColors.telegramBlue.withValues(alpha: 0.3))
               : null,
         ),
         child: Row(
@@ -706,8 +777,8 @@ class _MainNavigationState extends State<MainNavigation>
               clipBehavior: Clip.none,
               children: [
                 Container(
-                  width: 40,
-                  height: 40,
+                  width: 44,
+                  height: 44,
                   decoration: BoxDecoration(
                     gradient: isSelected
                         ? LinearGradient(
@@ -722,28 +793,33 @@ class _MainNavigationState extends State<MainNavigation>
                               AppColors.getCard(context).withValues(alpha: 0.1),
                             ],
                           ),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   child: Center(
                     child: Stack(
                       children: [
-                        Icon(isSelected ? activeIcon : icon,
-                            color: isSelected
-                                ? AppColors.telegramBlue
-                                : (isDark
-                                    ? AppColors.darkTextSecondary
-                                    : AppColors.lightTextSecondary),
-                            size: isSelected ? 20 : 18),
+                        Icon(
+                          isSelected ? activeIcon : icon,
+                          color: isSelected
+                              ? AppColors.telegramBlue
+                              : AppColors.getTextSecondary(context),
+                          size: isSelected ? 22 : 20,
+                        ),
                         if (unreadCount > 0)
-                          Positioned(
-                              top: 2,
-                              right: 2,
-                              child: Container(
-                                  width: 8,
-                                  height: 8,
-                                  decoration: const BoxDecoration(
-                                      color: Color(0xFFFF3B30),
-                                      shape: BoxShape.circle))),
+                          const Positioned(
+                            top: 2,
+                            right: 2,
+                            child: SizedBox(
+                              width: 10,
+                              height: 10,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: Color(0xFFFF3B30),
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -755,33 +831,38 @@ class _MainNavigationState extends State<MainNavigation>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label,
-                      style: TextStyle(
-                          fontSize: 14,
-                          fontWeight:
-                              isSelected ? FontWeight.w600 : FontWeight.w500,
-                          color: isSelected
-                              ? AppColors.telegramBlue
-                              : (isDark
-                                  ? Colors.white
-                                  : AppColors.lightTextPrimary))),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight:
+                          isSelected ? FontWeight.w600 : FontWeight.w500,
+                      color: isSelected
+                          ? AppColors.telegramBlue
+                          : AppColors.getTextPrimary(context),
+                    ),
+                  ),
                   const SizedBox(height: 2),
-                  Text(description,
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: isSelected
-                              ? AppColors.telegramBlue.withValues(alpha: 0.8)
-                              : (isDark
-                                  ? AppColors.darkTextSecondary
-                                  : AppColors.lightTextSecondary)),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
+                  Text(
+                    description,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isSelected
+                          ? AppColors.telegramBlue.withValues(alpha: 0.8)
+                          : AppColors.getTextSecondary(context),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ],
               ),
             ),
             if (isSelected)
-              const Icon(Icons.arrow_forward_ios_rounded,
-                  size: 14, color: AppColors.telegramBlue),
+              const Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 14,
+                color: AppColors.telegramBlue,
+              ),
           ],
         ),
       ),
@@ -818,6 +899,18 @@ class _MainNavigationState extends State<MainNavigation>
     super.dispose();
   }
 
+  Widget _buildMobileLayout() {
+    return _buildMobileNavigation();
+  }
+
+  Widget _buildTabletLayout() {
+    return _buildTabletNavigation();
+  }
+
+  Widget _buildDesktopLayout() {
+    return _buildDesktopNavigation();
+  }
+
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
@@ -831,9 +924,9 @@ class _MainNavigationState extends State<MainNavigation>
     }
 
     return ResponsiveLayout(
-      mobile: _buildMobileNavigation(),
-      tablet: _buildTabletNavigation(),
-      desktop: _buildDesktopNavigation(),
+      mobile: _buildMobileLayout(),
+      tablet: _buildTabletLayout(),
+      desktop: _buildDesktopLayout(),
     );
   }
 }

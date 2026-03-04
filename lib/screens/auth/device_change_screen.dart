@@ -11,7 +11,9 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
+import 'package:familyacademyclient/utils/responsive_values.dart';
 import 'package:familyacademyclient/utils/helpers.dart';
+import 'package:familyacademyclient/widgets/common/responsive_widgets.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/device_provider.dart';
 import '../../providers/subscription_provider.dart';
@@ -88,7 +90,8 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
 
   Widget _buildGlassContainer({required Widget child}) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
+      borderRadius:
+          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
         child: Container(
@@ -101,7 +104,8 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
                 AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
-            borderRadius: BorderRadius.circular(24),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
             border: Border.all(
               color: AppColors.telegramBlue.withValues(alpha: 0.2),
             ),
@@ -125,13 +129,14 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
         color: isEnabled
             ? null
             : AppColors.getTextSecondary(context).withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
         boxShadow: isEnabled
             ? [
                 BoxShadow(
                   color: gradient.first.withValues(alpha: 0.3),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
+                  blurRadius: ResponsiveValues.spacingS(context),
+                  offset: Offset(0, ResponsiveValues.spacingXS(context)),
                 ),
               ]
             : null,
@@ -140,21 +145,24 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
         color: Colors.transparent,
         child: InkWell(
           onTap: isEnabled ? onPressed : null,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
           child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 16),
+            padding: EdgeInsets.symmetric(
+              vertical: ResponsiveValues.spacingL(context),
+            ),
             alignment: Alignment.center,
             child: isLoading
-                ? const SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(
+                ? SizedBox(
+                    width: ResponsiveValues.iconSizeM(context),
+                    height: ResponsiveValues.iconSizeM(context),
+                    child: const CircularProgressIndicator(
                         strokeWidth: 2,
                         valueColor: AlwaysStoppedAnimation(Colors.white)),
                   )
-                : Text(
+                : ResponsiveText(
                     label,
-                    style: AppTextStyles.buttonLarge.copyWith(
+                    style: AppTextStyles.buttonLarge(context).copyWith(
                       color: isEnabled
                           ? Colors.white
                           : AppColors.getTextSecondary(context),
@@ -261,7 +269,6 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
         _passwordController.text = password;
       }
 
-      // Save to cache for offline access
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         await _saveDeviceChangeToCache();
       });
@@ -272,7 +279,6 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
       });
     } else {
       debugLog('DeviceChangeScreen', '❌ No arguments provided');
-      // Try to load from cache
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         await _loadDeviceChangeFromCache();
         if (_hasArgs) {
@@ -365,9 +371,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
       );
 
       if (!approveResponse.success) {
-        throw ApiError(
-            message:
-                approveResponse.message ?? 'Device change approval failed');
+        throw ApiError(message: approveResponse.message);
       }
 
       debugLog('DeviceChangeScreen', '✅ Device change approved by backend');
@@ -389,7 +393,6 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
             forceRefresh: true);
         await deviceProvider.initialize();
 
-        // Clear cached device change after successful approval
         final userId = await UserSession().getCurrentUserId();
         if (userId != null) {
           await deviceProvider.deviceService.removeCacheItem(
@@ -457,12 +460,12 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
         backgroundColor: Colors.transparent,
         child: _buildGlassContainer(
           child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
+            padding: ResponsiveValues.dialogPadding(context),
+            child: ResponsiveColumn(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  padding: const EdgeInsets.all(16),
+                  padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
@@ -472,22 +475,29 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
                     ),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.exit_to_app_rounded,
-                      color: AppColors.telegramYellow, size: 32),
+                  child: ResponsiveIcon(
+                    Icons.exit_to_app_rounded,
+                    size: ResponsiveValues.iconSizeL(context),
+                    color: AppColors.telegramYellow,
+                  ),
                 ),
-                const SizedBox(height: 16),
-                Text('Cancel Device Change',
-                    style: AppTextStyles.titleLarge.copyWith(
-                        color: AppColors.getTextPrimary(context),
-                        fontWeight: FontWeight.w600)),
-                const SizedBox(height: 12),
-                Text(
-                    'Are you sure you want to cancel? You will not be able to login on this device.',
-                    style: AppTextStyles.bodyMedium
-                        .copyWith(color: AppColors.getTextSecondary(context)),
-                    textAlign: TextAlign.center),
-                const SizedBox(height: 24),
-                Row(
+                const ResponsiveSizedBox(height: AppSpacing.l),
+                ResponsiveText(
+                  'Cancel Device Change',
+                  style: AppTextStyles.titleLarge(context).copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const ResponsiveSizedBox(height: AppSpacing.m),
+                ResponsiveText(
+                  'Are you sure you want to cancel? You will not be able to login on this device.',
+                  style: AppTextStyles.bodyMedium(context).copyWith(
+                    color: AppColors.getTextSecondary(context),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const ResponsiveSizedBox(height: AppSpacing.xl),
+                ResponsiveRow(
                   children: [
                     Expanded(
                       child: TextButton(
@@ -495,13 +505,18 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
                         style: TextButton.styleFrom(
                           foregroundColor: AppColors.getTextSecondary(context),
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16)),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
+                            borderRadius: BorderRadius.circular(
+                              ResponsiveValues.radiusMedium(context),
+                            ),
+                          ),
+                          padding: EdgeInsets.symmetric(
+                            vertical: ResponsiveValues.spacingM(context),
+                          ),
                         ),
                         child: const Text('No, Stay'),
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const ResponsiveSizedBox(width: AppSpacing.m),
                     Expanded(
                       child: _buildGlassButton(
                         label: 'Yes, Cancel',
@@ -531,15 +546,19 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
         appBar: AppBar(
-          title: Text('Device Change',
-              style: AppTextStyles.appBarTitle
-                  .copyWith(color: AppColors.getTextPrimary(context))),
+          title: ResponsiveText(
+            'Device Change',
+            style: AppTextStyles.appBarTitle(context),
+          ),
           backgroundColor: Colors.transparent,
           elevation: 0,
           leading: IconButton(
-              icon: Icon(Icons.arrow_back_rounded,
-                  color: AppColors.getTextPrimary(context)),
-              onPressed: () => context.go('/auth/login')),
+            icon: ResponsiveIcon(
+              Icons.arrow_back_rounded,
+              color: AppColors.getTextPrimary(context),
+            ),
+            onPressed: () => context.go('/auth/login'),
+          ),
         ),
         body: OfflineState(
           dataType: 'device change',
@@ -556,31 +575,40 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
         appBar: AppBar(
-          title: Text('Device Change',
-              style: AppTextStyles.appBarTitle
-                  .copyWith(color: AppColors.getTextPrimary(context))),
+          title: ResponsiveText(
+            'Device Change',
+            style: AppTextStyles.appBarTitle(context),
+          ),
           backgroundColor: Colors.transparent,
           elevation: 0,
           leading: IconButton(
-              icon: Icon(Icons.arrow_back_rounded,
-                  color: AppColors.getTextPrimary(context)),
-              onPressed: () => context.go('/auth/login')),
+            icon: ResponsiveIcon(
+              Icons.arrow_back_rounded,
+              color: AppColors.getTextPrimary(context),
+            ),
+            onPressed: () => context.go('/auth/login'),
+          ),
         ),
         body: Center(
-          child: Column(
+          child: ResponsiveColumn(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               _buildGlassContainer(
                 child: Container(
-                  padding: const EdgeInsets.all(24),
-                  child: const LoadingIndicator(
-                      size: 48, color: AppColors.telegramBlue),
+                  padding: ResponsiveValues.dialogPadding(context),
+                  child: LoadingIndicator(
+                    size: ResponsiveValues.iconSizeXL(context),
+                    color: AppColors.telegramBlue,
+                  ),
                 ),
               ),
-              const SizedBox(height: 16),
-              Text('Initializing device information...',
-                  style: AppTextStyles.bodyMedium
-                      .copyWith(color: AppColors.getTextSecondary(context))),
+              const ResponsiveSizedBox(height: AppSpacing.l),
+              ResponsiveText(
+                'Initializing device information...',
+                style: AppTextStyles.bodyMedium(context).copyWith(
+                  color: AppColors.getTextSecondary(context),
+                ),
+              ),
             ],
           ),
         ),
@@ -591,15 +619,19 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
         appBar: AppBar(
-          title: Text('Device Change',
-              style: AppTextStyles.appBarTitle
-                  .copyWith(color: AppColors.getTextPrimary(context))),
+          title: ResponsiveText(
+            'Device Change',
+            style: AppTextStyles.appBarTitle(context),
+          ),
           backgroundColor: Colors.transparent,
           elevation: 0,
           leading: IconButton(
-              icon: Icon(Icons.arrow_back_rounded,
-                  color: AppColors.getTextPrimary(context)),
-              onPressed: () => context.go('/auth/login')),
+            icon: ResponsiveIcon(
+              Icons.arrow_back_rounded,
+              color: AppColors.getTextPrimary(context),
+            ),
+            onPressed: () => context.go('/auth/login'),
+          ),
         ),
         body: Center(
           child: EmptyState(
@@ -621,24 +653,25 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     ).animate().fadeIn(duration: AppThemes.animationDurationMedium);
   }
 
-  // ... rest of the existing UI methods (_buildMobileLayout, _buildDesktopLayout, etc.)
-  // They remain the same as in your original file
-
   Widget _buildMobileLayout() {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: AppBar(
-        title: Text('Device Change',
-            style: AppTextStyles.appBarTitle
-                .copyWith(color: AppColors.getTextPrimary(context))),
+        title: ResponsiveText(
+          'Device Change',
+          style: AppTextStyles.appBarTitle(context),
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
         automaticallyImplyLeading: false,
         actions: [
           IconButton(
-            icon: Icon(Icons.info_outline_rounded,
-                color: AppColors.getTextSecondary(context)),
+            icon: ResponsiveIcon(
+              Icons.info_outline_rounded,
+              size: ResponsiveValues.iconSizeM(context),
+              color: AppColors.getTextSecondary(context),
+            ),
             onPressed: _showDeviceInfoDialog,
             tooltip: 'Device Information',
           ),
@@ -646,21 +679,21 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
+          padding: ResponsiveValues.screenPadding(context),
           child: Form(
             key: _formKey,
-            child: Column(
+            child: ResponsiveColumn(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _buildWarningBanner(),
-                const SizedBox(height: 24),
+                const ResponsiveSizedBox(height: AppSpacing.xl),
                 _buildDeviceInfoCard(),
-                const SizedBox(height: 16),
+                const ResponsiveSizedBox(height: AppSpacing.l),
                 _buildDeviceLimitsCard(),
-                const SizedBox(height: 24),
+                const ResponsiveSizedBox(height: AppSpacing.xl),
                 _buildGlassContainer(
                   child: Padding(
-                    padding: const EdgeInsets.all(16),
+                    padding: ResponsiveValues.cardPadding(context),
                     child: PasswordField(
                       controller: _passwordController,
                       label: 'Verify Password',
@@ -669,11 +702,11 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const ResponsiveSizedBox(height: AppSpacing.l),
                 _buildConfirmationCard(),
-                const SizedBox(height: 32),
+                const ResponsiveSizedBox(height: AppSpacing.xxl),
                 _buildActionButtons(),
-                const SizedBox(height: 16),
+                const ResponsiveSizedBox(height: AppSpacing.l),
                 _buildNote(),
               ],
             ),
@@ -687,17 +720,21 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: AppBar(
-        title: Text('Device Change Required',
-            style: AppTextStyles.appBarTitle
-                .copyWith(color: AppColors.getTextPrimary(context))),
+        title: ResponsiveText(
+          'Device Change Required',
+          style: AppTextStyles.appBarTitle(context),
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
         automaticallyImplyLeading: false,
         actions: [
           IconButton(
-            icon: Icon(Icons.info_outline_rounded,
-                color: AppColors.getTextSecondary(context)),
+            icon: ResponsiveIcon(
+              Icons.info_outline_rounded,
+              size: ResponsiveValues.iconSizeM(context),
+              color: AppColors.getTextSecondary(context),
+            ),
             onPressed: _showDeviceInfoDialog,
             tooltip: 'Device Information',
           ),
@@ -707,32 +744,32 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
         child: AdaptiveContainer(
           child: Form(
             key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: ResponsiveColumn(
               children: [
-                const SizedBox(height: 32),
+                const ResponsiveSizedBox(height: AppSpacing.xxl),
                 _buildWarningBanner(),
-                const SizedBox(height: 48),
-                Row(
+                const ResponsiveSizedBox(height: AppSpacing.xxxl),
+                ResponsiveRow(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(child: _buildDeviceInfoCard()),
-                    const SizedBox(width: 32),
+                    const ResponsiveSizedBox(width: AppSpacing.xxl),
                     Expanded(child: _buildDeviceLimitsCard()),
                   ],
                 ),
-                const SizedBox(height: 48),
+                const ResponsiveSizedBox(height: AppSpacing.xxxl),
                 _buildGlassContainer(
                   child: Padding(
-                    padding: const EdgeInsets.all(32),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    padding: ResponsiveValues.dialogPadding(context),
+                    child: ResponsiveColumn(
                       children: [
-                        Text('Verification',
-                            style: AppTextStyles.titleLarge.copyWith(
-                                color: AppColors.getTextPrimary(context),
-                                fontWeight: FontWeight.w600)),
-                        const SizedBox(height: 24),
+                        ResponsiveText(
+                          'Verification',
+                          style: AppTextStyles.titleLarge(context).copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const ResponsiveSizedBox(height: AppSpacing.xl),
                         PasswordField(
                           controller: _passwordController,
                           label: 'Verify Password',
@@ -740,17 +777,17 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
                               'Enter your password to confirm device change',
                           validator: _validatePassword,
                         ),
-                        const SizedBox(height: 24),
+                        const ResponsiveSizedBox(height: AppSpacing.xl),
                         _buildConfirmationCard(),
                       ],
                     ),
                   ),
                 ),
-                const SizedBox(height: 48),
+                const ResponsiveSizedBox(height: AppSpacing.xxxl),
                 _buildActionButtons(),
-                const SizedBox(height: 24),
+                const ResponsiveSizedBox(height: AppSpacing.xl),
                 _buildNote(),
-                const SizedBox(height: 48),
+                const ResponsiveSizedBox(height: AppSpacing.xxxl),
               ],
             ),
           ),
@@ -762,16 +799,14 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
   Widget _buildDeviceInfoCard() {
     return _buildGlassContainer(
       child: Padding(
-        padding: EdgeInsets.all(ScreenSize.responsiveValue(
-            context: context, mobile: 16, tablet: 20, desktop: 24)),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
+        child: ResponsiveColumn(
           children: [
-            Row(
+            ResponsiveRow(
               children: [
                 Container(
-                  width: 40,
-                  height: 40,
+                  width: ResponsiveValues.iconSizeXL(context),
+                  height: ResponsiveValues.iconSizeXL(context),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
@@ -781,21 +816,26 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
                     ),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.devices_rounded,
-                      color: AppColors.telegramBlue, size: 20),
+                  child: ResponsiveIcon(
+                    Icons.devices_rounded,
+                    size: ResponsiveValues.iconSizeS(context),
+                    color: AppColors.telegramBlue,
+                  ),
                 ),
-                const SizedBox(width: 12),
-                Text('Device Information',
-                    style: AppTextStyles.titleMedium.copyWith(
-                        color: AppColors.getTextPrimary(context),
-                        fontWeight: FontWeight.w600)),
+                const ResponsiveSizedBox(width: AppSpacing.m),
+                ResponsiveText(
+                  'Device Information',
+                  style: AppTextStyles.titleMedium(context).copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ],
             ),
-            const SizedBox(height: 16),
+            const ResponsiveSizedBox(height: AppSpacing.l),
             _buildInfoRow('Username', _username),
-            const SizedBox(height: 12),
+            const ResponsiveSizedBox(height: AppSpacing.m),
             _buildInfoRow('Current Device', _currentDeviceId),
-            const SizedBox(height: 12),
+            const ResponsiveSizedBox(height: AppSpacing.m),
             _buildInfoRow('New Device', _newDeviceId ?? _deviceId),
           ],
         ),
@@ -804,28 +844,32 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
   }
 
   Widget _buildInfoRow(String label, String value) {
-    return Row(
+    return ResponsiveRow(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(
-            width: 100,
-            child: Text('$label:',
-                style: AppTextStyles.labelMedium
-                    .copyWith(color: AppColors.getTextSecondary(context)))),
+          width: ResponsiveValues.spacingXXXL(context) * 3,
+          child: ResponsiveText(
+            '$label:',
+            style: AppTextStyles.labelMedium(context).copyWith(
+              color: AppColors.getTextSecondary(context),
+            ),
+          ),
+        ),
         Expanded(
           child: _buildGlassContainer(
             child: Container(
-              padding: const EdgeInsets.all(8),
-              child: Text(
+              padding: EdgeInsets.all(ResponsiveValues.spacingS(context)),
+              child: ResponsiveText(
                 value.isNotEmpty
                     ? value.substring(
                             0, value.length > 30 ? 30 : value.length) +
                         (value.length > 30 ? '...' : '')
                     : 'Not available',
-                style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.getTextPrimary(context),
-                    fontFamily: Platform.isIOS ? 'Courier' : 'monospace',
-                    fontWeight: FontWeight.w600),
+                style: AppTextStyles.bodySmall(context).copyWith(
+                  fontFamily: Platform.isIOS ? 'Courier' : 'monospace',
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ),
@@ -843,16 +887,14 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
 
     return _buildGlassContainer(
       child: Padding(
-        padding: EdgeInsets.all(ScreenSize.responsiveValue(
-            context: context, mobile: 16, tablet: 20, desktop: 24)),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
+        child: ResponsiveColumn(
           children: [
-            Row(
+            ResponsiveRow(
               children: [
                 Container(
-                  width: 40,
-                  height: 40,
+                  width: ResponsiveValues.iconSizeXL(context),
+                  height: ResponsiveValues.iconSizeXL(context),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
@@ -862,31 +904,39 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
                     ),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.timer_rounded,
-                      color: AppColors.telegramBlue, size: 20),
+                  child: ResponsiveIcon(
+                    Icons.timer_rounded,
+                    size: ResponsiveValues.iconSizeS(context),
+                    color: AppColors.telegramBlue,
+                  ),
                 ),
-                const SizedBox(width: 12),
-                Text('Device Change Limits',
-                    style: AppTextStyles.titleMedium.copyWith(
-                        color: AppColors.getTextPrimary(context),
-                        fontWeight: FontWeight.w600)),
+                const ResponsiveSizedBox(width: AppSpacing.m),
+                ResponsiveText(
+                  'Device Change Limits',
+                  style: AppTextStyles.titleMedium(context).copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ],
             ),
-            const SizedBox(height: 16),
+            const ResponsiveSizedBox(height: AppSpacing.l),
             _buildLimitRow(
-                label: 'Changes this month',
-                value: '$_changeCount/$_maxChanges',
-                color: AppColors.telegramBlue),
-            const SizedBox(height: 12),
+              label: 'Changes this month',
+              value: '$_changeCount/$_maxChanges',
+              color: AppColors.telegramBlue,
+            ),
+            const ResponsiveSizedBox(height: AppSpacing.m),
             _buildLimitRow(
-                label: 'Remaining changes',
-                value: '$_remainingChanges',
-                color: remainingColor),
+              label: 'Remaining changes',
+              value: '$_remainingChanges',
+              color: remainingColor,
+            ),
             if (!_canChangeDevice)
               Padding(
-                padding: const EdgeInsets.only(top: 16),
+                padding:
+                    EdgeInsets.only(top: ResponsiveValues.spacingL(context)),
                 child: Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
@@ -894,19 +944,26 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
                         AppColors.telegramRed.withValues(alpha: 0.1),
                       ],
                     ),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(
+                        ResponsiveValues.radiusMedium(context)),
                   ),
-                  child: Row(
+                  child: ResponsiveRow(
                     children: [
-                      const Icon(Icons.error_outline_rounded,
-                          color: AppColors.telegramRed, size: 20),
-                      const SizedBox(width: 12),
+                      ResponsiveIcon(
+                        Icons.error_outline_rounded,
+                        size: ResponsiveValues.iconSizeS(context),
+                        color: AppColors.telegramRed,
+                      ),
+                      const ResponsiveSizedBox(width: AppSpacing.m),
                       Expanded(
-                          child: Text(
-                              'Maximum changes reached. Contact support.',
-                              style: AppTextStyles.bodyMedium.copyWith(
-                                  color: AppColors.telegramRed,
-                                  fontWeight: FontWeight.w500))),
+                        child: ResponsiveText(
+                          'Maximum changes reached. Contact support.',
+                          style: AppTextStyles.bodyMedium(context).copyWith(
+                            color: AppColors.telegramRed,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -917,20 +974,31 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     );
   }
 
-  Widget _buildLimitRow(
-      {required String label, required String value, required Color color}) {
-    return Row(
+  Widget _buildLimitRow({
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return ResponsiveRow(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label,
-            style: AppTextStyles.bodyMedium
-                .copyWith(color: AppColors.getTextPrimary(context))),
+        ResponsiveText(
+          label,
+          style: AppTextStyles.bodyMedium(context),
+        ),
         _buildGlassContainer(
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            child: Text(value,
-                style: AppTextStyles.labelMedium
-                    .copyWith(color: color, fontWeight: FontWeight.w600)),
+            padding: EdgeInsets.symmetric(
+              horizontal: ResponsiveValues.spacingM(context),
+              vertical: ResponsiveValues.spacingXS(context),
+            ),
+            child: ResponsiveText(
+              value,
+              style: AppTextStyles.labelMedium(context).copyWith(
+                color: color,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ),
       ],
@@ -940,33 +1008,41 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
   Widget _buildConfirmationCard() {
     return _buildGlassContainer(
       child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
+        padding: ResponsiveValues.cardPadding(context),
+        child: ResponsiveRow(
           children: [
-            Checkbox(
-              value: _confirmChange,
-              onChanged: (value) => _mounted
-                  ? setState(() => _confirmChange = value ?? false)
-                  : null,
-              activeColor: AppColors.telegramBlue,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(4)),
+            SizedBox(
+              width: ResponsiveValues.iconSizeM(context),
+              height: ResponsiveValues.iconSizeM(context),
+              child: Checkbox(
+                value: _confirmChange,
+                onChanged: (value) => _mounted
+                    ? setState(() => _confirmChange = value ?? false)
+                    : null,
+                activeColor: AppColors.telegramBlue,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(
+                    ResponsiveValues.radiusSmall(context),
+                  ),
+                ),
+              ),
             ),
-            const SizedBox(width: 12),
+            const ResponsiveSizedBox(width: AppSpacing.m),
             Expanded(
               child: RichText(
                 text: TextSpan(
-                  style: AppTextStyles.bodyMedium
-                      .copyWith(color: AppColors.getTextPrimary(context)),
+                  style: AppTextStyles.bodyMedium(context),
                   children: const [
                     TextSpan(text: 'I understand that: '),
                     TextSpan(
-                        text: 'my old device will be blocked, ',
-                        style: TextStyle(fontWeight: FontWeight.w600)),
+                      text: 'my old device will be blocked, ',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
                     TextSpan(text: 'and I can only change devices '),
                     TextSpan(
-                        text: '2 times per month.',
-                        style: TextStyle(fontWeight: FontWeight.w600)),
+                      text: '2 times per month.',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
                   ],
                 ),
               ),
@@ -978,23 +1054,31 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
   }
 
   Widget _buildActionButtons() {
-    return Row(
+    return ResponsiveRow(
       children: [
         Expanded(
           child: TextButton(
             onPressed: _isLoading ? null : _cancelDeviceChange,
             style: TextButton.styleFrom(
               foregroundColor: AppColors.getTextSecondary(context),
-              padding: const EdgeInsets.symmetric(vertical: 16),
+              padding: EdgeInsets.symmetric(
+                vertical: ResponsiveValues.spacingL(context),
+              ),
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16)),
+                borderRadius: BorderRadius.circular(
+                  ResponsiveValues.radiusMedium(context),
+                ),
+              ),
             ),
-            child: Text('Cancel',
-                style: AppTextStyles.buttonMedium
-                    .copyWith(color: AppColors.getTextSecondary(context))),
+            child: ResponsiveText(
+              'Cancel',
+              style: AppTextStyles.buttonMedium(context).copyWith(
+                color: AppColors.getTextSecondary(context),
+              ),
+            ),
           ),
         ),
-        const SizedBox(width: 12),
+        const ResponsiveSizedBox(width: AppSpacing.m),
         Expanded(
           child: _canChangeDevice
               ? _buildGlassButton(
@@ -1018,18 +1102,21 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
   Widget _buildNote() {
     return _buildGlassContainer(
       child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
+        padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
+        child: ResponsiveRow(
           children: [
-            Icon(Icons.info_outline_rounded,
-                size: 20, color: AppColors.getTextSecondary(context)),
-            const SizedBox(width: 12),
+            ResponsiveIcon(
+              Icons.info_outline_rounded,
+              size: ResponsiveValues.iconSizeS(context),
+              color: AppColors.getTextSecondary(context),
+            ),
+            const ResponsiveSizedBox(width: AppSpacing.m),
             Expanded(
-              child: Text(
+              child: ResponsiveText(
                 'Device changes are limited to 2 per month for security reasons.',
-                style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.getTextSecondary(context),
-                    fontStyle: FontStyle.italic),
+                style: AppTextStyles.bodySmall(context).copyWith(
+                  fontStyle: FontStyle.italic,
+                ),
               ),
             ),
           ],
@@ -1045,15 +1132,15 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
         backgroundColor: Colors.transparent,
         child: _buildGlassContainer(
           child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
+            padding: ResponsiveValues.dialogPadding(context),
+            child: ResponsiveColumn(
               mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
+                ResponsiveRow(
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(12),
+                      padding:
+                          EdgeInsets.all(ResponsiveValues.spacingM(context)),
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
@@ -1063,34 +1150,41 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
                         ),
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.info_rounded,
-                          color: AppColors.telegramBlue, size: 24),
+                      child: ResponsiveIcon(
+                        Icons.info_rounded,
+                        size: ResponsiveValues.iconSizeL(context),
+                        color: AppColors.telegramBlue,
+                      ),
                     ),
-                    const SizedBox(width: 16),
-                    Text('Device Information',
-                        style: AppTextStyles.titleLarge.copyWith(
-                            color: AppColors.getTextPrimary(context),
-                            fontWeight: FontWeight.w600)),
+                    const ResponsiveSizedBox(width: AppSpacing.l),
+                    ResponsiveText(
+                      'Device Information',
+                      style: AppTextStyles.titleLarge(context).copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 16),
+                const ResponsiveSizedBox(height: AppSpacing.l),
                 _buildDialogInfoItem('Username', _username),
-                const SizedBox(height: 12),
+                const ResponsiveSizedBox(height: AppSpacing.m),
                 _buildDialogInfoItem('Current Device', _currentDeviceId),
-                const SizedBox(height: 12),
+                const ResponsiveSizedBox(height: AppSpacing.m),
                 _buildDialogInfoItem('New Device', _newDeviceId ?? _deviceId),
-                const SizedBox(height: 12),
+                const ResponsiveSizedBox(height: AppSpacing.m),
                 _buildDialogInfoItem(
                     'Device Changes', '$_changeCount/$_maxChanges'),
-                const SizedBox(height: 12),
+                const ResponsiveSizedBox(height: AppSpacing.m),
                 _buildDialogInfoItem('Remaining Changes', '$_remainingChanges'),
-                const SizedBox(height: 12),
+                const ResponsiveSizedBox(height: AppSpacing.m),
                 _buildDialogInfoItem(
-                    'Status', _canChangeDevice ? 'Can Change' : 'Cannot Change',
-                    valueColor: _canChangeDevice
-                        ? AppColors.telegramGreen
-                        : AppColors.telegramRed),
-                const SizedBox(height: 24),
+                  'Status',
+                  _canChangeDevice ? 'Can Change' : 'Cannot Change',
+                  valueColor: _canChangeDevice
+                      ? AppColors.telegramGreen
+                      : AppColors.telegramRed,
+                ),
+                const ResponsiveSizedBox(height: AppSpacing.xl),
                 SizedBox(
                   width: double.infinity,
                   child: _buildGlassButton(
@@ -1108,19 +1202,21 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
   }
 
   Widget _buildDialogInfoItem(String label, String value, {Color? valueColor}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return ResponsiveColumn(
       children: [
-        Text(label,
-            style: AppTextStyles.labelMedium
-                .copyWith(color: AppColors.getTextSecondary(context))),
-        const SizedBox(height: 4),
+        ResponsiveText(
+          label,
+          style: AppTextStyles.labelMedium(context).copyWith(
+            color: AppColors.getTextSecondary(context),
+          ),
+        ),
+        const ResponsiveSizedBox(height: AppSpacing.xs),
         _buildGlassContainer(
           child: Container(
-            padding: const EdgeInsets.all(12),
-            child: Text(
+            padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
+            child: ResponsiveText(
               value.isEmpty ? 'Not available' : value,
-              style: AppTextStyles.bodyMedium.copyWith(
+              style: AppTextStyles.bodyMedium(context).copyWith(
                 color: valueColor ?? AppColors.getTextPrimary(context),
                 fontFamily: Platform.isIOS ? 'Courier' : 'monospace',
                 fontWeight: FontWeight.w600,
@@ -1135,8 +1231,8 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
   Widget _buildWarningBanner() {
     return _buildGlassContainer(
       child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Row(
+        padding: EdgeInsets.all(ResponsiveValues.spacingXL(context)),
+        child: ResponsiveRow(
           children: [
             AnimatedBuilder(
               animation: _pulseAnimationController,
@@ -1144,7 +1240,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
                 return Transform.scale(
                   scale: 1 + _pulseAnimationController.value * 0.1,
                   child: Container(
-                    padding: const EdgeInsets.all(12),
+                    padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
@@ -1154,26 +1250,33 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
                       ),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.warning_rounded,
-                        color: AppColors.telegramYellow, size: 32),
+                    child: ResponsiveIcon(
+                      Icons.warning_rounded,
+                      size: ResponsiveValues.iconSizeXL(context),
+                      color: AppColors.telegramYellow,
+                    ),
                   ),
                 );
               },
             ),
-            const SizedBox(width: 24),
+            const ResponsiveSizedBox(width: AppSpacing.xl),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: ResponsiveColumn(
                 children: [
-                  Text('New Device Detected',
-                      style: AppTextStyles.headlineSmall.copyWith(
-                          color: AppColors.telegramYellow,
-                          fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 8),
-                  Text(
-                      'You are logging in from a new device. Your old device will be blocked after this change.',
-                      style: AppTextStyles.bodyLarge
-                          .copyWith(color: AppColors.telegramYellow)),
+                  ResponsiveText(
+                    'New Device Detected',
+                    style: AppTextStyles.headlineSmall(context).copyWith(
+                      color: AppColors.telegramYellow,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const ResponsiveSizedBox(height: AppSpacing.s),
+                  ResponsiveText(
+                    'You are logging in from a new device. Your old device will be blocked after this change.',
+                    style: AppTextStyles.bodyLarge(context).copyWith(
+                      color: AppColors.telegramYellow,
+                    ),
+                  ),
                 ],
               ),
             ),

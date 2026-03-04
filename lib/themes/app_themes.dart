@@ -3,9 +3,10 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:shimmer/shimmer.dart';
 import 'app_colors.dart';
 import 'app_text_styles.dart';
+import '../utils/responsive.dart';
+import '../utils/responsive_values.dart';
 
 class AppThemes {
-  // Spacing
   static const double spacingXS = 4.0;
   static const double spacingS = 8.0;
   static const double spacingM = 12.0;
@@ -13,28 +14,26 @@ class AppThemes {
   static const double spacingXL = 20.0;
   static const double spacingXXL = 24.0;
   static const double spacingXXXL = 32.0;
+  static const double spacingXXXXL = 48.0;
 
-  // Border Radius
   static const double borderRadiusSmall = 6.0;
   static const double borderRadiusMedium = 12.0;
   static const double borderRadiusLarge = 18.0;
   static const double borderRadiusXLarge = 24.0;
+  static const double borderRadiusXXLarge = 32.0;
   static const double borderRadiusFull = 999.0;
 
-  // Elevation
   static const double elevationNone = 0.0;
   static const double elevationLow = 1.0;
   static const double elevationMedium = 3.0;
   static const double elevationHigh = 6.0;
 
-  // Icon Sizes
   static const double iconSizeXS = 16.0;
   static const double iconSizeS = 20.0;
   static const double iconSizeM = 24.0;
   static const double iconSizeL = 28.0;
   static const double iconSizeXL = 32.0;
 
-  // Component Sizes
   static const double appBarHeight = 56.0;
   static const double bottomNavBarHeight = 60.0;
   static const double fabSize = 56.0;
@@ -42,38 +41,36 @@ class AppThemes {
   static const double buttonHeightMedium = 44.0;
   static const double buttonHeightLarge = 52.0;
 
-  // Animation Durations
   static const Duration animationDurationFast = Duration(milliseconds: 150);
   static const Duration animationDurationMedium = Duration(milliseconds: 300);
   static const Duration animationDurationSlow = Duration(milliseconds: 500);
   static const Duration animationDurationPage = Duration(milliseconds: 350);
 
-  // Telegram Light Theme
   static ThemeData get lightTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
-      colorScheme: ColorScheme.light(
+      colorScheme: const ColorScheme.light(
         primary: AppColors.telegramBlue,
         primaryContainer: AppColors.telegramBlueLight,
         secondary: AppColors.telegramGreen,
-        secondaryContainer: AppColors.telegramGreen.withValues(alpha: 0.1),
+        secondaryContainer: AppColors.telegramGreenFaded,
         surface: AppColors.lightSurface,
-        surfaceContainerHighest: const Color(0xFFE5E5EA),
+        surfaceContainerHighest: AppColors.lightAccent3,
         error: AppColors.telegramRed,
         onSecondary: Colors.white,
         outline: AppColors.lightDivider,
-        outlineVariant: const Color(0xFFE5E5EA),
+        outlineVariant: AppColors.lightAccent3,
       ),
-
-      // Scaffold & App Bar
       scaffoldBackgroundColor: AppColors.lightBackground,
       appBarTheme: AppBarTheme(
         backgroundColor: AppColors.lightBackground,
         foregroundColor: AppColors.lightTextPrimary,
         elevation: elevationNone,
         centerTitle: false,
-        titleTextStyle: AppTextStyles.appBarTitle.copyWith(
+        titleTextStyle: const TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.w600,
           color: AppColors.lightTextPrimary,
         ),
         iconTheme: const IconThemeData(
@@ -83,8 +80,6 @@ class AppThemes {
         toolbarHeight: appBarHeight,
         surfaceTintColor: Colors.transparent,
       ),
-
-      // Bottom Navigation Bar
       bottomNavigationBarTheme: const BottomNavigationBarThemeData(
         backgroundColor: AppColors.bottomNavBar,
         selectedItemColor: AppColors.telegramBlue,
@@ -96,32 +91,32 @@ class AppThemes {
         selectedLabelStyle: TextStyle(
           fontSize: 10,
           fontWeight: FontWeight.w500,
-          height: 1.2,
+          color: AppColors.telegramBlue,
         ),
         unselectedLabelStyle: TextStyle(
           fontSize: 10,
           fontWeight: FontWeight.w500,
-          height: 1.2,
+          color: AppColors.lightTextSecondary,
         ),
       ),
-
-      // Cards
-      cardTheme: const CardThemeData(
+      cardTheme: CardThemeData(
         color: AppColors.lightCard,
         elevation: elevationLow,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(borderRadiusMedium)),
+          borderRadius: BorderRadius.circular(borderRadiusMedium),
+          side: BorderSide(
+            color: AppColors.lightDivider.withValues(alpha: 0.5),
+            width: 0.5,
+          ),
         ),
         surfaceTintColor: Colors.transparent,
         margin: EdgeInsets.zero,
       ),
-
-      // Buttons
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.telegramBlue,
           foregroundColor: Colors.white,
-          disabledBackgroundColor: AppColors.telegramBlue.withValues(alpha: 0.5),
+          disabledBackgroundColor: AppColors.telegramBlueFaded,
           elevation: elevationNone,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(borderRadiusMedium),
@@ -130,11 +125,13 @@ class AppThemes {
             horizontal: spacingXL,
             vertical: spacingM,
           ),
-          textStyle: AppTextStyles.buttonMedium,
+          textStyle: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
           minimumSize: const Size(64, buttonHeightMedium),
         ),
       ),
-
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.telegramBlue,
@@ -147,13 +144,14 @@ class AppThemes {
             horizontal: spacingXL,
             vertical: spacingM,
           ),
-          textStyle: AppTextStyles.buttonMedium.copyWith(
+          textStyle: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
             color: AppColors.telegramBlue,
           ),
           minimumSize: const Size(64, buttonHeightMedium),
         ),
       ),
-
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: AppColors.telegramBlue,
@@ -161,22 +159,27 @@ class AppThemes {
             horizontal: spacingM,
             vertical: spacingS,
           ),
-          textStyle: AppTextStyles.buttonMedium.copyWith(
+          textStyle: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
             color: AppColors.telegramBlue,
           ),
           minimumSize: const Size(48, buttonHeightSmall),
         ),
       ),
-
-      // Input Fields
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: AppColors.lightSurface,
-        hintStyle: AppTextStyles.bodyMedium.copyWith(
-          color: AppColors.lightTextSecondary,
+        fillColor: AppColors.lightAccent2,
+        hintStyle: TextStyle(
+          fontSize: 14,
+          color: AppColors.lightTextSecondary.withValues(alpha: 0.7),
         ),
-        labelStyle: AppTextStyles.bodyMedium,
-        floatingLabelStyle: AppTextStyles.labelMedium,
+        labelStyle: const TextStyle(fontSize: 14),
+        floatingLabelStyle: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: AppColors.telegramBlue,
+        ),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: spacingL,
           vertical: spacingM,
@@ -210,107 +213,50 @@ class AppThemes {
           ),
         ),
       ),
-
-      // Dialogs
-      dialogTheme: DialogThemeData(
+      dialogTheme: const DialogThemeData(
         backgroundColor: AppColors.lightCard,
         elevation: elevationHigh,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(borderRadiusLarge),
+          borderRadius: BorderRadius.all(Radius.circular(borderRadiusLarge)),
         ),
-        titleTextStyle: AppTextStyles.headlineMedium.copyWith(
+        titleTextStyle: TextStyle(
+          fontSize: 20,
+          fontWeight: FontWeight.w600,
           color: AppColors.lightTextPrimary,
         ),
-        contentTextStyle: AppTextStyles.bodyMedium.copyWith(
+        contentTextStyle: TextStyle(
+          fontSize: 14,
           color: AppColors.lightTextSecondary,
         ),
       ),
-
-      // SnackBar
-      snackBarTheme: SnackBarThemeData(
+      snackBarTheme: const SnackBarThemeData(
         backgroundColor: AppColors.darkCard,
-        contentTextStyle: AppTextStyles.bodyMedium.copyWith(
+        contentTextStyle: TextStyle(
+          fontSize: 14,
           color: Colors.white,
         ),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(borderRadiusMedium),
+          borderRadius: BorderRadius.all(Radius.circular(borderRadiusMedium)),
         ),
         elevation: elevationMedium,
         behavior: SnackBarBehavior.floating,
-        insetPadding: const EdgeInsets.all(spacingL),
+        insetPadding: EdgeInsets.all(spacingL),
       ),
-
-      // Progress Indicators
       progressIndicatorTheme: const ProgressIndicatorThemeData(
         color: AppColors.telegramBlue,
-        linearTrackColor: Color(0xFFE5E5EA),
-        circularTrackColor: Color(0xFFE5E5EA),
+        linearTrackColor: AppColors.lightAccent3,
+        circularTrackColor: AppColors.lightAccent3,
         linearMinHeight: 2.0,
       ),
-
-      // Text Theme
-      textTheme: TextTheme(
-        displayLarge: AppTextStyles.displayLarge.copyWith(
-          color: AppColors.lightTextPrimary,
-        ),
-        displayMedium: AppTextStyles.displayMedium.copyWith(
-          color: AppColors.lightTextPrimary,
-        ),
-        displaySmall: AppTextStyles.displaySmall.copyWith(
-          color: AppColors.lightTextPrimary,
-        ),
-        headlineLarge: AppTextStyles.headlineLarge.copyWith(
-          color: AppColors.lightTextPrimary,
-        ),
-        headlineMedium: AppTextStyles.headlineMedium.copyWith(
-          color: AppColors.lightTextPrimary,
-        ),
-        headlineSmall: AppTextStyles.headlineSmall.copyWith(
-          color: AppColors.lightTextPrimary,
-        ),
-        titleLarge: AppTextStyles.titleLarge.copyWith(
-          color: AppColors.lightTextPrimary,
-        ),
-        titleMedium: AppTextStyles.titleMedium.copyWith(
-          color: AppColors.lightTextPrimary,
-        ),
-        titleSmall: AppTextStyles.titleSmall.copyWith(
-          color: AppColors.lightTextPrimary,
-        ),
-        bodyLarge: AppTextStyles.bodyLarge.copyWith(
-          color: AppColors.lightTextPrimary,
-        ),
-        bodyMedium: AppTextStyles.bodyMedium.copyWith(
-          color: AppColors.lightTextPrimary,
-        ),
-        bodySmall: AppTextStyles.bodySmall.copyWith(
-          color: AppColors.lightTextSecondary,
-        ),
-        labelLarge: AppTextStyles.labelLarge.copyWith(
-          color: AppColors.lightTextPrimary,
-        ),
-        labelMedium: AppTextStyles.labelMedium.copyWith(
-          color: AppColors.lightTextSecondary,
-        ),
-        labelSmall: AppTextStyles.labelSmall.copyWith(
-          color: AppColors.lightTextTertiary,
-        ),
-      ),
-
-      // Icons
       iconTheme: const IconThemeData(
         color: AppColors.lightTextSecondary,
         size: iconSizeM,
       ),
-
-      // Dividers
       dividerTheme: const DividerThemeData(
         color: AppColors.lightDivider,
         thickness: 0.5,
         space: 0,
       ),
-
-      // List Tiles
       listTileTheme: const ListTileThemeData(
         tileColor: Colors.transparent,
         contentPadding: EdgeInsets.symmetric(
@@ -332,8 +278,6 @@ class AppThemes {
           borderRadius: BorderRadius.all(Radius.circular(borderRadiusMedium)),
         ),
       ),
-
-      // Floating Action Button
       floatingActionButtonTheme: const FloatingActionButtonThemeData(
         backgroundColor: AppColors.telegramBlue,
         foregroundColor: Colors.white,
@@ -344,24 +288,26 @@ class AppThemes {
           height: fabSize,
         ),
       ),
-
-      // Chip Theme
-      chipTheme: ChipThemeData(
-        backgroundColor: AppColors.lightSurface,
+      chipTheme: const ChipThemeData(
+        backgroundColor: AppColors.lightAccent2,
         selectedColor: AppColors.telegramBlue,
-        disabledColor: const Color(0xFFE5E5EA),
-        labelStyle: AppTextStyles.labelSmall.copyWith(
+        disabledColor: AppColors.lightAccent3,
+        labelStyle: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
           color: AppColors.lightTextSecondary,
         ),
-        secondaryLabelStyle: AppTextStyles.labelSmall.copyWith(
+        secondaryLabelStyle: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
           color: Colors.white,
         ),
-        padding: const EdgeInsets.symmetric(
+        padding: EdgeInsets.symmetric(
           horizontal: spacingM,
           vertical: spacingXS,
         ),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(borderRadiusFull),
+          borderRadius: BorderRadius.all(Radius.circular(borderRadiusFull)),
         ),
         side: BorderSide.none,
         brightness: Brightness.light,
@@ -369,44 +315,41 @@ class AppThemes {
     );
   }
 
-  // Telegram Dark Theme
   static ThemeData get darkTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
-      colorScheme: ColorScheme.dark(
+      colorScheme: const ColorScheme.dark(
         primary: AppColors.telegramBlueLight,
         primaryContainer: AppColors.telegramBlueDark,
         secondary: AppColors.telegramGreen,
-        secondaryContainer: AppColors.telegramGreen.withValues(alpha: 0.1),
+        secondaryContainer: AppColors.telegramGreenFaded,
         surface: AppColors.darkSurface,
-        surfaceContainerHighest: const Color(0xFF2C2C2E),
+        surfaceContainerHighest: AppColors.darkCard,
         error: AppColors.telegramRed,
         onPrimary: Colors.white,
         onSecondary: Colors.white,
         outline: AppColors.darkDivider,
-        outlineVariant: const Color(0xFF38383A),
+        outlineVariant: AppColors.darkDivider,
       ),
-
-      // Scaffold & App Bar
       scaffoldBackgroundColor: AppColors.darkBackground,
-      appBarTheme: AppBarTheme(
+      appBarTheme: const AppBarTheme(
         backgroundColor: AppColors.darkBackground,
         foregroundColor: AppColors.darkTextPrimary,
         elevation: elevationNone,
         centerTitle: false,
-        titleTextStyle: AppTextStyles.appBarTitle.copyWith(
+        titleTextStyle: TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.w600,
           color: AppColors.darkTextPrimary,
         ),
-        iconTheme: const IconThemeData(
+        iconTheme: IconThemeData(
           color: AppColors.darkTextPrimary,
           size: iconSizeM,
         ),
         toolbarHeight: appBarHeight,
         surfaceTintColor: Colors.transparent,
       ),
-
-      // Bottom Navigation Bar
       bottomNavigationBarTheme: const BottomNavigationBarThemeData(
         backgroundColor: AppColors.bottomNavBarDark,
         selectedItemColor: AppColors.telegramBlueLight,
@@ -418,32 +361,32 @@ class AppThemes {
         selectedLabelStyle: TextStyle(
           fontSize: 10,
           fontWeight: FontWeight.w500,
-          height: 1.2,
+          color: AppColors.telegramBlueLight,
         ),
         unselectedLabelStyle: TextStyle(
           fontSize: 10,
           fontWeight: FontWeight.w500,
-          height: 1.2,
+          color: AppColors.darkTextSecondary,
         ),
       ),
-
-      // Cards
-      cardTheme: const CardThemeData(
+      cardTheme: CardThemeData(
         color: AppColors.darkCard,
         elevation: elevationLow,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(borderRadiusMedium)),
+          borderRadius: BorderRadius.circular(borderRadiusMedium),
+          side: BorderSide(
+            color: AppColors.darkDivider.withValues(alpha: 0.5),
+            width: 0.5,
+          ),
         ),
         surfaceTintColor: Colors.transparent,
         margin: EdgeInsets.zero,
       ),
-
-      // Buttons
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.telegramBlueLight,
           foregroundColor: Colors.white,
-          disabledBackgroundColor: AppColors.telegramBlueLight.withValues(alpha: 0.5),
+          disabledBackgroundColor: AppColors.telegramBlueLightFaded,
           elevation: elevationNone,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(borderRadiusMedium),
@@ -452,11 +395,13 @@ class AppThemes {
             horizontal: spacingXL,
             vertical: spacingM,
           ),
-          textStyle: AppTextStyles.buttonMedium,
+          textStyle: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
           minimumSize: const Size(64, buttonHeightMedium),
         ),
       ),
-
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.telegramBlueLight,
@@ -469,13 +414,14 @@ class AppThemes {
             horizontal: spacingXL,
             vertical: spacingM,
           ),
-          textStyle: AppTextStyles.buttonMedium.copyWith(
+          textStyle: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
             color: AppColors.telegramBlueLight,
           ),
           minimumSize: const Size(64, buttonHeightMedium),
         ),
       ),
-
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: AppColors.telegramBlueLight,
@@ -483,22 +429,27 @@ class AppThemes {
             horizontal: spacingM,
             vertical: spacingS,
           ),
-          textStyle: AppTextStyles.buttonMedium.copyWith(
+          textStyle: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
             color: AppColors.telegramBlueLight,
           ),
           minimumSize: const Size(48, buttonHeightSmall),
         ),
       ),
-
-      // Input Fields
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: AppColors.darkSurface,
-        hintStyle: AppTextStyles.bodyMedium.copyWith(
-          color: AppColors.darkTextSecondary,
+        hintStyle: TextStyle(
+          fontSize: 14,
+          color: AppColors.darkTextSecondary.withValues(alpha: 0.7),
         ),
-        labelStyle: AppTextStyles.bodyMedium,
-        floatingLabelStyle: AppTextStyles.labelMedium,
+        labelStyle: const TextStyle(fontSize: 14),
+        floatingLabelStyle: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: AppColors.telegramBlueLight,
+        ),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: spacingL,
           vertical: spacingM,
@@ -532,107 +483,50 @@ class AppThemes {
           ),
         ),
       ),
-
-      // Dialogs
-      dialogTheme: DialogThemeData(
+      dialogTheme: const DialogThemeData(
         backgroundColor: AppColors.darkCard,
         elevation: elevationHigh,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(borderRadiusLarge),
+          borderRadius: BorderRadius.all(Radius.circular(borderRadiusLarge)),
         ),
-        titleTextStyle: AppTextStyles.headlineMedium.copyWith(
+        titleTextStyle: TextStyle(
+          fontSize: 20,
+          fontWeight: FontWeight.w600,
           color: AppColors.darkTextPrimary,
         ),
-        contentTextStyle: AppTextStyles.bodyMedium.copyWith(
+        contentTextStyle: TextStyle(
+          fontSize: 14,
           color: AppColors.darkTextSecondary,
         ),
       ),
-
-      // SnackBar
-      snackBarTheme: SnackBarThemeData(
+      snackBarTheme: const SnackBarThemeData(
         backgroundColor: AppColors.darkCard,
-        contentTextStyle: AppTextStyles.bodyMedium.copyWith(
+        contentTextStyle: TextStyle(
+          fontSize: 14,
           color: Colors.white,
         ),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(borderRadiusMedium),
+          borderRadius: BorderRadius.all(Radius.circular(borderRadiusMedium)),
         ),
         elevation: elevationMedium,
         behavior: SnackBarBehavior.floating,
-        insetPadding: const EdgeInsets.all(spacingL),
+        insetPadding: EdgeInsets.all(spacingL),
       ),
-
-      // Progress Indicators
       progressIndicatorTheme: const ProgressIndicatorThemeData(
         color: AppColors.telegramBlueLight,
-        linearTrackColor: Color(0xFF38383A),
-        circularTrackColor: Color(0xFF38383A),
+        linearTrackColor: AppColors.darkDivider,
+        circularTrackColor: AppColors.darkDivider,
         linearMinHeight: 2.0,
       ),
-
-      // Text Theme
-      textTheme: TextTheme(
-        displayLarge: AppTextStyles.displayLarge.copyWith(
-          color: AppColors.darkTextPrimary,
-        ),
-        displayMedium: AppTextStyles.displayMedium.copyWith(
-          color: AppColors.darkTextPrimary,
-        ),
-        displaySmall: AppTextStyles.displaySmall.copyWith(
-          color: AppColors.darkTextPrimary,
-        ),
-        headlineLarge: AppTextStyles.headlineLarge.copyWith(
-          color: AppColors.darkTextPrimary,
-        ),
-        headlineMedium: AppTextStyles.headlineMedium.copyWith(
-          color: AppColors.darkTextPrimary,
-        ),
-        headlineSmall: AppTextStyles.headlineSmall.copyWith(
-          color: AppColors.darkTextPrimary,
-        ),
-        titleLarge: AppTextStyles.titleLarge.copyWith(
-          color: AppColors.darkTextPrimary,
-        ),
-        titleMedium: AppTextStyles.titleMedium.copyWith(
-          color: AppColors.darkTextPrimary,
-        ),
-        titleSmall: AppTextStyles.titleSmall.copyWith(
-          color: AppColors.darkTextPrimary,
-        ),
-        bodyLarge: AppTextStyles.bodyLarge.copyWith(
-          color: AppColors.darkTextPrimary,
-        ),
-        bodyMedium: AppTextStyles.bodyMedium.copyWith(
-          color: AppColors.darkTextPrimary,
-        ),
-        bodySmall: AppTextStyles.bodySmall.copyWith(
-          color: AppColors.darkTextSecondary,
-        ),
-        labelLarge: AppTextStyles.labelLarge.copyWith(
-          color: AppColors.darkTextPrimary,
-        ),
-        labelMedium: AppTextStyles.labelMedium.copyWith(
-          color: AppColors.darkTextSecondary,
-        ),
-        labelSmall: AppTextStyles.labelSmall.copyWith(
-          color: AppColors.darkTextTertiary,
-        ),
-      ),
-
-      // Icons
       iconTheme: const IconThemeData(
         color: AppColors.darkTextSecondary,
         size: iconSizeM,
       ),
-
-      // Dividers
       dividerTheme: const DividerThemeData(
         color: AppColors.darkDivider,
         thickness: 0.5,
         space: 0,
       ),
-
-      // List Tiles
       listTileTheme: const ListTileThemeData(
         tileColor: Colors.transparent,
         contentPadding: EdgeInsets.symmetric(
@@ -654,8 +548,6 @@ class AppThemes {
           borderRadius: BorderRadius.all(Radius.circular(borderRadiusMedium)),
         ),
       ),
-
-      // Floating Action Button
       floatingActionButtonTheme: const FloatingActionButtonThemeData(
         backgroundColor: AppColors.telegramBlueLight,
         foregroundColor: Colors.white,
@@ -666,24 +558,26 @@ class AppThemes {
           height: fabSize,
         ),
       ),
-
-      // Chip Theme
-      chipTheme: ChipThemeData(
+      chipTheme: const ChipThemeData(
         backgroundColor: AppColors.darkSurface,
         selectedColor: AppColors.telegramBlueLight,
-        disabledColor: const Color(0xFF38383A),
-        labelStyle: AppTextStyles.labelSmall.copyWith(
+        disabledColor: AppColors.darkDivider,
+        labelStyle: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
           color: AppColors.darkTextSecondary,
         ),
-        secondaryLabelStyle: AppTextStyles.labelSmall.copyWith(
+        secondaryLabelStyle: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
           color: Colors.white,
         ),
-        padding: const EdgeInsets.symmetric(
+        padding: EdgeInsets.symmetric(
           horizontal: spacingM,
           vertical: spacingXS,
         ),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(borderRadiusFull),
+          borderRadius: BorderRadius.all(Radius.circular(borderRadiusFull)),
         ),
         side: BorderSide.none,
         brightness: Brightness.dark,
@@ -691,7 +585,6 @@ class AppThemes {
     );
   }
 
-  // Common Decorations
   static BoxDecoration cardDecoration(BuildContext context) {
     return BoxDecoration(
       color: AppColors.getCard(context),
@@ -709,7 +602,7 @@ class AppThemes {
             ]
           : [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.08),
+                color: AppColors.telegramBlue.withValues(alpha: 0.08),
                 blurRadius: 8.0,
                 offset: const Offset(0, 2),
               ),
@@ -741,7 +634,6 @@ class AppThemes {
     );
   }
 
-  // Animation Effects
   static List<Effect<dynamic>> get fadeInSlideUp => [
         const FadeEffect(duration: animationDurationMedium),
         const SlideEffect(
@@ -760,7 +652,6 @@ class AppThemes {
         const FadeEffect(duration: animationDurationMedium),
       ];
 
-  // Loading Shimmer
   static Widget shimmerLoading({
     required double width,
     required double height,
@@ -785,7 +676,6 @@ class AppThemes {
     );
   }
 
-  // Responsive padding
   static EdgeInsetsGeometry responsivePadding(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     if (screenWidth >= 1024) {
@@ -806,7 +696,6 @@ class AppThemes {
     }
   }
 
-  // Chat bubble decoration
   static BoxDecoration chatBubbleDecoration(bool isUser, BuildContext context) {
     return BoxDecoration(
       color: isUser ? AppColors.chatBubbleUser : AppColors.chatBubbleBot,

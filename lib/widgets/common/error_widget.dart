@@ -5,7 +5,20 @@ import 'package:flutter/material.dart';
 import 'package:lottie/lottie.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
+import 'package:familyacademyclient/utils/responsive_values.dart';
+import 'package:familyacademyclient/utils/app_enums.dart';
 import '../../themes/app_themes.dart';
+import 'responsive_widgets.dart';
+
+enum ErrorType {
+  general,
+  network,
+  server,
+  access,
+  notFound,
+  timeout,
+  payment,
+}
 
 class ErrorWidget extends StatelessWidget {
   final String title;
@@ -31,7 +44,8 @@ class ErrorWidget extends StatelessWidget {
 
   Widget _buildGlassContainer(BuildContext context, {required Widget child}) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
+      borderRadius:
+          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
         child: Container(
@@ -44,7 +58,8 @@ class ErrorWidget extends StatelessWidget {
                 AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
-            borderRadius: BorderRadius.circular(24),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
             border: Border.all(
               color: _getIconColor(context).withValues(alpha: 0.2),
             ),
@@ -64,12 +79,13 @@ class ErrorWidget extends StatelessWidget {
         gradient: LinearGradient(
           colors: _getButtonGradient(type),
         ),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
         boxShadow: [
           BoxShadow(
             color: _getIconColor(context).withValues(alpha: 0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            blurRadius: ResponsiveValues.spacingS(context),
+            offset: Offset(0, ResponsiveValues.spacingXS(context)),
           ),
         ],
       ),
@@ -77,17 +93,23 @@ class ErrorWidget extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: onPressed,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
           child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-            child: Row(
+            padding: EdgeInsets.symmetric(
+              vertical: ResponsiveValues.spacingM(context),
+              horizontal: ResponsiveValues.spacingL(context),
+            ),
+            child: ResponsiveRow(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon, color: Colors.white, size: 18),
-                const SizedBox(width: 8),
-                Text(
+                Icon(icon,
+                    color: Colors.white,
+                    size: ResponsiveValues.iconSizeS(context)),
+                const ResponsiveSizedBox(width: AppSpacing.s),
+                ResponsiveText(
                   label,
-                  style: AppTextStyles.buttonMedium.copyWith(
+                  style: AppTextStyles.buttonMedium(context).copyWith(
                     color: Colors.white,
                   ),
                 ),
@@ -102,36 +124,26 @@ class ErrorWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final content = Container(
-      padding: EdgeInsets.all(ScreenSize.responsiveValue(
-        context: context,
-        mobile: AppThemes.spacingL,
-        tablet: AppThemes.spacingXL,
-        desktop: AppThemes.spacingXXL,
-      )),
+      padding: EdgeInsets.all(ResponsiveValues.spacingXL(context)),
       child: _buildGlassContainer(
         context,
         child: Padding(
-          padding: EdgeInsets.all(ScreenSize.responsiveValue(
-            context: context,
-            mobile: AppThemes.spacingXL,
-            tablet: AppThemes.spacingXXL,
-            desktop: AppThemes.spacingXXXL,
-          )),
+          padding: EdgeInsets.all(ResponsiveValues.spacingXXL(context)),
           child: SingleChildScrollView(
-            child: Column(
+            child: ResponsiveColumn(
               mainAxisAlignment: MainAxisAlignment.center,
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (showAnimation) _buildAnimatedIcon(context),
-                const SizedBox(height: AppThemes.spacingXXL),
+                const ResponsiveSizedBox(height: AppSpacing.xxl),
                 _buildTitle(context),
-                const SizedBox(height: AppThemes.spacingM),
+                const ResponsiveSizedBox(height: AppSpacing.m),
                 _buildMessage(context),
                 if (onRetry != null) ...[
-                  const SizedBox(height: AppThemes.spacingXXL),
+                  const ResponsiveSizedBox(height: AppSpacing.xxl),
                   _buildActionButtons(context),
                 ],
-                const SizedBox(height: AppThemes.spacingL),
+                const ResponsiveSizedBox(height: AppSpacing.l),
               ],
             ),
           ),
@@ -156,27 +168,22 @@ class ErrorWidget extends StatelessWidget {
   List<Color> _getButtonGradient(ErrorType type) {
     switch (type) {
       case ErrorType.network:
-        return const [Color(0xFF2AABEE), Color(0xFF5856D6)];
+        return AppColors.blueGradient;
       case ErrorType.server:
       case ErrorType.payment:
-        return const [Color(0xFFFF3B30), Color(0xFFE6204A)];
+        return AppColors.pinkGradient;
       case ErrorType.access:
       case ErrorType.timeout:
-        return const [Color(0xFFFF9500), Color(0xFFFF2D55)];
+        return [AppColors.telegramOrange, AppColors.telegramRed];
       case ErrorType.notFound:
-        return const [Color(0xFF2AABEE), Color(0xFF5856D6)];
+        return AppColors.blueGradient;
       default:
-        return const [Color(0xFF2AABEE), Color(0xFF5856D6)];
+        return AppColors.blueGradient;
     }
   }
 
   Widget _buildAnimatedIcon(BuildContext context) {
-    final iconSize = ScreenSize.responsiveValue(
-      context: context,
-      mobile: 100.0,
-      tablet: 120.0,
-      desktop: 140.0,
-    );
+    final iconSize = ResponsiveValues.iconSizeXXL(context) * 2;
 
     if (lottieAsset != null) {
       return SizedBox(
@@ -221,9 +228,11 @@ class ErrorWidget extends StatelessWidget {
         ),
         shape: BoxShape.circle,
         border: Border.all(
-            color: _getIconColor(context).withValues(alpha: 0.2), width: 2.0),
+          color: _getIconColor(context).withValues(alpha: 0.2),
+          width: 2.0,
+        ),
       ),
-      child: Icon(
+      child: ResponsiveIcon(
         icon ?? _getIconForType(),
         size: iconSize * 0.4,
         color: _getIconColor(context),
@@ -292,19 +301,20 @@ class ErrorWidget extends StatelessWidget {
 
   Widget _buildTitle(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-          horizontal: AppThemes.spacingL, vertical: AppThemes.spacingS),
+      padding: EdgeInsets.symmetric(
+        horizontal: ResponsiveValues.spacingL(context),
+        vertical: ResponsiveValues.spacingS(context),
+      ),
       decoration: BoxDecoration(
         color: _getIconColor(context).withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
       ),
-      child: Text(
+      child: ResponsiveText(
         title,
-        style: AppTextStyles.titleLarge.copyWith(
-          color: AppColors.getTextPrimary(context),
+        style: AppTextStyles.titleLarge(context).copyWith(
           fontWeight: FontWeight.w600,
-          fontSize: ScreenSize.responsiveFontSize(
-              context: context, mobile: 18, tablet: 20, desktop: 22),
+          fontSize: ResponsiveValues.fontHeadlineSmall(context),
         ),
         textAlign: TextAlign.center,
       ),
@@ -314,18 +324,14 @@ class ErrorWidget extends StatelessWidget {
   Widget _buildMessage(BuildContext context) {
     return Padding(
       padding: EdgeInsets.symmetric(
-          horizontal: ScreenSize.responsiveValue(
-              context: context,
-              mobile: AppThemes.spacingL,
-              tablet: AppThemes.spacingXL,
-              desktop: AppThemes.spacingXXL)),
-      child: Text(
+        horizontal: ResponsiveValues.spacingXL(context),
+      ),
+      child: ResponsiveText(
         message,
         textAlign: TextAlign.center,
-        style: AppTextStyles.bodyMedium.copyWith(
+        style: AppTextStyles.bodyMedium(context).copyWith(
           color: AppColors.getTextSecondary(context),
-          fontSize: ScreenSize.responsiveFontSize(
-              context: context, mobile: 14, tablet: 15, desktop: 16),
+          fontSize: ResponsiveValues.fontBodyLarge(context),
           height: 1.5,
         ),
       ),
@@ -333,7 +339,7 @@ class ErrorWidget extends StatelessWidget {
   }
 
   Widget _buildActionButtons(BuildContext context) {
-    return Column(
+    return ResponsiveColumn(
       children: [
         _buildGlassButton(
           context,
@@ -342,40 +348,29 @@ class ErrorWidget extends StatelessWidget {
           icon: Icons.refresh_outlined,
         ),
         if (type == ErrorType.network || type == ErrorType.access) ...[
-          const SizedBox(height: AppThemes.spacingL),
+          const ResponsiveSizedBox(height: AppSpacing.l),
           TextButton(
             onPressed: () => _showHelpDialog(context),
             style: TextButton.styleFrom(
               foregroundColor: _getIconColor(context),
               padding: EdgeInsets.symmetric(
-                horizontal: ScreenSize.responsiveValue(
-                    context: context,
-                    mobile: AppThemes.spacingL,
-                    tablet: AppThemes.spacingXL,
-                    desktop: AppThemes.spacingXXL),
-                vertical: AppThemes.spacingM,
+                horizontal: ResponsiveValues.spacingXL(context),
+                vertical: ResponsiveValues.spacingM(context),
               ),
             ),
-            child: Row(
+            child: ResponsiveRow(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(Icons.help_outline_outlined,
-                    size: ScreenSize.responsiveValue(
-                        context: context, mobile: 16, tablet: 18, desktop: 20)),
-                SizedBox(
-                    width: ScreenSize.responsiveValue(
-                        context: context,
-                        mobile: AppThemes.spacingS,
-                        tablet: AppThemes.spacingM,
-                        desktop: AppThemes.spacingL)),
-                Text('Need Help?',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                        fontSize: ScreenSize.responsiveFontSize(
-                            context: context,
-                            mobile: 14,
-                            tablet: 15,
-                            desktop: 16),
-                        fontWeight: FontWeight.w500)),
+                    size: ResponsiveValues.iconSizeS(context)),
+                const ResponsiveSizedBox(width: AppSpacing.s),
+                ResponsiveText(
+                  'Need Help?',
+                  style: AppTextStyles.bodyMedium(context).copyWith(
+                    fontSize: ResponsiveValues.fontBodyLarge(context),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ],
             ),
           ),
@@ -392,12 +387,12 @@ class ErrorWidget extends StatelessWidget {
         child: _buildGlassContainer(
           context,
           child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
+            padding: ResponsiveValues.dialogPadding(context),
+            child: ResponsiveColumn(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
@@ -407,23 +402,22 @@ class ErrorWidget extends StatelessWidget {
                     ),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(
+                  child: ResponsiveIcon(
                     _getIconForType(),
+                    size: ResponsiveValues.iconSizeXL(context),
                     color: _getIconColor(context),
-                    size: 32,
                   ),
                 ),
-                const SizedBox(height: 16),
-                Text(
+                const ResponsiveSizedBox(height: AppSpacing.l),
+                ResponsiveText(
                   'Help with ${type.name} Error',
-                  style: AppTextStyles.titleLarge.copyWith(
-                    color: AppColors.getTextPrimary(context),
+                  style: AppTextStyles.titleLarge(context).copyWith(
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 12),
+                const ResponsiveSizedBox(height: AppSpacing.m),
                 Container(
-                  padding: const EdgeInsets.all(16),
+                  padding: ResponsiveValues.cardPadding(context),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
@@ -431,33 +425,38 @@ class ErrorWidget extends StatelessWidget {
                         AppColors.getCard(context).withValues(alpha: 0.1),
                       ],
                     ),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(
+                        ResponsiveValues.radiusMedium(context)),
                   ),
-                  child: Text(
+                  child: ResponsiveText(
                     _getHelpMessage(),
-                    style: AppTextStyles.bodyMedium.copyWith(
+                    style: AppTextStyles.bodyMedium(context).copyWith(
                       color: AppColors.getTextSecondary(context),
                       height: 1.5,
                     ),
                   ),
                 ),
-                const SizedBox(height: 24),
-                Row(
+                const ResponsiveSizedBox(height: AppSpacing.xl),
+                ResponsiveRow(
                   children: [
                     Expanded(
                       child: TextButton(
                         onPressed: () => Navigator.of(context).pop(),
                         style: TextButton.styleFrom(
                           foregroundColor: AppColors.getTextSecondary(context),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          padding: EdgeInsets.symmetric(
+                            vertical: ResponsiveValues.spacingM(context),
+                          ),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
+                            borderRadius: BorderRadius.circular(
+                              ResponsiveValues.radiusMedium(context),
+                            ),
                           ),
                         ),
                         child: const Text('Close'),
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const ResponsiveSizedBox(width: AppSpacing.m),
                     Expanded(
                       child: _buildGlassButton(
                         context,
@@ -505,16 +504,6 @@ class ErrorWidget extends StatelessWidget {
         return 'An unexpected error occurred. Please try again or contact support if the problem persists.';
     }
   }
-}
-
-enum ErrorType {
-  general,
-  network,
-  server,
-  access,
-  notFound,
-  timeout,
-  payment,
 }
 
 class NetworkErrorWidget extends StatelessWidget {

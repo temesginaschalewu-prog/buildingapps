@@ -13,7 +13,9 @@ import 'package:familyacademyclient/providers/payment_provider.dart';
 import 'package:familyacademyclient/providers/subscription_provider.dart';
 import 'package:familyacademyclient/themes/app_themes.dart';
 import 'package:familyacademyclient/utils/helpers.dart';
+import 'package:familyacademyclient/utils/responsive_values.dart';
 import 'package:shimmer/shimmer.dart';
+import '../common/responsive_widgets.dart';
 
 class ChapterCard extends StatelessWidget {
   final Chapter chapter;
@@ -53,6 +55,181 @@ class ChapterCard extends StatelessWidget {
   String _getStatusText(bool hasAccess) {
     if (hasAccess) return 'START';
     return chapter.isFree ? 'FREE' : 'LOCKED';
+  }
+
+  Widget _buildGlassBottomSheet(BuildContext context, {required Widget child}) {
+    return ClipRRect(
+      borderRadius: const BorderRadius.only(
+        topLeft: Radius.circular(24),
+        topRight: Radius.circular(24),
+      ),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
+              ],
+            ),
+            border: Border.all(
+              color: AppColors.telegramBlue.withValues(alpha: 0.2),
+            ),
+          ),
+          child: Padding(
+            padding: ResponsiveValues.dialogPadding(context),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomSheetHandle(BuildContext context) {
+    return Center(
+      child: Container(
+        width: ResponsiveValues.spacingXXL(context),
+        height: ResponsiveValues.spacingXS(context),
+        decoration: BoxDecoration(
+          color: AppColors.getTextSecondary(context).withValues(alpha: 0.3),
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusSmall(context)),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGradientButton({
+    required String label,
+    required VoidCallback onPressed,
+    required List<Color> gradient,
+  }) {
+    return Builder(
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(colors: gradient),
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+          boxShadow: [
+            BoxShadow(
+              color: gradient.first.withValues(alpha: 0.3),
+              blurRadius: ResponsiveValues.spacingS(context),
+              offset: Offset(0, ResponsiveValues.spacingXS(context)),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onPressed,
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+            child: Container(
+              padding: EdgeInsets.symmetric(
+                vertical: ResponsiveValues.spacingM(context),
+              ),
+              alignment: Alignment.center,
+              child: ResponsiveText(
+                label,
+                style: AppTextStyles.labelLarge(context).copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDialogContent(
+    BuildContext context, {
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String message,
+    required String buttonText,
+    required VoidCallback onButtonPressed,
+  }) {
+    return ResponsiveColumn(
+      children: [
+        ResponsiveRow(
+          children: [
+            Container(
+              padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
+              decoration: BoxDecoration(
+                color: iconColor.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: ResponsiveIcon(
+                icon,
+                size: ResponsiveValues.iconSizeL(context),
+                color: iconColor,
+              ),
+            ),
+            const ResponsiveSizedBox(width: AppSpacing.l),
+            Expanded(
+              child: ResponsiveColumn(
+                children: [
+                  ResponsiveText(
+                    title,
+                    style: AppTextStyles.titleMedium(context).copyWith(
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  const ResponsiveSizedBox(height: AppSpacing.xs),
+                  ResponsiveText(
+                    message,
+                    style: AppTextStyles.bodySmall(context).copyWith(
+                      color: AppColors.getTextSecondary(context),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const ResponsiveSizedBox(height: AppSpacing.xl),
+        ResponsiveRow(
+          children: [
+            Expanded(
+              child: TextButton(
+                onPressed: () => Navigator.pop(context),
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.symmetric(
+                    vertical: ResponsiveValues.spacingM(context),
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(
+                      ResponsiveValues.radiusMedium(context),
+                    ),
+                  ),
+                ),
+                child: ResponsiveText(
+                  'Cancel',
+                  style: AppTextStyles.labelLarge(context).copyWith(
+                    color: AppColors.getTextSecondary(context),
+                  ),
+                ),
+              ),
+            ),
+            const ResponsiveSizedBox(width: AppSpacing.m),
+            Expanded(
+              child: _buildGradientButton(
+                label: buttonText,
+                onPressed: onButtonPressed,
+                gradient: AppColors.blueGradient,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
   }
 
   Future<void> _handleTap(BuildContext context) async {
@@ -110,11 +287,11 @@ class ChapterCard extends StatelessWidget {
       backgroundColor: Colors.transparent,
       builder: (context) => _buildGlassBottomSheet(
         context,
-        child: Column(
+        child: ResponsiveColumn(
           mainAxisSize: MainAxisSize.min,
           children: [
             _buildBottomSheetHandle(context),
-            const SizedBox(height: 20),
+            const ResponsiveSizedBox(height: AppSpacing.xl),
             _buildDialogContent(
               context,
               icon: Icons.lock_open_rounded,
@@ -144,11 +321,11 @@ class ChapterCard extends StatelessWidget {
       backgroundColor: Colors.transparent,
       builder: (context) => _buildGlassBottomSheet(
         context,
-        child: Column(
+        child: ResponsiveColumn(
           mainAxisSize: MainAxisSize.min,
           children: [
             _buildBottomSheetHandle(context),
-            const SizedBox(height: 20),
+            const ResponsiveSizedBox(height: AppSpacing.xl),
             _buildDialogContent(
               context,
               icon: Icons.schedule_rounded,
@@ -160,167 +337,6 @@ class ChapterCard extends StatelessWidget {
               onButtonPressed: () => Navigator.pop(context),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGlassBottomSheet(BuildContext context, {required Widget child}) {
-    return ClipRRect(
-      borderRadius: const BorderRadius.only(
-        topLeft: Radius.circular(24),
-        topRight: Radius.circular(24),
-      ),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.getCard(context).withValues(alpha: 0.4),
-                AppColors.getCard(context).withValues(alpha: 0.2),
-              ],
-            ),
-            border: Border.all(
-              color: AppColors.telegramBlue.withValues(alpha: 0.2),
-            ),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: child,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBottomSheetHandle(BuildContext context) {
-    return Center(
-      child: Container(
-        width: 40,
-        height: 4,
-        decoration: BoxDecoration(
-          color: AppColors.getTextSecondary(context).withValues(alpha: 0.3),
-          borderRadius: BorderRadius.circular(2),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDialogContent(
-    BuildContext context, {
-    required IconData icon,
-    required Color iconColor,
-    required String title,
-    required String message,
-    required String buttonText,
-    required VoidCallback onButtonPressed,
-  }) {
-    return Column(
-      children: [
-        Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: iconColor.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, color: iconColor, size: 28),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: AppTextStyles.titleMedium.copyWith(
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: -0.3,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    message,
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.getTextSecondary(context),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 24),
-        Row(
-          children: [
-            Expanded(
-              child: TextButton(
-                onPressed: () => Navigator.pop(context),
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-                child: Text(
-                  'Cancel',
-                  style: AppTextStyles.labelLarge.copyWith(
-                    color: AppColors.getTextSecondary(context),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildGradientButton(
-                label: buttonText,
-                onPressed: onButtonPressed,
-                gradient: const [Color(0xFF2AABEE), Color(0xFF5856D6)],
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildGradientButton({
-    required String label,
-    required VoidCallback onPressed,
-    required List<Color> gradient,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(colors: gradient),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: gradient.first.withValues(alpha: 0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onPressed,
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            alignment: Alignment.center,
-            child: Text(
-              label,
-              style: AppTextStyles.labelLarge.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
         ),
       ),
     );
@@ -340,20 +356,18 @@ class ChapterCard extends StatelessWidget {
         final statusColor = _getStatusColor(context, hasAccess);
         final statusBgColor = _getStatusBackgroundColor(context, hasAccess);
 
-        final screenWidth = MediaQuery.of(context).size.width;
-        final isMobile = screenWidth < 600;
-        final isTablet = screenWidth >= 600 && screenWidth < 1024;
-
-        final iconSize = isMobile ? 48.0 : (isTablet ? 56.0 : 64.0);
-        final titleSize = isMobile ? 15.0 : (isTablet ? 16.0 : 17.0);
-        final padding = isMobile
-            ? AppThemes.spacingL
-            : (isTablet ? AppThemes.spacingXL : AppThemes.spacingXXL);
+        final iconSize = ResponsiveValues.iconSizeXXL(context);
+        final titleSize = ResponsiveValues.fontTitleMedium(context);
+        final padding = ResponsiveValues.cardPadding(context);
 
         return Container(
-          margin: margin ?? const EdgeInsets.only(bottom: AppThemes.spacingL),
+          margin: margin ??
+              EdgeInsets.only(
+                bottom: ResponsiveValues.spacingL(context),
+              ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(24),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
               child: Container(
@@ -366,7 +380,8 @@ class ChapterCard extends StatelessWidget {
                       AppColors.getCard(context).withValues(alpha: 0.2),
                     ],
                   ),
-                  borderRadius: BorderRadius.circular(24),
+                  borderRadius: BorderRadius.circular(
+                      ResponsiveValues.radiusXLarge(context)),
                   border: Border.all(
                     color: hasAccess
                         ? AppColors.telegramGreen.withValues(alpha: 0.3)
@@ -381,10 +396,11 @@ class ChapterCard extends StatelessWidget {
                   color: Colors.transparent,
                   child: InkWell(
                     onTap: () => _handleTap(context),
-                    borderRadius: BorderRadius.circular(24),
+                    borderRadius: BorderRadius.circular(
+                        ResponsiveValues.radiusXLarge(context)),
                     child: Padding(
-                      padding: EdgeInsets.all(padding),
-                      child: Row(
+                      padding: padding,
+                      child: ResponsiveRow(
                         children: [
                           Container(
                             width: iconSize,
@@ -398,26 +414,28 @@ class ChapterCard extends StatelessWidget {
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                               ),
-                              borderRadius: BorderRadius.circular(20),
+                              borderRadius: BorderRadius.circular(
+                                ResponsiveValues.radiusLarge(context),
+                              ),
                               border: Border.all(
                                 color: statusColor.withValues(alpha: 0.3),
                                 width: 1.5,
                               ),
                             ),
-                            child: Icon(
+                            child: ResponsiveIcon(
                               _getStatusIcon(hasAccess),
-                              color: statusColor,
                               size: iconSize * 0.5,
+                              color: statusColor,
                             ),
                           ),
-                          const SizedBox(width: 16),
+                          const ResponsiveSizedBox(width: AppSpacing.l),
                           Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            child: ResponsiveColumn(
                               children: [
-                                Text(
+                                ResponsiveText(
                                   chapter.name,
-                                  style: AppTextStyles.titleMedium.copyWith(
+                                  style: AppTextStyles.titleMedium(context)
+                                      .copyWith(
                                     fontWeight: FontWeight.w600,
                                     fontSize: titleSize,
                                     letterSpacing: -0.3,
@@ -425,31 +443,38 @@ class ChapterCard extends StatelessWidget {
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                 ),
-                                const SizedBox(height: 8),
+                                const ResponsiveSizedBox(height: AppSpacing.s),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 4,
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal:
+                                        ResponsiveValues.spacingS(context),
+                                    vertical:
+                                        ResponsiveValues.spacingXXS(context),
                                   ),
                                   decoration: BoxDecoration(
                                     color: statusBgColor,
-                                    borderRadius: BorderRadius.circular(20),
+                                    borderRadius: BorderRadius.circular(
+                                      ResponsiveValues.radiusFull(context),
+                                    ),
                                     border: Border.all(
                                       color: statusColor.withValues(alpha: 0.3),
                                     ),
                                   ),
-                                  child: Row(
+                                  child: ResponsiveRow(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      Icon(
+                                      ResponsiveIcon(
                                         _getStatusIcon(hasAccess),
-                                        size: 12,
+                                        size: ResponsiveValues.iconSizeXXS(
+                                            context),
                                         color: statusColor,
                                       ),
-                                      const SizedBox(width: 4),
-                                      Text(
+                                      const ResponsiveSizedBox(
+                                          width: AppSpacing.xs),
+                                      ResponsiveText(
                                         _getStatusText(hasAccess),
-                                        style: AppTextStyles.caption.copyWith(
+                                        style: AppTextStyles.caption(context)
+                                            .copyWith(
                                           color: statusColor,
                                           fontWeight: FontWeight.w600,
                                         ),
@@ -459,10 +484,13 @@ class ChapterCard extends StatelessWidget {
                                 ),
                                 if (!hasAccess && !chapter.isFree)
                                   Padding(
-                                    padding: const EdgeInsets.only(top: 8),
-                                    child: Text(
+                                    padding: EdgeInsets.only(
+                                      top: ResponsiveValues.spacingS(context),
+                                    ),
+                                    child: ResponsiveText(
                                       'Purchase "$categoryName" to unlock',
-                                      style: AppTextStyles.caption.copyWith(
+                                      style: AppTextStyles.caption(context)
+                                          .copyWith(
                                         color:
                                             AppColors.getTextSecondary(context),
                                       ),
@@ -472,18 +500,20 @@ class ChapterCard extends StatelessWidget {
                             ),
                           ),
                           Container(
-                            padding: const EdgeInsets.all(8),
+                            padding: EdgeInsets.all(
+                                ResponsiveValues.spacingS(context)),
                             decoration: BoxDecoration(
                               color: hasAccess
-                                  ? AppColors.telegramBlue.withValues(alpha: 0.1)
+                                  ? AppColors.telegramBlue
+                                      .withValues(alpha: 0.1)
                                   : Colors.transparent,
                               shape: BoxShape.circle,
                             ),
-                            child: Icon(
+                            child: ResponsiveIcon(
                               hasAccess
                                   ? Icons.chevron_right_rounded
                                   : Icons.lock_rounded,
-                              size: isMobile ? 20 : (isTablet ? 24 : 28),
+                              size: ResponsiveValues.iconSizeL(context),
                               color: hasAccess
                                   ? AppColors.telegramBlue
                                   : AppColors.getTextSecondary(context),
@@ -521,23 +551,20 @@ class ChapterCardShimmer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = screenWidth < 600;
-    final isTablet = screenWidth >= 600 && screenWidth < 1024;
-
-    final iconSize = isMobile ? 48.0 : (isTablet ? 56.0 : 64.0);
-    final padding = isMobile
-        ? AppThemes.spacingL
-        : (isTablet ? AppThemes.spacingXL : AppThemes.spacingXXL);
+    final iconSize = ResponsiveValues.iconSizeXXL(context);
+    final padding = ResponsiveValues.cardPadding(context);
 
     return Container(
-      margin: const EdgeInsets.only(bottom: AppThemes.spacingL),
+      margin: EdgeInsets.only(
+        bottom: ResponsiveValues.spacingL(context),
+      ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
           child: Container(
-            padding: EdgeInsets.all(padding),
+            padding: padding,
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
@@ -547,12 +574,13 @@ class ChapterCardShimmer extends StatelessWidget {
                   AppColors.getCard(context).withValues(alpha: 0.2),
                 ],
               ),
-              borderRadius: BorderRadius.circular(24),
+              borderRadius:
+                  BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
               border: Border.all(
                 color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
               ),
             ),
-            child: Row(
+            child: ResponsiveRow(
               children: [
                 Shimmer.fromColors(
                   baseColor: isDark ? Colors.grey[800]! : Colors.grey[300]!,
@@ -563,14 +591,15 @@ class ChapterCardShimmer extends StatelessWidget {
                     height: iconSize,
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(
+                        ResponsiveValues.radiusLarge(context),
+                      ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 16),
+                const ResponsiveSizedBox(width: AppSpacing.l),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: ResponsiveColumn(
                     children: [
                       Shimmer.fromColors(
                         baseColor:
@@ -579,25 +608,29 @@ class ChapterCardShimmer extends StatelessWidget {
                             isDark ? Colors.grey[700]! : Colors.grey[100]!,
                         child: Container(
                           width: double.infinity,
-                          height: 20,
+                          height: ResponsiveValues.spacingXL(context),
                           decoration: BoxDecoration(
                             color: Colors.white,
-                            borderRadius: BorderRadius.circular(4),
+                            borderRadius: BorderRadius.circular(
+                              ResponsiveValues.radiusSmall(context),
+                            ),
                           ),
                         ),
                       ),
-                      const SizedBox(height: 12),
+                      const ResponsiveSizedBox(height: AppSpacing.m),
                       Shimmer.fromColors(
                         baseColor:
                             isDark ? Colors.grey[800]! : Colors.grey[300]!,
                         highlightColor:
                             isDark ? Colors.grey[700]! : Colors.grey[100]!,
                         child: Container(
-                          width: 80,
-                          height: 24,
+                          width: ResponsiveValues.spacingXXL(context) * 2,
+                          height: ResponsiveValues.spacingXL(context),
                           decoration: BoxDecoration(
                             color: Colors.white,
-                            borderRadius: BorderRadius.circular(20),
+                            borderRadius: BorderRadius.circular(
+                              ResponsiveValues.radiusFull(context),
+                            ),
                           ),
                         ),
                       ),
@@ -609,8 +642,8 @@ class ChapterCardShimmer extends StatelessWidget {
                   highlightColor:
                       isDark ? Colors.grey[700]! : Colors.grey[100]!,
                   child: Container(
-                    width: 32,
-                    height: 32,
+                    width: ResponsiveValues.iconSizeL(context),
+                    height: ResponsiveValues.iconSizeL(context),
                     decoration: const BoxDecoration(
                       color: Colors.white,
                       shape: BoxShape.circle,

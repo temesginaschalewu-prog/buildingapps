@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:familyacademyclient/utils/helpers.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
+import 'package:familyacademyclient/utils/responsive_values.dart';
 import 'package:familyacademyclient/themes/app_themes.dart';
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/themes/app_text_styles.dart';
@@ -15,6 +16,8 @@ import '../../providers/subscription_provider.dart';
 import '../../widgets/common/loading_indicator.dart';
 import '../../widgets/common/empty_state.dart';
 import '../../models/subscription_model.dart';
+import '../../widgets/common/responsive_widgets.dart';
+import '../../widgets/common/app_bar.dart';
 
 class SubscriptionScreen extends StatefulWidget {
   const SubscriptionScreen({super.key});
@@ -28,15 +31,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
   bool _isRefreshing = false;
   bool _isOffline = false;
   Timer? _refreshTimer;
-  late AnimationController _pulseAnimationController;
+  String _refreshSubtitle = '';
 
   @override
   void initState() {
     super.initState();
-
-    _pulseAnimationController =
-        AnimationController(vsync: this, duration: 1.seconds)
-          ..repeat(reverse: true);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkConnectivity();
@@ -50,8 +49,90 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
   @override
   void dispose() {
     _refreshTimer?.cancel();
-    _pulseAnimationController.dispose();
     super.dispose();
+  }
+
+  Widget _buildGlassContainer({required Widget child}) {
+    return ClipRRect(
+      borderRadius:
+          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
+              ],
+            ),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
+            border: Border.all(
+              color: AppColors.telegramBlue.withValues(alpha: 0.2),
+            ),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGradientButton({
+    required String label,
+    required VoidCallback? onPressed,
+    required List<Color> gradient,
+    bool isLoading = false,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: onPressed != null ? LinearGradient(colors: gradient) : null,
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+        boxShadow: onPressed != null
+            ? [
+                BoxShadow(
+                  color: gradient.first.withValues(alpha: 0.3),
+                  blurRadius: ResponsiveValues.spacingS(context),
+                  offset: Offset(0, ResponsiveValues.spacingXS(context)),
+                ),
+              ]
+            : null,
+      ),
+      child: Material(
+        color: onPressed != null ? Colors.transparent : Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+          child: Container(
+            padding: EdgeInsets.symmetric(
+              vertical: ResponsiveValues.spacingL(context),
+            ),
+            alignment: Alignment.center,
+            child: isLoading
+                ? SizedBox(
+                    width: ResponsiveValues.iconSizeM(context),
+                    height: ResponsiveValues.iconSizeM(context),
+                    child: const CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation(Colors.white),
+                    ),
+                  )
+                : ResponsiveText(
+                    label,
+                    style: AppTextStyles.buttonMedium(context).copyWith(
+                      color: onPressed != null
+                          ? Colors.white
+                          : AppColors.getTextSecondary(context),
+                    ),
+                  ),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _checkConnectivity() async {
@@ -69,19 +150,21 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
         forceRefresh: forceRefresh && !_isOffline);
   }
 
-  Future<void> _refreshData() async {
-    setState(() => _isRefreshing = true);
+  Future<void> _manualRefresh() async {
+    if (_isRefreshing) return;
 
     final hasConnection = await hasInternetConnection();
     if (!hasConnection) {
-      setState(() {
-        _isOffline = true;
-        _isRefreshing = false;
-      });
+      setState(() => _isOffline = true);
       showTopSnackBar(context, 'You are offline. Using cached data.',
           isError: true);
       return;
     }
+
+    setState(() {
+      _isRefreshing = true;
+      _refreshSubtitle = 'Refreshing...';
+    });
 
     try {
       final subscriptionProvider =
@@ -92,34 +175,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
     } catch (e) {
       showTopSnackBar(context, 'Refresh failed: $e', isError: true);
     } finally {
-      if (mounted) setState(() => _isRefreshing = false);
+      setState(() {
+        _isRefreshing = false;
+        _refreshSubtitle = '';
+      });
     }
-  }
-
-  Widget _buildGlassContainer({required Widget child}) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.getCard(context).withValues(alpha: 0.4),
-                AppColors.getCard(context).withValues(alpha: 0.2),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: AppColors.telegramBlue.withValues(alpha: 0.2),
-            ),
-          ),
-          child: child,
-        ),
-      ),
-    );
   }
 
   Widget _buildSubscriptionCard(Subscription subscription) {
@@ -137,9 +197,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
 
     return Container(
       margin: EdgeInsets.symmetric(
-        horizontal: ScreenSize.responsiveValue(
-            context: context, mobile: 16, tablet: 20, desktop: 24),
-        vertical: 8,
+        horizontal: ResponsiveValues.spacingL(context),
+        vertical: ResponsiveValues.spacingS(context),
       ),
       child: _buildGlassContainer(
         child: Material(
@@ -163,20 +222,20 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                     });
                   }
                 : null,
-            borderRadius: BorderRadius.circular(24),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
             splashColor: AppColors.telegramBlue.withValues(alpha: 0.1),
             highlightColor: Colors.transparent,
             child: Padding(
-              padding: EdgeInsets.all(ScreenSize.responsiveValue(
-                  context: context, mobile: 16, tablet: 20, desktop: 24)),
-              child: Column(
+              padding: ResponsiveValues.cardPadding(context),
+              child: ResponsiveColumn(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
+                  ResponsiveRow(
                     children: [
                       Container(
-                        width: 48,
-                        height: 48,
+                        width: ResponsiveValues.iconSizeXL(context) * 1.5,
+                        height: ResponsiveValues.iconSizeXL(context) * 1.5,
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
@@ -184,47 +243,50 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                               statusColor.withValues(alpha: 0.05),
                             ],
                           ),
-                          borderRadius: BorderRadius.circular(16),
+                          borderRadius: BorderRadius.circular(
+                            ResponsiveValues.radiusMedium(context),
+                          ),
                           border: Border.all(color: statusColor, width: 1.5),
                         ),
-                        child: Icon(
+                        child: Center(
+                          child: ResponsiveIcon(
                             _getCategoryIcon(subscription.categoryName ?? ''),
+                            size: ResponsiveValues.iconSizeL(context),
                             color: statusColor,
-                            size: 24),
+                          ),
+                        ),
                       ),
-                      const SizedBox(width: 16),
+                      ResponsiveSizedBox(width: AppSpacing.l),
                       Expanded(
-                        child: Column(
+                        child: ResponsiveColumn(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
+                            ResponsiveText(
                               subscription.categoryName ?? 'Unknown Category',
-                              style: AppTextStyles.titleMedium.copyWith(
-                                color: AppColors.getTextPrimary(context),
-                                fontSize: ScreenSize.responsiveFontSize(
-                                    context: context,
-                                    mobile: 16,
-                                    tablet: 18,
-                                    desktop: 20),
+                              style:
+                                  AppTextStyles.titleMedium(context).copyWith(
                                 fontWeight: FontWeight.w600,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
-                            const SizedBox(height: 4),
-                            Text(
+                            ResponsiveSizedBox(height: AppSpacing.xs),
+                            ResponsiveText(
                               subscription.billingCycle == 'monthly'
                                   ? 'Monthly Subscription'
                                   : 'Semester Subscription',
-                              style: AppTextStyles.bodySmall.copyWith(
-                                  color: AppColors.getTextSecondary(context)),
+                              style: AppTextStyles.bodySmall(context).copyWith(
+                                color: AppColors.getTextSecondary(context),
+                              ),
                             ),
                           ],
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 4),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: ResponsiveValues.spacingM(context),
+                          vertical: ResponsiveValues.spacingXS(context),
+                        ),
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
@@ -232,154 +294,131 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                               statusColor.withValues(alpha: 0.05),
                             ],
                           ),
-                          borderRadius: BorderRadius.circular(20),
+                          borderRadius: BorderRadius.circular(
+                            ResponsiveValues.radiusFull(context),
+                          ),
                           border: Border.all(color: statusColor),
                         ),
-                        child: Text(
+                        child: ResponsiveText(
                           _getStatusText(status),
-                          style: AppTextStyles.statusBadge.copyWith(
+                          style: AppTextStyles.statusBadge(context).copyWith(
                             color: statusColor,
-                            fontSize: ScreenSize.responsiveFontSize(
-                                context: context,
-                                mobile: 10,
-                                tablet: 11,
-                                desktop: 12),
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  ResponsiveSizedBox(height: AppSpacing.l),
                   if (isActive && !isExpired && isExpiringSoon)
-                    Column(
+                    ResponsiveColumn(
                       children: [
-                        Row(
+                        ResponsiveRow(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text('Expires in $daysRemaining days',
-                                style: AppTextStyles.labelSmall.copyWith(
-                                    color:
-                                        AppColors.getTextSecondary(context))),
-                            Text('${((1 - progressValue) * 100).toInt()}% used',
-                                style: AppTextStyles.labelSmall.copyWith(
-                                    color: statusColor,
-                                    fontWeight: FontWeight.w600)),
+                            ResponsiveText(
+                              'Expires in $daysRemaining days',
+                              style: AppTextStyles.labelSmall(context).copyWith(
+                                color: AppColors.getTextSecondary(context),
+                              ),
+                            ),
+                            ResponsiveText(
+                              '${((1 - progressValue) * 100).toInt()}% used',
+                              style: AppTextStyles.labelSmall(context).copyWith(
+                                color: statusColor,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           ],
                         ),
-                        const SizedBox(height: 8),
+                        ResponsiveSizedBox(height: AppSpacing.s),
                         ClipRRect(
-                          borderRadius: BorderRadius.circular(20),
+                          borderRadius: BorderRadius.circular(
+                            ResponsiveValues.radiusFull(context),
+                          ),
                           child: LinearProgressIndicator(
                             value: progressValue.clamp(0.0, 1.0),
                             backgroundColor: AppColors.getSurface(context)
                                 .withValues(alpha: 0.3),
                             color: statusColor,
-                            minHeight: 6,
+                            minHeight:
+                                ResponsiveValues.progressBarHeight(context),
                           ),
                         ),
-                        const SizedBox(height: 16),
+                        ResponsiveSizedBox(height: AppSpacing.l),
                       ],
                     ),
                   _buildGlassContainer(
                     child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
+                      padding: ResponsiveValues.cardPadding(context),
+                      child: ResponsiveColumn(
                         children: [
                           _buildInfoRow(
-                              icon: Icons.calendar_today_rounded,
-                              label: 'Start Date',
-                              value: _formatDate(subscription.startDate)),
-                          const SizedBox(height: 12),
+                            icon: Icons.calendar_today_rounded,
+                            label: 'Start Date',
+                            value: _formatDate(subscription.startDate),
+                          ),
+                          ResponsiveSizedBox(height: AppSpacing.m),
                           _buildInfoRow(
-                              icon: isExpired
-                                  ? Icons.event_busy_rounded
-                                  : Icons.calendar_month_rounded,
-                              label: 'Expiry Date',
-                              value: _formatDate(subscription.expiryDate),
-                              valueColor: isExpired ? statusColor : null),
-                          const SizedBox(height: 12),
+                            icon: isExpired
+                                ? Icons.event_busy_rounded
+                                : Icons.calendar_month_rounded,
+                            label: 'Expiry Date',
+                            value: _formatDate(subscription.expiryDate),
+                            valueColor: isExpired ? statusColor : null,
+                          ),
+                          ResponsiveSizedBox(height: AppSpacing.m),
                           _buildInfoRow(
-                              icon: Icons.repeat_rounded,
-                              label: 'Billing Cycle',
-                              value: subscription.billingCycle == 'monthly'
-                                  ? 'Monthly'
-                                  : 'Semester'),
+                            icon: Icons.repeat_rounded,
+                            label: 'Billing Cycle',
+                            value: subscription.billingCycle == 'monthly'
+                                ? 'Monthly'
+                                : 'Semester',
+                          ),
                           if (subscription.price != null) ...[
-                            const SizedBox(height: 12),
+                            ResponsiveSizedBox(height: AppSpacing.m),
                             _buildInfoRow(
-                                icon: Icons.payments_rounded,
-                                label: 'Price',
-                                value:
-                                    '${subscription.price!.toStringAsFixed(0)} ETB',
-                                valueColor: AppColors.telegramBlue),
+                              icon: Icons.payments_rounded,
+                              label: 'Price',
+                              value:
+                                  '${subscription.price!.toStringAsFixed(0)} ETB',
+                              valueColor: AppColors.telegramBlue,
+                            ),
                           ],
                           if (isActive && !isExpired) ...[
-                            const SizedBox(height: 12),
+                            ResponsiveSizedBox(height: AppSpacing.m),
                             _buildInfoRow(
-                                icon: Icons.timer_rounded,
-                                label: 'Days Remaining',
-                                value: '$daysRemaining days',
-                                valueColor:
-                                    isExpiringSoon ? statusColor : null),
+                              icon: Icons.timer_rounded,
+                              label: 'Days Remaining',
+                              value: '$daysRemaining days',
+                              valueColor: isExpiringSoon ? statusColor : null,
+                            ),
                           ],
                         ],
                       ),
                     ),
                   ),
                   if ((isExpired || isExpiringSoon) && !_isOffline) ...[
-                    const SizedBox(height: 24),
+                    ResponsiveSizedBox(height: AppSpacing.xl),
                     SizedBox(
                       width: double.infinity,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: isExpired
-                                ? [
-                                    AppColors.telegramRed,
-                                    AppColors.telegramOrange
-                                  ]
-                                : [
-                                    AppColors.telegramBlue,
-                                    AppColors.telegramPurple
-                                  ],
-                          ),
-                          borderRadius: BorderRadius.circular(
-                              AppThemes.borderRadiusMedium),
-                          boxShadow: [
-                            BoxShadow(
-                              color: statusColor.withValues(alpha: 0.3),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: ElevatedButton(
-                          onPressed: () {
-                            context.push('/payment', extra: {
-                              'category': {
-                                'id': subscription.categoryId,
-                                'name': subscription.categoryName ?? 'Category',
-                                'price': subscription.price,
-                                'billing_cycle': subscription.billingCycle,
-                                'isFree': false,
-                              },
-                              'paymentType': 'repayment',
-                            });
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.transparent,
-                            foregroundColor: Colors.white,
-                            shadowColor: Colors.transparent,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(
-                                    AppThemes.borderRadiusMedium)),
-                          ),
-                          child: Text(isExpired ? 'Renew Now' : 'Extend Now',
-                              style: AppTextStyles.buttonMedium
-                                  .copyWith(color: Colors.white)),
-                        ),
+                      child: _buildGradientButton(
+                        label: isExpired ? 'Renew Now' : 'Extend Now',
+                        onPressed: () {
+                          context.push('/payment', extra: {
+                            'category': {
+                              'id': subscription.categoryId,
+                              'name': subscription.categoryName ?? 'Category',
+                              'price': subscription.price,
+                              'billing_cycle': subscription.billingCycle,
+                              'isFree': false,
+                            },
+                            'paymentType': 'repayment',
+                          });
+                        },
+                        gradient: isExpired
+                            ? [AppColors.telegramRed, AppColors.telegramOrange]
+                            : AppColors.blueGradient,
                       ),
                     ),
                   ],
@@ -418,34 +457,48 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
     }
   }
 
-  Widget _buildInfoRow(
-      {required IconData icon,
-      required String label,
-      required String value,
-      Color? valueColor}) {
-    return Row(
+  Widget _buildInfoRow({
+    required IconData icon,
+    required String label,
+    required String value,
+    Color? valueColor,
+  }) {
+    return ResponsiveRow(
       children: [
         Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    AppColors.telegramBlue.withValues(alpha: 0.2),
-                    AppColors.telegramPurple.withValues(alpha: 0.1),
-                  ],
-                ),
-                shape: BoxShape.circle),
-            child: Icon(icon, size: 16, color: AppColors.telegramBlue)),
-        const SizedBox(width: 12),
+          width: ResponsiveValues.iconSizeL(context),
+          height: ResponsiveValues.iconSizeL(context),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                AppColors.telegramBlue.withValues(alpha: 0.2),
+                AppColors.telegramPurple.withValues(alpha: 0.1),
+              ],
+            ),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            icon,
+            size: ResponsiveValues.iconSizeXS(context),
+            color: AppColors.telegramBlue,
+          ),
+        ),
+        ResponsiveSizedBox(width: AppSpacing.m),
         Expanded(
-            child: Text(label,
-                style: AppTextStyles.bodyMedium
-                    .copyWith(color: AppColors.getTextSecondary(context)))),
-        Text(value,
-            style: AppTextStyles.bodyMedium.copyWith(
-                color: valueColor ?? AppColors.getTextPrimary(context),
-                fontWeight: FontWeight.w600)),
+          child: ResponsiveText(
+            label,
+            style: AppTextStyles.bodyMedium(context).copyWith(
+              color: AppColors.getTextSecondary(context),
+            ),
+          ),
+        ),
+        ResponsiveText(
+          value,
+          style: AppTextStyles.bodyMedium(context).copyWith(
+            color: valueColor ?? AppColors.getTextPrimary(context),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ],
     );
   }
@@ -454,133 +507,77 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
   }
 
-  Widget _buildExpiringSoonBanner(int count) {
-    return Container(
-      margin: EdgeInsets.symmetric(
-        horizontal: ScreenSize.responsiveValue(
-            context: context, mobile: 16, tablet: 20, desktop: 24),
-        vertical: 8,
-      ),
-      child: _buildGlassContainer(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              AnimatedBuilder(
-                animation: _pulseAnimationController,
-                builder: (context, child) {
-                  return Transform.scale(
-                    scale: 1 + _pulseAnimationController.value * 0.1,
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            AppColors.statusPending.withValues(alpha: 0.2),
-                            AppColors.statusPending.withValues(alpha: 0.1),
-                          ],
-                        ),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.warning_amber_rounded,
-                          color: AppColors.statusPending, size: 24),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Renewal Needed',
-                        style: AppTextStyles.titleSmall.copyWith(
-                            color: AppColors.statusPending,
-                            fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 4),
-                    Text(
-                        count == 1
-                            ? '1 subscription is expiring soon'
-                            : '$count subscriptions are expiring soon',
-                        style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.getTextSecondary(context))),
-                  ],
-                ),
-              ),
-              const Icon(Icons.arrow_forward_rounded,
-                  color: AppColors.statusPending),
-            ],
-          ),
-        ),
-      ),
-    ).animate().shake(duration: 1.seconds, delay: 500.ms);
-  }
-
   Widget _buildSkeletonLoader() {
     return Container(
-      margin: const EdgeInsets.all(16),
+      margin: EdgeInsets.symmetric(
+        horizontal: ResponsiveValues.spacingL(context),
+      ),
       child: _buildGlassContainer(
         child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
+          padding: ResponsiveValues.cardPadding(context),
+          child: ResponsiveColumn(
             children: List.generate(
-                5,
-                (index) => Padding(
-                      padding: const EdgeInsets.only(bottom: 16),
-                      child: Row(
+              5,
+              (index) => Padding(
+                padding: EdgeInsets.only(
+                  bottom: ResponsiveValues.spacingL(context),
+                ),
+                child: ResponsiveRow(
+                  children: [
+                    Shimmer.fromColors(
+                      baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                      highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
+                      child: Container(
+                        width: ResponsiveValues.iconSizeXL(context) * 1.5,
+                        height: ResponsiveValues.iconSizeXL(context) * 1.5,
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                    ResponsiveSizedBox(width: AppSpacing.l),
+                    Expanded(
+                      child: ResponsiveColumn(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Shimmer.fromColors(
                             baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
                             highlightColor:
                                 Colors.grey[100]!.withValues(alpha: 0.6),
                             child: Container(
-                              width: 48,
-                              height: 48,
-                              decoration: const BoxDecoration(
+                              height: ResponsiveValues.spacingXL(context),
+                              decoration: BoxDecoration(
                                 color: Colors.white,
-                                shape: BoxShape.circle,
+                                borderRadius: BorderRadius.circular(
+                                  ResponsiveValues.radiusSmall(context),
+                                ),
                               ),
                             ),
                           ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Shimmer.fromColors(
-                                  baseColor:
-                                      Colors.grey[300]!.withValues(alpha: 0.3),
-                                  highlightColor:
-                                      Colors.grey[100]!.withValues(alpha: 0.6),
-                                  child: Container(
-                                    height: 20,
-                                    decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                  ),
+                          ResponsiveSizedBox(height: AppSpacing.s),
+                          Shimmer.fromColors(
+                            baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                            highlightColor:
+                                Colors.grey[100]!.withValues(alpha: 0.6),
+                            child: Container(
+                              width: ResponsiveValues.spacingXXXL(context) * 2,
+                              height: ResponsiveValues.spacingL(context),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(
+                                  ResponsiveValues.radiusSmall(context),
                                 ),
-                                const SizedBox(height: 8),
-                                Shimmer.fromColors(
-                                  baseColor:
-                                      Colors.grey[300]!.withValues(alpha: 0.3),
-                                  highlightColor:
-                                      Colors.grey[100]!.withValues(alpha: 0.6),
-                                  child: Container(
-                                    height: 16,
-                                    width: 100,
-                                    decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                  ),
-                                ),
-                              ],
+                              ),
                             ),
                           ),
                         ],
                       ),
-                    )),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -590,207 +587,301 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
   Widget _buildMobileLayout(SubscriptionProvider subscriptionProvider) {
     final activeSubscriptions = subscriptionProvider.activeSubscriptions;
     final expiredSubscriptions = subscriptionProvider.expiredSubscriptions;
-    final expiringSoonSubscriptions =
-        subscriptionProvider.expiringSoonSubscriptions;
     final allSubscriptions = subscriptionProvider.allSubscriptions;
 
     if (subscriptionProvider.isLoading && allSubscriptions.isEmpty) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
-        appBar: _buildAppBar(),
-        body: _buildSkeletonLoader(),
+        appBar: AppBar(
+          leading: IconButton(
+            icon: ResponsiveIcon(
+              Icons.arrow_back_rounded,
+              color: AppColors.getTextPrimary(context),
+            ),
+            onPressed: () => context.pop(),
+          ),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+        ),
+        body: Center(child: _buildSkeletonLoader()),
       );
     }
 
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
-      appBar: _buildAppBar(),
-      body: CustomScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        slivers: [
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.all(ScreenSize.responsiveValue(
-                  context: context, mobile: 16, tablet: 20, desktop: 24)),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Subscriptions',
-                      style: AppTextStyles.displaySmall
-                          .copyWith(color: AppColors.getTextPrimary(context))),
-                  const SizedBox(height: 8),
-                  Text('Manage your course access and renewals',
-                      style: AppTextStyles.bodyLarge.copyWith(
-                          color: AppColors.getTextSecondary(context))),
-                ],
-              ),
-            ),
-          ),
-          if (_isOffline && allSubscriptions.isNotEmpty)
+      body: RefreshIndicator(
+        onRefresh: _manualRefresh,
+        color: AppColors.telegramBlue,
+        backgroundColor: AppColors.getSurface(context),
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            // App bar with back button
             SliverToBoxAdapter(
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      AppColors.telegramYellow.withValues(alpha: 0.2),
-                      AppColors.telegramYellow.withValues(alpha: 0.1),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: AppColors.telegramYellow.withValues(alpha: 0.3),
-                  ),
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: ResponsiveValues.spacingL(context),
+                  right: ResponsiveValues.spacingL(context),
+                  top: MediaQuery.of(context).padding.top +
+                      ResponsiveValues.spacingM(context),
+                  bottom: ResponsiveValues.spacingS(context),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.wifi_off_rounded,
-                        color: AppColors.telegramYellow, size: 20),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'Offline mode - showing cached subscriptions',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.telegramYellow,
+                    Container(
+                      width: ResponsiveValues.appBarButtonSize(context),
+                      height: ResponsiveValues.appBarButtonSize(context),
+                      decoration: BoxDecoration(
+                        color: AppColors.getSurface(context)
+                            .withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(
+                          ResponsiveValues.radiusFull(context) / 2,
                         ),
+                      ),
+                      child: IconButton(
+                        icon: ResponsiveIcon(
+                          Icons.arrow_back_rounded,
+                          size: ResponsiveValues.appBarIconSize(context),
+                          color: AppColors.getTextPrimary(context),
+                        ),
+                        onPressed: () => context.pop(),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'My Subscriptions',
+                            style:
+                                AppTextStyles.headlineSmall(context).copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _isRefreshing
+                                ? 'Refreshing...'
+                                : (_isOffline
+                                    ? 'Offline mode'
+                                    : 'Manage your subscriptions'),
+                            style: AppTextStyles.bodySmall(context).copyWith(
+                              color: AppColors.getTextSecondary(context),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
               ),
             ),
-          if (expiringSoonSubscriptions.isNotEmpty && !_isOffline)
             SliverToBoxAdapter(
-                child:
-                    _buildExpiringSoonBanner(expiringSoonSubscriptions.length)),
-          if (activeSubscriptions.isNotEmpty) ...[
-            SliverPadding(
-              padding: EdgeInsets.fromLTRB(
-                ScreenSize.responsiveValue(
-                    context: context, mobile: 16, tablet: 20, desktop: 24),
-                24,
-                ScreenSize.responsiveValue(
-                    context: context, mobile: 16, tablet: 20, desktop: 24),
-                8,
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: ResponsiveValues.spacingL(context),
+                  vertical: ResponsiveValues.spacingL(context),
+                ),
+                child: ResponsiveText(
+                  _isOffline
+                      ? 'Offline mode - showing cached subscriptions'
+                      : 'Your active and expired subscriptions',
+                  style: AppTextStyles.bodyMedium(context).copyWith(
+                    color: AppColors.getTextSecondary(context),
+                  ),
+                ),
               ),
-              sliver: SliverToBoxAdapter(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Active',
-                        style: AppTextStyles.titleLarge.copyWith(
-                            color: AppColors.getTextPrimary(context),
-                            fontWeight: FontWeight.w600)),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 4),
-                      decoration: BoxDecoration(
+            ),
+            if (_isOffline && allSubscriptions.isNotEmpty)
+              SliverToBoxAdapter(
+                child: Container(
+                  margin: EdgeInsets.symmetric(
+                    horizontal: ResponsiveValues.spacingL(context),
+                  ),
+                  padding: ResponsiveValues.cardPadding(context),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        AppColors.telegramYellow.withValues(alpha: 0.2),
+                        AppColors.telegramYellow.withValues(alpha: 0.1),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(
+                      ResponsiveValues.radiusMedium(context),
+                    ),
+                    border: Border.all(
+                      color: AppColors.telegramYellow.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: ResponsiveRow(
+                    children: [
+                      const Icon(Icons.wifi_off_rounded,
+                          color: AppColors.telegramYellow, size: 20),
+                      ResponsiveSizedBox(width: AppSpacing.m),
+                      Expanded(
+                        child: ResponsiveText(
+                          'Offline mode - showing cached subscriptions',
+                          style: AppTextStyles.bodySmall(context).copyWith(
+                            color: AppColors.telegramYellow,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            if (activeSubscriptions.isNotEmpty) ...[
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(
+                  ResponsiveValues.spacingL(context),
+                  ResponsiveValues.spacingXL(context),
+                  ResponsiveValues.spacingL(context),
+                  ResponsiveValues.spacingS(context),
+                ),
+                sliver: SliverToBoxAdapter(
+                  child: ResponsiveRow(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      ResponsiveText(
+                        'Active',
+                        style: AppTextStyles.titleLarge(context).copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: ResponsiveValues.spacingM(context),
+                          vertical: ResponsiveValues.spacingXS(context),
+                        ),
+                        decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
                               AppColors.telegramGreen.withValues(alpha: 0.2),
                               AppColors.telegramGreen.withValues(alpha: 0.1),
                             ],
                           ),
-                          borderRadius: BorderRadius.circular(20)),
-                      child: Text('${activeSubscriptions.length}',
-                          style: AppTextStyles.labelMedium.copyWith(
-                              color: AppColors.telegramGreen,
-                              fontWeight: FontWeight.w600)),
-                    ),
-                  ],
+                          borderRadius: BorderRadius.circular(
+                            ResponsiveValues.radiusFull(context),
+                          ),
+                        ),
+                        child: ResponsiveText(
+                          '${activeSubscriptions.length}',
+                          style: AppTextStyles.labelMedium(context).copyWith(
+                            color: AppColors.telegramGreen,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) =>
-                    _buildSubscriptionCard(activeSubscriptions[index]),
-                childCount: activeSubscriptions.length,
+              SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) =>
+                      _buildSubscriptionCard(activeSubscriptions[index]),
+                  childCount: activeSubscriptions.length,
+                ),
               ),
-            ),
-          ],
-          if (expiredSubscriptions.isNotEmpty) ...[
-            SliverPadding(
-              padding: EdgeInsets.fromLTRB(
-                ScreenSize.responsiveValue(
-                    context: context, mobile: 16, tablet: 20, desktop: 24),
-                32,
-                ScreenSize.responsiveValue(
-                    context: context, mobile: 16, tablet: 20, desktop: 24),
-                8,
-              ),
-              sliver: SliverToBoxAdapter(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Expired',
-                        style: AppTextStyles.titleLarge.copyWith(
-                            color: AppColors.getTextPrimary(context),
-                            fontWeight: FontWeight.w600)),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 4),
-                      decoration: BoxDecoration(
+            ],
+            if (expiredSubscriptions.isNotEmpty) ...[
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(
+                  ResponsiveValues.spacingL(context),
+                  ResponsiveValues.spacingXXL(context),
+                  ResponsiveValues.spacingL(context),
+                  ResponsiveValues.spacingS(context),
+                ),
+                sliver: SliverToBoxAdapter(
+                  child: ResponsiveRow(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      ResponsiveText(
+                        'Expired',
+                        style: AppTextStyles.titleLarge(context).copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: ResponsiveValues.spacingM(context),
+                          vertical: ResponsiveValues.spacingXS(context),
+                        ),
+                        decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
                               AppColors.telegramRed.withValues(alpha: 0.2),
                               AppColors.telegramRed.withValues(alpha: 0.1),
                             ],
                           ),
-                          borderRadius: BorderRadius.circular(20)),
-                      child: Text('${expiredSubscriptions.length}',
-                          style: AppTextStyles.labelMedium.copyWith(
-                              color: AppColors.telegramRed,
-                              fontWeight: FontWeight.w600)),
-                    ),
-                  ],
+                          borderRadius: BorderRadius.circular(
+                            ResponsiveValues.radiusFull(context),
+                          ),
+                        ),
+                        child: ResponsiveText(
+                          '${expiredSubscriptions.length}',
+                          style: AppTextStyles.labelMedium(context).copyWith(
+                            color: AppColors.telegramRed,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) =>
-                    _buildSubscriptionCard(expiredSubscriptions[index]),
-                childCount: expiredSubscriptions.length,
+              SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) =>
+                      _buildSubscriptionCard(expiredSubscriptions[index]),
+                  childCount: expiredSubscriptions.length,
+                ),
               ),
+            ],
+            if (allSubscriptions.isEmpty && !subscriptionProvider.isLoading)
+              SliverFillRemaining(
+                child: Center(
+                  child: _isOffline
+                      ? OfflineState(
+                          dataType: 'subscriptions',
+                          message: 'No cached subscriptions available.',
+                          onRetry: () {
+                            setState(() => _isOffline = false);
+                            _checkConnectivity();
+                            _manualRefresh();
+                          },
+                        )
+                      : EmptyState(
+                          lottieAsset: 'assets/lottie/empty_subscriptions.json',
+                          title: 'No Subscriptions',
+                          message:
+                              'You don\'t have any subscriptions yet.\nBrowse categories to get started.',
+                          actionText: 'Browse Categories',
+                          onAction: () => context.go('/'),
+                          type: EmptyStateType.noData,
+                        ),
+                ),
+              ),
+            if (subscriptionProvider.isLoading && allSubscriptions.isNotEmpty)
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Center(
+                    child: LoadingIndicator(
+                      size: 32,
+                      color: AppColors.telegramBlue,
+                    ),
+                  ),
+                ),
+              ),
+            SliverToBoxAdapter(
+              child: ResponsiveSizedBox(height: AppSpacing.xxl),
             ),
           ],
-          if (allSubscriptions.isEmpty && !subscriptionProvider.isLoading)
-            SliverFillRemaining(
-              child: Center(
-                child: _isOffline
-                    ? OfflineState(
-                        dataType: 'subscriptions',
-                        message: 'No cached subscriptions available.',
-                        onRetry: () {
-                          setState(() => _isOffline = false);
-                          _checkConnectivity();
-                          _refreshData();
-                        },
-                      )
-                    : EmptyState(
-                        lottieAsset: 'assets/lottie/empty_subscriptions.json',
-                        title: 'No Subscriptions',
-                        message:
-                            'You don\'t have any subscriptions yet.\nBrowse categories to get started.',
-                        actionText: 'Browse Categories',
-                        onAction: () => context.go('/'),
-                        type: EmptyStateType.noData,
-                      ),
-              ),
-            ),
-          if (subscriptionProvider.isLoading && allSubscriptions.isNotEmpty)
-            const SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Center(
-                    child: LoadingIndicator(
-                        size: 32, color: AppColors.telegramBlue)),
-              ),
-            ),
-          const SliverToBoxAdapter(child: SizedBox(height: 32)),
-        ],
+        ),
       ),
       floatingActionButton: allSubscriptions.isEmpty && !_isOffline
           ? FloatingActionButton(
@@ -804,289 +895,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
     );
   }
 
-  AppBar _buildAppBar() {
-    return AppBar(
-      title: Text('My Subscriptions',
-          style: AppTextStyles.appBarTitle
-              .copyWith(color: AppColors.getTextPrimary(context))),
-      backgroundColor: AppColors.getBackground(context),
-      elevation: 0,
-      surfaceTintColor: Colors.transparent,
-      centerTitle: false,
-      actions: [
-        IconButton(
-          icon: _isRefreshing
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: AppColors.telegramBlue))
-              : Icon(
-                  _isOffline ? Icons.wifi_off_rounded : Icons.refresh_rounded,
-                  color: _isOffline
-                      ? AppColors.telegramGray
-                      : AppColors.getTextSecondary(context)),
-          onPressed: _isRefreshing ? null : _refreshData,
-          tooltip: _isOffline ? 'Offline' : 'Refresh',
-        ),
-      ],
-    );
-  }
-
   Widget _buildDesktopLayout(SubscriptionProvider subscriptionProvider) {
-    final activeSubscriptions = subscriptionProvider.activeSubscriptions;
-    final expiredSubscriptions = subscriptionProvider.expiredSubscriptions;
-    final expiringSoonSubscriptions =
-        subscriptionProvider.expiringSoonSubscriptions;
-    final allSubscriptions = subscriptionProvider.allSubscriptions;
-
-    if (subscriptionProvider.isLoading && allSubscriptions.isEmpty) {
-      return Scaffold(
-        backgroundColor: AppColors.getBackground(context),
-        appBar: _buildAppBar(),
-        body: Center(child: _buildSkeletonLoader()),
-      );
-    }
-
-    return Scaffold(
-      backgroundColor: AppColors.getBackground(context),
-      appBar: _buildAppBar(),
-      body: SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        child: AdaptiveContainer(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 24),
-              Padding(
-                padding: EdgeInsets.symmetric(
-                    horizontal: ScreenSize.responsiveValue(
-                        context: context, mobile: 16, tablet: 20, desktop: 24)),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Subscriptions',
-                        style: AppTextStyles.displaySmall.copyWith(
-                            color: AppColors.getTextPrimary(context))),
-                    const SizedBox(height: 8),
-                    Text('Manage your course subscriptions and renewals',
-                        style: AppTextStyles.bodyLarge.copyWith(
-                            color: AppColors.getTextSecondary(context))),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 32),
-              if (_isOffline && allSubscriptions.isNotEmpty)
-                Padding(
-                  padding: EdgeInsets.symmetric(
-                      horizontal: ScreenSize.responsiveValue(
-                          context: context,
-                          mobile: 16,
-                          tablet: 20,
-                          desktop: 24)),
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          AppColors.telegramYellow.withValues(alpha: 0.2),
-                          AppColors.telegramYellow.withValues(alpha: 0.1),
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: AppColors.telegramYellow.withValues(alpha: 0.3),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.wifi_off_rounded,
-                            color: AppColors.telegramYellow, size: 20),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            'Offline mode - showing cached subscriptions',
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.telegramYellow,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              if (expiringSoonSubscriptions.isNotEmpty && !_isOffline)
-                Padding(
-                  padding: EdgeInsets.symmetric(
-                      horizontal: ScreenSize.responsiveValue(
-                          context: context,
-                          mobile: 16,
-                          tablet: 20,
-                          desktop: 24)),
-                  child: _buildExpiringSoonBanner(
-                      expiringSoonSubscriptions.length),
-                ),
-              if (expiringSoonSubscriptions.isNotEmpty)
-                const SizedBox(height: 32),
-              if (activeSubscriptions.isNotEmpty) ...[
-                Padding(
-                  padding: EdgeInsets.symmetric(
-                      horizontal: ScreenSize.responsiveValue(
-                          context: context,
-                          mobile: 16,
-                          tablet: 20,
-                          desktop: 24)),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Active Subscriptions',
-                          style: AppTextStyles.headlineMedium.copyWith(
-                              color: AppColors.getTextPrimary(context),
-                              fontWeight: FontWeight.w600)),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 4),
-                        decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                AppColors.telegramGreen.withValues(alpha: 0.2),
-                                AppColors.telegramGreen.withValues(alpha: 0.1),
-                              ],
-                            ),
-                            borderRadius: BorderRadius.circular(20)),
-                        child: Text('${activeSubscriptions.length} active',
-                            style: AppTextStyles.labelMedium.copyWith(
-                                color: AppColors.telegramGreen,
-                                fontWeight: FontWeight.w600)),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                ...activeSubscriptions.map((subscription) => Padding(
-                      padding: EdgeInsets.only(
-                        bottom: 16,
-                        left: ScreenSize.responsiveValue(
-                            context: context,
-                            mobile: 16,
-                            tablet: 20,
-                            desktop: 24),
-                        right: ScreenSize.responsiveValue(
-                            context: context,
-                            mobile: 16,
-                            tablet: 20,
-                            desktop: 24),
-                      ),
-                      child: _buildSubscriptionCard(subscription),
-                    )),
-                const SizedBox(height: 32),
-              ],
-              if (expiredSubscriptions.isNotEmpty) ...[
-                Padding(
-                  padding: EdgeInsets.symmetric(
-                      horizontal: ScreenSize.responsiveValue(
-                          context: context,
-                          mobile: 16,
-                          tablet: 20,
-                          desktop: 24)),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Expired Subscriptions',
-                          style: AppTextStyles.headlineMedium.copyWith(
-                              color: AppColors.getTextPrimary(context),
-                              fontWeight: FontWeight.w600)),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 4),
-                        decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                AppColors.telegramRed.withValues(alpha: 0.2),
-                                AppColors.telegramRed.withValues(alpha: 0.1),
-                              ],
-                            ),
-                            borderRadius: BorderRadius.circular(20)),
-                        child: Text('${expiredSubscriptions.length} expired',
-                            style: AppTextStyles.labelMedium.copyWith(
-                                color: AppColors.telegramRed,
-                                fontWeight: FontWeight.w600)),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                ...expiredSubscriptions.map((subscription) => Padding(
-                      padding: EdgeInsets.only(
-                        bottom: 16,
-                        left: ScreenSize.responsiveValue(
-                            context: context,
-                            mobile: 16,
-                            tablet: 20,
-                            desktop: 24),
-                        right: ScreenSize.responsiveValue(
-                            context: context,
-                            mobile: 16,
-                            tablet: 20,
-                            desktop: 24),
-                      ),
-                      child: _buildSubscriptionCard(subscription),
-                    )),
-                const SizedBox(height: 32),
-              ],
-              if (allSubscriptions.isEmpty && !subscriptionProvider.isLoading)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 64),
-                  child: Center(
-                    child: _isOffline
-                        ? OfflineState(
-                            dataType: 'subscriptions',
-                            message: 'No cached subscriptions available.',
-                            onRetry: () {
-                              setState(() => _isOffline = false);
-                              _checkConnectivity();
-                              _refreshData();
-                            },
-                          )
-                        : EmptyState(
-                            lottieAsset:
-                                'assets/lottie/empty_subscriptions.json',
-                            title: 'No Subscriptions Found',
-                            message:
-                                'You don\'t have any active subscriptions.\nBrowse categories to start learning.',
-                            actionText: 'Browse Categories',
-                            onAction: () => context.go('/'),
-                            type: EmptyStateType.noData,
-                          ),
-                  ),
-                ),
-              if (subscriptionProvider.isLoading && allSubscriptions.isNotEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 32),
-                  child: Center(
-                      child: LoadingIndicator(
-                          size: 40, color: AppColors.telegramBlue)),
-                ),
-              const SizedBox(height: 48),
-            ],
-          ),
-        ),
-      ),
-      floatingActionButton: allSubscriptions.isEmpty && !_isOffline
-          ? FloatingActionButton.extended(
-              onPressed: () => context.go('/'),
-              icon: const Icon(Icons.explore_rounded, color: Colors.white),
-              label: Text('Browse Categories',
-                  style:
-                      AppTextStyles.buttonMedium.copyWith(color: Colors.white)),
-              backgroundColor: AppColors.telegramBlue,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                  borderRadius:
-                      BorderRadius.circular(AppThemes.borderRadiusLarge)),
-            )
-          : null,
-    );
+    return _buildMobileLayout(subscriptionProvider);
   }
 
   @override

@@ -7,11 +7,13 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
+import 'package:familyacademyclient/utils/responsive_values.dart';
 import 'package:familyacademyclient/themes/app_themes.dart';
 import 'package:familyacademyclient/providers/category_provider.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../models/category_model.dart';
 import '../../themes/app_colors.dart';
+import '../../widgets/common/responsive_widgets.dart';
 
 class PaymentSuccessScreen extends StatefulWidget {
   final Map<String, dynamic>? extra;
@@ -35,7 +37,6 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
   String _categoryName = '';
   String _username = '';
   String _billingCycle = '';
-  int _months = 1;
   String _durationText = '';
   String? _accountHolderName;
   bool _animationComplete = false;
@@ -70,6 +71,142 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
     super.dispose();
   }
 
+  Widget _buildGlassContainer({required Widget child}) {
+    return ClipRRect(
+      borderRadius:
+          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
+              ],
+            ),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
+            border: Border.all(
+              color: AppColors.telegramBlue.withValues(alpha: 0.2),
+            ),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGradientButton({
+    required String label,
+    required VoidCallback onPressed,
+    required List<Color> gradient,
+    IconData? icon,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(colors: gradient),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+        boxShadow: [
+          BoxShadow(
+            color: gradient.first.withValues(alpha: 0.3),
+            blurRadius: ResponsiveValues.spacingS(context),
+            offset: Offset(0, ResponsiveValues.spacingXS(context)),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+          child: Container(
+            padding: EdgeInsets.symmetric(
+              vertical: ResponsiveValues.spacingL(context),
+            ),
+            alignment: Alignment.center,
+            child: ResponsiveRow(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (icon != null) ...[
+                  Icon(
+                    icon,
+                    size: ResponsiveValues.iconSizeS(context),
+                    color: Colors.white,
+                  ),
+                  const ResponsiveSizedBox(width: AppSpacing.s),
+                ],
+                ResponsiveText(
+                  label,
+                  style: AppTextStyles.buttonMedium(context).copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionChip({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusFull(context)),
+        child: Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: ResponsiveValues.spacingL(context),
+            vertical: ResponsiveValues.spacingS(context),
+          ),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                AppColors.getSurface(context).withValues(alpha: 0.3),
+                AppColors.getSurface(context).withValues(alpha: 0.1),
+              ],
+            ),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusFull(context)),
+            border: Border.all(
+              color: AppColors.getDivider(context).withValues(alpha: 0.2),
+            ),
+          ),
+          child: ResponsiveRow(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: ResponsiveValues.iconSizeXS(context),
+                color: AppColors.telegramBlue,
+              ),
+              const ResponsiveSizedBox(width: AppSpacing.xs),
+              ResponsiveText(
+                label,
+                style: AppTextStyles.labelSmall(context).copyWith(
+                  color: AppColors.telegramBlue,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _loadData() async {
     try {
       final args = widget.extra;
@@ -82,7 +219,6 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
         _categoryName = args['category_name'] as String? ?? '';
         _username = args['username'] as String? ?? '';
         _billingCycle = args['billing_cycle'] as String? ?? 'monthly';
-        _months = args['months'] as int? ?? 1;
         _durationText =
             args['duration_text'] as String? ?? _getAccessDurationText();
         _accountHolderName = args['account_holder_name'] as String?;
@@ -107,10 +243,10 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
           setState(() => _isLoading = false);
         }
       } else {
-        _tryToLoadFromCache();
+        await _tryToLoadFromCache();
       }
 
-      _checkAnimationController.forward();
+      await _checkAnimationController.forward();
       _startRedirectTimer();
       Future.delayed(1.seconds,
           () => mounted ? setState(() => _animationComplete = true) : null);
@@ -166,7 +302,6 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
               cachedPaymentData['categoryName'] ?? category?.name ?? '';
           _username = cachedPaymentData['username'] ?? '';
           _billingCycle = cachedPaymentData['billingCycle'] ?? 'monthly';
-          _months = cachedPaymentData['months'] ?? 1;
           _durationText =
               cachedPaymentData['durationText'] ?? _getAccessDurationText();
           _accountHolderName =
@@ -189,77 +324,55 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
     }
   }
 
-  Widget _buildGlassContainer({required Widget child}) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.getCard(context).withValues(alpha: 0.4),
-                AppColors.getCard(context).withValues(alpha: 0.2),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: AppColors.telegramBlue.withValues(alpha: 0.2),
-            ),
-          ),
-          child: child,
-        ),
-      ),
-    );
-  }
-
   Widget _buildSkeletonLoader() {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       body: Center(
         child: _buildGlassContainer(
           child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(
+            padding: ResponsiveValues.dialogPadding(context),
+            child: ResponsiveColumn(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Shimmer.fromColors(
                   baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
                   highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                   child: Container(
-                    width: 100,
-                    height: 100,
+                    width: ResponsiveValues.avatarSizeLarge(context),
+                    height: ResponsiveValues.avatarSizeLarge(context),
                     decoration: const BoxDecoration(
                       color: Colors.white,
                       shape: BoxShape.circle,
                     ),
                   ),
                 ),
-                const SizedBox(height: 24),
+                const ResponsiveSizedBox(height: AppSpacing.xl),
                 Shimmer.fromColors(
                   baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
                   highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                   child: Container(
-                    width: 200,
-                    height: 24,
+                    width: ResponsiveValues.spacingXXXL(context) * 4,
+                    height: ResponsiveValues.spacingXL(context),
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: BorderRadius.circular(
+                        ResponsiveValues.radiusSmall(context),
+                      ),
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const ResponsiveSizedBox(height: AppSpacing.l),
                 Shimmer.fromColors(
                   baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
                   highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                   child: Container(
-                    width: 300,
-                    height: 16,
+                    width: ResponsiveValues.spacingXXXL(context) * 5,
+                    height: ResponsiveValues.spacingL(context),
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: BorderRadius.circular(
+                        ResponsiveValues.radiusSmall(context),
+                      ),
                     ),
                   ),
                 ),
@@ -276,53 +389,51 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
       backgroundColor: AppColors.getBackground(context),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(AppThemes.spacingXXL),
-          child: Column(
+          padding: ResponsiveValues.dialogPadding(context),
+          child: ResponsiveColumn(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                padding: const EdgeInsets.all(AppThemes.spacingXL),
+                padding: ResponsiveValues.dialogPadding(context),
                 decoration: BoxDecoration(
-                    color: AppColors.telegramRed.withValues(alpha: 0.1),
-                    shape: BoxShape.circle),
+                  color: AppColors.telegramRed.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
                 child: const Icon(Icons.error_outline_rounded,
                     size: 64, color: AppColors.telegramRed),
               ).animate().shake(duration: 1.seconds),
-              const SizedBox(height: AppThemes.spacingXL),
-              Text('Payment Error',
-                  style: AppTextStyles.headlineLarge.copyWith(
-                      color: AppColors.getTextPrimary(context),
-                      fontWeight: FontWeight.w700)),
-              const SizedBox(height: AppThemes.spacingL),
-              Text(_errorMessage,
-                  textAlign: TextAlign.center,
-                  style: AppTextStyles.bodyLarge.copyWith(
-                      color: AppColors.getTextSecondary(context), height: 1.6)),
-              const SizedBox(height: AppThemes.spacingXXL),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () => context.go('/'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.telegramBlue,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: AppThemes.spacingL),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(
-                            AppThemes.borderRadiusMedium)),
-                  ),
-                  child: Text('Go to Home',
-                      style: AppTextStyles.buttonMedium
-                          .copyWith(color: Colors.white)),
+              const ResponsiveSizedBox(height: AppSpacing.xl),
+              ResponsiveText(
+                'Payment Error',
+                style: AppTextStyles.headlineLarge(context).copyWith(
+                  fontWeight: FontWeight.w700,
                 ),
               ),
-              const SizedBox(height: AppThemes.spacingM),
+              const ResponsiveSizedBox(height: AppSpacing.l),
+              ResponsiveText(
+                _errorMessage,
+                textAlign: TextAlign.center,
+                style: AppTextStyles.bodyLarge(context).copyWith(
+                  color: AppColors.getTextSecondary(context),
+                  height: 1.6,
+                ),
+              ),
+              const ResponsiveSizedBox(height: AppSpacing.xxl),
+              SizedBox(
+                width: double.infinity,
+                child: _buildGradientButton(
+                  label: 'Go to Home',
+                  onPressed: () => context.go('/'),
+                  gradient: AppColors.blueGradient,
+                ),
+              ),
+              const ResponsiveSizedBox(height: AppSpacing.m),
               TextButton(
                 onPressed: () => context.push('/notifications'),
                 style: TextButton.styleFrom(
-                    foregroundColor: AppColors.telegramBlue),
-                child: const Text('Check Notifications',
-                    style: AppTextStyles.buttonMedium),
+                  foregroundColor: AppColors.telegramBlue,
+                ),
+                child: const Text('Check Notifications'),
               ),
             ],
           ),
@@ -339,14 +450,18 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
           animation: _pulseAnimationController,
           builder: (context, child) {
             return Container(
-              width: 140 * _scaleAnimation.value,
-              height: 140 * _scaleAnimation.value,
+              width: ResponsiveValues.avatarSizeLarge(context) *
+                  1.5 *
+                  _scaleAnimation.value,
+              height: ResponsiveValues.avatarSizeLarge(context) *
+                  1.5 *
+                  _scaleAnimation.value,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: RadialGradient(colors: [
                   AppColors.telegramGreen.withValues(alpha: 0.3),
                   AppColors.telegramGreen.withValues(alpha: 0.1),
-                  Colors.transparent
+                  Colors.transparent,
                 ], stops: const [
                   0.1,
                   0.5,
@@ -363,8 +478,8 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
               scale:
                   Curves.elasticOut.transform(_checkAnimationController.value),
               child: Container(
-                width: 100,
-                height: 100,
+                width: ResponsiveValues.avatarSizeLarge(context),
+                height: ResponsiveValues.avatarSizeLarge(context),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [
@@ -375,12 +490,14 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                        color: AppColors.telegramGreen.withValues(alpha: 0.3),
-                        blurRadius: 20,
-                        spreadRadius: 5)
+                      color: AppColors.telegramGreen.withValues(alpha: 0.3),
+                      blurRadius: ResponsiveValues.spacingXL(context),
+                      spreadRadius: ResponsiveValues.spacingS(context),
+                    ),
                   ],
                 ),
-                child: const Icon(Icons.check_rounded, size: 60, color: Colors.white),
+                child: const Icon(Icons.check_rounded,
+                    size: 60, color: Colors.white),
               ),
             );
           },
@@ -397,22 +514,30 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
         ? 'Your payment for "$_categoryName" has been submitted successfully.'
         : 'Your payment has been submitted successfully.';
 
-    return Column(
+    return ResponsiveColumn(
       children: [
-        Text(title,
-            style: AppTextStyles.displaySmall.copyWith(
-                color: AppColors.getTextPrimary(context),
-                fontWeight: FontWeight.w700),
-            textAlign: TextAlign.center),
-        const SizedBox(height: AppThemes.spacingM),
-        Text(message,
-            style: AppTextStyles.bodyLarge.copyWith(
-                color: AppColors.getTextSecondary(context), height: 1.5),
-            textAlign: TextAlign.center),
-        const SizedBox(height: AppThemes.spacingM),
+        ResponsiveText(
+          title,
+          style: AppTextStyles.displaySmall(context).copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const ResponsiveSizedBox(height: AppSpacing.m),
+        ResponsiveText(
+          message,
+          style: AppTextStyles.bodyLarge(context).copyWith(
+            color: AppColors.getTextSecondary(context),
+            height: 1.5,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const ResponsiveSizedBox(height: AppSpacing.m),
         Container(
-          padding: const EdgeInsets.symmetric(
-              horizontal: AppThemes.spacingL, vertical: AppThemes.spacingS),
+          padding: EdgeInsets.symmetric(
+            horizontal: ResponsiveValues.spacingL(context),
+            vertical: ResponsiveValues.spacingS(context),
+          ),
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
@@ -420,24 +545,30 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                 AppColors.statusPending.withValues(alpha: 0.1),
               ],
             ),
-            borderRadius: BorderRadius.circular(AppThemes.borderRadiusFull),
+            borderRadius: BorderRadius.circular(
+              ResponsiveValues.radiusFull(context),
+            ),
             border: Border.all(
-                color: AppColors.statusPending.withValues(alpha: 0.3)),
+              color: AppColors.statusPending.withValues(alpha: 0.3),
+            ),
           ),
-          child: Row(
+          child: ResponsiveRow(
             mainAxisSize: MainAxisSize.min,
             children: [
               const Icon(Icons.schedule_rounded,
                   size: 16, color: AppColors.statusPending),
-              const SizedBox(width: 4),
-              Text('Pending Verification',
-                  style: AppTextStyles.labelSmall.copyWith(
-                      color: AppColors.statusPending,
-                      fontWeight: FontWeight.w600)),
+              const ResponsiveSizedBox(width: AppSpacing.xs),
+              ResponsiveText(
+                'Pending Verification',
+                style: AppTextStyles.labelSmall(context).copyWith(
+                  color: AppColors.statusPending,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ],
           ),
         ),
-        const SizedBox(height: AppThemes.spacingXL),
+        const ResponsiveSizedBox(height: AppSpacing.xl),
         _buildPaymentDetails(),
       ],
     );
@@ -446,97 +577,118 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
   Widget _buildPaymentDetails() {
     return _buildGlassContainer(
       child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
+        padding: ResponsiveValues.cardPadding(context),
+        child: ResponsiveColumn(
           children: [
             _buildDetailRow(
-                icon: Icons.category_rounded,
-                label: 'Category',
-                value: _categoryName.isNotEmpty
-                    ? _categoryName
-                    : (_category?.name ?? 'N/A')),
-            const SizedBox(height: AppThemes.spacingM),
+              icon: Icons.category_rounded,
+              label: 'Category',
+              value: _categoryName.isNotEmpty
+                  ? _categoryName
+                  : (_category?.name ?? 'N/A'),
+            ),
+            const ResponsiveSizedBox(height: AppSpacing.m),
             _buildDetailRow(
-                icon: Icons.attach_money_rounded,
-                label: 'Amount',
-                value: '${_amount.toStringAsFixed(0)} ETB'),
+              icon: Icons.attach_money_rounded,
+              label: 'Amount',
+              value: '${_amount.toStringAsFixed(0)} ETB',
+            ),
             if (_paymentMethodName.isNotEmpty) ...[
-              const SizedBox(height: AppThemes.spacingM),
+              const ResponsiveSizedBox(height: AppSpacing.m),
               _buildDetailRow(
-                  icon: Icons.payment_rounded,
-                  label: 'Method',
-                  value: _paymentMethodName),
+                icon: Icons.payment_rounded,
+                label: 'Method',
+                value: _paymentMethodName,
+              ),
             ],
             if (_accountHolderName != null &&
                 _accountHolderName!.isNotEmpty) ...[
-              const SizedBox(height: AppThemes.spacingM),
+              const ResponsiveSizedBox(height: AppSpacing.m),
               _buildDetailRow(
-                  icon: Icons.person_rounded,
-                  label: 'Account Holder',
-                  value: _accountHolderName!),
+                icon: Icons.person_rounded,
+                label: 'Account Holder',
+                value: _accountHolderName!,
+              ),
             ],
             if (_username.isNotEmpty) ...[
-              const SizedBox(height: AppThemes.spacingM),
+              const ResponsiveSizedBox(height: AppSpacing.m),
               _buildDetailRow(
-                  icon: Icons.person_rounded,
-                  label: 'Username',
-                  value: _username),
+                icon: Icons.person_rounded,
+                label: 'Username',
+                value: _username,
+              ),
             ],
-            const SizedBox(height: AppThemes.spacingM),
+            const ResponsiveSizedBox(height: AppSpacing.m),
             _buildDetailRow(
-                icon: Icons.calendar_today_rounded,
-                label: 'Billing Cycle',
-                value: _billingCycle == 'semester'
-                    ? 'Semester (4 months)'
-                    : 'Monthly (1 month)'),
-            const SizedBox(height: AppThemes.spacingM),
+              icon: Icons.calendar_today_rounded,
+              label: 'Billing Cycle',
+              value: _billingCycle == 'semester'
+                  ? 'Semester (4 months)'
+                  : 'Monthly (1 month)',
+            ),
+            const ResponsiveSizedBox(height: AppSpacing.m),
             _buildDetailRow(
-                icon: Icons.timer_rounded,
-                label: 'Access Duration',
-                value: _durationText),
-            const SizedBox(height: AppThemes.spacingM),
+              icon: Icons.timer_rounded,
+              label: 'Access Duration',
+              value: _durationText,
+            ),
+            const ResponsiveSizedBox(height: AppSpacing.m),
             _buildDetailRow(
-                icon: Icons.info_rounded,
-                label: 'Status',
-                value: 'Pending Verification',
-                valueColor: AppColors.statusPending),
+              icon: Icons.info_rounded,
+              label: 'Status',
+              value: 'Pending Verification',
+              valueColor: AppColors.statusPending,
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildDetailRow(
-      {required IconData icon,
-      required String label,
-      required String value,
-      Color? valueColor}) {
-    return Row(
+  Widget _buildDetailRow({
+    required IconData icon,
+    required String label,
+    required String value,
+    Color? valueColor,
+  }) {
+    return ResponsiveRow(
       children: [
         Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    AppColors.telegramBlue.withValues(alpha: 0.2),
-                    AppColors.telegramPurple.withValues(alpha: 0.1),
-                  ],
-                ),
-                shape: BoxShape.circle),
-            child: Icon(icon, size: 16, color: AppColors.telegramBlue)),
-        const SizedBox(width: AppThemes.spacingM),
+          width: ResponsiveValues.iconSizeL(context),
+          height: ResponsiveValues.iconSizeL(context),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                AppColors.telegramBlue.withValues(alpha: 0.2),
+                AppColors.telegramPurple.withValues(alpha: 0.1),
+              ],
+            ),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            icon,
+            size: ResponsiveValues.iconSizeXS(context),
+            color: AppColors.telegramBlue,
+          ),
+        ),
+        const ResponsiveSizedBox(width: AppSpacing.m),
         Expanded(
-          child: Row(
+          child: ResponsiveRow(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(label,
-                  style: AppTextStyles.bodyMedium
-                      .copyWith(color: AppColors.getTextSecondary(context))),
-              Text(value,
-                  style: AppTextStyles.bodyMedium.copyWith(
-                      color: valueColor ?? AppColors.getTextPrimary(context),
-                      fontWeight: FontWeight.w600)),
+              ResponsiveText(
+                label,
+                style: AppTextStyles.bodyMedium(context).copyWith(
+                  color: AppColors.getTextSecondary(context),
+                ),
+              ),
+              ResponsiveText(
+                value,
+                style: AppTextStyles.bodyMedium(context).copyWith(
+                  color: valueColor ?? AppColors.getTextPrimary(context),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ],
           ),
         ),
@@ -545,68 +697,70 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
   }
 
   Widget _buildActionButtons(BuildContext context) {
-    return Column(
+    return ResponsiveColumn(
       children: [
         SizedBox(
           width: double.infinity,
-          child: ElevatedButton(
+          child: _buildGradientButton(
+            label: 'Continue to Home',
             onPressed: () => context.go('/'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.telegramBlue,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: AppThemes.spacingL),
-              shape: RoundedRectangleBorder(
-                  borderRadius:
-                      BorderRadius.circular(AppThemes.borderRadiusMedium)),
-            ),
-            child: Text('Continue to Home',
-                style:
-                    AppTextStyles.buttonMedium.copyWith(color: Colors.white)),
+            gradient: AppColors.blueGradient,
           ),
         ),
-        const SizedBox(height: AppThemes.spacingL),
-        Row(
+        const ResponsiveSizedBox(height: AppSpacing.l),
+        ResponsiveRow(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             _buildActionChip(
-                icon: Icons.subscriptions_rounded,
-                label: 'Subscriptions',
-                onTap: () => context.push('/subscriptions')),
-            const SizedBox(width: AppThemes.spacingM),
+              icon: Icons.subscriptions_rounded,
+              label: 'Subscriptions',
+              onTap: () => context.push('/subscriptions'),
+            ),
+            const ResponsiveSizedBox(width: AppSpacing.m),
             _buildActionChip(
-                icon: Icons.notifications_rounded,
-                label: 'Notifications',
-                onTap: () => context.push('/notifications')),
+              icon: Icons.notifications_rounded,
+              label: 'Notifications',
+              onTap: () => context.push('/notifications'),
+            ),
           ],
         ),
         if (_animationComplete) ...[
-          const SizedBox(height: AppThemes.spacingXL),
+          const ResponsiveSizedBox(height: AppSpacing.xl),
           Container(
-            padding: const EdgeInsets.symmetric(
-                horizontal: AppThemes.spacingL, vertical: AppThemes.spacingM),
+            padding: EdgeInsets.symmetric(
+              horizontal: ResponsiveValues.spacingL(context),
+              vertical: ResponsiveValues.spacingM(context),
+            ),
             decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    AppColors.getSurface(context).withValues(alpha: 0.3),
-                    AppColors.getSurface(context).withValues(alpha: 0.1),
-                  ],
-                ),
-                borderRadius:
-                    BorderRadius.circular(AppThemes.borderRadiusFull)),
-            child: Row(
+              gradient: LinearGradient(
+                colors: [
+                  AppColors.getSurface(context).withValues(alpha: 0.3),
+                  AppColors.getSurface(context).withValues(alpha: 0.1),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(
+                ResponsiveValues.radiusFull(context),
+              ),
+            ),
+            child: ResponsiveRow(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                            AppColors.telegramBlue))),
-                const SizedBox(width: AppThemes.spacingM),
-                Text('Redirecting in $_secondsRemaining seconds...',
-                    style: AppTextStyles.bodySmall
-                        .copyWith(color: AppColors.getTextSecondary(context))),
+                SizedBox(
+                  width: ResponsiveValues.iconSizeS(context),
+                  height: ResponsiveValues.iconSizeS(context),
+                  child: const CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor:
+                        AlwaysStoppedAnimation<Color>(AppColors.telegramBlue),
+                  ),
+                ),
+                const ResponsiveSizedBox(width: AppSpacing.m),
+                ResponsiveText(
+                  'Redirecting in $_secondsRemaining seconds...',
+                  style: AppTextStyles.bodySmall(context).copyWith(
+                    color: AppColors.getTextSecondary(context),
+                  ),
+                ),
               ],
             ),
           ),
@@ -615,60 +769,21 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
     );
   }
 
-  Widget _buildActionChip(
-      {required IconData icon,
-      required String label,
-      required VoidCallback onTap}) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppThemes.borderRadiusFull),
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-              horizontal: AppThemes.spacingL, vertical: AppThemes.spacingS),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                AppColors.getSurface(context).withValues(alpha: 0.3),
-                AppColors.getSurface(context).withValues(alpha: 0.1),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(AppThemes.borderRadiusFull),
-            border: Border.all(
-                color: Theme.of(context).dividerColor.withValues(alpha: 0.2)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 16, color: AppColors.telegramBlue),
-              const SizedBox(width: 4),
-              Text(label,
-                  style: AppTextStyles.labelSmall.copyWith(
-                      color: AppColors.telegramBlue,
-                      fontWeight: FontWeight.w600)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildMobileLayout(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(AppThemes.spacingXL),
-          child: Column(
+          padding: ResponsiveValues.screenPadding(context),
+          child: ResponsiveColumn(
             children: [
-              const SizedBox(height: AppThemes.spacingXXL),
+              const ResponsiveSizedBox(height: AppSpacing.xxl),
               _buildSuccessIcon(context),
-              const SizedBox(height: AppThemes.spacingXXL),
+              const ResponsiveSizedBox(height: AppSpacing.xxl),
               _buildSuccessContent(context),
-              const SizedBox(height: AppThemes.spacingXXL),
+              const ResponsiveSizedBox(height: AppSpacing.xxl),
               _buildActionButtons(context),
-              const SizedBox(height: AppThemes.spacingXXL),
+              const ResponsiveSizedBox(height: AppSpacing.xxl),
             ],
           ),
         ),
@@ -680,19 +795,19 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       body: Center(
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 500),
-          margin: const EdgeInsets.all(AppThemes.spacingXXL),
+        child: ResponsiveContainer(
+          maxWidth: 500,
+          margin: ResponsiveValues.dialogPadding(context),
           child: _buildGlassContainer(
             child: Padding(
-              padding: const EdgeInsets.all(AppThemes.spacingXXXL),
-              child: Column(
+              padding: ResponsiveValues.dialogPadding(context),
+              child: ResponsiveColumn(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   _buildSuccessIcon(context),
-                  const SizedBox(height: AppThemes.spacingXXL),
+                  const ResponsiveSizedBox(height: AppSpacing.xxl),
                   _buildSuccessContent(context),
-                  const SizedBox(height: AppThemes.spacingXXL),
+                  const ResponsiveSizedBox(height: AppSpacing.xxl),
                   _buildActionButtons(context),
                 ],
               ),

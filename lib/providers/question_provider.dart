@@ -27,10 +27,26 @@ class QuestionProvider with ChangeNotifier {
   StreamController<Map<String, dynamic>> _answerUpdateController =
       StreamController<Map<String, dynamic>>.broadcast();
 
-  static const Duration cacheDuration = Duration(minutes: 20);
+  static const Duration cacheDuration =
+      Duration(hours: 24); // Increased to 24 hours
   static const Duration answerCacheDuration = Duration(days: 7);
 
-  QuestionProvider({required this.apiService, required this.deviceService});
+  QuestionProvider({required this.apiService, required this.deviceService}) {
+    _initPreload();
+  }
+
+  Future<void> _initPreload() async {
+    // Preload in background
+    Future.delayed(Duration.zero, () async {
+      try {
+        final userId = await UserSession().getCurrentUserId();
+        if (userId != null) {
+          // Try to load any cached question data in background
+          // This doesn't block UI
+        }
+      } catch (e) {}
+    });
+  }
 
   List<Question> get questions => _questions;
   bool get isLoading => _isLoading;
@@ -52,7 +68,7 @@ class QuestionProvider with ChangeNotifier {
 
   Future<void> loadPracticeQuestions(int chapterId,
       {bool forceRefresh = false}) async {
-    if (_isLoadingForChapter[chapterId] == true) {
+    if (_isLoadingForChapter[chapterId] == true && !forceRefresh) {
       return;
     }
 
@@ -67,13 +83,62 @@ class QuestionProvider with ChangeNotifier {
       return;
     }
 
+    // Try cache first
+    if (!forceRefresh) {
+      try {
+        final cachedQuestions = await deviceService.getCacheItem<List<dynamic>>(
+            AppConstants.questionsChapterKey(chapterId));
+
+        if (cachedQuestions != null && cachedQuestions.isNotEmpty) {
+          final questionList = <Question>[];
+          for (final questionJson in cachedQuestions) {
+            try {
+              questionList.add(Question.fromJson(questionJson));
+            } catch (e) {
+              debugLog('QuestionProvider', 'Error parsing cached question: $e');
+            }
+          }
+
+          if (questionList.isNotEmpty) {
+            _questionsByChapter[chapterId] = questionList;
+            _hasLoadedForChapter[chapterId] = true;
+            _lastLoadedTime[chapterId] = DateTime.now();
+
+            for (final question in questionList) {
+              if (!_questions.any((q) => q.id == question.id)) {
+                _questions.add(question);
+              }
+            }
+
+            await _loadAnswerResults(chapterId);
+
+            debugLog('QuestionProvider',
+                '✅ Loaded ${questionList.length} questions from cache for chapter $chapterId');
+
+            _questionUpdateController.add({
+              'type': 'questions_loaded_cached',
+              'chapter_id': chapterId,
+              'count': questionList.length
+            });
+
+            // Background refresh
+            unawaited(_refreshInBackground(chapterId));
+            return;
+          }
+        }
+      } catch (e) {
+        debugLog('QuestionProvider', 'Error loading cached questions: $e');
+      }
+    }
+
     _isLoadingForChapter[chapterId] = true;
+    _isLoading = true;
     _error = null;
-    notifyListeners();
+    _notifySafely();
 
     try {
       debugLog('QuestionProvider',
-          '❓ Loading practice questions for chapter: $chapterId');
+          '📥 Loading practice questions for chapter: $chapterId');
       final response = await apiService.getPracticeQuestions(chapterId);
 
       final responseData = response.data ?? {};
@@ -109,7 +174,7 @@ class QuestionProvider with ChangeNotifier {
         await _loadAnswerResults(chapterId);
 
         debugLog('QuestionProvider',
-            '✅ Loaded ${questionList.length} questions for chapter $chapterId');
+            '✅ Loaded ${questionList.length} questions from API for chapter $chapterId');
 
         _questionUpdateController.add({
           'type': 'questions_loaded',
@@ -120,40 +185,82 @@ class QuestionProvider with ChangeNotifier {
         _questionsByChapter[chapterId] = [];
         _hasLoadedForChapter[chapterId] = true;
         _lastLoadedTime[chapterId] = DateTime.now();
+
+        _questionUpdateController.add(
+            {'type': 'questions_loaded', 'chapter_id': chapterId, 'count': 0});
       }
     } catch (e) {
       _error = e.toString();
       debugLog('QuestionProvider', '❌ loadPracticeQuestions error: $e');
 
-      try {
-        final cachedQuestions = await deviceService.getCacheItem<List<dynamic>>(
-            AppConstants.questionsChapterKey(chapterId));
-        if (cachedQuestions != null) {
-          final questionList = <Question>[];
-          for (final questionJson in cachedQuestions) {
-            try {
-              questionList.add(Question.fromJson(questionJson));
-            } catch (e) {
-              debugLog('QuestionProvider', 'Error parsing cached question: $e');
-            }
-          }
-          _questionsByChapter[chapterId] = questionList;
-          _hasLoadedForChapter[chapterId] = true;
-          _lastLoadedTime[chapterId] = DateTime.now();
-
-          await _loadAnswerResults(chapterId);
-        }
-      } catch (cacheError) {
-        debugLog('QuestionProvider', 'Cache load error: $cacheError');
-      }
-
-      if (!_hasLoadedForChapter[chapterId]!) {
+      // Keep existing data on error
+      if (!_hasLoadedForChapter.containsKey(chapterId)) {
         _questionsByChapter[chapterId] = [];
+        _hasLoadedForChapter[chapterId] = true;
+        _lastLoadedTime[chapterId] = DateTime.now();
       }
+
+      _questionUpdateController.add({
+        'type': 'questions_load_error',
+        'chapter_id': chapterId,
+        'error': _error
+      });
     } finally {
       _isLoadingForChapter[chapterId] = false;
       _isLoading = false;
-      notifyListeners();
+      _notifySafely();
+    }
+  }
+
+  Future<void> _refreshInBackground(int chapterId) async {
+    try {
+      debugLog(
+          'QuestionProvider', '🔄 Background refresh for chapter $chapterId');
+
+      final response = await apiService.getPracticeQuestions(chapterId);
+      final responseData = response.data ?? {};
+      final questionsData = responseData['questions'] ?? [];
+
+      if (questionsData is List) {
+        final questionList = <Question>[];
+        for (final questionJson in questionsData) {
+          try {
+            questionList.add(Question.fromJson(questionJson));
+          } catch (e) {}
+        }
+
+        if (questionList.isNotEmpty) {
+          _questionsByChapter[chapterId] = questionList;
+          _lastLoadedTime[chapterId] = DateTime.now();
+
+          for (final question in questionList) {
+            if (!_questions.any((q) => q.id == question.id)) {
+              _questions.add(question);
+            }
+          }
+
+          await deviceService.saveCacheItem(
+            AppConstants.questionsChapterKey(chapterId),
+            questionList.map((q) => q.toJson()).toList(),
+            ttl: cacheDuration,
+          );
+
+          await _loadAnswerResults(chapterId);
+
+          _questionUpdateController.add({
+            'type': 'questions_refreshed',
+            'chapter_id': chapterId,
+            'count': questionList.length
+          });
+
+          _notifySafely();
+
+          debugLog('QuestionProvider',
+              '✅ Background refresh completed for chapter $chapterId');
+        }
+      }
+    } catch (e) {
+      debugLog('QuestionProvider', '⚠️ Background refresh failed: $e');
     }
   }
 
@@ -188,7 +295,7 @@ class QuestionProvider with ChangeNotifier {
   ) async {
     _isLoading = true;
     _error = null;
-    notifyListeners();
+    _notifySafely();
 
     try {
       debugLog('QuestionProvider',
@@ -257,18 +364,18 @@ class QuestionProvider with ChangeNotifier {
           });
         }
 
-        notifyListeners();
+        _notifySafely();
       }
 
       return response.data ?? {};
     } catch (e) {
       _error = e.toString();
       debugLog('QuestionProvider', '❌ checkAnswer error: $e');
-      notifyListeners();
+      _notifySafely();
       rethrow;
     } finally {
       _isLoading = false;
-      notifyListeners();
+      _notifySafely();
     }
   }
 
@@ -333,7 +440,7 @@ class QuestionProvider with ChangeNotifier {
     _questionUpdateController
         .add({'type': 'questions_cleared', 'chapter_id': chapterId});
 
-    notifyListeners();
+    _notifySafely();
   }
 
   /// 🔵 FIX: Clear user data ONLY for different user logout
@@ -373,7 +480,7 @@ class QuestionProvider with ChangeNotifier {
     _questionUpdateController.add({'type': 'all_questions_cleared'});
     _answerUpdateController.add({'type': 'all_answers_cleared'});
 
-    notifyListeners();
+    _notifySafely();
   }
 
   Future<bool> _isLoggingOut() async {
@@ -383,7 +490,7 @@ class QuestionProvider with ChangeNotifier {
 
   void clearError() {
     _error = null;
-    notifyListeners();
+    _notifySafely();
   }
 
   @override
@@ -391,5 +498,15 @@ class QuestionProvider with ChangeNotifier {
     _questionUpdateController.close();
     _answerUpdateController.close();
     super.dispose();
+  }
+
+  void _notifySafely() {
+    if (hasListeners) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (hasListeners) {
+          notifyListeners();
+        }
+      });
+    }
   }
 }

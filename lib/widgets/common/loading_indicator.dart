@@ -6,7 +6,19 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:lottie/lottie.dart';
 import 'package:familyacademyclient/themes/app_themes.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
+import 'package:familyacademyclient/utils/responsive_values.dart';
+import 'package:familyacademyclient/utils/app_enums.dart';
 import 'package:familyacademyclient/themes/app_colors.dart';
+import 'responsive_widgets.dart';
+
+enum LoadingType {
+  circular,
+  linear,
+  lottie,
+  shimmer,
+  pulse,
+  telegram,
+}
 
 class LoadingIndicator extends StatelessWidget {
   final String? message;
@@ -30,7 +42,8 @@ class LoadingIndicator extends StatelessWidget {
 
   Widget _buildGlassContainer(BuildContext context, {required Widget child}) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
+      borderRadius:
+          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
         child: Container(
@@ -43,7 +56,8 @@ class LoadingIndicator extends StatelessWidget {
                 AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
-            borderRadius: BorderRadius.circular(24),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
             border: Border.all(
               color: AppColors.telegramBlue.withValues(alpha: 0.2),
             ),
@@ -69,19 +83,14 @@ class LoadingIndicator extends StatelessWidget {
     return _buildGlassContainer(
       context,
       child: Padding(
-        padding: EdgeInsets.all(ScreenSize.responsiveValue(
-          context: context,
-          mobile: AppThemes.spacingL,
-          tablet: AppThemes.spacingXL,
-          desktop: AppThemes.spacingXXL,
-        )),
-        child: Column(
+        padding: EdgeInsets.all(ResponsiveValues.spacingXL(context)),
+        child: ResponsiveColumn(
           mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [
             if (showAnimation) _buildLoader(context),
             if (message != null) ...[
-              const SizedBox(height: AppThemes.spacingL),
+              ResponsiveSizedBox(height: AppSpacing.l),
               _buildMessage(context),
             ],
           ],
@@ -108,12 +117,7 @@ class LoadingIndicator extends StatelessWidget {
   }
 
   Widget _buildCircularLoader(BuildContext context) {
-    final effectiveSize = size ??
-        (ScreenSize.isDesktop(context)
-            ? 48.0
-            : ScreenSize.isTablet(context)
-                ? 40.0
-                : 32.0);
+    final effectiveSize = size ?? ResponsiveValues.iconSizeXXL(context);
 
     return Container(
       width: effectiveSize,
@@ -133,8 +137,9 @@ class LoadingIndicator extends StatelessWidget {
           height: effectiveSize * 0.6,
           child: CircularProgressIndicator(
             strokeWidth: 3.0,
-            valueColor:
-                AlwaysStoppedAnimation<Color>(color ?? AppColors.telegramBlue),
+            valueColor: AlwaysStoppedAnimation<Color>(
+              color ?? AppColors.telegramBlue,
+            ),
             backgroundColor: Colors.transparent,
           ),
         ),
@@ -145,21 +150,23 @@ class LoadingIndicator extends StatelessWidget {
   }
 
   Widget _buildLinearLoader(BuildContext context) {
-    final effectiveWidth = size ?? 200;
+    final effectiveWidth = size ?? ResponsiveValues.spacingXXXL(context) * 6;
 
     return Container(
       width: effectiveWidth,
-      height: 4,
+      height: ResponsiveValues.progressBarHeight(context),
       decoration: BoxDecoration(
         color: AppColors.getSurface(context),
-        borderRadius: BorderRadius.circular(2),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusSmall(context)),
       ),
       child: Stack(
         children: [
           Positioned.fill(
             child: Container(
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(2),
+                borderRadius: BorderRadius.circular(
+                    ResponsiveValues.radiusSmall(context)),
                 gradient: LinearGradient(
                   colors: [
                     color ?? AppColors.telegramBlue,
@@ -179,12 +186,7 @@ class LoadingIndicator extends StatelessWidget {
   }
 
   Widget _buildLottieLoader(BuildContext context) {
-    final effectiveSize = size ??
-        (ScreenSize.isDesktop(context)
-            ? 120.0
-            : ScreenSize.isTablet(context)
-                ? 100.0
-                : 80.0);
+    final effectiveSize = size ?? ResponsiveValues.iconSizeXXL(context) * 2;
 
     return SizedBox(
       width: effectiveSize,
@@ -201,12 +203,7 @@ class LoadingIndicator extends StatelessWidget {
   }
 
   Widget _buildShimmerLoader(BuildContext context) {
-    final effectiveSize = size ??
-        (ScreenSize.isDesktop(context)
-            ? 120.0
-            : ScreenSize.isTablet(context)
-                ? 100.0
-                : 80.0);
+    final effectiveSize = size ?? ResponsiveValues.iconSizeXXL(context) * 2;
 
     return Container(
       width: effectiveSize,
@@ -234,12 +231,7 @@ class LoadingIndicator extends StatelessWidget {
   }
 
   Widget _buildPulseLoader(BuildContext context) {
-    final effectiveSize = size ??
-        (ScreenSize.isDesktop(context)
-            ? 48.0
-            : ScreenSize.isTablet(context)
-                ? 40.0
-                : 32.0);
+    final effectiveSize = size ?? ResponsiveValues.iconSizeXXL(context);
 
     return Container(
       width: effectiveSize,
@@ -269,31 +261,29 @@ class LoadingIndicator extends StatelessWidget {
   }
 
   Widget _buildTelegramLoader(BuildContext context) {
-    final effectiveSize = size ??
-        (ScreenSize.isDesktop(context)
-            ? 56.0
-            : ScreenSize.isTablet(context)
-                ? 48.0
-                : 40.0);
+    final effectiveSize = size ?? ResponsiveValues.iconSizeXXL(context) * 1.5;
 
     return Container(
       width: effectiveSize,
       height: effectiveSize,
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-            colors: AppColors.blueGradient,
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight),
+          colors: AppColors.blueGradient,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
-              color: AppColors.telegramBlue.withValues(alpha: 0.3),
-              blurRadius: 16.0,
-              offset: const Offset(0, 8))
+            color: AppColors.telegramBlue.withValues(alpha: 0.3),
+            blurRadius: ResponsiveValues.spacingL(context),
+            offset: Offset(0, ResponsiveValues.spacingS(context)),
+          ),
         ],
       ),
       child: const Center(
-          child: Icon(Icons.telegram, color: Colors.white, size: 24)),
+        child: Icon(Icons.telegram, color: Colors.white, size: 32),
+      ),
     ).animate(onPlay: (controller) => controller.repeat()).scale(
         begin: const Offset(1.0, 1.0),
         end: const Offset(1.1, 1.1),
@@ -302,19 +292,16 @@ class LoadingIndicator extends StatelessWidget {
   }
 
   Widget _buildMessage(BuildContext context) {
-    return Text(
+    return ResponsiveText(
       message!,
-      style: AppTextStyles.bodyMedium.copyWith(
+      style: AppTextStyles.bodyMedium(context).copyWith(
         color: AppColors.getTextSecondary(context),
-        fontSize: ScreenSize.responsiveFontSize(
-            context: context, mobile: 14, tablet: 15, desktop: 16),
+        fontSize: ResponsiveValues.fontBodyLarge(context),
       ),
       textAlign: TextAlign.center,
     );
   }
 }
-
-enum LoadingType { circular, linear, lottie, shimmer, pulse, telegram }
 
 class ShimmerLoading extends StatelessWidget {
   final double width;
@@ -343,12 +330,12 @@ class ShimmerLoading extends StatelessWidget {
     return Shimmer.fromColors(
       baseColor: baseColor ??
           (Theme.of(context).brightness == Brightness.dark
-              ? const Color(0xFF2C2C2E)
-              : const Color(0xFFE5E5EA)),
+              ? AppColors.darkSurface
+              : AppColors.lightSurface),
       highlightColor: highlightColor ??
           (Theme.of(context).brightness == Brightness.dark
-              ? const Color(0xFF3C3C3E)
-              : const Color(0xFFF2F2F7)),
+              ? AppColors.darkCard
+              : AppColors.lightCard),
       period: const Duration(seconds: 2),
       child: Container(
         width: width,
@@ -358,7 +345,9 @@ class ShimmerLoading extends StatelessWidget {
             ? const BoxDecoration(shape: BoxShape.circle, color: Colors.white)
             : BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(borderRadius),
+                borderRadius: BorderRadius.circular(
+                  borderRadius,
+                ),
               ),
         child: child,
       ),

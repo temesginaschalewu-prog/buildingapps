@@ -15,6 +15,7 @@ import 'package:provider/provider.dart';
 import 'package:pull_to_refresh/pull_to_refresh.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
+import 'package:familyacademyclient/utils/responsive_values.dart';
 import 'package:familyacademyclient/themes/app_themes.dart';
 import 'package:familyacademyclient/models/category_model.dart';
 import 'package:familyacademyclient/models/chapter_model.dart';
@@ -27,6 +28,7 @@ import 'package:familyacademyclient/providers/subscription_provider.dart';
 import 'package:familyacademyclient/providers/payment_provider.dart';
 import 'package:familyacademyclient/utils/helpers.dart';
 import 'package:shimmer/shimmer.dart';
+import '../../widgets/common/responsive_widgets.dart';
 
 class CourseDetailScreen extends StatefulWidget {
   final int courseId;
@@ -87,6 +89,245 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     });
   }
 
+  Widget _buildGlassContainer({required Widget child}) {
+    return ClipRRect(
+      borderRadius:
+          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
+              ],
+            ),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
+            border: Border.all(
+              color: AppColors.telegramBlue.withValues(alpha: 0.2),
+            ),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGlassBottomSheet(BuildContext context, {required Widget child}) {
+    return ClipRRect(
+      borderRadius: const BorderRadius.only(
+        topLeft: Radius.circular(24),
+        topRight: Radius.circular(24),
+      ),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
+              ],
+            ),
+            border: Border.all(
+              color: AppColors.telegramBlue.withValues(alpha: 0.2),
+            ),
+          ),
+          child: Padding(
+            padding: ResponsiveValues.dialogPadding(context),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomSheetHandle(BuildContext context) {
+    return Center(
+      child: Container(
+        width: ResponsiveValues.spacingXXL(context),
+        height: ResponsiveValues.spacingXS(context),
+        decoration: BoxDecoration(
+          color: AppColors.getTextSecondary(context).withValues(alpha: 0.3),
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusSmall(context)),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGradientButton({
+    required String label,
+    required VoidCallback onPressed,
+    required List<Color> gradient,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(colors: gradient),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+        boxShadow: [
+          BoxShadow(
+            color: gradient.first.withValues(alpha: 0.3),
+            blurRadius: ResponsiveValues.spacingS(context),
+            offset: Offset(0, ResponsiveValues.spacingXS(context)),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+          child: Container(
+            padding: EdgeInsets.symmetric(
+              vertical: ResponsiveValues.spacingM(context),
+            ),
+            alignment: Alignment.center,
+            child: ResponsiveText(
+              label,
+              style: AppTextStyles.labelLarge(context).copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGlassButton({
+    required String label,
+    required VoidCallback onPressed,
+    required Color color,
+  }) {
+    return ClipRRect(
+      borderRadius:
+          BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+      child: Material(
+        color: color.withValues(alpha: 0.1),
+        child: InkWell(
+          onTap: onPressed,
+          child: Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: ResponsiveValues.spacingL(context),
+              vertical: ResponsiveValues.spacingS(context),
+            ),
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: color.withValues(alpha: 0.3),
+              ),
+              borderRadius:
+                  BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+            ),
+            child: ResponsiveText(
+              label,
+              style: AppTextStyles.labelMedium(context).copyWith(
+                color: color,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDialogContent(
+    BuildContext context, {
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String message,
+    required String buttonText,
+    required VoidCallback onButtonPressed,
+  }) {
+    return ResponsiveColumn(
+      children: [
+        ResponsiveRow(
+          children: [
+            Container(
+              padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
+              decoration: BoxDecoration(
+                color: iconColor.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: ResponsiveIcon(
+                icon,
+                size: ResponsiveValues.iconSizeL(context),
+                color: iconColor,
+              ),
+            ),
+            ResponsiveSizedBox(width: AppSpacing.l),
+            Expanded(
+              child: ResponsiveColumn(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ResponsiveText(
+                    title,
+                    style: AppTextStyles.titleMedium(context).copyWith(
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  ResponsiveSizedBox(height: AppSpacing.xs),
+                  ResponsiveText(
+                    message,
+                    style: AppTextStyles.bodySmall(context).copyWith(
+                      color: AppColors.getTextSecondary(context),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        ResponsiveSizedBox(height: AppSpacing.xl),
+        ResponsiveRow(
+          children: [
+            Expanded(
+              child: TextButton(
+                onPressed: () => Navigator.pop(context),
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.symmetric(
+                    vertical: ResponsiveValues.spacingM(context),
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(
+                      ResponsiveValues.radiusMedium(context),
+                    ),
+                  ),
+                ),
+                child: ResponsiveText(
+                  'Cancel',
+                  style: AppTextStyles.labelLarge(context).copyWith(
+                    color: AppColors.getTextSecondary(context),
+                  ),
+                ),
+              ),
+            ),
+            ResponsiveSizedBox(width: AppSpacing.m),
+            Expanded(
+              child: _buildGradientButton(
+                label: buttonText,
+                onPressed: onButtonPressed,
+                gradient: AppColors.blueGradient,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
   Future<void> _checkConnectivity() async {
     final hasConnection = await hasInternetConnection();
     if (!hasConnection && mounted) {
@@ -97,10 +338,13 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
 
   Future<void> _initializeScreen() async {
     await _checkConnectivity();
+
     await _loadFromCache();
 
     if (_course != null && _hasCachedData) {
-      setState(() => _isFirstLoad = false);
+      setState(() {
+        _isFirstLoad = false;
+      });
       if (!_isOffline) {
         _refreshInBackground();
       }
@@ -193,13 +437,26 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         await courseProvider.refreshCoursesWithAccessCheck(
             _category!.id, _hasAccess);
       }
+
+      if (!mounted) return;
+
       await _checkAccessStatus(forceCheck: true);
+      if (!mounted) return;
+
       await _loadPaymentInfo(forceRefresh: true);
+      if (!mounted) return;
+
       await _loadChapters(forceRefresh: true);
+      if (!mounted) return;
+
       await _loadExams(forceRefresh: true);
+      if (!mounted) return;
+
       await _saveToCache();
     } finally {
-      _isRefreshing = false;
+      if (mounted) {
+        _isRefreshing = false;
+      }
     }
   }
 
@@ -208,11 +465,19 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
 
     final hasConnection = await hasInternetConnection();
     if (!hasConnection) {
-      setState(() => _isOffline = true);
+      if (mounted) {
+        setState(() {
+          _isOffline = true;
+          _isRefreshing = false;
+        });
+      }
       _refreshController.refreshFailed();
+      showTopSnackBar(context, 'You are offline. Using cached data.',
+          isError: true);
       return;
     }
 
+    if (!mounted) return;
     setState(() => _isRefreshing = true);
 
     try {
@@ -222,20 +487,34 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         await courseProvider.refreshCoursesWithAccessCheck(
             _category!.id, _hasAccess);
       }
+
+      if (!mounted) return;
+
       await _checkAccessStatus(forceCheck: true);
+      if (!mounted) return;
+
       await _loadPaymentInfo(forceRefresh: true);
+      if (!mounted) return;
+
       await _loadChapters(forceRefresh: true);
+      if (!mounted) return;
+
       await _loadExams(forceRefresh: true);
+      if (!mounted) return;
+
       await _saveToCache();
 
       setState(() => _isOffline = false);
       showTopSnackBar(context, 'Course updated');
     } catch (e) {
+      if (!mounted) return;
       setState(() => _isOffline = true);
       showTopSnackBar(context, 'Refresh failed, using cached data',
           isError: true);
     } finally {
-      setState(() => _isRefreshing = false);
+      if (mounted) {
+        setState(() => _isRefreshing = false);
+      }
       _refreshController.refreshCompleted();
     }
   }
@@ -367,12 +646,14 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => _buildGlassBottomSheet(
-        child: Column(
+        context,
+        child: ResponsiveColumn(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _buildBottomSheetHandle(),
-            const SizedBox(height: 20),
-            _buildPaymentDialogContent(
+            _buildBottomSheetHandle(context),
+            ResponsiveSizedBox(height: AppSpacing.xl),
+            _buildDialogContent(
+              context,
               icon: Icons.lock_open_rounded,
               iconColor: AppColors.telegramBlue,
               title: 'Unlock Content',
@@ -398,12 +679,14 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => _buildGlassBottomSheet(
-        child: Column(
+        context,
+        child: ResponsiveColumn(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _buildBottomSheetHandle(),
-            const SizedBox(height: 20),
-            _buildPaymentDialogContent(
+            _buildBottomSheetHandle(context),
+            ResponsiveSizedBox(height: AppSpacing.xl),
+            _buildDialogContent(
+              context,
               icon: Icons.error_outline_rounded,
               iconColor: AppColors.telegramRed,
               title: 'Payment Rejected',
@@ -431,7 +714,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
       builder: (context) => Dialog(
         backgroundColor: Colors.transparent,
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
             child: Container(
@@ -444,213 +728,54 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
                     AppColors.getCard(context).withValues(alpha: 0.2),
                   ],
                 ),
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: BorderRadius.circular(
+                    ResponsiveValues.radiusXLarge(context)),
                 border: Border.all(
                   color: AppColors.statusPending.withValues(alpha: 0.3),
                 ),
               ),
-              padding: const EdgeInsets.all(24),
-              child: Column(
+              padding: ResponsiveValues.dialogPadding(context),
+              child: ResponsiveColumn(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(16),
+                    padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
                     decoration: BoxDecoration(
                       color: AppColors.statusPending.withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(
+                    child: ResponsiveIcon(
                       Icons.schedule_rounded,
+                      size: ResponsiveValues.iconSizeXL(context),
                       color: AppColors.statusPending,
-                      size: 32,
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  Text(
+                  ResponsiveSizedBox(height: AppSpacing.l),
+                  ResponsiveText(
                     'Payment Pending',
-                    style: AppTextStyles.titleLarge.copyWith(
+                    style: AppTextStyles.titleLarge(context).copyWith(
                       fontWeight: FontWeight.w700,
                       letterSpacing: -0.5,
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
+                  ResponsiveSizedBox(height: AppSpacing.s),
+                  ResponsiveText(
                     'You have a pending payment for ${_category?.name}. Please wait for admin verification (1-3 working days).',
-                    style: AppTextStyles.bodyMedium.copyWith(
+                    style: AppTextStyles.bodyMedium(context).copyWith(
                       color: AppColors.getTextSecondary(context),
                     ),
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 24),
+                  ResponsiveSizedBox(height: AppSpacing.xl),
                   SizedBox(
                     width: double.infinity,
                     child: _buildGradientButton(
                       label: 'OK',
                       onPressed: () => Navigator.pop(context),
-                      gradient: const [Color(0xFF2AABEE), Color(0xFF5856D6)],
+                      gradient: AppColors.blueGradient,
                     ),
                   ),
                 ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGlassBottomSheet({required Widget child}) {
-    return ClipRRect(
-      borderRadius: const BorderRadius.only(
-        topLeft: Radius.circular(24),
-        topRight: Radius.circular(24),
-      ),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.getCard(context).withValues(alpha: 0.4),
-                AppColors.getCard(context).withValues(alpha: 0.2),
-              ],
-            ),
-            border: Border.all(
-              color: AppColors.telegramBlue.withValues(alpha: 0.2),
-            ),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: child,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBottomSheetHandle() {
-    return Center(
-      child: Container(
-        width: 40,
-        height: 4,
-        decoration: BoxDecoration(
-          color: AppColors.getTextSecondary(context).withValues(alpha: 0.3),
-          borderRadius: BorderRadius.circular(2),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPaymentDialogContent({
-    required IconData icon,
-    required Color iconColor,
-    required String title,
-    required String message,
-    required String buttonText,
-    required VoidCallback onButtonPressed,
-  }) {
-    return Column(
-      children: [
-        Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: iconColor.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, color: iconColor, size: 28),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: AppTextStyles.titleMedium.copyWith(
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: -0.3,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    message,
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.getTextSecondary(context),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 24),
-        Row(
-          children: [
-            Expanded(
-              child: TextButton(
-                onPressed: () => Navigator.pop(context),
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-                child: Text(
-                  'Cancel',
-                  style: AppTextStyles.labelLarge.copyWith(
-                    color: AppColors.getTextSecondary(context),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildGradientButton(
-                label: buttonText,
-                onPressed: onButtonPressed,
-                gradient: const [Color(0xFF2AABEE), Color(0xFF5856D6)],
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildGradientButton({
-    required String label,
-    required VoidCallback onPressed,
-    required List<Color> gradient,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(colors: gradient),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: gradient.first.withValues(alpha: 0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onPressed,
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            alignment: Alignment.center,
-            child: Text(
-              label,
-              style: AppTextStyles.labelLarge.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
               ),
             ),
           ),
@@ -732,59 +857,57 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
   }) {
     return Container(
       margin: EdgeInsets.symmetric(
-        horizontal: ScreenSize.responsiveValue(
-          context: context,
-          mobile: 16,
-          tablet: 20,
-          desktop: 24,
-        ),
-        vertical: 8,
+        horizontal: ResponsiveValues.sectionPadding(context),
+        vertical: ResponsiveValues.spacingS(context),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
           child: Container(
-            padding: EdgeInsets.all(ScreenSize.responsiveValue(
-              context: context,
-              mobile: 16,
-              tablet: 20,
-              desktop: 24,
-            )),
+            padding: EdgeInsets.all(ResponsiveValues.sectionPadding(context)),
             decoration: BoxDecoration(
               color: backgroundColor ?? color.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(20),
+              borderRadius:
+                  BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
               border: Border.all(
                 color: borderColor ?? color.withValues(alpha: 0.3),
               ),
             ),
-            child: Row(
+            child: ResponsiveRow(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
                   decoration: BoxDecoration(
                     color: color.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(
+                      ResponsiveValues.radiusMedium(context),
+                    ),
                   ),
-                  child: Icon(icon, color: color, size: 24),
+                  child: ResponsiveIcon(
+                    icon,
+                    size: ResponsiveValues.iconSizeL(context),
+                    color: color,
+                  ),
                 ),
-                const SizedBox(width: 16),
+                ResponsiveSizedBox(width: AppSpacing.l),
                 Expanded(
-                  child: Column(
+                  child: ResponsiveColumn(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
+                      ResponsiveText(
                         title,
-                        style: AppTextStyles.titleSmall.copyWith(
+                        style: AppTextStyles.titleSmall(context).copyWith(
                           color: color,
                           fontWeight: FontWeight.w600,
                           letterSpacing: -0.3,
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
+                      ResponsiveSizedBox(height: AppSpacing.xs),
+                      ResponsiveText(
                         message,
-                        style: AppTextStyles.bodySmall.copyWith(
+                        style: AppTextStyles.bodySmall(context).copyWith(
                           color: AppColors.getTextSecondary(context),
                         ),
                       ),
@@ -792,7 +915,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
                   ),
                 ),
                 if (actionText != null && onAction != null) ...[
-                  const SizedBox(width: 12),
+                  ResponsiveSizedBox(width: AppSpacing.m),
                   _buildGlassButton(
                     label: actionText,
                     onPressed: onAction,
@@ -807,38 +930,6 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     );
   }
 
-  Widget _buildGlassButton({
-    required String label,
-    required VoidCallback onPressed,
-    required Color color,
-  }) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: Material(
-        color: color.withValues(alpha: 0.1),
-        child: InkWell(
-          onTap: onPressed,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: color.withValues(alpha: 0.3),
-              ),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              label,
-              style: AppTextStyles.labelMedium.copyWith(
-                color: color,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildSkeletonLoader() {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
@@ -846,7 +937,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         backgroundColor: AppColors.getBackground(context),
         elevation: 0,
         leading: IconButton(
-          icon: Icon(
+          icon: ResponsiveIcon(
             Icons.arrow_back_rounded,
             color: AppColors.getTextPrimary(context),
           ),
@@ -856,18 +947,19 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
           baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
           highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
           child: Container(
-            width: 200,
-            height: 24,
+            width: ResponsiveValues.spacingXXXL(context) * 4,
+            height: ResponsiveValues.spacingXL(context),
             color: Colors.white,
           ),
         ),
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(48),
+          preferredSize:
+              Size.fromHeight(ResponsiveValues.appBarHeight(context)),
           child: Container(
             decoration: BoxDecoration(
               border: Border(
                 bottom: BorderSide(
-                  color: Theme.of(context).dividerColor.withValues(alpha: 0.5),
+                  color: AppColors.getDivider(context).withValues(alpha: 0.5),
                   width: 0.5,
                 ),
               ),
@@ -878,8 +970,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
                 Tab(text: 'Chapters'),
                 Tab(text: 'Exams'),
               ],
-              labelStyle: AppTextStyles.labelMedium,
-              unselectedLabelStyle: AppTextStyles.labelMedium,
+              labelStyle: AppTextStyles.labelMedium(context),
+              unselectedLabelStyle: AppTextStyles.labelMedium(context),
               indicatorColor: AppColors.telegramBlue,
               indicatorWeight: 3,
               labelColor: AppColors.telegramBlue,
@@ -889,19 +981,20 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         ),
       ),
       body: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: ResponsiveValues.screenPadding(context),
         child: ListView.separated(
           itemCount: 5,
-          separatorBuilder: (_, __) => const SizedBox(height: 16),
+          separatorBuilder: (_, __) => ResponsiveSizedBox(height: AppSpacing.l),
           itemBuilder: (context, index) => Shimmer.fromColors(
             baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
             highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(20),
+              borderRadius:
+                  BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
                 child: Container(
-                  height: 100,
+                  height: ResponsiveValues.chapterCardHeight(context),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.topLeft,
@@ -921,8 +1014,334 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
+  int _getChaptersChildCount(List<Chapter> chapters, bool isLoading) {
+    if (chapters.isNotEmpty) return chapters.length;
+    if (isLoading) return 5;
+    return 1;
+  }
+
+  int _getExamsChildCount(List<Exam> exams, bool isLoading) {
+    if (exams.isNotEmpty) return exams.length;
+    if (isLoading) return 5;
+    return 1;
+  }
+
+  Widget _buildChaptersList(List<Chapter> chapters) {
+    final chapterProvider = Provider.of<ChapterProvider>(context);
+    final isLoading = chapterProvider.isLoadingForCourse(_course!.id);
+
+    return ListView.builder(
+      padding: ResponsiveValues.screenPadding(context),
+      itemCount: _getChaptersChildCount(chapters, isLoading),
+      itemBuilder: (context, index) {
+        if (isLoading && chapters.isEmpty) {
+          return Padding(
+            padding: EdgeInsets.only(
+              bottom: ResponsiveValues.spacingL(context),
+            ),
+            child: _buildChapterCardShimmer(index: index),
+          );
+        }
+
+        if (index < chapters.length) {
+          final chapter = chapters[index];
+          return Padding(
+            padding: EdgeInsets.only(
+              bottom: ResponsiveValues.spacingL(context),
+            ),
+            child: ChapterCard(
+              chapter: chapter,
+              courseId: _course!.id,
+              categoryId: _category?.id ?? 0,
+              categoryName: _category?.name ?? 'Category',
+              onTap: () => _handleChapterTap(chapter),
+              index: index,
+            ),
+          );
+        }
+
+        if (!isLoading && chapters.isEmpty && index == 0) {
+          return Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                  vertical: ResponsiveValues.spacingXXL(context)),
+              child: EmptyState(
+                icon: Icons.menu_book_rounded,
+                title: 'No Chapters Yet',
+                message: _isOffline
+                    ? 'No cached chapters available. Connect to load chapters.'
+                    : 'Chapters will appear here when available.',
+                type: EmptyStateType.noData,
+                actionText: 'Retry',
+                onAction: _manualRefresh,
+              ),
+            ),
+          );
+        }
+
+        return null;
+      },
+    );
+  }
+
+  Widget _buildChapterCardShimmer({required int index}) {
+    final iconSize = ResponsiveValues.iconSizeXXL(context);
+    final padding = ResponsiveValues.cardPadding(context);
+
+    return ClipRRect(
+      borderRadius:
+          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
+        child: Container(
+          padding: padding,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
+              ],
+            ),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
+            border: Border.all(
+              color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
+            ),
+          ),
+          child: ResponsiveRow(
+            children: [
+              Shimmer.fromColors(
+                baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
+                child: Container(
+                  width: iconSize,
+                  height: iconSize,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(
+                      ResponsiveValues.radiusLarge(context),
+                    ),
+                  ),
+                ),
+              ),
+              ResponsiveSizedBox(width: AppSpacing.l),
+              Expanded(
+                child: ResponsiveColumn(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Shimmer.fromColors(
+                      baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                      highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
+                      child: Container(
+                        width: double.infinity,
+                        height: ResponsiveValues.spacingXL(context),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(
+                            ResponsiveValues.radiusSmall(context),
+                          ),
+                        ),
+                      ),
+                    ),
+                    ResponsiveSizedBox(height: AppSpacing.m),
+                    Shimmer.fromColors(
+                      baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                      highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
+                      child: Container(
+                        width: ResponsiveValues.spacingXXL(context) * 2,
+                        height: ResponsiveValues.spacingXL(context),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(
+                            ResponsiveValues.radiusFull(context),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Shimmer.fromColors(
+                baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
+                child: Container(
+                  width: ResponsiveValues.iconSizeL(context),
+                  height: ResponsiveValues.iconSizeL(context),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ).animate().fadeIn(
+          duration: AppThemes.animationDurationMedium,
+          delay: (index * 50).ms,
+        );
+  }
+
+  Widget _buildExamsList(List<Exam> exams) {
+    final examProvider = Provider.of<ExamProvider>(context);
+    final isLoading = examProvider.isLoading;
+
+    return ListView.builder(
+      padding: ResponsiveValues.screenPadding(context),
+      itemCount: _getExamsChildCount(exams, isLoading),
+      itemBuilder: (context, index) {
+        if (isLoading && exams.isEmpty) {
+          return Padding(
+            padding: EdgeInsets.only(
+              bottom: ResponsiveValues.spacingL(context),
+            ),
+            child: _buildExamCardShimmer(index: index),
+          );
+        }
+
+        if (index < exams.length) {
+          final exam = exams[index];
+          return Padding(
+            padding: EdgeInsets.only(
+              bottom: ResponsiveValues.spacingL(context),
+            ),
+            child: ExamCard(
+              exam: exam,
+              onTap: () => _handleExamTap(exam),
+              index: index,
+            ),
+          );
+        }
+
+        if (!isLoading && exams.isEmpty && index == 0) {
+          return Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                  vertical: ResponsiveValues.spacingXXL(context)),
+              child: EmptyState(
+                icon: Icons.quiz_rounded,
+                title: 'No Exams Yet',
+                message: _isOffline
+                    ? 'No cached exams available. Connect to load exams.'
+                    : 'Exams will appear here when available.',
+                type: EmptyStateType.noData,
+                actionText: 'Retry',
+                onAction: _manualRefresh,
+              ),
+            ),
+          );
+        }
+
+        return null;
+      },
+    );
+  }
+
+  Widget _buildExamCardShimmer({required int index}) {
+    final iconSize = ResponsiveValues.iconSizeXXL(context);
+    final padding = ResponsiveValues.cardPadding(context);
+
+    return ClipRRect(
+      borderRadius:
+          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
+        child: Container(
+          padding: padding,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.getCard(context).withValues(alpha: 0.4),
+                AppColors.getCard(context).withValues(alpha: 0.2),
+              ],
+            ),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
+            border: Border.all(
+              color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
+            ),
+          ),
+          child: ResponsiveRow(
+            children: [
+              Shimmer.fromColors(
+                baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
+                child: Container(
+                  width: iconSize,
+                  height: iconSize,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(
+                      ResponsiveValues.radiusLarge(context),
+                    ),
+                  ),
+                ),
+              ),
+              ResponsiveSizedBox(width: AppSpacing.l),
+              Expanded(
+                child: ResponsiveColumn(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Shimmer.fromColors(
+                      baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                      highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
+                      child: Container(
+                        width: double.infinity,
+                        height: ResponsiveValues.spacingXL(context),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(
+                            ResponsiveValues.radiusSmall(context),
+                          ),
+                        ),
+                      ),
+                    ),
+                    ResponsiveSizedBox(height: AppSpacing.m),
+                    Shimmer.fromColors(
+                      baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                      highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
+                      child: Container(
+                        width: ResponsiveValues.spacingXXL(context) * 2,
+                        height: ResponsiveValues.spacingXL(context),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(
+                            ResponsiveValues.radiusFull(context),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Shimmer.fromColors(
+                baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
+                child: Container(
+                  width: ResponsiveValues.iconSizeL(context),
+                  height: ResponsiveValues.iconSizeL(context),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ).animate().fadeIn(
+          duration: AppThemes.animationDurationMedium,
+          delay: (index * 50).ms,
+        );
+  }
+
+  Widget _buildMobileLayout() {
     if (_isFirstLoad && !_hasCachedData) return _buildSkeletonLoader();
 
     if (_course == null) {
@@ -932,7 +1351,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
           backgroundColor: AppColors.getBackground(context),
           elevation: 0,
           leading: IconButton(
-            icon: Icon(
+            icon: ResponsiveIcon(
               Icons.arrow_back_rounded,
               color: AppColors.getTextPrimary(context),
             ),
@@ -941,49 +1360,51 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         ),
         body: Center(
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(30),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusXXLarge(context)),
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
               child: Container(
-                padding: const EdgeInsets.all(32),
+                padding: ResponsiveValues.dialogPadding(context),
                 decoration: BoxDecoration(
                   color: AppColors.getCard(context).withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(30),
+                  borderRadius: BorderRadius.circular(
+                      ResponsiveValues.radiusXXLarge(context)),
                   border: Border.all(
                     color: AppColors.telegramRed.withValues(alpha: 0.2),
                   ),
                 ),
-                child: Column(
+                child: ResponsiveColumn(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
+                    ResponsiveIcon(
                       Icons.error_outline_rounded,
-                      size: 64,
+                      size: ResponsiveValues.iconSizeXXL(context),
                       color: AppColors.telegramRed.withValues(alpha: 0.5),
                     ),
-                    const SizedBox(height: 16),
-                    Text(
+                    ResponsiveSizedBox(height: AppSpacing.l),
+                    ResponsiveText(
                       'Course not found',
-                      style: AppTextStyles.titleLarge.copyWith(
+                      style: AppTextStyles.titleLarge(context).copyWith(
                         fontWeight: FontWeight.w600,
                         letterSpacing: -0.5,
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
+                    ResponsiveSizedBox(height: AppSpacing.s),
+                    ResponsiveText(
                       _isOffline
                           ? 'No cached data available. Please check your connection.'
                           : 'The course you\'re looking for doesn\'t exist.',
-                      style: AppTextStyles.bodyMedium.copyWith(
+                      style: AppTextStyles.bodyMedium(context).copyWith(
                         color: AppColors.getTextSecondary(context),
                       ),
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 24),
+                    ResponsiveSizedBox(height: AppSpacing.xl),
                     _buildGradientButton(
                       label: 'Retry',
                       onPressed: _manualRefresh,
-                      gradient: const [Color(0xFF2AABEE), Color(0xFF5856D6)],
+                      gradient: AppColors.blueGradient,
                     ),
                   ],
                 ),
@@ -1002,10 +1423,9 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: AppBar(
-        title: Text(
+        title: ResponsiveText(
           _course!.name,
-          style: AppTextStyles.titleMedium.copyWith(
-            color: AppColors.getTextPrimary(context),
+          style: AppTextStyles.titleMedium(context).copyWith(
             letterSpacing: -0.3,
           ),
           maxLines: 1,
@@ -1014,7 +1434,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         backgroundColor: AppColors.getBackground(context),
         elevation: 0,
         leading: IconButton(
-          icon: Icon(
+          icon: ResponsiveIcon(
             Icons.arrow_back_rounded,
             color: AppColors.getTextPrimary(context),
           ),
@@ -1022,12 +1442,12 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         ),
         actions: [
           if (_isRefreshing)
-            const Padding(
-              padding: EdgeInsets.all(16),
+            Padding(
+              padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
               child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
+                width: ResponsiveValues.iconSizeS(context),
+                height: ResponsiveValues.iconSizeS(context),
+                child: const CircularProgressIndicator(
                   strokeWidth: 2,
                   valueColor: AlwaysStoppedAnimation(AppColors.telegramBlue),
                 ),
@@ -1035,12 +1455,13 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
             ),
         ],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(48),
+          preferredSize:
+              Size.fromHeight(ResponsiveValues.appBarHeight(context)),
           child: Container(
             decoration: BoxDecoration(
               border: Border(
                 bottom: BorderSide(
-                  color: Theme.of(context).dividerColor.withValues(alpha: 0.5),
+                  color: AppColors.getDivider(context).withValues(alpha: 0.5),
                   width: 0.5,
                 ),
               ),
@@ -1051,8 +1472,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
                 Tab(icon: Icon(Icons.menu_book_rounded), text: 'Chapters'),
                 Tab(icon: Icon(Icons.quiz_rounded), text: 'Exams'),
               ],
-              labelStyle: AppTextStyles.labelMedium,
-              unselectedLabelStyle: AppTextStyles.labelMedium,
+              labelStyle: AppTextStyles.labelMedium(context),
+              unselectedLabelStyle: AppTextStyles.labelMedium(context),
               indicatorColor: AppColors.telegramBlue,
               indicatorWeight: 3,
               labelColor: AppColors.telegramBlue,
@@ -1075,12 +1496,12 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         child: SmartRefresher(
           controller: _refreshController,
           onRefresh: _manualRefresh,
-          header: const WaterDropHeader(
+          header: WaterDropHeader(
             waterDropColor: AppColors.telegramBlue,
             refresh: SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(
+              width: ResponsiveValues.iconSizeL(context),
+              height: ResponsiveValues.iconSizeL(context),
+              child: const CircularProgressIndicator(
                 strokeWidth: 2,
                 valueColor: AlwaysStoppedAnimation(AppColors.telegramBlue),
               ),
@@ -1106,96 +1527,20 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     ).animate().fadeIn(duration: AppThemes.animationDurationMedium);
   }
 
-  Widget _buildChaptersList(List<Chapter> chapters) {
-    if (chapters.isEmpty) {
-      return Center(
-        child: EmptyState(
-          icon: Icons.menu_book_rounded,
-          title: 'No Chapters Yet',
-          message: _isOffline
-              ? 'No cached chapters available. Connect to load chapters.'
-              : 'Chapters will appear here when available.',
-          type: EmptyStateType.noData,
-          actionText: 'Retry',
-          onAction: _manualRefresh,
-        ),
-      );
-    }
-
-    return ListView.builder(
-      padding: EdgeInsets.all(ScreenSize.responsiveValue(
-        context: context,
-        mobile: 16,
-        tablet: 20,
-        desktop: 24,
-      )),
-      itemCount: chapters.length,
-      itemBuilder: (context, index) {
-        final chapter = chapters[index];
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: ScreenSize.responsiveValue(
-              context: context,
-              mobile: 16,
-              tablet: 20,
-              desktop: 24,
-            ),
-          ),
-          child: ChapterCard(
-            chapter: chapter,
-            courseId: _course!.id,
-            categoryId: _category?.id ?? 0,
-            categoryName: _category?.name ?? 'Category',
-            onTap: () => _handleChapterTap(chapter),
-            index: index,
-          ),
-        );
-      },
-    );
+  Widget _buildTabletLayout() {
+    return _buildMobileLayout();
   }
 
-  Widget _buildExamsList(List<Exam> exams) {
-    if (exams.isEmpty) {
-      return Center(
-        child: EmptyState(
-          icon: Icons.quiz_rounded,
-          title: 'No Exams Yet',
-          message: _isOffline
-              ? 'No cached exams available. Connect to load exams.'
-              : 'Exams will appear here when available.',
-          type: EmptyStateType.noData,
-          actionText: 'Retry',
-          onAction: _manualRefresh,
-        ),
-      );
-    }
+  Widget _buildDesktopLayout() {
+    return _buildMobileLayout();
+  }
 
-    return ListView.builder(
-      padding: EdgeInsets.all(ScreenSize.responsiveValue(
-        context: context,
-        mobile: 16,
-        tablet: 20,
-        desktop: 24,
-      )),
-      itemCount: exams.length,
-      itemBuilder: (context, index) {
-        final exam = exams[index];
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: ScreenSize.responsiveValue(
-              context: context,
-              mobile: 16,
-              tablet: 20,
-              desktop: 24,
-            ),
-          ),
-          child: ExamCard(
-            exam: exam,
-            onTap: () => _handleExamTap(exam),
-            index: index,
-          ),
-        );
-      },
+  @override
+  Widget build(BuildContext context) {
+    return ResponsiveLayout(
+      mobile: _buildMobileLayout(),
+      tablet: _buildTabletLayout(),
+      desktop: _buildDesktopLayout(),
     );
   }
 

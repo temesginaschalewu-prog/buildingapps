@@ -4,6 +4,8 @@ import 'package:familyacademyclient/themes/app_text_styles.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../themes/app_themes.dart';
+import '../../utils/responsive_values.dart';
+import '../common/responsive_widgets.dart';
 
 class AchievementBadge extends StatelessWidget {
   final String title;
@@ -27,7 +29,8 @@ class AchievementBadge extends StatelessWidget {
 
   Widget _buildGlassContainer(BuildContext context, {required Widget child}) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
+      borderRadius:
+          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
         child: Container(
@@ -40,9 +43,12 @@ class AchievementBadge extends StatelessWidget {
                 AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
-            borderRadius: BorderRadius.circular(24),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
             border: Border.all(
-              color: unlocked ? color : AppColors.telegramBlue.withValues(alpha: 0.2),
+              color: unlocked
+                  ? color
+                  : AppColors.telegramBlue.withValues(alpha: 0.2),
               width: 1.5,
             ),
           ),
@@ -54,24 +60,18 @@ class AchievementBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = screenWidth < 600;
-    final isTablet = screenWidth >= 600 && screenWidth < 1024;
-
-    final padding = isMobile
-        ? AppThemes.spacingL
-        : (isTablet ? AppThemes.spacingXL : AppThemes.spacingXXL);
-    final iconContainerSize = isMobile ? 60.0 : (isTablet ? 70.0 : 80.0);
-    final iconSize = isMobile ? 28.0 : (isTablet ? 32.0 : 36.0);
-    final titleSize = isMobile ? 14.0 : (isTablet ? 15.0 : 16.0);
-    final descSize = isMobile ? 11.0 : (isTablet ? 12.0 : 13.0);
-    final badgeSize = isMobile ? 10.0 : (isTablet ? 11.0 : 12.0);
+    final padding = ResponsiveValues.cardPadding(context);
+    final iconContainerSize = ResponsiveValues.iconSizeXXL(context) * 1.5;
+    final iconSize = ResponsiveValues.iconSizeXL(context);
+    final titleSize = ResponsiveValues.fontTitleSmall(context);
+    final descSize = ResponsiveValues.fontBodySmall(context);
+    final badgeSize = ResponsiveValues.fontLabelSmall(context);
 
     return _buildGlassContainer(
       context,
       child: Padding(
-        padding: EdgeInsets.all(padding),
-        child: Column(
+        padding: padding,
+        child: ResponsiveColumn(
           children: [
             Stack(
               alignment: Alignment.center,
@@ -104,10 +104,11 @@ class AchievementBadge extends StatelessWidget {
                           ),
                         ),
                       Center(
-                        child: Icon(
+                        child: ResponsiveIcon(
                           icon,
                           size: iconSize,
-                          color: unlocked ? color : color.withValues(alpha: 0.5),
+                          color:
+                              unlocked ? color : color.withValues(alpha: 0.5),
                         ),
                       ),
                     ],
@@ -118,7 +119,8 @@ class AchievementBadge extends StatelessWidget {
                     bottom: 0,
                     right: 0,
                     child: Container(
-                      padding: const EdgeInsets.all(4),
+                      padding:
+                          EdgeInsets.all(ResponsiveValues.spacingXXS(context)),
                       decoration: BoxDecoration(
                         color: AppColors.getBackground(context),
                         shape: BoxShape.circle,
@@ -128,26 +130,24 @@ class AchievementBadge extends StatelessWidget {
                         ),
                         boxShadow: [
                           BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.1),
-                              blurRadius: 4)
+                            color: Colors.black.withValues(alpha: 0.1),
+                            blurRadius: ResponsiveValues.spacingXS(context),
+                          ),
                         ],
                       ),
-                      child: Icon(
+                      child: ResponsiveIcon(
                         Icons.lock_outline_rounded,
-                        size: isMobile ? 14 : (isTablet ? 15 : 16),
+                        size: ResponsiveValues.iconSizeXS(context),
                         color: AppColors.getTextSecondary(context),
                       ),
                     ),
                   ),
               ],
             ),
-            SizedBox(
-                height: isMobile
-                    ? AppThemes.spacingM
-                    : (isTablet ? AppThemes.spacingL : AppThemes.spacingXL)),
-            Text(
+            const ResponsiveSizedBox(height: AppSpacing.m),
+            ResponsiveText(
               title,
-              style: AppTextStyles.titleSmall.copyWith(
+              style: AppTextStyles.titleSmall(context).copyWith(
                 color: unlocked ? color : AppColors.getTextPrimary(context),
                 fontWeight: FontWeight.w600,
                 fontSize: titleSize,
@@ -156,13 +156,10 @@ class AchievementBadge extends StatelessWidget {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
-            SizedBox(
-                height: isMobile
-                    ? AppThemes.spacingXS
-                    : (isTablet ? AppThemes.spacingS : AppThemes.spacingM)),
-            Text(
+            const ResponsiveSizedBox(height: AppSpacing.xs),
+            ResponsiveText(
               description,
-              style: AppTextStyles.bodySmall.copyWith(
+              style: AppTextStyles.bodySmall(context).copyWith(
                 color: AppColors.getTextSecondary(context),
                 fontSize: descSize,
               ),
@@ -173,12 +170,11 @@ class AchievementBadge extends StatelessWidget {
             if (unlocked && earnedDate != null)
               Padding(
                 padding: EdgeInsets.only(
-                    top: isMobile
-                        ? AppThemes.spacingS
-                        : (isTablet ? AppThemes.spacingM : AppThemes.spacingL)),
-                child: Text(
+                  top: ResponsiveValues.spacingS(context),
+                ),
+                child: ResponsiveText(
                   _formatDate(earnedDate!),
-                  style: AppTextStyles.labelSmall.copyWith(
+                  style: AppTextStyles.labelSmall(context).copyWith(
                     color: color,
                     fontSize: badgeSize,
                     fontWeight: FontWeight.w600,
@@ -188,27 +184,23 @@ class AchievementBadge extends StatelessWidget {
             if (!unlocked && progress > 0)
               Padding(
                 padding: EdgeInsets.only(
-                    top: isMobile
-                        ? AppThemes.spacingS
-                        : (isTablet ? AppThemes.spacingM : AppThemes.spacingL)),
+                  top: ResponsiveValues.spacingS(context),
+                ),
                 child: Container(
                   padding: EdgeInsets.symmetric(
-                    horizontal: isMobile
-                        ? AppThemes.spacingS
-                        : (isTablet ? AppThemes.spacingM : AppThemes.spacingL),
-                    vertical: isMobile
-                        ? AppThemes.spacingXS
-                        : (isTablet ? AppThemes.spacingS : AppThemes.spacingM),
+                    horizontal: ResponsiveValues.spacingS(context),
+                    vertical: ResponsiveValues.spacingXXS(context),
                   ),
                   decoration: BoxDecoration(
                     color: color.withValues(alpha: 0.1),
-                    borderRadius:
-                        BorderRadius.circular(AppThemes.borderRadiusFull),
+                    borderRadius: BorderRadius.circular(
+                      ResponsiveValues.radiusFull(context),
+                    ),
                     border: Border.all(color: color),
                   ),
-                  child: Text(
+                  child: ResponsiveText(
                     '${(progress * 100).toInt()}%',
-                    style: AppTextStyles.labelSmall.copyWith(
+                    style: AppTextStyles.labelSmall(context).copyWith(
                       color: color,
                       fontWeight: FontWeight.w600,
                       fontSize: badgeSize,

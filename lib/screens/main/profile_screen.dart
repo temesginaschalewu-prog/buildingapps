@@ -15,6 +15,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
+import 'package:familyacademyclient/utils/responsive_values.dart';
 import 'package:familyacademyclient/providers/auth_provider.dart';
 import 'package:familyacademyclient/providers/user_provider.dart';
 import 'package:familyacademyclient/providers/theme_provider.dart';
@@ -23,9 +24,9 @@ import 'package:familyacademyclient/themes/app_themes.dart';
 import 'package:familyacademyclient/services/api_service.dart';
 import 'package:familyacademyclient/services/device_service.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:badges/badges.dart' as badges;
 import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:familyacademyclient/widgets/common/responsive_widgets.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -39,21 +40,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+  final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey =
+      GlobalKey<RefreshIndicatorState>();
 
   File? _profileImageFile;
-  String? _tempProfileImageUrl;
   bool _isEditing = false;
   bool _isUploadingImage = false;
   bool _isSaving = false;
   String? _schoolName;
   bool _notificationsEnabled = true;
-  final int _unreadNotifications = 0;
   bool _isOffline = false;
+  bool _isRefreshing = false;
+  String _refreshSubtitle = '';
 
   User? _cachedUser;
   bool _hasCachedData = false;
   bool _isFirstLoad = true;
-  bool _isRefreshing = false;
 
   Timer? _refreshTimer;
   StreamSubscription? _userSubscription;
@@ -88,9 +90,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  Widget _buildGlassContainer(BuildContext context, {required Widget child}) {
+  Widget _buildGlassContainer({required Widget child}) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
+      borderRadius:
+          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
         child: Container(
@@ -103,7 +106,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 AppColors.getCard(context).withValues(alpha: 0.2),
               ],
             ),
-            borderRadius: BorderRadius.circular(24),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
             border: Border.all(
               color: AppColors.telegramBlue.withValues(alpha: 0.2),
             ),
@@ -138,7 +142,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _phoneController.text = _cachedUser!.phone ?? '';
       }
       if (!_isOffline) {
-        _refreshInBackground();
+        await _refreshInBackground();
       }
     } else {
       await _loadFreshData();
@@ -256,7 +260,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
 
-    setState(() => _isRefreshing = true);
+    setState(() {
+      _isRefreshing = true;
+      _refreshSubtitle = 'Refreshing...';
+    });
 
     try {
       final userProvider = Provider.of<UserProvider>(context, listen: false);
@@ -284,7 +291,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
       showTopSnackBar(context, 'Refresh failed, using cached data',
           isError: true);
     } finally {
-      setState(() => _isRefreshing = false);
+      setState(() {
+        _isRefreshing = false;
+        _refreshSubtitle = '';
+      });
     }
   }
 
@@ -455,7 +465,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       if (response.success && response.data != null) {
         final imageUrl = response.data!;
-        setState(() => _tempProfileImageUrl = imageUrl);
 
         final userProvider = Provider.of<UserProvider>(context, listen: false);
         await userProvider.updateProfile(profileImage: imageUrl);
@@ -463,7 +472,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         showTopSnackBar(context, 'Profile image updated');
         setState(() {
           _profileImageFile = null;
-          _tempProfileImageUrl = null;
         });
       } else {
         showTopSnackBar(context, 'Failed to upload image', isError: true);
@@ -512,14 +520,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 3),
           shape: RoundedRectangleBorder(
-              borderRadius:
-                  BorderRadius.circular(AppThemes.borderRadiusMedium)),
+            borderRadius: BorderRadius.circular(
+              ResponsiveValues.radiusMedium(context),
+            ),
+          ),
         ),
       );
       setState(() => _isSaving = false);
     }
 
-    if (!_isSaving) _refreshInBackground();
+    if (!_isSaving) await _refreshInBackground();
   }
 
   bool _isValidEmail(String email) {
@@ -530,86 +540,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return RegExp(r'^[0-9+\-()\s]{10,15}$').hasMatch(phone);
   }
 
-  Widget _buildNotificationButton() {
-    return GestureDetector(
-      onTap: () {
-        GoRouter.of(context).push('/notifications');
-      },
-      child: _buildGlassContainer(
-        context,
-        child: SizedBox(
-          width: 40,
-          height: 40,
-          child: Center(
-            child: _unreadNotifications > 0
-                ? badges.Badge(
-                    position: badges.BadgePosition.topEnd(top: -4, end: -4),
-                    badgeContent: Text(
-                      _unreadNotifications > 9
-                          ? '9+'
-                          : _unreadNotifications.toString(),
-                      style: AppTextStyles.labelSmall.copyWith(
-                          color: Colors.white,
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold),
-                    ),
-                    badgeStyle: const badges.BadgeStyle(
-                      badgeColor: AppColors.telegramRed,
-                      padding: EdgeInsets.all(4),
-                    ),
-                    child: Icon(Icons.notifications_outlined,
-                        size: 22, color: AppColors.getTextPrimary(context)),
-                  )
-                : Icon(Icons.notifications_outlined,
-                    size: 22, color: AppColors.getTextPrimary(context)),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildThemeToggleButton() {
-    return Consumer<ThemeProvider>(
-      builder: (context, themeProvider, child) {
-        return GestureDetector(
-          onTap: themeProvider.toggleTheme,
-          child: _buildGlassContainer(
-            context,
-            child: SizedBox(
-              width: 40,
-              height: 40,
-              child: Center(
-                child: Icon(
-                  themeProvider.themeMode == ThemeMode.dark
-                      ? Icons.light_mode_outlined
-                      : Icons.dark_mode_outlined,
-                  size: 22,
-                  color: AppColors.getTextPrimary(context),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
+// FIXED: Edit button now matches theme/notification buttons exactly
   Widget _buildEditButton() {
     return GestureDetector(
       onTap: _isOffline
           ? null
           : (_isEditing ? null : () => setState(() => _isEditing = true)),
-      child: _buildGlassContainer(
-        context,
-        child: SizedBox(
-          width: 40,
-          height: 40,
-          child: Center(
-            child: Icon(
-              _isOffline ? Icons.wifi_off_rounded : Icons.edit_rounded,
-              size: 22,
-              color:
-                  _isOffline ? AppColors.telegramGray : AppColors.telegramBlue,
+      child: Container(
+        width: ResponsiveValues.appBarButtonSize(context),
+        height: ResponsiveValues.appBarButtonSize(context),
+        decoration: BoxDecoration(
+          color: AppColors.getSurface(context).withValues(alpha: 0.15),
+          shape: BoxShape.circle,
+        ),
+        child: ClipOval(
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: _isOffline
+                  ? null
+                  : (_isEditing
+                      ? null
+                      : () => setState(() => _isEditing = true)),
+              splashColor: AppColors.telegramBlue.withValues(alpha: 0.2),
+              highlightColor: Colors.transparent,
+              child: Center(
+                child: Icon(
+                  _isOffline ? Icons.wifi_off_rounded : Icons.edit_rounded,
+                  size: ResponsiveValues.appBarIconSize(context),
+                  color: _isOffline
+                      ? AppColors.telegramGray
+                      : AppColors.telegramBlue,
+                ),
+              ),
             ),
           ),
         ),
@@ -617,29 +580,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+// FIXED: Save button matches the same style
   Widget _buildSaveButton() {
     return GestureDetector(
       onTap: _isSaving ? null : _saveProfile,
-      child: _buildGlassContainer(
-        context,
-        child: SizedBox(
-          width: 40,
-          height: 40,
-          child: Center(
-            child: _isSaving
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: AppColors.telegramBlue,
-                    ),
-                  )
-                : const Icon(
-                    Icons.save_rounded,
-                    color: AppColors.telegramBlue,
-                    size: 22,
-                  ),
+      child: Container(
+        width: ResponsiveValues.appBarButtonSize(context),
+        height: ResponsiveValues.appBarButtonSize(context),
+        decoration: BoxDecoration(
+          color: AppColors.getSurface(context).withValues(alpha: 0.15),
+          shape: BoxShape.circle,
+        ),
+        child: ClipOval(
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: _isSaving ? null : _saveProfile,
+              splashColor: AppColors.telegramBlue.withValues(alpha: 0.2),
+              highlightColor: Colors.transparent,
+              child: Center(
+                child: _isSaving
+                    ? SizedBox(
+                        width: ResponsiveValues.appBarIconSize(context),
+                        height: ResponsiveValues.appBarIconSize(context),
+                        child: const CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.telegramBlue,
+                        ),
+                      )
+                    : Icon(
+                        Icons.save_rounded,
+                        size: ResponsiveValues.appBarIconSize(context),
+                        color: AppColors.telegramBlue,
+                      ),
+              ),
+            ),
           ),
         ),
       ),
@@ -647,8 +622,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildProfileHeader(User user) {
-    final avatarSize = ScreenSize.responsiveValue(
-        context: context, mobile: 80.0, tablet: 100.0, desktop: 120.0);
+    final avatarSize = ResponsiveValues.avatarSizeLarge(context);
 
     return Column(
       children: [
@@ -658,42 +632,47 @@ class _ProfileScreenState extends State<ProfileScreen> {
             GestureDetector(
               onTap: (_isEditing && !_isOffline) ? _pickProfileImage : null,
               behavior: HitTestBehavior.opaque,
-              child: _buildGlassContainer(
-                context,
-                child: SizedBox(
-                  width: avatarSize,
-                  height: avatarSize,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(avatarSize / 2),
-                    child: _profileImageFile != null
-                        ? Image.file(_profileImageFile!,
-                            fit: BoxFit.cover,
-                            width: avatarSize,
-                            height: avatarSize)
-                        : user.profileImage?.isNotEmpty == true
-                            ? Image.network(
-                                user.profileImage!,
-                                fit: BoxFit.cover,
-                                width: avatarSize,
-                                height: avatarSize,
-                                loadingBuilder: (context, child, progress) {
-                                  if (progress == null) return child;
-                                  return Center(
-                                    child: CircularProgressIndicator(
-                                      value: progress.expectedTotalBytes != null
-                                          ? progress.cumulativeBytesLoaded /
-                                              progress.expectedTotalBytes!
-                                          : null,
-                                      color: AppColors.telegramBlue,
-                                    ),
-                                  );
-                                },
-                                errorBuilder: (context, error, stackTrace) =>
-                                    _buildInitialsAvatar(
-                                        user.username, avatarSize),
-                              )
-                            : _buildInitialsAvatar(user.username, avatarSize),
+              child: Container(
+                width: avatarSize,
+                height: avatarSize,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: ResponsiveValues.profileAvatarBorderColor(context),
+                    width: ResponsiveValues.profileAvatarBorderWidth(context),
                   ),
+                ),
+                child: ClipOval(
+                  child: _profileImageFile != null
+                      ? Image.file(
+                          _profileImageFile!,
+                          fit: BoxFit.cover,
+                          width: avatarSize,
+                          height: avatarSize,
+                        )
+                      : user.profileImage?.isNotEmpty == true
+                          ? Image.network(
+                              user.profileImage!,
+                              fit: BoxFit.cover,
+                              width: avatarSize,
+                              height: avatarSize,
+                              loadingBuilder: (context, child, progress) {
+                                if (progress == null) return child;
+                                return Center(
+                                  child: CircularProgressIndicator(
+                                    value: progress.expectedTotalBytes != null
+                                        ? progress.cumulativeBytesLoaded /
+                                            progress.expectedTotalBytes!
+                                        : null,
+                                    color: AppColors.telegramBlue,
+                                  ),
+                                );
+                              },
+                              errorBuilder: (context, error, stackTrace) =>
+                                  _buildInitialsAvatar(
+                                      user.username, avatarSize),
+                            )
+                          : _buildInitialsAvatar(user.username, avatarSize),
                 ),
               ),
             ),
@@ -703,33 +682,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 right: 0,
                 child: GestureDetector(
                   onTap: _pickProfileImage,
-                  behavior: HitTestBehavior.opaque,
-                  child: _buildGlassContainer(
-                    context,
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      padding: const EdgeInsets.all(4),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                              colors: AppColors.blueGradient,
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight),
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                              color: AppColors.getBackground(context),
-                              width: 3),
-                          boxShadow: [
-                            BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.2),
-                                blurRadius: 4,
-                                offset: const Offset(0, 2))
-                          ],
-                        ),
-                        child: const Icon(Icons.edit_rounded,
-                            size: 14, color: Colors.white),
+                  child: Container(
+                    width: ResponsiveValues.iconSizeXL(context) * 1.2,
+                    height: ResponsiveValues.iconSizeXL(context) * 1.2,
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: AppColors.blueGradient,
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
+                      shape: BoxShape.circle,
+                      border: Border.fromBorderSide(
+                        BorderSide(color: Colors.white, width: 3),
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.edit_rounded,
+                      size: 18,
+                      color: Colors.white,
                     ),
                   ),
                 ),
@@ -738,52 +708,72 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Positioned.fill(
                 child: Container(
                   decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(avatarSize / 2)),
+                    color: Colors.black.withValues(alpha: 0.5),
+                    shape: BoxShape.circle,
+                  ),
                   child: const Center(
+                    child: SizedBox(
+                      width: 24,
+                      height: 24,
                       child: CircularProgressIndicator(
-                          valueColor:
-                              AlwaysStoppedAnimation<Color>(Colors.white))),
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    ),
+                  ),
                 ),
               ),
           ],
         ),
-        const SizedBox(height: AppThemes.spacingL),
-        Text(user.username,
-            style: AppTextStyles.headlineSmall.copyWith(
-                color: AppColors.getTextPrimary(context),
-                fontWeight: FontWeight.w700),
-            textAlign: TextAlign.center),
+        ResponsiveSizedBox(height: AppSpacing.l),
+        Text(
+          user.username,
+          style: AppTextStyles.headlineSmall(context).copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+          textAlign: TextAlign.center,
+        ),
         if (_schoolName != null) ...[
-          const SizedBox(height: 4),
-          Text(_schoolName!,
-              style: AppTextStyles.bodySmall
-                  .copyWith(color: AppColors.getTextSecondary(context)),
-              textAlign: TextAlign.center),
+          ResponsiveSizedBox(height: AppSpacing.xs),
+          Text(
+            _schoolName!,
+            style: AppTextStyles.bodySmall(context).copyWith(
+              color: AppColors.getTextSecondary(context),
+            ),
+            textAlign: TextAlign.center,
+          ),
         ],
-        const SizedBox(height: AppThemes.spacingM),
-        _buildGlassContainer(
-          context,
-          child: Container(
-            padding: const EdgeInsets.symmetric(
-                horizontal: AppThemes.spacingM, vertical: 6),
-            child: Text(
-              user.accountStatus.toUpperCase(),
-              style: AppTextStyles.labelSmall.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.getStatusColor(user.accountStatus, context)),
+        ResponsiveSizedBox(height: AppSpacing.m),
+        Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: ResponsiveValues.statusBadgePadding(context),
+            vertical: ResponsiveValues.spacingXXS(context),
+          ),
+          decoration: BoxDecoration(
+            color: AppColors.getStatusBackground(user.accountStatus, context),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusFull(context)),
+          ),
+          child: Text(
+            user.accountStatus.toUpperCase(),
+            style: AppTextStyles.statusBadge(context).copyWith(
+              fontSize: ResponsiveValues.statusBadgeFontSize(context),
+              fontWeight: FontWeight.w600,
+              color: AppColors.getStatusColor(user.accountStatus, context),
             ),
           ),
         ),
         if (_isOffline)
           Padding(
-            padding: const EdgeInsets.only(top: 8),
+            padding: EdgeInsets.only(top: ResponsiveValues.spacingS(context)),
             child: Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: AppThemes.spacingM, vertical: 4),
+              padding: EdgeInsets.symmetric(
+                horizontal: ResponsiveValues.spacingM(context),
+                vertical: ResponsiveValues.spacingXXS(context),
+              ),
               decoration: BoxDecoration(
                 color: AppColors.telegramYellow.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(20),
+                borderRadius:
+                    BorderRadius.circular(ResponsiveValues.radiusFull(context)),
                 border: Border.all(
                   color: AppColors.telegramYellow.withValues(alpha: 0.3),
                 ),
@@ -791,15 +781,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.wifi_off_rounded,
-                      size: 12, color: AppColors.telegramYellow),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Offline Mode',
-                    style: AppTextStyles.caption.copyWith(
-                      color: AppColors.telegramYellow,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  const Icon(
+                    Icons.wifi_off_rounded,
+                    size: 12,
+                    color: AppColors.telegramYellow,
                   ),
                 ],
               ),
@@ -812,18 +797,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildInitialsAvatar(String username, double size) {
     return Container(
       decoration: const BoxDecoration(
-          gradient: LinearGradient(
-              colors: AppColors.purpleGradient,
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight),
-          shape: BoxShape.circle),
+        gradient: LinearGradient(
+          colors: AppColors.purpleGradient,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
       child: Center(
         child: Text(
           username.substring(0, 2).toUpperCase(),
           style: TextStyle(
-              fontSize: size * 0.3,
-              fontWeight: FontWeight.bold,
-              color: Colors.white),
+            fontSize: size * 0.3,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
         ),
       ),
     );
@@ -831,13 +818,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildEditProfileForm() {
     return _buildGlassContainer(
-      context,
       child: Padding(
-        padding: EdgeInsets.all(ScreenSize.responsiveValue(
-            context: context,
-            mobile: AppThemes.spacingL,
-            tablet: AppThemes.spacingXL,
-            desktop: AppThemes.spacingXXL)),
+        padding: ResponsiveValues.cardPadding(context),
         child: Form(
           key: _formKey,
           child: Column(
@@ -847,17 +829,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 decoration: InputDecoration(
                   labelText: 'Email',
                   hintText: 'email@example.com',
-                  prefixIcon: const Icon(Icons.email_outlined),
+                  prefixIcon: ResponsiveIcon(
+                    Icons.email_outlined,
+                    size: ResponsiveValues.iconSizeS(context),
+                  ),
                   border: OutlineInputBorder(
-                      borderRadius:
-                          BorderRadius.circular(AppThemes.borderRadiusMedium),
-                      borderSide: BorderSide.none),
+                    borderRadius: BorderRadius.circular(
+                      ResponsiveValues.radiusMedium(context),
+                    ),
+                    borderSide: BorderSide.none,
+                  ),
                   filled: true,
                   fillColor: AppColors.getSurface(context),
                 ),
                 keyboardType: TextInputType.emailAddress,
-                style: AppTextStyles.bodyMedium
-                    .copyWith(color: AppColors.getTextPrimary(context)),
+                style: AppTextStyles.bodyMedium(context),
                 enabled: !_isOffline,
                 validator: (value) {
                   if (value != null &&
@@ -868,23 +854,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   return null;
                 },
               ),
-              const SizedBox(height: AppThemes.spacingL),
+              ResponsiveSizedBox(height: AppSpacing.l),
               TextFormField(
                 controller: _phoneController,
                 decoration: InputDecoration(
                   labelText: 'Phone Number',
                   hintText: '+1 (123) 456-7890',
-                  prefixIcon: const Icon(Icons.phone_outlined),
+                  prefixIcon: ResponsiveIcon(
+                    Icons.phone_outlined,
+                    size: ResponsiveValues.iconSizeS(context),
+                  ),
                   border: OutlineInputBorder(
-                      borderRadius:
-                          BorderRadius.circular(AppThemes.borderRadiusMedium),
-                      borderSide: BorderSide.none),
+                    borderRadius: BorderRadius.circular(
+                      ResponsiveValues.radiusMedium(context),
+                    ),
+                    borderSide: BorderSide.none,
+                  ),
                   filled: true,
                   fillColor: AppColors.getSurface(context),
                 ),
                 keyboardType: TextInputType.phone,
-                style: AppTextStyles.bodyMedium
-                    .copyWith(color: AppColors.getTextPrimary(context)),
+                style: AppTextStyles.bodyMedium(context),
                 enabled: !_isOffline,
                 validator: (value) {
                   if (value != null &&
@@ -895,12 +885,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   return null;
                 },
               ),
-              const SizedBox(height: AppThemes.spacingXL),
+              ResponsiveSizedBox(height: AppSpacing.xl),
               if (_isOffline)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
+                  padding: EdgeInsets.only(
+                      bottom: ResponsiveValues.spacingL(context)),
                   child: Container(
-                    padding: const EdgeInsets.all(12),
+                    padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
@@ -908,7 +899,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           AppColors.telegramYellow.withValues(alpha: 0.1),
                         ],
                       ),
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(
+                        ResponsiveValues.radiusMedium(context),
+                      ),
                     ),
                     child: Row(
                       children: [
@@ -918,7 +911,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         Expanded(
                           child: Text(
                             'You are offline. Connect to update profile.',
-                            style: AppTextStyles.bodySmall.copyWith(
+                            style: AppTextStyles.bodySmall(context).copyWith(
                               color: AppColors.telegramYellow,
                             ),
                           ),
@@ -935,38 +928,45 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       style: TextButton.styleFrom(
                         foregroundColor: AppColors.getTextPrimary(context),
                         side: BorderSide(
-                            color: AppColors.getTextSecondary(context)),
-                        padding: const EdgeInsets.symmetric(
-                            vertical: AppThemes.spacingM),
+                          color: AppColors.getTextSecondary(context),
+                        ),
+                        padding: EdgeInsets.symmetric(
+                          vertical: ResponsiveValues.spacingM(context),
+                        ),
                         shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(
-                                AppThemes.borderRadiusMedium)),
+                          borderRadius: BorderRadius.circular(
+                            ResponsiveValues.radiusMedium(context),
+                          ),
+                        ),
                       ),
                       child: const Text('Cancel'),
                     ),
                   ),
-                  const SizedBox(width: AppThemes.spacingM),
+                  ResponsiveSizedBox(width: AppSpacing.m),
                   Expanded(
                     child: Container(
                       decoration: BoxDecoration(
                         gradient: _isOffline
                             ? null
                             : const LinearGradient(
-                                colors: [Color(0xFF2AABEE), Color(0xFF5856D6)],
+                                colors: AppColors.blueGradient,
                               ),
                         color: _isOffline
                             ? AppColors.telegramGray.withValues(alpha: 0.3)
                             : null,
-                        borderRadius:
-                            BorderRadius.circular(AppThemes.borderRadiusMedium),
+                        borderRadius: BorderRadius.circular(
+                          ResponsiveValues.radiusMedium(context),
+                        ),
                         boxShadow: _isOffline
                             ? null
                             : [
                                 BoxShadow(
                                   color: AppColors.telegramBlue
                                       .withValues(alpha: 0.3),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 2),
+                                  blurRadius:
+                                      ResponsiveValues.spacingS(context),
+                                  offset: Offset(
+                                      0, ResponsiveValues.spacingXS(context)),
                                 ),
                               ],
                       ),
@@ -979,20 +979,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ? AppColors.getTextSecondary(context)
                               : Colors.white,
                           shadowColor: Colors.transparent,
-                          padding: const EdgeInsets.symmetric(
-                              vertical: AppThemes.spacingM),
+                          padding: EdgeInsets.symmetric(
+                            vertical: ResponsiveValues.spacingM(context),
+                          ),
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(
-                                  AppThemes.borderRadiusMedium)),
+                            borderRadius: BorderRadius.circular(
+                              ResponsiveValues.radiusMedium(context),
+                            ),
+                          ),
                         ),
                         child: _isSaving
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                        Colors.white)))
+                            ? SizedBox(
+                                width: ResponsiveValues.iconSizeM(context),
+                                height: ResponsiveValues.iconSizeM(context),
+                                child: const CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white,
+                                  ),
+                                ),
+                              )
                             : Text(_isOffline ? 'Offline' : 'Save'),
                       ),
                     ),
@@ -1008,23 +1014,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildInfoSection(User user) {
     return _buildGlassContainer(
-      context,
       child: Padding(
-        padding: EdgeInsets.all(ScreenSize.responsiveValue(
-            context: context,
-            mobile: AppThemes.spacingL,
-            tablet: AppThemes.spacingXL,
-            desktop: AppThemes.spacingXXL)),
+        padding: ResponsiveValues.cardPadding(context),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             _buildInfoItem(
-                Icons.email_outlined, 'Email', user.email ?? 'Not set'),
-            const Divider(),
+              Icons.email_outlined,
+              'Email',
+              user.email ?? 'Not set',
+            ),
+            const Divider(height: 1),
             _buildInfoItem(
-                Icons.phone_outlined, 'Phone', user.phone ?? 'Not set'),
-            const Divider(),
+              Icons.phone_outlined,
+              'Phone',
+              user.phone ?? 'Not set',
+            ),
+            const Divider(height: 1),
             _buildInfoItem(
-                Icons.school_outlined, 'School', _schoolName ?? 'Not selected'),
+              Icons.school_outlined,
+              'School',
+              _schoolName ?? 'Not selected',
+            ),
           ],
         ),
       ),
@@ -1033,85 +1044,125 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildInfoItem(IconData icon, String label, String value) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppThemes.spacingM),
-      child: Row(
-        children: [
-          Container(
-              width: 40,
-              height: 40,
+      padding: EdgeInsets.symmetric(
+        vertical: ResponsiveValues.infoSectionVerticalPadding(context),
+      ),
+      child: SizedBox(
+        height: ResponsiveValues.infoSectionItemHeight(context),
+        child: Row(
+          children: [
+            Container(
+              width: ResponsiveValues.menuIconContainerSize(context),
+              height: ResponsiveValues.menuIconContainerSize(context),
               decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      AppColors.telegramBlue.withValues(alpha: 0.2),
-                      AppColors.telegramPurple.withValues(alpha: 0.1),
-                    ],
-                  ),
-                  shape: BoxShape.circle),
-              child: Icon(icon, color: AppColors.telegramBlue, size: 20)),
-          const SizedBox(width: AppThemes.spacingM),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label,
-                    style: AppTextStyles.labelMedium.copyWith(
-                        color: AppColors.getTextSecondary(context),
-                        fontWeight: FontWeight.w500)),
-                const SizedBox(height: 2),
-                Text(value,
-                    style: AppTextStyles.bodyMedium.copyWith(
-                        color: AppColors.getTextPrimary(context),
-                        fontWeight: FontWeight.w500),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
-              ],
+                color: ResponsiveValues.infoIconBackgroundColor(context),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                icon,
+                size: ResponsiveValues.infoSectionIconSize(context),
+                color: ResponsiveValues.infoIconColor(context),
+              ),
             ),
-          ),
-        ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    label,
+                    style: AppTextStyles.labelMedium(context).copyWith(
+                      color: AppColors.getTextSecondary(context),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  Text(
+                    value,
+                    style: AppTextStyles.bodyMedium(context).copyWith(
+                      fontWeight: FontWeight.w500,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildMenuCard(
-      {required IconData icon,
-      required String title,
-      required VoidCallback onTap,
-      Color? iconColor}) {
-    return _buildGlassContainer(
-      context,
+  // FIXED: Menu cards now have consistent padding and no extra margin
+  Widget _buildMenuCard({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+    Color? iconColor,
+  }) {
+    return Container(
+      height: ResponsiveValues.menuCardHeight(context),
+      margin: EdgeInsets.zero,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: AppThemes.spacingM),
+          borderRadius: BorderRadius.circular(
+              ResponsiveValues.menuCardBorderRadius(context)),
+          child: Container(
+            padding: ResponsiveValues.menuCardPadding(context),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  ResponsiveValues.menuCardGradientStart(context),
+                  ResponsiveValues.menuCardGradientEnd(context),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(
+                  ResponsiveValues.menuCardBorderRadius(context)),
+              border: Border.all(
+                color: ResponsiveValues.menuCardBorderColor(context),
+              ),
+            ),
             child: Row(
               children: [
                 Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            (iconColor ?? AppColors.getTextSecondary(context))
-                                .withValues(alpha: 0.2),
-                            (iconColor ?? AppColors.getTextSecondary(context))
-                                .withValues(alpha: 0.1),
-                          ],
-                        ),
-                        shape: BoxShape.circle),
-                    child: Icon(icon,
-                        color: iconColor ?? AppColors.getTextSecondary(context),
-                        size: 20)),
-                const SizedBox(width: AppThemes.spacingM),
+                  width: ResponsiveValues.menuIconContainerSize(context),
+                  height: ResponsiveValues.menuIconContainerSize(context),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        (iconColor ?? AppColors.telegramBlue)
+                            .withValues(alpha: 0.2),
+                        (iconColor ?? AppColors.telegramBlue)
+                            .withValues(alpha: 0.1),
+                      ],
+                    ),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    icon,
+                    size: ResponsiveValues.menuIconSize(context),
+                    color: iconColor ?? AppColors.telegramBlue,
+                  ),
+                ),
+                const SizedBox(width: 12),
                 Expanded(
-                    child: Text(title,
-                        style: AppTextStyles.bodyMedium.copyWith(
-                            color: AppColors.getTextPrimary(context),
-                            fontWeight: FontWeight.w500))),
-                Icon(Icons.chevron_right_rounded,
-                    color: AppColors.getTextSecondary(context), size: 20),
+                  child: Text(
+                    title,
+                    style: AppTextStyles.bodyMedium(context).copyWith(
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: ResponsiveValues.iconSizeS(context),
+                  color: AppColors.getTextSecondary(context),
+                ),
               ],
             ),
           ),
@@ -1121,64 +1172,110 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildMenuSection() {
-    return _buildGlassContainer(
-      context,
-      child: Padding(
-        padding: EdgeInsets.all(ScreenSize.responsiveValue(
-            context: context,
-            mobile: AppThemes.spacingL,
-            tablet: AppThemes.spacingXL,
-            desktop: AppThemes.spacingXXL)),
-        child: Column(
-          children: [
-            _buildMenuCard(
-                icon: Icons.subscriptions_outlined,
-                title: 'Subscriptions',
-                onTap: () => context.push('/subscriptions')),
-            const Divider(),
-            _buildMenuCard(
-                icon: Icons.tv_outlined,
-                title: 'TV Pairing',
-                onTap: () => context.push('/tv-pairing')),
-            const Divider(),
-            _buildMenuCard(
-                icon: Icons.family_restroom_outlined,
-                title: 'Parent Controls',
-                onTap: () => context.push('/parent-link')),
-            const Divider(),
-            _buildMenuCard(
-                icon: Icons.feedback_outlined,
-                title: 'Feedback',
-                onTap: _openTelegramGroup,
-                iconColor: AppColors.telegramBlue),
-            const Divider(),
-            _buildMenuCard(
-                icon: Icons.support_outlined,
-                title: 'Help & Support',
-                onTap: () => context.push('/support')),
-            const Divider(),
-            _buildMenuCard(
-                icon: Icons.info_outline,
-                title: 'App Info',
-                onTap: _showAppInfo),
-          ],
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildMenuCard(
+          icon: Icons.subscriptions_outlined,
+          title: 'Subscriptions',
+          onTap: () => context.push('/subscriptions'),
+        ),
+        _buildMenuCard(
+          icon: Icons.tv_outlined,
+          title: 'TV Pairing',
+          onTap: () => context.push('/tv-pairing'),
+        ),
+        _buildMenuCard(
+          icon: Icons.family_restroom_outlined,
+          title: 'Parent Controls',
+          onTap: () => context.push('/parent-link'),
+        ),
+        _buildMenuCard(
+          icon: Icons.feedback_outlined,
+          title: 'Feedback',
+          onTap: _openTelegramGroup,
+          iconColor: AppColors.telegramBlue,
+        ),
+        _buildMenuCard(
+          icon: Icons.support_outlined,
+          title: 'Help & Support',
+          onTap: () => context.push('/support'),
+        ),
+        _buildMenuCard(
+          icon: Icons.info_outline,
+          title: 'App Info',
+          onTap: _showAppInfo,
+        ),
+      ],
+    );
+  }
+
+  // FIXED: Setting cards now have proper spacing and no extra margin
+  Widget _buildSettingCard({
+    required IconData icon,
+    required String title,
+    required bool value,
+    required Function(bool)? onChanged,
+  }) {
+    return Container(
+      height: ResponsiveValues.settingCardHeight(context),
+      margin: EdgeInsets.zero,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onChanged != null ? () => onChanged(!value) : null,
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+          child: Row(
+            children: [
+              Container(
+                width: ResponsiveValues.settingIconContainerSize(context),
+                height: ResponsiveValues.settingIconContainerSize(context),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      AppColors.telegramBlue.withValues(alpha: 0.2),
+                      AppColors.telegramPurple.withValues(alpha: 0.1),
+                    ],
+                  ),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  icon,
+                  size: ResponsiveValues.settingIconSize(context),
+                  color: AppColors.telegramBlue,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  title,
+                  style: AppTextStyles.bodyMedium(context).copyWith(
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              Switch.adaptive(
+                value: value,
+                onChanged: onChanged,
+                activeColor: AppColors.telegramBlue,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ],
+          ),
         ),
       ),
-    ).animate().slideY(begin: 0.1, end: 0).fadeIn();
+    );
   }
 
   Widget _buildSettingsSection() {
     final themeProvider = Provider.of<ThemeProvider>(context);
 
     return _buildGlassContainer(
-      context,
       child: Padding(
-        padding: EdgeInsets.all(ScreenSize.responsiveValue(
-            context: context,
-            mobile: AppThemes.spacingL,
-            tablet: AppThemes.spacingXL,
-            desktop: AppThemes.spacingXXL)),
+        padding: ResponsiveValues.cardPadding(context),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             _buildSettingCard(
               icon: Icons.notifications_outlined,
@@ -1186,7 +1283,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               value: _notificationsEnabled,
               onChanged: _isOffline ? null : _toggleNotifications,
             ),
-            const Divider(),
+            const Divider(height: 1),
             _buildSettingCard(
               icon: Icons.dark_mode_outlined,
               title: 'Dark Mode',
@@ -1200,59 +1297,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     ).animate().slideY(begin: 0.1, end: 0).fadeIn();
   }
 
-  Widget _buildSettingCard(
-      {required IconData icon,
-      required String title,
-      required bool value,
-      required Function(bool)? onChanged}) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onChanged != null ? () => onChanged(!value) : null,
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: AppThemes.spacingM),
-          child: Row(
-            children: [
-              Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          AppColors.telegramBlue.withValues(alpha: 0.2),
-                          AppColors.telegramPurple.withValues(alpha: 0.1),
-                        ],
-                      ),
-                      shape: BoxShape.circle),
-                  child: Icon(icon, color: AppColors.telegramBlue, size: 20)),
-              const SizedBox(width: AppThemes.spacingM),
-              Expanded(
-                  child: Text(title,
-                      style: AppTextStyles.bodyMedium.copyWith(
-                          color: AppColors.getTextPrimary(context),
-                          fontWeight: FontWeight.w500))),
-              Switch.adaptive(
-                  value: value,
-                  onChanged: onChanged,
-                  activeColor: AppColors.telegramBlue,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   void _showAppInfo() {
     showDialog(
       context: context,
       builder: (context) => Dialog(
         backgroundColor: Colors.transparent,
         child: _buildGlassContainer(
-          context,
           child: Padding(
-            padding: const EdgeInsets.all(24),
+            padding: ResponsiveValues.dialogPadding(context),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1260,71 +1312,72 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 Row(
                   children: [
                     Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                            colors: AppColors.blueGradient,
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight),
-                        borderRadius: BorderRadius.circular(12),
+                      width: ResponsiveValues.iconSizeXL(context),
+                      height: ResponsiveValues.iconSizeXL(context),
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: AppColors.blueGradient,
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        shape: BoxShape.circle,
                       ),
                       child: const Center(
-                          child: Icon(Icons.info_outline,
-                              size: 20, color: Colors.white)),
+                        child: Icon(
+                          Icons.info_outline,
+                          size: 20,
+                          color: Colors.white,
+                        ),
+                      ),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
-                        child: Text('Family Academy',
-                            style: AppTextStyles.titleMedium.copyWith(
-                                color: AppColors.getTextPrimary(context),
-                                fontWeight: FontWeight.w700))),
+                      child: Text(
+                        'Family Academy',
+                        style: AppTextStyles.titleMedium(context).copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 16),
-                Text('Version 1.4.0+1',
-                    style: AppTextStyles.bodyMedium
-                        .copyWith(color: AppColors.getTextSecondary(context))),
+                Text(
+                  'Version 1.4.0+1',
+                  style: AppTextStyles.bodyMedium(context).copyWith(
+                    color: AppColors.getTextSecondary(context),
+                  ),
+                ),
                 const SizedBox(height: 12),
                 Text(
-                    'Empowering students with quality education through modern technology.',
-                    style: AppTextStyles.bodyMedium
-                        .copyWith(color: AppColors.getTextSecondary(context))),
+                  'Empowering students with quality education through modern technology.',
+                  style: AppTextStyles.bodyMedium(context).copyWith(
+                    color: AppColors.getTextSecondary(context),
+                  ),
+                ),
                 const SizedBox(height: 24),
-                Text('© 2024 Family Academy',
-                    style: AppTextStyles.caption
-                        .copyWith(color: AppColors.getTextSecondary(context))),
+                Text(
+                  '© 2024 Family Academy',
+                  style: AppTextStyles.caption(context).copyWith(
+                    color: AppColors.getTextSecondary(context),
+                  ),
+                ),
                 const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF2AABEE), Color(0xFF5856D6)],
-                      ),
-                      borderRadius:
-                          BorderRadius.circular(AppThemes.borderRadiusMedium),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.telegramBlue.withValues(alpha: 0.3),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.telegramBlue,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(
+                          ResponsiveValues.radiusMedium(context),
                         ),
-                      ],
-                    ),
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.transparent,
-                        foregroundColor: Colors.white,
-                        shadowColor: Colors.transparent,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(
-                                AppThemes.borderRadiusMedium)),
                       ),
-                      child: const Text('Close'),
                     ),
+                    child: const Text('Close'),
                   ),
                 ),
               ],
@@ -1335,43 +1388,43 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildLogoutButton(BuildContext context) {
+  // FIXED: Logout dialog with proper text visibility in both light/dark modes
+  Widget _buildLogoutButton() {
     return Container(
-      padding: EdgeInsets.all(ScreenSize.responsiveValue(
-          context: context,
-          mobile: AppThemes.spacingL,
-          tablet: AppThemes.spacingXL,
-          desktop: AppThemes.spacingXXL)),
-      margin: EdgeInsets.symmetric(
-          horizontal: ScreenSize.responsiveValue(
-              context: context,
-              mobile: AppThemes.spacingL,
-              tablet: AppThemes.spacingXL,
-              desktop: AppThemes.spacingXXL)),
+      padding: ResponsiveValues.cardPadding(context),
+      margin: EdgeInsets.zero,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: _showLogoutConfirmation,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
           child: Container(
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [Color(0xFFFF3B30), Color(0xFFE6204A)],
+                colors: AppColors.pinkGradient,
               ),
-              borderRadius: BorderRadius.circular(AppThemes.borderRadiusMedium),
+              borderRadius:
+                  BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
               boxShadow: [
                 BoxShadow(
                   color: AppColors.telegramRed.withValues(alpha: 0.3),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
+                  blurRadius: ResponsiveValues.spacingS(context),
+                  offset: Offset(0, ResponsiveValues.spacingXS(context)),
                 ),
               ],
             ),
-            padding: const EdgeInsets.symmetric(vertical: AppThemes.spacingM),
+            padding: EdgeInsets.symmetric(
+              vertical: ResponsiveValues.spacingM(context),
+            ),
             child: Center(
-              child: Text('Logout',
-                  style: AppTextStyles.buttonMedium.copyWith(
-                      color: Colors.white, fontWeight: FontWeight.w600)),
+              child: Text(
+                'Logout',
+                style: AppTextStyles.buttonMedium(context).copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
           ),
         ),
@@ -1379,22 +1432,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
     ).animate().slideY(begin: 0.1, end: 0).fadeIn();
   }
 
+  // FIXED: Logout dialog with theme-aware colors for text visibility
   Future<void> _showLogoutConfirmation() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => Dialog(
         backgroundColor: Colors.transparent,
         child: _buildGlassContainer(
-          context,
           child: Padding(
-            padding: const EdgeInsets.all(24),
+            padding: ResponsiveValues.dialogPadding(context),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  width: 64,
-                  height: 64,
-                  padding: const EdgeInsets.all(12),
+                  width: ResponsiveValues.logoutDialogIconSize(context),
+                  height: ResponsiveValues.logoutDialogIconSize(context),
+                  padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
@@ -1404,72 +1457,97 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.logout_rounded,
-                      size: 32, color: AppColors.telegramRed),
+                  child: Icon(
+                    Icons.logout_rounded,
+                    size: 32,
+                    color: AppColors.telegramRed.withValues(alpha: 0.3),
+                  ),
                 ),
                 const SizedBox(height: 16),
-                Text('Logout',
-                    style: AppTextStyles.titleLarge.copyWith(
-                        color: AppColors.getTextPrimary(context),
-                        fontWeight: FontWeight.w700)),
-                const SizedBox(height: 12),
-                Text('Are you sure you want to logout?',
-                    style: AppTextStyles.bodyMedium
-                        .copyWith(color: AppColors.getTextSecondary(context)),
-                    textAlign: TextAlign.center),
-                const SizedBox(height: 24),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        style: TextButton.styleFrom(
-                          foregroundColor: AppColors.getTextSecondary(context),
-                          side: BorderSide(
-                              color: AppColors.getTextSecondary(context)),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(
-                                  AppThemes.borderRadiusMedium)),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        child: const Text('Cancel'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFFFF3B30), Color(0xFFE6204A)],
-                          ),
-                          borderRadius: BorderRadius.circular(
-                              AppThemes.borderRadiusMedium),
-                          boxShadow: [
-                            BoxShadow(
-                              color:
-                                  AppColors.telegramRed.withValues(alpha: 0.3),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: ElevatedButton(
-                          onPressed: () => Navigator.pop(context, true),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.transparent,
-                            foregroundColor: Colors.white,
-                            shadowColor: Colors.transparent,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(
-                                    AppThemes.borderRadiusMedium)),
-                          ),
-                          child: const Text('Logout'),
-                        ),
-                      ),
-                    ),
-                  ],
+                Text(
+                  'Logout',
+                  style: AppTextStyles.titleLarge(context).copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.getTextPrimary(context),
+                  ),
                 ),
+                const SizedBox(height: 8),
+                Text(
+                  'Are you sure you want to logout?',
+                  style: AppTextStyles.bodyMedium(context).copyWith(
+                    color: AppColors.getTextSecondary(context),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                Row(children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppColors.getTextPrimary(context),
+                        side: BorderSide(
+                          color: AppColors.getDivider(context),
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(
+                            ResponsiveValues.radiusMedium(context),
+                          ),
+                        ),
+                        padding: EdgeInsets.symmetric(
+                          vertical: ResponsiveValues.spacingM(context),
+                        ),
+                      ),
+                      child: Text(
+                        'Cancel',
+                        style: TextStyle(
+                          color: AppColors.getTextPrimary(context),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // In _showLogoutConfirmation dialog, around line 1515
+                  Expanded(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: AppColors
+                              .pinkGradient, // Use gradient here, not in button
+                        ),
+                        borderRadius: BorderRadius.circular(
+                          ResponsiveValues.radiusMedium(context),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.telegramRed.withValues(alpha: 0.3),
+                            blurRadius: ResponsiveValues.spacingS(context),
+                            offset:
+                                Offset(0, ResponsiveValues.spacingXS(context)),
+                          ),
+                        ],
+                      ),
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor:
+                              Colors.transparent, // Make button transparent
+                          foregroundColor: Colors.white,
+                          shadowColor: Colors.transparent,
+                          padding: EdgeInsets.symmetric(
+                            vertical: ResponsiveValues.spacingM(context),
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(
+                              ResponsiveValues.radiusMedium(context),
+                            ),
+                          ),
+                        ),
+                        child: const Text('Logout'),
+                      ),
+                    ),
+                  ),
+                ]),
               ],
             ),
           ),
@@ -1499,69 +1577,65 @@ class _ProfileScreenState extends State<ProfileScreen> {
           SliverList(
             delegate: SliverChildListDelegate([
               Container(
-                padding: EdgeInsets.symmetric(
-                  horizontal: ScreenSize.responsiveValue(
-                      context: context,
-                      mobile: AppThemes.spacingL,
-                      tablet: AppThemes.spacingXL,
-                      desktop: AppThemes.spacingXXL),
-                  vertical: AppThemes.spacingXL,
-                ),
+                padding: ResponsiveValues.screenPadding(context),
                 child: Column(
                   children: [
                     Shimmer.fromColors(
                       baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
                       highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
-                      child: _buildGlassContainer(
-                        context,
-                        child: Container(
-                          width: ScreenSize.responsiveValue(
-                              context: context,
-                              mobile: 80,
-                              tablet: 100,
-                              desktop: 120),
-                          height: ScreenSize.responsiveValue(
-                              context: context,
-                              mobile: 80,
-                              tablet: 100,
-                              desktop: 120),
-                          decoration: const BoxDecoration(
-                              color: Colors.white, shape: BoxShape.circle),
+                      child: Container(
+                        width: ResponsiveValues.avatarSizeLarge(context),
+                        height: ResponsiveValues.avatarSizeLarge(context),
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
                         ),
                       ),
                     ),
-                    const SizedBox(height: AppThemes.spacingL),
+                    const SizedBox(height: 16),
                     Shimmer.fromColors(
                       baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
                       highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
                       child: Container(
-                          width: 150, height: 24, color: Colors.white),
+                        width: 150,
+                        height: 24,
+                        color: Colors.white,
+                      ),
                     ),
                   ],
                 ),
               ),
               _buildGlassContainer(
-                context,
                 child: Container(
-                  margin: EdgeInsets.symmetric(
-                    horizontal: ScreenSize.responsiveValue(
-                        context: context,
-                        mobile: AppThemes.spacingL,
-                        tablet: AppThemes.spacingXL,
-                        desktop: AppThemes.spacingXXL),
-                  ),
-                  padding: EdgeInsets.all(ScreenSize.responsiveValue(
-                      context: context,
-                      mobile: AppThemes.spacingL,
-                      tablet: AppThemes.spacingXL,
-                      desktop: AppThemes.spacingXXL)),
+                  margin: ResponsiveValues.screenPadding(context),
+                  padding: ResponsiveValues.cardPadding(context),
                   child: Column(
                     children: List.generate(
-                        3,
-                        (index) => Padding(
-                              padding: const EdgeInsets.symmetric(
-                                  vertical: AppThemes.spacingM),
-                              child: Row(
+                      3,
+                      (index) => Padding(
+                        padding: EdgeInsets.symmetric(
+                          vertical: ResponsiveValues.spacingM(context),
+                        ),
+                        child: Row(
+                          children: [
+                            Shimmer.fromColors(
+                              baseColor:
+                                  Colors.grey[300]!.withValues(alpha: 0.3),
+                              highlightColor:
+                                  Colors.grey[100]!.withValues(alpha: 0.6),
+                              child: Container(
+                                width: ResponsiveValues.iconSizeXL(context),
+                                height: ResponsiveValues.iconSizeXL(context),
+                                decoration: const BoxDecoration(
+                                  color: Colors.white,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Shimmer.fromColors(
                                     baseColor: Colors.grey[300]!
@@ -1569,45 +1643,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     highlightColor: Colors.grey[100]!
                                         .withValues(alpha: 0.6),
                                     child: Container(
-                                        width: 40,
-                                        height: 40,
-                                        decoration: const BoxDecoration(
-                                            color: Colors.white,
-                                            shape: BoxShape.circle)),
+                                      width: 100,
+                                      height: 16,
+                                      color: Colors.white,
+                                    ),
                                   ),
-                                  const SizedBox(width: AppThemes.spacingM),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Shimmer.fromColors(
-                                          baseColor: Colors.grey[300]!
-                                              .withValues(alpha: 0.3),
-                                          highlightColor: Colors.grey[100]!
-                                              .withValues(alpha: 0.6),
-                                          child: Container(
-                                              width: 100,
-                                              height: 16,
-                                              color: Colors.white),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Shimmer.fromColors(
-                                          baseColor: Colors.grey[300]!
-                                              .withValues(alpha: 0.3),
-                                          highlightColor: Colors.grey[100]!
-                                              .withValues(alpha: 0.6),
-                                          child: Container(
-                                              width: double.infinity,
-                                              height: 20,
-                                              color: Colors.white),
-                                        ),
-                                      ],
+                                  const SizedBox(height: 4),
+                                  Shimmer.fromColors(
+                                    baseColor: Colors.grey[300]!
+                                        .withValues(alpha: 0.3),
+                                    highlightColor: Colors.grey[100]!
+                                        .withValues(alpha: 0.6),
+                                    child: Container(
+                                      width: double.infinity,
+                                      height: 20,
+                                      color: Colors.white,
                                     ),
                                   ),
                                 ],
                               ),
-                            )),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -1620,15 +1679,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildContent(User user) {
     return CustomScrollView(
-      physics: const BouncingScrollPhysics(),
+      physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
         SliverToBoxAdapter(
           child: CustomAppBar(
             title: 'Profile',
-            subtitle: _isOffline ? 'Offline mode' : 'Manage your account',
-            showRefresh: true,
-            isLoading: _isRefreshing,
-            onRefresh: _manualRefresh,
+            subtitle: _isRefreshing
+                ? 'Refreshing...'
+                : (_isOffline ? 'Offline mode' : 'Manage your account'),
             customTrailing:
                 _isEditing ? _buildSaveButton() : _buildEditButton(),
           ),
@@ -1636,29 +1694,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
         SliverList(
           delegate: SliverChildListDelegate([
             Container(
-                alignment: Alignment.center, child: _buildProfileHeader(user)),
-            const SizedBox(height: AppThemes.spacingXXL),
+              alignment: Alignment.center,
+              child: _buildProfileHeader(user),
+            ),
+            ResponsiveSizedBox(height: AppSpacing.xxl),
             if (_isEditing)
               _buildEditProfileForm()
             else
               _buildInfoSection(user),
-            const SizedBox(height: AppThemes.spacingXXL),
+            ResponsiveSizedBox(height: AppSpacing.xxl),
             _buildMenuSection(),
-            const SizedBox(height: AppThemes.spacingXXL),
+            ResponsiveSizedBox(height: AppSpacing.xxl),
             _buildSettingsSection(),
-            const SizedBox(height: AppThemes.spacingXXL),
-            _buildLogoutButton(context),
-            const SizedBox(height: AppThemes.spacingXXXL),
+            ResponsiveSizedBox(height: AppSpacing.xxl),
+            _buildLogoutButton(),
+            ResponsiveSizedBox(height: AppSpacing.xxxl),
           ]),
         ),
       ],
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    if (_isFirstLoad && !_hasCachedData) return _buildSkeletonLoader();
-
+  Widget _buildMobileLayout() {
     final authProvider = Provider.of<AuthProvider>(context);
     final userProvider = Provider.of<UserProvider>(context);
     final user =
@@ -1682,7 +1739,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
 
     return Scaffold(
-        backgroundColor: AppColors.getBackground(context),
-        body: _buildContent(user));
+      backgroundColor: AppColors.getBackground(context),
+      body: RefreshIndicator(
+        key: _refreshIndicatorKey,
+        onRefresh: _manualRefresh,
+        color: AppColors.telegramBlue,
+        backgroundColor: AppColors.getSurface(context),
+        child: _buildContent(user),
+      ),
+    );
+  }
+
+  Widget _buildTabletLayout() {
+    return _buildMobileLayout();
+  }
+
+  Widget _buildDesktopLayout() {
+    return _buildMobileLayout();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isFirstLoad && !_hasCachedData) return _buildSkeletonLoader();
+
+    return ResponsiveLayout(
+      mobile: _buildMobileLayout(),
+      tablet: _buildTabletLayout(),
+      desktop: _buildDesktopLayout(),
+    );
   }
 }

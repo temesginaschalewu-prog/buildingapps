@@ -29,7 +29,8 @@ class ExamProvider with ChangeNotifier {
   StreamController<List<ExamResult>> _resultsUpdateController =
       StreamController<List<ExamResult>>.broadcast();
 
-  static const Duration _cacheDuration = Duration(hours: 1);
+  static const Duration _cacheDuration =
+      Duration(hours: 24); // Increased to 24 hours
   static const Duration _cacheCleanupInterval = Duration(minutes: 30);
 
   ExamProvider({required this.apiService, required this.deviceService}) {
@@ -149,44 +150,54 @@ class ExamProvider with ChangeNotifier {
 
   Future<void> loadAvailableExams(
       {int? courseId, bool forceRefresh = false}) async {
-    if (_isLoading) return;
+    if (_isLoading && !forceRefresh) return;
 
     _isLoading = true;
     _error = null;
     _notifySafely();
 
     try {
-      debugLog('ExamProvider', 'Loading available exams for course: $courseId');
+      debugLog(
+          'ExamProvider', '📥 Loading available exams for course: $courseId');
 
-      if (courseId == null) {
-        final cachedExams = await deviceService
-            .getCacheItem<List<Exam>>(AppConstants.availableExamsCacheKey);
-        if (cachedExams != null && !forceRefresh) {
-          _availableExams = cachedExams;
+      // Try cache first if not forcing refresh
+      if (!forceRefresh) {
+        if (courseId == null) {
+          final cachedExams = await deviceService
+              .getCacheItem<List<Exam>>(AppConstants.availableExamsCacheKey);
+          if (cachedExams != null) {
+            _availableExams = cachedExams;
+            _applyPendingPaymentStatus();
+            _isLoading = false;
+            _examsUpdateController.add(_availableExams);
+            debugLog('ExamProvider',
+                '✅ Loaded ${_availableExams.length} exams from cache');
 
-          _applyPendingPaymentStatus();
-          _isLoading = false;
-          _examsUpdateController.add(_availableExams);
-          debugLog('ExamProvider',
-              '✅ Loaded ${_availableExams.length} exams from cache');
-          return;
-        }
-      } else {
-        final cachedExams = await deviceService
-            .getCacheItem<List<Exam>>(AppConstants.examsByCourseKey(courseId));
-        if (cachedExams != null && !forceRefresh) {
-          _examsByCourse[courseId] = cachedExams;
-          _updateGlobalExams(cachedExams);
-          _lastLoadedTime[courseId] = DateTime.now();
-          _applyPendingPaymentStatus();
-          _isLoading = false;
-          _examsUpdateController.add(_availableExams);
-          debugLog('ExamProvider',
-              '✅ Loaded ${cachedExams.length} exams for course $courseId from cache');
-          return;
+            // Background refresh
+            unawaited(_refreshAvailableExamsInBackground());
+            return;
+          }
+        } else {
+          final cachedExams = await deviceService.getCacheItem<List<Exam>>(
+              AppConstants.examsByCourseKey(courseId));
+          if (cachedExams != null) {
+            _examsByCourse[courseId] = cachedExams;
+            _updateGlobalExams(cachedExams);
+            _lastLoadedTime[courseId] = DateTime.now();
+            _applyPendingPaymentStatus();
+            _isLoading = false;
+            _examsUpdateController.add(_availableExams);
+            debugLog('ExamProvider',
+                '✅ Loaded ${cachedExams.length} exams for course $courseId from cache');
+
+            // Background refresh
+            unawaited(_refreshCourseExamsInBackground(courseId));
+            return;
+          }
         }
       }
 
+      // No cache or force refresh, load from API
       final response = await apiService.getAvailableExams(courseId: courseId);
 
       if (response.success && response.data != null) {
@@ -208,20 +219,89 @@ class ExamProvider with ChangeNotifier {
               ttl: _cacheDuration);
         }
 
-        debugLog('ExamProvider', 'Loaded ${exams.length} exams');
+        debugLog('ExamProvider', '✅ Loaded ${exams.length} exams from API');
         _examsUpdateController.add(exams);
       } else {
-        debugLog('ExamProvider', 'No exams data received: ${response.message}');
-        _availableExams = [];
+        debugLog(
+            'ExamProvider', '❌ No exams data received: ${response.message}');
+
+        // If we have no data and no cache, set empty list
+        if (courseId == null) {
+          _availableExams = [];
+        } else {
+          _examsByCourse[courseId] = [];
+        }
         _error = response.message;
       }
     } catch (e) {
       _error = 'Failed to load exams: ${e.toString()}';
-      debugLog('ExamProvider', 'loadAvailableExams error: $e');
-      _availableExams = [];
+      debugLog('ExamProvider', '❌ loadAvailableExams error: $e');
+
+      // Keep existing data on error
+      if (courseId == null && _availableExams.isEmpty) {
+        _availableExams = [];
+      } else if (courseId != null && !_examsByCourse.containsKey(courseId)) {
+        _examsByCourse[courseId] = [];
+      }
     } finally {
       _isLoading = false;
       _notifySafely();
+    }
+  }
+
+  Future<void> _refreshAvailableExamsInBackground() async {
+    try {
+      debugLog('ExamProvider', '🔄 Background refresh for available exams');
+
+      final response = await apiService.getAvailableExams(courseId: null);
+
+      if (response.success && response.data != null) {
+        final exams = response.data!;
+
+        _availableExams = exams;
+        _applyPendingPaymentStatus();
+        await deviceService.saveCacheItem(
+            AppConstants.availableExamsCacheKey, exams,
+            ttl: _cacheDuration);
+
+        _examsUpdateController.add(_availableExams);
+        _notifySafely();
+
+        debugLog('ExamProvider', '✅ Background refresh completed');
+      }
+    } catch (e) {
+      debugLog('ExamProvider', '⚠️ Background refresh failed: $e');
+    }
+  }
+
+  Future<void> _refreshCourseExamsInBackground(int courseId) async {
+    try {
+      debugLog(
+          'ExamProvider', '🔄 Background refresh for course $courseId exams');
+
+      final response = await apiService.getAvailableExams(courseId: courseId);
+
+      if (response.success && response.data != null) {
+        final exams = response.data!;
+
+        _examsByCourse[courseId] = exams;
+        _updateGlobalExams(exams);
+        _lastLoadedTime[courseId] = DateTime.now();
+        _applyPendingPaymentStatus();
+
+        await deviceService.saveCacheItem(
+            AppConstants.examsByCourseKey(courseId), exams,
+            ttl: _cacheDuration);
+
+        _examsUpdateController.add(_availableExams);
+        _notifySafely();
+
+        debugLog('ExamProvider',
+            '✅ Background refresh completed for course $courseId');
+      }
+    } catch (e) {
+      debugLog('ExamProvider',
+          '⚠️ Background refresh failed for course $courseId: $e');
     }
   }
 
@@ -326,8 +406,9 @@ class ExamProvider with ChangeNotifier {
     _notifySafely();
 
     try {
-      debugLog('ExamProvider', 'Loading my exam results');
+      debugLog('ExamProvider', '📥 Loading my exam results');
 
+      // Try cache first if not forcing refresh
       if (!forceRefresh) {
         final cachedResults = await deviceService
             .getCacheItem<List<ExamResult>>(AppConstants.myExamResultsCacheKey);
@@ -335,13 +416,17 @@ class ExamProvider with ChangeNotifier {
           _myExamResults = cachedResults;
           _isLoading = false;
           _resultsUpdateController.add(_myExamResults);
-          notifyListeners();
+          _notifySafely();
           debugLog('ExamProvider',
               '✅ Loaded ${_myExamResults.length} exam results from cache');
+
+          // Background refresh
+          unawaited(_refreshExamResultsInBackground());
           return;
         }
       }
 
+      // No cache or force refresh, load from API
       final response = await apiService.getMyExamResults();
 
       if (response.success) {
@@ -367,7 +452,7 @@ class ExamProvider with ChangeNotifier {
             ttl: _cacheDuration);
 
         _resultsUpdateController.add(_myExamResults);
-        notifyListeners();
+        _notifySafely();
 
         debugLog('ExamProvider',
             '✅ Final exam results count: ${_myExamResults.length}');
@@ -378,10 +463,46 @@ class ExamProvider with ChangeNotifier {
     } catch (e) {
       _error = 'Failed to load exam results: ${e.toString()}';
       debugLog('ExamProvider', '❌ loadMyExamResults error: $e');
-      _myExamResults = [];
+
+      // Keep existing data on error
+      if (_myExamResults.isEmpty) {
+        _myExamResults = [];
+      }
     } finally {
       _isLoading = false;
       _notifySafely();
+    }
+  }
+
+  Future<void> _refreshExamResultsInBackground() async {
+    try {
+      debugLog('ExamProvider', '🔄 Background refresh for exam results');
+
+      final response = await apiService.getMyExamResults();
+
+      if (response.success) {
+        if (response.data is List) {
+          _myExamResults = response.data as List<ExamResult>;
+        } else if (response.data is Map &&
+            (response.data as Map).containsKey('data')) {
+          final dataList = (response.data as Map)['data'];
+          if (dataList is List) {
+            _myExamResults =
+                dataList.map((item) => ExamResult.fromJson(item)).toList();
+          }
+        }
+
+        await deviceService.saveCacheItem(
+            AppConstants.myExamResultsCacheKey, _myExamResults,
+            ttl: _cacheDuration);
+
+        _resultsUpdateController.add(_myExamResults);
+        _notifySafely();
+
+        debugLog('ExamProvider', '✅ Background refresh completed');
+      }
+    } catch (e) {
+      debugLog('ExamProvider', '⚠️ Background refresh failed: $e');
     }
   }
 
@@ -389,6 +510,7 @@ class ExamProvider with ChangeNotifier {
       {bool forceRefresh = false}) async {
     if (_isLoadingCourse[courseId] == true && !forceRefresh) return;
 
+    // Try cache first
     if (!forceRefresh) {
       final cachedExams = await deviceService
           .getCacheItem<List<Exam>>(AppConstants.examsByCourseKey(courseId));
@@ -398,8 +520,12 @@ class ExamProvider with ChangeNotifier {
         _lastLoadedTime[courseId] = DateTime.now();
         _applyPendingPaymentStatus();
         _examsUpdateController.add(_availableExams);
+        _notifySafely();
         debugLog('ExamProvider',
             '✅ Loaded ${cachedExams.length} exams for course $courseId from cache');
+
+        // Background refresh
+        unawaited(_refreshCourseExamsInBackground(courseId));
         return;
       }
     }
@@ -410,7 +536,7 @@ class ExamProvider with ChangeNotifier {
     _notifySafely();
 
     try {
-      debugLog('ExamProvider', 'Loading exams for course: $courseId');
+      debugLog('ExamProvider', '📥 Loading exams for course: $courseId');
       final response = await apiService.getAvailableExams(courseId: courseId);
 
       if (response.success) {
@@ -425,14 +551,20 @@ class ExamProvider with ChangeNotifier {
             ttl: _cacheDuration);
 
         _examsUpdateController.add(_availableExams);
+        debugLog('ExamProvider',
+            '✅ Loaded ${exams.length} exams for course $courseId from API');
       } else {
         _error = response.message;
         _examsByCourse[courseId] = [];
       }
     } catch (e) {
       _error = 'Failed to load exams for course: ${e.toString()}';
-      debugLog('ExamProvider', 'loadExamsByCourse error: $e');
-      _examsByCourse[courseId] = [];
+      debugLog('ExamProvider', '❌ loadExamsByCourse error: $e');
+
+      // Keep existing data on error
+      if (!_examsByCourse.containsKey(courseId)) {
+        _examsByCourse[courseId] = [];
+      }
     } finally {
       _isLoadingCourse[courseId] = false;
       _isLoading = false;

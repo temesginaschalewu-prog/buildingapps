@@ -4,6 +4,10 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../models/exam_question_model.dart';
+import '../../utils/responsive.dart';
+import '../../utils/responsive_values.dart';
+import '../../utils/app_enums.dart';
+import '../common/responsive_widgets.dart';
 
 class QuestionWidget extends StatefulWidget {
   final ExamQuestion question;
@@ -69,32 +73,55 @@ class _QuestionWidgetState extends State<QuestionWidget> {
     }
   }
 
+  Widget _buildGlassContainer(BuildContext context, {required Widget child}) {
+    return ClipRRect(
+      borderRadius:
+          BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.getCard(context).withValues(alpha: 0.3),
+                AppColors.getCard(context).withValues(alpha: 0.1),
+              ],
+            ),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+            border: Border.all(
+              color: AppColors.telegramBlue.withValues(alpha: 0.2),
+            ),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final options = widget.question.options;
     final optionLetters = ['A', 'B', 'C', 'D', 'E', 'F'];
 
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = screenWidth < 600;
-    final isTablet = screenWidth >= 600 && screenWidth < 1024;
-
-    final questionFontSize = isMobile ? 16.0 : (isTablet ? 17.0 : 18.0);
-    final padding = isMobile ? 16.0 : (isTablet ? 20.0 : 24.0);
+    final questionFontSize = ResponsiveValues.fontBodyLarge(context);
+    final padding = ResponsiveValues.cardPadding(context);
 
     final difficultyColor = _getDifficultyColor(widget.question.difficulty);
     final difficultyBgColor =
         _getDifficultyBackgroundColor(widget.question.difficulty);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return ResponsiveColumn(
       children: [
-        // Header with marks and difficulty
         ClipRRect(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
             child: Container(
-              padding: EdgeInsets.all(padding / 1.5),
+              padding: EdgeInsets.all((padding / 1.5) as double),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
@@ -104,69 +131,78 @@ class _QuestionWidgetState extends State<QuestionWidget> {
                     AppColors.getCard(context).withValues(alpha: 0.1),
                   ],
                 ),
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(
+                    ResponsiveValues.radiusMedium(context)),
                 border: Border.all(
                   color: AppColors.telegramBlue.withValues(alpha: 0.2),
                 ),
               ),
-              child: Row(
+              child: ResponsiveRow(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
+                  ResponsiveRow(
                     children: [
-                      // Marks badge
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: ResponsiveValues.spacingS(context),
+                          vertical: ResponsiveValues.spacingXXS(context),
+                        ),
                         decoration: BoxDecoration(
                           color: AppColors.blueFaded,
-                          borderRadius: BorderRadius.circular(20),
+                          borderRadius: BorderRadius.circular(
+                            ResponsiveValues.radiusFull(context),
+                          ),
                           border: Border.all(
-                            color: AppColors.telegramBlue.withValues(alpha: 0.3),
+                            color:
+                                AppColors.telegramBlue.withValues(alpha: 0.3),
                           ),
                         ),
-                        child: Text(
+                        child: ResponsiveText(
                           '${widget.question.marks} mark${widget.question.marks > 1 ? 's' : ''}',
-                          style: AppTextStyles.caption.copyWith(
+                          style: AppTextStyles.caption(context).copyWith(
                             color: AppColors.telegramBlue,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
-
-                      // Difficulty badge
+                      const ResponsiveSizedBox(width: AppSpacing.s),
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: ResponsiveValues.spacingS(context),
+                          vertical: ResponsiveValues.spacingXXS(context),
+                        ),
                         decoration: BoxDecoration(
                           color: difficultyBgColor,
-                          borderRadius: BorderRadius.circular(20),
+                          borderRadius: BorderRadius.circular(
+                            ResponsiveValues.radiusFull(context),
+                          ),
                           border: Border.all(
                             color: difficultyColor.withValues(alpha: 0.3),
                           ),
                         ),
-                        child: Row(
+                        child: ResponsiveRow(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Container(
-                              width: 6,
-                              height: 6,
+                              width: ResponsiveValues.spacingXS(context),
+                              height: ResponsiveValues.spacingXS(context),
                               decoration: BoxDecoration(
                                 color: difficultyColor,
                                 shape: BoxShape.circle,
                                 boxShadow: [
                                   BoxShadow(
-                                    color: difficultyColor.withValues(alpha: 0.5),
-                                    blurRadius: 4,
+                                    color:
+                                        difficultyColor.withValues(alpha: 0.5),
+                                    blurRadius:
+                                        ResponsiveValues.spacingXS(context),
                                   ),
                                 ],
                               ),
                             ),
-                            const SizedBox(width: 6),
-                            Text(
+                            const ResponsiveSizedBox(width: AppSpacing.xs),
+                            ResponsiveText(
                               widget.question.difficulty.toUpperCase(),
-                              style: AppTextStyles.caption.copyWith(
+                              style: AppTextStyles.caption(context).copyWith(
                                 color: difficultyColor,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -176,21 +212,23 @@ class _QuestionWidgetState extends State<QuestionWidget> {
                       ),
                     ],
                   ),
-
-                  // Question number badge
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: ResponsiveValues.spacingS(context),
+                      vertical: ResponsiveValues.spacingXXS(context),
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.grayFaded,
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(
+                        ResponsiveValues.radiusFull(context),
+                      ),
                       border: Border.all(
                         color: AppColors.telegramGray.withValues(alpha: 0.3),
                       ),
                     ),
-                    child: Text(
+                    child: ResponsiveText(
                       'Q${widget.question.displayOrder}',
-                      style: AppTextStyles.caption.copyWith(
+                      style: AppTextStyles.caption(context).copyWith(
                         color: AppColors.getTextSecondary(context),
                         fontWeight: FontWeight.w600,
                       ),
@@ -201,16 +239,14 @@ class _QuestionWidgetState extends State<QuestionWidget> {
             ),
           ),
         ),
-
-        const SizedBox(height: 16),
-
-        // Question text with glass morphism
+        const ResponsiveSizedBox(height: AppSpacing.l),
         ClipRRect(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
             child: Container(
-              padding: EdgeInsets.all(padding),
+              padding: padding,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
@@ -220,49 +256,47 @@ class _QuestionWidgetState extends State<QuestionWidget> {
                     AppColors.getCard(context).withValues(alpha: 0.2),
                   ],
                 ),
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(
+                    ResponsiveValues.radiusLarge(context)),
                 border: Border.all(
                   color: AppColors.telegramBlue.withValues(alpha: 0.2),
                 ),
               ),
-              child: Text(
+              child: ResponsiveText(
                 widget.question.questionText,
-                style: AppTextStyles.bodyLarge.copyWith(
+                style: AppTextStyles.bodyLarge(context).copyWith(
                   fontSize: questionFontSize,
                   fontWeight: FontWeight.w500,
                   height: 1.6,
-                  color: AppColors.getTextPrimary(context),
                 ),
               ),
             ),
           ),
         ),
-
-        const SizedBox(height: 24),
-
-        // Options header
+        const ResponsiveSizedBox(height: AppSpacing.xl),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: Text(
+          padding: EdgeInsets.symmetric(
+            horizontal: ResponsiveValues.spacingXS(context),
+          ),
+          child: ResponsiveText(
             'Select your answer:',
-            style: AppTextStyles.labelLarge.copyWith(
+            style: AppTextStyles.labelLarge(context).copyWith(
               color: AppColors.getTextSecondary(context),
               fontWeight: FontWeight.w600,
               letterSpacing: 0.3,
             ),
           ),
         ),
-
-        const SizedBox(height: 12),
-
-        // Options
+        const ResponsiveSizedBox(height: AppSpacing.m),
         ...List.generate(options.length, (index) {
           final option = options[index];
           final optionLetter = optionLetters[index];
           final isSelected = _selectedOption == optionLetter;
 
           return Padding(
-            padding: const EdgeInsets.only(bottom: 12),
+            padding: EdgeInsets.only(
+              bottom: ResponsiveValues.spacingM(context),
+            ),
             child: _buildOptionTile(
               context,
               optionLetter: optionLetter,
@@ -287,7 +321,8 @@ class _QuestionWidgetState extends State<QuestionWidget> {
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeInOut,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
           child: Container(
@@ -296,15 +331,23 @@ class _QuestionWidgetState extends State<QuestionWidget> {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  if (isSelected) AppColors.telegramBlue.withValues(alpha: 0.15) else AppColors.getCard(context).withValues(alpha: 0.2),
-                  if (isSelected) AppColors.telegramBlue.withValues(alpha: 0.05) else AppColors.getCard(context).withValues(alpha: 0.1),
+                  if (isSelected)
+                    AppColors.telegramBlue.withValues(alpha: 0.15)
+                  else
+                    AppColors.getCard(context).withValues(alpha: 0.2),
+                  if (isSelected)
+                    AppColors.telegramBlue.withValues(alpha: 0.05)
+                  else
+                    AppColors.getCard(context).withValues(alpha: 0.1),
                 ],
               ),
-              borderRadius: BorderRadius.circular(16),
+              borderRadius:
+                  BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
               border: Border.all(
                 color: isSelected
                     ? AppColors.telegramBlue.withValues(alpha: 0.5)
-                    : AppColors.getTextSecondary(context).withValues(alpha: 0.1),
+                    : AppColors.getTextSecondary(context)
+                        .withValues(alpha: 0.1),
                 width: isSelected ? 2 : 1,
               ),
             ),
@@ -312,22 +355,19 @@ class _QuestionWidgetState extends State<QuestionWidget> {
               color: Colors.transparent,
               child: InkWell(
                 onTap: onTap,
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(
+                    ResponsiveValues.radiusMedium(context)),
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
+                  padding: ResponsiveValues.cardPadding(context),
+                  child: ResponsiveRow(
                     children: [
-                      // Option letter circle
                       Container(
-                        width: 36,
-                        height: 36,
+                        width: ResponsiveValues.iconSizeL(context),
+                        height: ResponsiveValues.iconSizeL(context),
                         decoration: BoxDecoration(
                           gradient: isSelected
                               ? const LinearGradient(
-                                  colors: [
-                                    Color(0xFF2AABEE),
-                                    Color(0xFF5856D6)
-                                  ],
+                                  colors: AppColors.blueGradient,
                                 )
                               : null,
                           color: isSelected ? null : Colors.transparent,
@@ -341,9 +381,9 @@ class _QuestionWidgetState extends State<QuestionWidget> {
                           ),
                         ),
                         child: Center(
-                          child: Text(
+                          child: ResponsiveText(
                             optionLetter,
-                            style: AppTextStyles.labelLarge.copyWith(
+                            style: AppTextStyles.labelLarge(context).copyWith(
                               color: isSelected
                                   ? Colors.white
                                   : AppColors.getTextSecondary(context),
@@ -352,14 +392,11 @@ class _QuestionWidgetState extends State<QuestionWidget> {
                           ),
                         ),
                       ),
-
-                      const SizedBox(width: 16),
-
-                      // Option text
+                      const ResponsiveSizedBox(width: AppSpacing.l),
                       Expanded(
-                        child: Text(
+                        child: ResponsiveText(
                           option,
-                          style: AppTextStyles.bodyMedium.copyWith(
+                          style: AppTextStyles.bodyMedium(context).copyWith(
                             color: isSelected
                                 ? AppColors.telegramBlue
                                 : AppColors.getTextPrimary(context),
@@ -369,13 +406,13 @@ class _QuestionWidgetState extends State<QuestionWidget> {
                           ),
                         ),
                       ),
-
-                      // Selected checkmark
                       if (isSelected)
                         Container(
-                          padding: const EdgeInsets.all(4),
+                          padding: EdgeInsets.all(
+                              ResponsiveValues.spacingXXS(context)),
                           decoration: BoxDecoration(
-                            color: AppColors.telegramBlue.withValues(alpha: 0.2),
+                            color:
+                                AppColors.telegramBlue.withValues(alpha: 0.2),
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(
