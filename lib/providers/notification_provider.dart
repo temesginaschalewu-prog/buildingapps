@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:familyacademyclient/utils/api_response.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
@@ -8,6 +7,7 @@ import '../services/user_session.dart';
 import '../models/notification_model.dart' as notification_model;
 import '../utils/constants.dart';
 import '../utils/helpers.dart';
+import '../utils/api_response.dart';
 
 class NotificationProvider with ChangeNotifier {
   final ApiService apiService;
@@ -239,11 +239,30 @@ class NotificationProvider with ChangeNotifier {
     _notifySafely();
   }
 
-  /// 🔵 FIX: Clear user data ONLY for different user logout
+  notification_model.Notification? getNotificationByLogId(int logId) {
+    try {
+      return _notifications.firstWhere((n) => n.logId == logId);
+    } catch (e) {
+      debugLog(
+          'NotificationProvider', 'Error finding notification by logId: $e');
+      return null;
+    }
+  }
+
+  void clearNotifications() {
+    _notifications.clear();
+    _unreadCount = 0;
+    _notifySafely();
+  }
+
+  void clearError() {
+    _error = null;
+    _notifySafely();
+  }
+
   Future<void> clearUserData() async {
     debugLog('NotificationProvider', 'Clearing notification data');
 
-    // Only clear if this is a different user logout
     final session = UserSession();
     final isDifferentUser = !await session.isSameUser();
     final isLoggingOut = await _isLoggingOut();
@@ -265,27 +284,6 @@ class NotificationProvider with ChangeNotifier {
   Future<bool> _isLoggingOut() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
-  }
-
-  void clearNotifications() {
-    _notifications.clear();
-    _unreadCount = 0;
-    _notifySafely();
-  }
-
-  void clearError() {
-    _error = null;
-    _notifySafely();
-  }
-
-  notification_model.Notification? getNotificationByLogId(int logId) {
-    try {
-      return _notifications.firstWhere((n) => n.logId == logId);
-    } catch (e) {
-      debugLog(
-          'NotificationProvider', 'Error finding notification by logId: $e');
-      return null;
-    }
   }
 
   @override

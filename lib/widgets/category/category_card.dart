@@ -1,15 +1,21 @@
 import 'dart:ui';
-import 'package:familyacademyclient/models/category_model.dart';
-import 'package:familyacademyclient/themes/app_colors.dart';
-import 'package:familyacademyclient/themes/app_text_styles.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:shimmer/shimmer.dart';
+import 'package:provider/provider.dart';
+
+import '../../models/category_model.dart';
+import '../../providers/subscription_provider.dart';
+import '../../providers/auth_provider.dart';
+import '../../themes/app_colors.dart';
+import '../../themes/app_text_styles.dart';
 import '../../themes/app_themes.dart';
 import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
+import '../../utils/ui_helpers.dart';
 import '../../utils/app_enums.dart';
+import '../common/app_card.dart';
+import '../common/app_shimmer.dart';
 import '../common/responsive_widgets.dart';
 
 class CategoryCard extends StatelessWidget {
@@ -31,34 +37,6 @@ class CategoryCard extends StatelessWidget {
     this.onTap,
     this.index = 0,
   });
-
-  Widget _buildGlassContainer(BuildContext context, {required Widget child}) {
-    return ClipRRect(
-      borderRadius:
-          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.getCard(context).withValues(alpha: 0.4),
-                AppColors.getCard(context).withValues(alpha: 0.2),
-              ],
-            ),
-            borderRadius:
-                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-            border: Border.all(
-              color: AppColors.telegramBlue.withValues(alpha: 0.2),
-            ),
-          ),
-          child: child,
-        ),
-      ),
-    );
-  }
 
   Widget _buildImage(BuildContext context) {
     final imageFontSize = ResponsiveValues.iconSizeXXL(context);
@@ -139,21 +117,38 @@ class CategoryCard extends StatelessWidget {
     final badgePadding = ResponsiveValues.categoryCardBadgePadding(context);
     final spacing = ResponsiveValues.spacingM(context);
 
+    final statusColor = UiHelpers.getCategoryAccessColor(
+      isComingSoon: category.isComingSoon,
+      isFree: category.isFree,
+      hasActiveSubscription: hasSubscription,
+      hasPendingPayment: false,
+    );
+
+    final statusIcon = UiHelpers.getCategoryAccessIcon(
+      isComingSoon: category.isComingSoon,
+      isFree: category.isFree,
+      hasActiveSubscription: hasSubscription,
+      hasPendingPayment: false,
+    );
+
+    final statusLabel = UiHelpers.getCategoryAccessLabel(
+      isComingSoon: category.isComingSoon,
+      isFree: category.isFree,
+      hasActiveSubscription: hasSubscription,
+      hasPendingPayment: false,
+    );
+
     return GestureDetector(
       onTap: onTap,
-      child: _buildGlassContainer(
-        context,
+      child: AppCard.glass(
         child: ClipRRect(
           borderRadius:
               BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
           child: Stack(
             children: [
-              // Full image covering entire card
               Positioned.fill(
                 child: _buildImage(context),
               ),
-
-              // Gradient overlay for better text visibility
               Positioned.fill(
                 child: Container(
                   decoration: BoxDecoration(
@@ -170,8 +165,6 @@ class CategoryCard extends StatelessWidget {
                   ),
                 ),
               ),
-
-              // Category Name at top left
               Positioned(
                 top: spacing,
                 left: spacing,
@@ -204,16 +197,19 @@ class CategoryCard extends StatelessWidget {
                   ),
                 ),
               ),
-
-              // Status badge at top right
               Positioned(
                 top: spacing,
                 right: spacing,
                 child: _buildStatusBadge(
-                    context, badgeIconSize, badgeTextSize, badgePadding),
+                  context,
+                  icon: statusIcon,
+                  label: statusLabel,
+                  color: statusColor,
+                  iconSize: badgeIconSize,
+                  textSize: badgeTextSize,
+                  padding: badgePadding,
+                ),
               ),
-
-              // Price at bottom left
               if (category.price != null &&
                   category.price! > 0 &&
                   !category.isFree)
@@ -221,10 +217,12 @@ class CategoryCard extends StatelessWidget {
                   bottom: spacing,
                   left: spacing,
                   child: _buildPriceBadge(
-                      context, priceSize, badgeTextSize - 1.5, badgePadding),
+                    context,
+                    priceSize: priceSize,
+                    smallTextSize: badgeTextSize - 1.5,
+                    padding: badgePadding,
+                  ),
                 ),
-
-              // Subtle border overlay
               Positioned.fill(
                 child: Container(
                   decoration: BoxDecoration(
@@ -256,55 +254,6 @@ class CategoryCard extends StatelessWidget {
   }
 
   Widget _buildStatusBadge(
-      BuildContext context, double iconSize, double textSize, double padding) {
-    if (category.isFree) {
-      return _buildBadge(
-        context,
-        icon: Icons.lock_open_rounded,
-        label: 'FREE',
-        color: AppColors.telegramGreen,
-        iconSize: iconSize,
-        textSize: textSize,
-        padding: padding,
-      );
-    }
-
-    if (hasSubscription) {
-      return _buildBadge(
-        context,
-        icon: Icons.check_circle_rounded,
-        label: 'SUBSCIRBED',
-        color: AppColors.telegramGreen,
-        iconSize: iconSize,
-        textSize: textSize,
-        padding: padding,
-      );
-    }
-
-    if (category.status == 'coming_soon') {
-      return _buildBadge(
-        context,
-        icon: Icons.schedule_rounded,
-        label: 'SOON',
-        color: AppColors.telegramYellow,
-        iconSize: iconSize,
-        textSize: textSize,
-        padding: padding,
-      );
-    }
-
-    return _buildBadge(
-      context,
-      icon: Icons.book,
-      label: 'ACTIVE',
-      color: AppColors.telegramBlue,
-      iconSize: iconSize,
-      textSize: textSize,
-      padding: padding,
-    );
-  }
-
-  Widget _buildBadge(
     BuildContext context, {
     required IconData icon,
     required String label,
@@ -365,8 +314,12 @@ class CategoryCard extends StatelessWidget {
     );
   }
 
-  Widget _buildPriceBadge(BuildContext context, double priceSize,
-      double smallTextSize, double padding) {
+  Widget _buildPriceBadge(
+    BuildContext context, {
+    required double priceSize,
+    required double smallTextSize,
+    required double padding,
+  }) {
     final isDesktop = ScreenSize.isDesktop(context);
 
     return Container(
@@ -400,7 +353,7 @@ class CategoryCard extends StatelessWidget {
           ),
           SizedBox(width: isDesktop ? 1 : 2),
           Text(
-            '${category.price!.toStringAsFixed(0)}',
+            category.price!.toStringAsFixed(0),
             style: TextStyle(
               fontSize: priceSize,
               color: Colors.white,
@@ -441,11 +394,11 @@ class CategoryCardShimmer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDesktop = ScreenSize.isDesktop(context);
+    ScreenSize.isDesktop(context);
     final cardHeight = ResponsiveValues.categoryCardHeight(context);
-    final spacing = ResponsiveValues.spacingM(context);
-    final titleSize = ResponsiveValues.categoryCardTitleSize(context);
-    final priceSize = ResponsiveValues.categoryCardPriceSize(context);
+    ResponsiveValues.spacingM(context);
+    ResponsiveValues.categoryCardTitleSize(context);
+    ResponsiveValues.categoryCardPriceSize(context);
 
     return Container(
       height: cardHeight,
@@ -461,91 +414,9 @@ class CategoryCardShimmer extends StatelessWidget {
               : AppColors.lightDivider.withValues(alpha: 0.3),
         ),
       ),
-      child: Shimmer.fromColors(
-        baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-        highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
-        child: Stack(
-          children: [
-            // Full image shimmer
-            Container(
-              decoration: const BoxDecoration(
-                color: Colors.white,
-              ),
-            ),
-
-            // Gradient overlay shimmer
-            Positioned.fill(
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.white.withValues(alpha: 0.3),
-                      Colors.transparent,
-                      Colors.white.withValues(alpha: 0.5),
-                    ],
-                    stops: const [0.0, 0.5, 1.0],
-                  ),
-                ),
-              ),
-            ),
-
-            // Name shimmer at top left
-            Positioned(
-              top: spacing,
-              left: spacing,
-              child: Container(
-                width: isDesktop ? 80 : 100,
-                height: titleSize * 1.5,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-            ),
-
-            // Status badge shimmer at top right
-            Positioned(
-              top: spacing,
-              right: spacing,
-              child: Container(
-                width: isDesktop ? 60 : 70,
-                height: isDesktop ? 18 : 22,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-            ),
-
-            // Price shimmer at bottom left
-            Positioned(
-              bottom: spacing,
-              left: spacing,
-              child: Container(
-                width: isDesktop ? 50 : 60,
-                height: priceSize * 1.5,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-            ),
-
-            // Subtle border overlay
-            Positioned.fill(
-              child: Container(
-                decoration: BoxDecoration(
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.1),
-                    width: 0.5,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
+      child: AppShimmer(
+        type: ShimmerType.categoryCard,
+        index: index,
       ),
     ).animate().fadeIn(
           duration: AppThemes.animationDurationMedium,

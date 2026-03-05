@@ -24,23 +24,18 @@ class NoteProvider with ChangeNotifier {
   StreamController<Map<String, dynamic>> _noteUpdateController =
       StreamController<Map<String, dynamic>>.broadcast();
 
-  static const Duration cacheDuration =
-      Duration(hours: 24); // Increased to 24 hours
+  static const Duration cacheDuration = Duration(hours: 24);
   static const Duration viewedCacheDuration = Duration(days: 30);
 
   NoteProvider({required this.apiService, required this.deviceService}) {
-    // Pre-load commonly used chapters in background
     _preloadCommonChapters();
   }
 
   Future<void> _preloadCommonChapters() async {
-    // This runs in background, doesn't block UI
     Future.delayed(Duration.zero, () async {
       try {
         final userId = await UserSession().getCurrentUserId();
-        if (userId != null) {
-          // Passive preload - just checks for any cached notes
-        }
+        if (userId != null) {}
       } catch (e) {}
     });
   }
@@ -48,7 +43,6 @@ class NoteProvider with ChangeNotifier {
   List<Note> get notes => _notes;
   bool get isLoading => _isLoading;
   String? get error => _error;
-
   Stream<Map<String, dynamic>> get noteUpdates => _noteUpdateController.stream;
 
   bool hasLoadedForChapter(int chapterId) =>
@@ -58,6 +52,23 @@ class NoteProvider with ChangeNotifier {
 
   List<Note> getNotesByChapter(int chapterId) {
     return _notesByChapter[chapterId] ?? [];
+  }
+
+  Note? getNoteById(int id) {
+    try {
+      return _notes.firstWhere((n) => n.id == id);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  bool isNoteViewed(int noteId) {
+    return _noteViewedStatus[noteId] ?? false;
+  }
+
+  int getViewedNotesCountForChapter(int chapterId) {
+    final notes = _notesByChapter[chapterId] ?? [];
+    return notes.where((note) => isNoteViewed(note.id)).length;
   }
 
   Future<void> loadNotesByChapter(int chapterId,
@@ -76,7 +87,6 @@ class NoteProvider with ChangeNotifier {
       return;
     }
 
-    // Try cache first
     if (!forceRefresh) {
       try {
         final cachedNotes = await deviceService.getCacheItem<List<dynamic>>(
@@ -114,7 +124,6 @@ class NoteProvider with ChangeNotifier {
               'count': noteList.length
             });
 
-            // Background refresh
             unawaited(_refreshInBackground(chapterId));
             return;
           }
@@ -184,7 +193,6 @@ class NoteProvider with ChangeNotifier {
       _error = e.toString();
       debugLog('NoteProvider', '❌ loadNotesByChapter error: $e');
 
-      // Keep existing data on error
       if (!_hasLoadedForChapter.containsKey(chapterId)) {
         _notesByChapter[chapterId] = [];
         _hasLoadedForChapter[chapterId] = true;
@@ -264,18 +272,6 @@ class NoteProvider with ChangeNotifier {
     }
   }
 
-  Note? getNoteById(int id) {
-    try {
-      return _notes.firstWhere((n) => n.id == id);
-    } catch (e) {
-      return null;
-    }
-  }
-
-  bool isNoteViewed(int noteId) {
-    return _noteViewedStatus[noteId] ?? false;
-  }
-
   Future<void> markNoteAsViewed(int noteId) async {
     _noteViewedStatus[noteId] = true;
 
@@ -286,7 +282,6 @@ class NoteProvider with ChangeNotifier {
     );
 
     _noteUpdateController.add({'type': 'note_viewed', 'note_id': noteId});
-
     _notifySafely();
   }
 
@@ -295,11 +290,6 @@ class NoteProvider with ChangeNotifier {
     for (final note in notes) {
       await markNoteAsViewed(note.id);
     }
-  }
-
-  int getViewedNotesCountForChapter(int chapterId) {
-    final notes = _notesByChapter[chapterId] ?? [];
-    return notes.where((note) => isNoteViewed(note.id)).length;
   }
 
   Future<void> clearNotesForChapter(int chapterId) async {
@@ -320,15 +310,12 @@ class NoteProvider with ChangeNotifier {
 
     _noteUpdateController
         .add({'type': 'notes_cleared', 'chapter_id': chapterId});
-
     _notifySafely();
   }
 
-  /// 🔵 FIX: Clear user data ONLY for different user logout
   Future<void> clearUserData() async {
     debugLog('NoteProvider', 'Clearing note data');
 
-    // Only clear if this is a different user logout
     final session = UserSession();
     final isDifferentUser = !await session.isSameUser();
     final isLoggingOut = await _isLoggingOut();
@@ -352,7 +339,6 @@ class NoteProvider with ChangeNotifier {
     _noteUpdateController = StreamController<Map<String, dynamic>>.broadcast();
 
     _noteUpdateController.add({'type': 'all_notes_cleared'});
-
     _notifySafely();
   }
 

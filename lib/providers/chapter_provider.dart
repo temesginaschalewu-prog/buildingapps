@@ -6,6 +6,7 @@ import '../services/device_service.dart';
 import '../services/user_session.dart';
 import '../models/chapter_model.dart';
 import '../utils/helpers.dart';
+import '../utils/parsers.dart';
 
 class ChapterProvider with ChangeNotifier {
   final ApiService apiService;
@@ -22,23 +23,17 @@ class ChapterProvider with ChangeNotifier {
   StreamController<Map<int, List<Chapter>>> _chaptersUpdateController =
       StreamController<Map<int, List<Chapter>>>.broadcast();
 
-  static const Duration cacheDuration =
-      Duration(hours: 24); // Increased to 24 hours
+  static const Duration cacheDuration = Duration(hours: 24);
 
   ChapterProvider({required this.apiService, required this.deviceService}) {
-    // Pre-load commonly used courses on initialization
     _preloadCommonCourses();
   }
 
   Future<void> _preloadCommonCourses() async {
-    // This will run in background and not block UI
     Future.delayed(Duration.zero, () async {
       try {
         final userId = await UserSession().getCurrentUserId();
-        if (userId != null) {
-          // Look for any cached chapters in the device service
-          // This is a passive preload - doesn't force anything
-        }
+        if (userId != null) {}
       } catch (e) {}
     });
   }
@@ -46,7 +41,6 @@ class ChapterProvider with ChangeNotifier {
   List<Chapter> get chapters => _chapters;
   bool get isLoading => _isLoading;
   String? get error => _error;
-
   Stream<Map<int, List<Chapter>>> get chaptersUpdates =>
       _chaptersUpdateController.stream;
 
@@ -69,6 +63,14 @@ class ChapterProvider with ChangeNotifier {
     return chapters.where((c) => c.isLocked).toList();
   }
 
+  Chapter? getChapterById(int id) {
+    try {
+      return _chapters.firstWhere((c) => c.id == id);
+    } catch (e) {
+      return null;
+    }
+  }
+
   Future<void> loadChaptersByCourse(int courseId,
       {bool forceRefresh = false}) async {
     if (_isLoadingForCourse[courseId] == true && !forceRefresh) {
@@ -86,7 +88,6 @@ class ChapterProvider with ChangeNotifier {
       return;
     }
 
-    // Try cache first
     if (!forceRefresh) {
       final cachedChapters = await deviceService
           .getCacheItem<List<Chapter>>('chapters_course_$courseId');
@@ -103,7 +104,6 @@ class ChapterProvider with ChangeNotifier {
         debugLog('ChapterProvider',
             '✅ Loaded ${cachedChapters.length} chapters from cache for course $courseId');
 
-        // Refresh in background
         unawaited(_refreshInBackground(courseId));
         return;
       }
@@ -154,7 +154,6 @@ class ChapterProvider with ChangeNotifier {
       _error = e.toString();
       debugLog('ChapterProvider', '❌ loadChaptersByCourse error: $e');
 
-      // Keep existing data on error
       if (!_hasLoadedForCourse.containsKey(courseId)) {
         _chaptersByCourse[courseId] = [];
         _hasLoadedForCourse[courseId] = true;
@@ -211,14 +210,6 @@ class ChapterProvider with ChangeNotifier {
     }
   }
 
-  Chapter? getChapterById(int id) {
-    try {
-      return _chapters.firstWhere((c) => c.id == id);
-    } catch (e) {
-      return null;
-    }
-  }
-
   Future<void> clearChaptersForCourse(int courseId) async {
     _hasLoadedForCourse.remove(courseId);
     _lastLoadedTime.remove(courseId);
@@ -235,11 +226,9 @@ class ChapterProvider with ChangeNotifier {
     _notifySafely();
   }
 
-  /// 🔵 FIX: Clear user data ONLY for different user logout
   Future<void> clearUserData() async {
     debugLog('ChapterProvider', 'Clearing chapter data');
 
-    // Only clear if this is a different user logout
     final session = UserSession();
     final isDifferentUser = !await session.isSameUser();
     final isLoggingOut = await _isLoggingOut();
@@ -274,7 +263,6 @@ class ChapterProvider with ChangeNotifier {
     debugLog(
         'ChapterProvider', '⚠️ clearAllChapters called - check if intentional');
 
-    // Only clear if explicitly requested during logout
     final isLoggingOut = await _isLoggingOut();
     if (!isLoggingOut) {
       debugLog(

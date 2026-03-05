@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -6,8 +7,9 @@ import '../services/user_session.dart';
 import '../models/chatbot_model.dart';
 import '../utils/constants.dart';
 import '../utils/helpers.dart';
+import '../utils/parsers.dart';
 
-class ChatbotProvider extends ChangeNotifier {
+class ChatbotProvider with ChangeNotifier {
   final ApiService apiService;
 
   List<ChatbotMessage> _messages = [];
@@ -34,8 +36,6 @@ class ChatbotProvider extends ChangeNotifier {
     loadUsageStats();
   }
 
-  // ===== GETTERS =====
-
   List<ChatbotMessage> get messages => List.unmodifiable(_messages);
   List<ChatbotConversation> get conversations =>
       List.unmodifiable(_conversations);
@@ -54,8 +54,6 @@ class ChatbotProvider extends ChangeNotifier {
 
   bool get hasMoreConversations => _hasMoreConversations;
   bool get isLoadingMore => _isLoadingMore;
-
-  // ===== CACHE METHODS =====
 
   Future<void> _loadCachedData() async {
     try {
@@ -97,10 +95,10 @@ class ChatbotProvider extends ChangeNotifier {
       if (usageJson != null) {
         final Map<String, dynamic> usageMap =
             jsonDecode(usageJson) as Map<String, dynamic>;
-        _remainingMessages = usageMap['remaining'] as int? ?? 30;
-        _dailyLimit = usageMap['daily_limit'] as int? ?? 30;
-        _totalMessages = usageMap['total_messages'] as int? ?? 0;
-        _totalConversations = usageMap['total_conversations'] as int? ?? 0;
+        _remainingMessages = Parsers.parseInt(usageMap['remaining'], 30);
+        _dailyLimit = Parsers.parseInt(usageMap['daily_limit'], 30);
+        _totalMessages = Parsers.parseInt(usageMap['total_messages']);
+        _totalConversations = Parsers.parseInt(usageMap['total_conversations']);
       }
 
       debugLog('ChatbotProvider', '📦 Loaded cached data for user $userId');
@@ -143,8 +141,6 @@ class ChatbotProvider extends ChangeNotifier {
       debugLog('ChatbotProvider', 'Error saving to cache: $e');
     }
   }
-
-  // ===== DATA LOADING =====
 
   Future<void> loadUsageStats() async {
     try {
@@ -200,7 +196,7 @@ class ChatbotProvider extends ChangeNotifier {
 
         final pagination =
             response.data['pagination'] as Map<String, dynamic>? ?? {};
-        final totalPages = pagination['pages'] as int? ?? 1;
+        final totalPages = Parsers.parseInt(pagination['pages'], 1);
         _hasMoreConversations = _currentPage < totalPages;
 
         if (_hasMoreConversations) {
@@ -280,7 +276,6 @@ class ChatbotProvider extends ChangeNotifier {
     _isLoading = true;
     _error = null;
 
-    // Add user message immediately for better UX
     final tempUserMessage = ChatbotMessage(
       id: DateTime.now().millisecondsSinceEpoch,
       role: 'user',
@@ -291,7 +286,6 @@ class ChatbotProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Build conversation history
       final List<String> history = [];
       if (_messages.length > 1) {
         for (int i = 0; i < _messages.length - 1; i++) {
@@ -300,7 +294,6 @@ class ChatbotProvider extends ChangeNotifier {
           }
         }
 
-        // Keep only last 10 messages for context
         if (history.length > 10) {
           history.removeRange(0, history.length - 10);
         }
@@ -319,7 +312,6 @@ class ChatbotProvider extends ChangeNotifier {
         final Map<String, dynamic> data =
             response.data['data'] as Map<String, dynamic>;
 
-        // Add AI response
         final aiMessage = ChatbotMessage(
           id: DateTime.now().millisecondsSinceEpoch + 1,
           role: 'assistant',
@@ -328,16 +320,14 @@ class ChatbotProvider extends ChangeNotifier {
         );
         _messages.add(aiMessage);
 
-        // Update remaining messages
         if (data['remaining'] != null) {
-          _remainingMessages = data['remaining'] as int;
+          _remainingMessages = Parsers.parseInt(data['remaining']);
           debugLog(
               'ChatbotProvider', ' Updated remaining: $_remainingMessages');
         }
 
         await loadUsageStats();
 
-        // Refresh conversations list if this is a new conversation
         if (conversationId == null && data['conversation_id'] != null) {
           await loadConversations(forceRefresh: true);
         }
@@ -355,9 +345,7 @@ class ChatbotProvider extends ChangeNotifier {
         throw Exception(response.data['message'] ?? 'Failed to send message');
       }
     } catch (e) {
-      // Remove the temporary user message on error
       _messages.remove(tempUserMessage);
-
       _error = 'Failed to send message: $e';
       debugLog('ChatbotProvider', 'Error sending message: $e');
       notifyListeners();
@@ -450,21 +438,16 @@ class ChatbotProvider extends ChangeNotifier {
     await loadConversations();
   }
 
-  // ===== USER DATA CLEARING =====
-
-  /// Clear user data ONLY for different user logout
   Future<void> clearUserData() async {
     debugLog(
         'ChatbotProvider', '🔍 Checking if chatbot data should be cleared');
 
-    // Get session info
     final session = UserSession();
     final currentUserId = await session.getCurrentUserId();
     final lastUserId = await session.getLastUserId();
     final isDifferentUser = currentUserId != lastUserId;
     final isLoggingOut = await _isLoggingOut();
 
-    // Only clear if this is a different user logout
     if (!isDifferentUser || !isLoggingOut) {
       debugLog('ChatbotProvider', '✅ Same user - preserving chatbot cache');
       return;
@@ -473,7 +456,6 @@ class ChatbotProvider extends ChangeNotifier {
     debugLog(
         'ChatbotProvider', '🔄 Different user logout - clearing chatbot data');
 
-    // Clear all data
     _messages.clear();
     _conversations.clear();
     _currentConversation = null;
@@ -483,7 +465,6 @@ class ChatbotProvider extends ChangeNotifier {
     _currentPage = 1;
     _hasMoreConversations = true;
 
-    // Clear cache for old user
     try {
       final prefs = await SharedPreferences.getInstance();
       if (lastUserId != null) {

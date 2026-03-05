@@ -480,7 +480,6 @@ class ResponsiveValues {
   static EdgeInsets menuCardPadding(BuildContext context) {
     return EdgeInsets.symmetric(
       horizontal: spacingL(context),
-      vertical: 0,
     );
   }
 

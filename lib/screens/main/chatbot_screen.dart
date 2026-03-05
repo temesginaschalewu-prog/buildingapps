@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'dart:ui';
 import 'package:familyacademyclient/widgets/common/app_bar.dart';
+import 'package:familyacademyclient/widgets/common/app_card.dart';
+import 'package:familyacademyclient/widgets/common/app_empty_state.dart';
+import 'package:familyacademyclient/widgets/common/app_shimmer.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -15,9 +18,6 @@ import '../../themes/app_themes.dart';
 import '../../utils/helpers.dart';
 import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
-import '../../widgets/common/loading_indicator.dart';
-import '../../widgets/common/empty_state.dart';
-import '../../widgets/common/error_widget.dart' as custom_error;
 import '../../widgets/common/responsive_widgets.dart';
 
 class ChatbotScreen extends StatefulWidget {
@@ -236,7 +236,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       }
     });
   }
-// ... (keep all existing imports and class definition)
 
   Future<void> _sendMessage() async {
     final message = _messageController.text.trim();
@@ -324,14 +323,14 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                     color: AppColors.telegramYellow,
                   ),
                 ),
-                ResponsiveSizedBox(height: AppSpacing.l),
+                const ResponsiveSizedBox(height: AppSpacing.l),
                 ResponsiveText(
                   'Daily Limit Reached',
                   style: AppTextStyles.titleLarge(context).copyWith(
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                ResponsiveSizedBox(height: AppSpacing.m),
+                const ResponsiveSizedBox(height: AppSpacing.m),
                 ResponsiveText(
                   'You\'ve used all your daily messages (${Provider.of<ChatbotProvider>(context).dailyLimit}). The limit resets at midnight.\n\nYou can still review previous conversations.',
                   style: AppTextStyles.bodyMedium(context).copyWith(
@@ -339,7 +338,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                   ),
                   textAlign: TextAlign.center,
                 ),
-                ResponsiveSizedBox(height: AppSpacing.xl),
+                const ResponsiveSizedBox(height: AppSpacing.xl),
                 Row(
                   children: [
                     Expanded(
@@ -411,14 +410,14 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                     color: AppColors.telegramBlue,
                   ),
                 ),
-                ResponsiveSizedBox(height: AppSpacing.l),
+                const ResponsiveSizedBox(height: AppSpacing.l),
                 ResponsiveText(
                   'Start New Chat',
                   style: AppTextStyles.titleLarge(context).copyWith(
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                ResponsiveSizedBox(height: AppSpacing.m),
+                const ResponsiveSizedBox(height: AppSpacing.m),
                 ResponsiveText(
                   'This will clear the current conversation and start fresh.',
                   style: AppTextStyles.bodyMedium(context).copyWith(
@@ -426,7 +425,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                   ),
                   textAlign: TextAlign.center,
                 ),
-                ResponsiveSizedBox(height: AppSpacing.xl),
+                const ResponsiveSizedBox(height: AppSpacing.xl),
                 Row(
                   children: [
                     Expanded(
@@ -446,7 +445,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                         child: const Text('Cancel'),
                       ),
                     ),
-                    ResponsiveSizedBox(width: AppSpacing.m),
+                    const ResponsiveSizedBox(width: AppSpacing.m),
                     Expanded(
                       child: Container(
                         decoration: BoxDecoration(
@@ -577,7 +576,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                   ],
                 ),
                 child: ResponsiveColumn(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     ResponsiveText(
                       message.content.replaceAll('*', ''),
@@ -587,7 +585,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                             )
                           : AppTextStyles.bodyMedium(context),
                     ),
-                    ResponsiveSizedBox(height: AppSpacing.xs),
+                    const ResponsiveSizedBox(height: AppSpacing.xs),
                     Align(
                       alignment: Alignment.bottomRight,
                       child: ResponsiveText(
@@ -638,8 +636,15 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     return Consumer<ChatbotProvider>(
       builder: (context, provider, child) {
         if (provider.isLoadingConversations && provider.conversations.isEmpty) {
-          return const Center(
-            child: LoadingIndicator(),
+          return ListView.builder(
+            padding: ResponsiveValues.screenPadding(context),
+            itemCount: 5,
+            itemBuilder: (context, index) => Padding(
+              padding:
+                  EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
+              child: const AppShimmer(
+                  type: ShimmerType.textLine, customHeight: 60),
+            ),
           );
         }
 
@@ -665,7 +670,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                       ),
                     ),
                     IconButton(
-                      icon: ResponsiveIcon(
+                      icon: const ResponsiveIcon(
                         Icons.add_comment_outlined,
                         color: AppColors.telegramBlue,
                       ),
@@ -692,7 +697,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
             ),
             Expanded(
               child: provider.conversations.isEmpty
-                  ? const EmptyState(
+                  ? const AppEmptyState(
                       icon: Icons.chat_outlined,
                       title: 'No Conversations',
                       message: 'Start a new chat to begin learning!',
@@ -771,7 +776,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                                                   context),
                                         ),
                                       ),
-                                      ResponsiveSizedBox(width: AppSpacing.s),
+                                      const ResponsiveSizedBox(
+                                          width: AppSpacing.s),
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment:
@@ -907,7 +913,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                ResponsiveSizedBox(height: AppSpacing.l),
+                const ResponsiveSizedBox(height: AppSpacing.l),
                 _buildGlassContainer(
                   child: TextField(
                     controller: controller,
@@ -924,7 +930,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                     autofocus: true,
                   ),
                 ),
-                ResponsiveSizedBox(height: AppSpacing.xl),
+                const ResponsiveSizedBox(height: AppSpacing.xl),
                 Row(
                   children: [
                     Expanded(
@@ -944,7 +950,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                         child: const Text('Cancel'),
                       ),
                     ),
-                    ResponsiveSizedBox(width: AppSpacing.m),
+                    const ResponsiveSizedBox(width: AppSpacing.m),
                     Expanded(
                       child: Container(
                         decoration: BoxDecoration(
@@ -1030,14 +1036,14 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                     color: AppColors.telegramRed,
                   ),
                 ),
-                ResponsiveSizedBox(height: AppSpacing.l),
+                const ResponsiveSizedBox(height: AppSpacing.l),
                 ResponsiveText(
                   'Delete Conversation',
                   style: AppTextStyles.titleLarge(context).copyWith(
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                ResponsiveSizedBox(height: AppSpacing.m),
+                const ResponsiveSizedBox(height: AppSpacing.m),
                 ResponsiveText(
                   'Are you sure you want to delete "${conv.title}"?',
                   style: AppTextStyles.bodyMedium(context).copyWith(
@@ -1045,7 +1051,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                   ),
                   textAlign: TextAlign.center,
                 ),
-                ResponsiveSizedBox(height: AppSpacing.xl),
+                const ResponsiveSizedBox(height: AppSpacing.xl),
                 Row(
                   children: [
                     Expanded(
@@ -1065,7 +1071,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                         child: const Text('Cancel'),
                       ),
                     ),
-                    ResponsiveSizedBox(width: AppSpacing.m),
+                    const ResponsiveSizedBox(width: AppSpacing.m),
                     Expanded(
                       child: Container(
                         decoration: BoxDecoration(
@@ -1135,7 +1141,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         vertical: ResponsiveValues.spacingS(context),
       ),
       child: ResponsiveColumn(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
             padding: EdgeInsets.only(
@@ -1225,7 +1230,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                       ? AppColors.telegramGreen
                       : AppColors.telegramRed),
             ),
-            ResponsiveSizedBox(width: AppSpacing.xs),
+            const ResponsiveSizedBox(width: AppSpacing.xs),
             ResponsiveText(
               _isOffline
                   ? 'Offline'
@@ -1253,11 +1258,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       child: Container(
         padding: ResponsiveValues.cardPadding(context),
         child: ResponsiveColumn(
-          crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
             if (!_isOffline) _buildQuickQuestions(),
-            ResponsiveSizedBox(height: AppSpacing.m),
+            const ResponsiveSizedBox(height: AppSpacing.m),
             Row(
               children: [
                 Expanded(
@@ -1296,7 +1300,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                     ),
                   ),
                 ),
-                ResponsiveSizedBox(width: AppSpacing.s),
+                const ResponsiveSizedBox(width: AppSpacing.s),
                 if (_isSending)
                   SizedBox(
                     width: ResponsiveValues.iconSizeXL(context),
@@ -1341,14 +1345,21 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     return Consumer<ChatbotProvider>(
       builder: (context, provider, child) {
         if (provider.isLoadingMessages && provider.messages.isEmpty) {
-          return const Center(
-            child: LoadingIndicator(),
+          return ListView.builder(
+            padding: ResponsiveValues.screenPadding(context),
+            itemCount: 5,
+            itemBuilder: (context, index) => Padding(
+              padding:
+                  EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
+              child: const AppShimmer(
+                  type: ShimmerType.textLine, customHeight: 60),
+            ),
           );
         }
 
         if (provider.error != null && provider.messages.isEmpty) {
           return Center(
-            child: custom_error.ErrorWidget(
+            child: AppEmptyState.error(
               title: 'Error',
               message: provider.error!,
               onRetry: () => provider.clearError(),
@@ -1361,7 +1372,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
             padding: EdgeInsets.symmetric(
               horizontal: ResponsiveValues.spacingXL(context),
             ),
-            child: EmptyState(
+            child: AppEmptyState(
               icon: Icons.smart_toy,
               title: 'AI Learning Assistant',
               message: _isOffline
@@ -1392,12 +1403,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         chatbotProvider.conversations.isEmpty) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
-        appBar: CustomAppBar(
+        appBar: const CustomAppBar(
           title: 'AI Tutor',
           subtitle: 'Offline Mode',
         ),
         body: Center(
-          child: OfflineState(
+          child: AppEmptyState.offline(
             dataType: 'chat',
             message:
                 'You are offline. Connect to start chatting with the AI assistant.',

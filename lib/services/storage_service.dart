@@ -12,7 +12,7 @@ class StorageService {
   bool _initialized = false;
   final Map<String, dynamic> _memoryCache = {};
   final Map<String, DateTime> _cacheTimestamps = {};
-  static const Duration _defaultCacheTTL = Duration(days: 7);
+  static const Duration _defaultCacheTTL = AppConstants.defaultCacheTTL;
 
   Future<void> init() async {
     if (_initialized) return;
@@ -243,14 +243,15 @@ class StorageService {
 
   Future<void> saveSessionStart() async {
     await ensureInitialized();
-    await _prefs.setString('session_start', DateTime.now().toIso8601String());
+    await _prefs.setString(
+        AppConstants.sessionStartKey, DateTime.now().toIso8601String());
     debugLog('StorageService', '⏰ Session start saved');
   }
 
   Future<bool> isSessionValid(Duration sessionDuration) async {
     await ensureInitialized();
 
-    final sessionStartStr = _prefs.getString('session_start');
+    final sessionStartStr = _prefs.getString(AppConstants.sessionStartKey);
     if (sessionStartStr == null) {
       debugLog('StorageService', '⚠️ No session start found');
       return false;
@@ -273,60 +274,61 @@ class StorageService {
 
   Future<void> saveSelectedSchool(int schoolId) async {
     await ensureInitialized();
-    await _prefs.setInt('selected_school_id', schoolId);
+    await _prefs.setInt(AppConstants.selectedSchoolIdKey, schoolId);
     await _setLastUpdate('school');
     debugLog('StorageService', '🏫 School saved: $schoolId');
   }
 
   Future<int?> getSelectedSchool() async {
     await ensureInitialized();
-    return _prefs.getInt('selected_school_id');
+    return _prefs.getInt(AppConstants.selectedSchoolIdKey);
   }
 
   Future<void> clearSelectedSchool() async {
     await ensureInitialized();
-    await _prefs.remove('selected_school_id');
+    await _prefs.remove(AppConstants.selectedSchoolIdKey);
     debugLog('StorageService', 'Selected school cleared');
   }
 
   Future<void> saveFcmToken(String fcmToken) async {
     await ensureInitialized();
-    await _prefs.setString('fcm_token', fcmToken);
+    await _prefs.setString(AppConstants.fcmTokenCacheKey, fcmToken);
     debugLog('StorageService', ' FCM token saved');
   }
 
   Future<String?> getFcmToken() async {
     await ensureInitialized();
-    return _prefs.getString('fcm_token');
+    return _prefs.getString(AppConstants.fcmTokenCacheKey);
   }
 
   Future<void> saveNotificationPreferences(bool enabled) async {
     await ensureInitialized();
-    await _prefs.setBool('notifications_enabled', enabled);
+    await _prefs.setBool(AppConstants.notificationsEnabledKey, enabled);
     debugLog('StorageService', ' Notification preferences saved: $enabled');
   }
 
   Future<bool> getNotificationPreferences() async {
     await ensureInitialized();
-    return _prefs.getBool('notifications_enabled') ?? true;
+    return _prefs.getBool(AppConstants.notificationsEnabledKey) ?? true;
   }
 
   Future<bool> hasCompletedRegistration() async {
     await ensureInitialized();
-    final result = _prefs.getBool('registration_complete') ?? false;
+    final result =
+        _prefs.getBool(AppConstants.registrationCompleteKey) ?? false;
     debugLog('StorageService', ' Registration complete: $result');
     return result;
   }
 
   Future<void> markRegistrationComplete() async {
     await ensureInitialized();
-    await _prefs.setBool('registration_complete', true);
+    await _prefs.setBool(AppConstants.registrationCompleteKey, true);
     debugLog('StorageService', ' Registration marked as complete');
   }
 
   Future<void> clearRegistrationComplete() async {
     await ensureInitialized();
-    await _prefs.remove('registration_complete');
+    await _prefs.remove(AppConstants.registrationCompleteKey);
     debugLog('StorageService', ' Registration complete cleared');
   }
 
@@ -349,7 +351,6 @@ class StorageService {
     return null;
   }
 
-  /// Clear user data - ONLY called during logout with different user
   Future<void> clearAllUserData() async {
     await ensureInitialized();
 
@@ -363,31 +364,24 @@ class StorageService {
 
     debugLog('StorageService', '🔄 Different user - clearing old user storage');
 
-    // Get the old user ID to clear
     final oldUserId = await session.getOldUserIdToClear();
 
-    // Clear secure storage for old user only
     if (oldUserId != null) {
       try {
-        // Can't delete by prefix with flutter_secure_storage, so we'll clear all
-        // but this is acceptable since it's a different user
         await _secureStorage.deleteAll();
       } catch (e) {
         debugLog('StorageService', 'Error clearing secure storage: $e');
       }
     }
 
-    // Clear preferences - only user-specific keys
     final keys = _prefs.getKeys();
     for (final key in keys) {
-      // Keep system settings and device info
       if (key.startsWith('user_') ||
           key == AppConstants.userDataKey ||
-          key == 'session_start' ||
-          key == 'registration_complete' ||
-          key == 'selected_school_id' ||
+          key == AppConstants.sessionStartKey ||
+          key == AppConstants.registrationCompleteKey ||
+          key == AppConstants.selectedSchoolIdKey ||
           key.startsWith('last_update_')) {
-        // Only clear if it belongs to old user or is generic
         if (oldUserId == null ||
             key.contains(oldUserId) ||
             !key.contains('_')) {
@@ -397,7 +391,6 @@ class StorageService {
       }
     }
 
-    // Clear memory cache for old user
     if (oldUserId != null) {
       final keysToRemove =
           _memoryCache.keys.where((k) => k.contains(oldUserId)).toList();
@@ -408,15 +401,6 @@ class StorageService {
     }
 
     debugLog('StorageService', '✅ User data cleared for old user');
-  }
-
-  Future<void> _clearAllOfflineData() async {
-    final keys = _prefs.getKeys();
-    for (final key in keys) {
-      if (key.startsWith('offline_') || key.startsWith('data_')) {
-        await _prefs.remove(key);
-      }
-    }
   }
 
   Future<Map<String, dynamic>> getStorageStats() async {
@@ -449,7 +433,6 @@ class StorageService {
     };
   }
 
-  /// Clean expired cache - safe to run periodically
   Future<void> clearExpiredCache() async {
     await ensureInitialized();
     debugLog('StorageService', ' Clearing expired cache');

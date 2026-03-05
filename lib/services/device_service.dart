@@ -14,8 +14,8 @@ import 'package:familyacademyclient/models/chapter_model.dart';
 import 'package:familyacademyclient/models/exam_model.dart';
 import 'package:familyacademyclient/models/exam_result_model.dart';
 import 'package:familyacademyclient/services/user_session.dart';
+import 'package:familyacademyclient/utils/constants.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../utils/constants.dart';
 import '../utils/helpers.dart';
 
 class DeviceService {
@@ -27,7 +27,7 @@ class DeviceService {
 
   final Map<String, dynamic> _memoryCache = {};
   final Map<String, DateTime> _cacheTimestamps = {};
-  static const Duration _defaultCacheTTL = Duration(hours: 24);
+  static const Duration _defaultCacheTTL = AppConstants.defaultCacheTTLHours;
 
   String? _currentUserId;
   final Map<String, List<StreamController>> _cacheListeners = {};
@@ -78,7 +78,7 @@ class DeviceService {
       int loadedCount = 0;
 
       for (final key in keys) {
-        if (key.startsWith('cache_')) {
+        if (key.startsWith(AppConstants.cachePrefix)) {
           final cachedStr = _prefs.getString(key);
           if (cachedStr != null) {
             try {
@@ -107,11 +107,12 @@ class DeviceService {
   }
 
   Future<void> _loadPersistentDeviceId() async {
-    _persistentDeviceId = _prefs.getString('persistent_device_id');
+    _persistentDeviceId = _prefs.getString(AppConstants.persistentDeviceIdKey);
 
     if (_persistentDeviceId == null || _persistentDeviceId!.isEmpty) {
       _persistentDeviceId = await _generatePersistentDeviceId();
-      await _prefs.setString('persistent_device_id', _persistentDeviceId!);
+      await _prefs.setString(
+          AppConstants.persistentDeviceIdKey, _persistentDeviceId!);
       debugLog('DeviceService', 'Generated new persistent device ID');
     }
   }
@@ -122,13 +123,13 @@ class DeviceService {
         final androidInfo = await _deviceInfo.androidInfo;
         final androidId = androidInfo.id;
         if (androidId.isNotEmpty && androidId != 'unknown') {
-          return 'ANDROID_${androidId.hashCode.abs()}';
+          return '${AppConstants.androidDevicePrefix}${androidId.hashCode.abs()}';
         }
       } else if (Platform.isIOS) {
         final iosInfo = await _deviceInfo.iosInfo;
         final vendorId = iosInfo.identifierForVendor;
         if (vendorId != null && vendorId.isNotEmpty) {
-          return 'IOS_${vendorId.hashCode.abs()}';
+          return '${AppConstants.iosDevicePrefix}${vendorId.hashCode.abs()}';
         }
       }
 
@@ -140,10 +141,10 @@ class DeviceService {
       };
 
       final hash = machineInfo.hashCode.abs();
-      return 'FA_${hash}_${Random().nextInt(10000)}';
+      return '${AppConstants.fallbackDevicePrefix}${hash}_${Random().nextInt(10000)}';
     } catch (e) {
       debugLog('DeviceService', 'Error generating device ID: $e');
-      return 'FA_${DateTime.now().microsecondsSinceEpoch}_${Random().nextInt(10000)}';
+      return '${AppConstants.fallbackDevicePrefix}${DateTime.now().microsecondsSinceEpoch}_${Random().nextInt(10000)}';
     }
   }
 
@@ -152,7 +153,6 @@ class DeviceService {
     return _persistentDeviceId!;
   }
 
-  /// Save cache item - NEVER clears on its own
   Future<void> saveCacheItem<T>(String key, T value,
       {Duration? ttl,
       bool isUserSpecific = false,
@@ -174,7 +174,8 @@ class DeviceService {
     _cacheTimestamps[cacheKey] = now;
 
     try {
-      await _prefs.setString('cache_$cacheKey', json.encode(cacheData));
+      await _prefs.setString(
+          '${AppConstants.cachePrefix}$cacheKey', json.encode(cacheData));
 
       if (notifyListeners) {
         _notifyCacheListeners(cacheKey, value);
@@ -215,43 +216,37 @@ class DeviceService {
     return value;
   }
 
-  /// Get cache item - returns null if not found or expired
   Future<T?> getCacheItem<T>(String key, {bool isUserSpecific = false}) async {
     await ensureInitialized();
 
     final cacheKey = _getCacheKey(key, isUserSpecific);
 
-    // Check memory cache first
     if (_memoryCache.containsKey(cacheKey)) {
       final cacheData = _memoryCache[cacheKey] as Map<String, dynamic>;
       if (_isCacheValid(cacheData)) {
         return _decodeValue<T>(cacheData['value']);
       } else {
-        // Remove expired from memory
         _memoryCache.remove(cacheKey);
         _cacheTimestamps.remove(cacheKey);
-        // Will check disk below
       }
     }
 
-    // Check disk cache
     try {
-      final cachedStr = _prefs.getString('cache_$cacheKey');
+      final cachedStr =
+          _prefs.getString('${AppConstants.cachePrefix}$cacheKey');
       if (cachedStr != null) {
         final cacheData = json.decode(cachedStr) as Map<String, dynamic>;
         if (_isCacheValid(cacheData)) {
-          // Restore to memory
           _memoryCache[cacheKey] = cacheData;
           _cacheTimestamps[cacheKey] = DateTime.parse(cacheData['timestamp']);
           return _decodeValue<T>(cacheData['value']);
         } else {
-          // Remove expired
-          await _prefs.remove('cache_$cacheKey');
+          await _prefs.remove('${AppConstants.cachePrefix}$cacheKey');
         }
       }
     } catch (e) {
       debugLog('DeviceService', 'Error reading cache item: $e');
-      await _prefs.remove('cache_$cacheKey');
+      await _prefs.remove('${AppConstants.cachePrefix}$cacheKey');
     }
 
     return null;
@@ -402,7 +397,6 @@ class DeviceService {
     }
   }
 
-  /// Remove specific cache item
   Future<void> removeCacheItem(String key,
       {bool isUserSpecific = false}) async {
     await ensureInitialized();
@@ -411,16 +405,14 @@ class DeviceService {
 
     _memoryCache.remove(cacheKey);
     _cacheTimestamps.remove(cacheKey);
-    await _prefs.remove('cache_$cacheKey');
+    await _prefs.remove('${AppConstants.cachePrefix}$cacheKey');
 
     _notifyCacheListeners(cacheKey, null);
   }
 
-  /// Clear cache by prefix - USE WITH CAUTION
   Future<void> clearCacheByPrefix(String prefix) async {
     await ensureInitialized();
 
-    // Only clear if explicitly requested and not during navigation
     final session = UserSession();
     if (!session.shouldClearCache('clear_by_prefix')) {
       debugLog(
@@ -436,19 +428,17 @@ class DeviceService {
     }
 
     for (final key in _prefs.getKeys()) {
-      if (key.startsWith('cache_$prefix')) {
+      if (key.startsWith('${AppConstants.cachePrefix}$prefix')) {
         await _prefs.remove(key);
       }
     }
   }
 
-  /// Clear ONLY the old user's cache when switching users
   Future<void> clearOldUserCache(String oldUserId) async {
     await ensureInitialized();
 
     debugLog('DeviceService', '🔄 Clearing cache for old user: $oldUserId');
 
-    // Clear memory cache for old user
     for (final key in _memoryCache.keys.toList()) {
       if (key.startsWith('user_${oldUserId}_')) {
         _memoryCache.remove(key);
@@ -456,9 +446,8 @@ class DeviceService {
       }
     }
 
-    // Clear disk cache for old user
     for (final key in _prefs.getKeys()) {
-      if (key.startsWith('cache_user_${oldUserId}_')) {
+      if (key.startsWith('${AppConstants.cachePrefix}user_${oldUserId}_')) {
         await _prefs.remove(key);
       }
     }
@@ -466,7 +455,6 @@ class DeviceService {
     debugLog('DeviceService', '✅ Old user cache cleared');
   }
 
-  /// Clear current user's cache - ONLY for different user login
   Future<void> clearCurrentUserCache() async {
     await ensureInitialized();
 
@@ -490,7 +478,8 @@ class DeviceService {
       }
 
       for (final key in _prefs.getKeys()) {
-        if (key.startsWith('cache_user_${_currentUserId}_')) {
+        if (key
+            .startsWith('${AppConstants.cachePrefix}user_${_currentUserId}_')) {
           await _prefs.remove(key);
         }
       }
@@ -499,24 +488,22 @@ class DeviceService {
     debugLog('DeviceService', '✅ Current user cache cleared');
   }
 
-  /// Set current user ID
   Future<void> setCurrentUserId(String userId) async {
     await ensureInitialized();
     _currentUserId = userId;
-    await _prefs.setString('current_user_id', userId);
+    await _prefs.setString(AppConstants.currentUserIdKey, userId);
     debugLog('DeviceService', '👤 Current user ID set to: $userId');
   }
 
-  /// Clear current user ID - doesn't clear cache
   Future<void> clearCurrentUserId() async {
     await ensureInitialized();
     _currentUserId = null;
-    await _prefs.remove('current_user_id');
+    await _prefs.remove(AppConstants.currentUserIdKey);
     debugLog('DeviceService', '👤 Current user ID cleared');
   }
 
   Future<void> _loadCurrentUserId() async {
-    _currentUserId = _prefs.getString('current_user_id');
+    _currentUserId = _prefs.getString(AppConstants.currentUserIdKey);
     if (_currentUserId != null) {
       debugLog('DeviceService', '👤 Loaded current user ID: $_currentUserId');
     }
@@ -587,13 +574,13 @@ class DeviceService {
     await ensureInitialized();
 
     debugLog('DeviceService', '📺 Saving TV device id: $deviceId');
-    await _prefs.setString('tv_device_id', deviceId);
+    await _prefs.setString(AppConstants.tvDeviceIdKey, deviceId);
   }
 
   Future<String?> getTvDeviceId() async {
     await ensureInitialized();
 
-    final id = _prefs.getString('tv_device_id');
+    final id = _prefs.getString(AppConstants.tvDeviceIdKey);
     return id;
   }
 
@@ -601,10 +588,9 @@ class DeviceService {
     await ensureInitialized();
 
     debugLog('DeviceService', '📺 Clearing TV device id');
-    await _prefs.remove('tv_device_id');
+    await _prefs.remove(AppConstants.tvDeviceIdKey);
   }
 
-  /// Clean expired cache - safe to run periodically
   Future<void> cleanExpiredCache() async {
     await ensureInitialized();
 
@@ -629,7 +615,7 @@ class DeviceService {
     for (final key in expiredKeys) {
       _memoryCache.remove(key);
       _cacheTimestamps.remove(key);
-      await _prefs.remove('cache_$key');
+      await _prefs.remove('${AppConstants.cachePrefix}$key');
     }
 
     if (expiredKeys.isNotEmpty) {

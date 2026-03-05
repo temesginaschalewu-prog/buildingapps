@@ -1,17 +1,20 @@
+// lib/screens/splash/splash_screen.dart
+
 import 'dart:async';
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:familyacademyclient/providers/auth_provider.dart';
-import 'package:familyacademyclient/services/user_session.dart';
-import 'package:familyacademyclient/themes/app_themes.dart';
-import 'package:familyacademyclient/themes/app_colors.dart';
-import 'package:familyacademyclient/themes/app_text_styles.dart';
-import 'package:familyacademyclient/utils/responsive.dart';
-import 'package:familyacademyclient/utils/responsive_values.dart';
-import 'package:familyacademyclient/utils/helpers.dart';
+
+import '../../providers/auth_provider.dart';
+import '../../services/user_session.dart';
+import '../../services/connectivity_service.dart';
+import '../../widgets/common/app_card.dart';
+import '../../themes/app_themes.dart';
+import '../../themes/app_colors.dart';
+import '../../themes/app_text_styles.dart';
+import '../../utils/responsive.dart';
+import '../../utils/responsive_values.dart';
 import '../../widgets/common/responsive_widgets.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -104,43 +107,11 @@ class _SplashScreenState extends State<SplashScreen>
     });
   }
 
-  Widget _buildGlassContainer({required Widget child}) {
-    return ClipRRect(
-      borderRadius:
-          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.getCard(context).withValues(alpha: 0.4),
-                AppColors.getCard(context).withValues(alpha: 0.2),
-              ],
-            ),
-            borderRadius:
-                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-            border: Border.all(
-              color: AppColors.telegramBlue.withValues(alpha: 0.2),
-            ),
-          ),
-          child: child,
-        ),
-      ),
-    );
-  }
-
   Future<void> _checkConnectivity() async {
-    final hasConnection = await hasInternetConnection();
-    if (!hasConnection && mounted) {
-      setState(() {
-        _isOffline = true;
-        _isInitializing = false;
-        _currentStatus = 'Offline mode';
-      });
-    }
+    final connectivityService = context.read<ConnectivityService>();
+    setState(() {
+      _isOffline = !connectivityService.isOnline;
+    });
   }
 
   void _checkRouterReady() {
@@ -198,7 +169,7 @@ class _SplashScreenState extends State<SplashScreen>
     if (!mounted) return;
 
     try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final authProvider = context.read<AuthProvider>();
 
       await UserSession().init();
 
@@ -270,8 +241,7 @@ class _SplashScreenState extends State<SplashScreen>
         });
 
         if (_isOffline) {
-          final authProvider =
-              Provider.of<AuthProvider>(context, listen: false);
+          final authProvider = context.read<AuthProvider>();
           final user = authProvider.currentUser;
           if (user != null) {
             await Future.delayed(const Duration(seconds: 1));
@@ -296,9 +266,9 @@ class _SplashScreenState extends State<SplashScreen>
 
   Widget _buildStatusIndicator() {
     if (_hasError) {
-      return ResponsiveColumn(
+      return Column(
         children: [
-          _buildGlassContainer(
+          AppCard.glass(
             child: Container(
               width: ResponsiveValues.iconSizeXXL(context) * 1.5,
               height: ResponsiveValues.iconSizeXXL(context) * 1.5,
@@ -316,7 +286,7 @@ class _SplashScreenState extends State<SplashScreen>
             ),
           ).animate().shake(duration: 600.ms),
           const ResponsiveSizedBox(height: AppSpacing.l),
-          ResponsiveText(
+          Text(
             _errorMessage ?? 'Initialization Error',
             style: AppTextStyles.bodyMedium(context).copyWith(
               color: AppColors.telegramRed,
@@ -329,9 +299,9 @@ class _SplashScreenState extends State<SplashScreen>
     }
 
     if (_isOffline) {
-      return ResponsiveColumn(
+      return Column(
         children: [
-          _buildGlassContainer(
+          AppCard.glass(
             child: Container(
               width: ResponsiveValues.iconSizeXXL(context) * 1.5,
               height: ResponsiveValues.iconSizeXXL(context) * 1.5,
@@ -349,7 +319,7 @@ class _SplashScreenState extends State<SplashScreen>
             ),
           ).animate().shake(duration: 600.ms),
           const ResponsiveSizedBox(height: AppSpacing.l),
-          ResponsiveText(
+          Text(
             'Offline Mode',
             style: AppTextStyles.bodyMedium(context).copyWith(
               color: AppColors.telegramYellow,
@@ -369,7 +339,7 @@ class _SplashScreenState extends State<SplashScreen>
             opacity: _checkmarkOpacityAnimation.value,
             child: Transform.scale(
               scale: _checkmarkScaleAnimation.value,
-              child: _buildGlassContainer(
+              child: AppCard.glass(
                 child: Container(
                   width: ResponsiveValues.iconSizeXXL(context) * 1.5,
                   height: ResponsiveValues.iconSizeXXL(context) * 1.5,
@@ -394,7 +364,7 @@ class _SplashScreenState extends State<SplashScreen>
       );
     }
 
-    return _buildGlassContainer(
+    return AppCard.glass(
       child: Container(
         width: ResponsiveValues.iconSizeXXL(context) * 1.5,
         height: ResponsiveValues.iconSizeXXL(context) * 1.5,
@@ -426,7 +396,7 @@ class _SplashScreenState extends State<SplashScreen>
       backgroundColor: AppColors.getBackground(context),
       body: SafeArea(
         child: Center(
-          child: ResponsiveColumn(
+          child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               AnimatedBuilder(
@@ -436,7 +406,7 @@ class _SplashScreenState extends State<SplashScreen>
                     opacity: _logoOpacityAnimation.value,
                     child: Transform.scale(
                       scale: _logoScaleAnimation.value,
-                      child: _buildGlassContainer(
+                      child: AppCard.glass(
                         child: Container(
                           width: ResponsiveValues.splashLogoSize(context),
                           height: ResponsiveValues.splashLogoSize(context),
@@ -460,7 +430,7 @@ class _SplashScreenState extends State<SplashScreen>
                               ),
                             ],
                           ),
-                          child: ResponsiveIcon(
+                          child: Icon(
                             Icons.school_rounded,
                             size: ResponsiveValues.splashIconSize(context),
                             color: Colors.white,
@@ -471,21 +441,21 @@ class _SplashScreenState extends State<SplashScreen>
                   );
                 },
               ),
-              ResponsiveSizedBox(height: AppSpacing.splash),
+              const ResponsiveSizedBox(height: AppSpacing.splash),
               SlideTransition(
                 position: _textSlideAnimation,
                 child: FadeTransition(
                   opacity: _textOpacityAnimation,
-                  child: ResponsiveColumn(
+                  child: Column(
                     children: [
-                      ResponsiveText(
+                      Text(
                         'Family Academy',
                         style: AppTextStyles.displaySmall(context).copyWith(
                           fontWeight: FontWeight.w700,
                         ),
                       ),
                       const ResponsiveSizedBox(height: AppSpacing.l),
-                      ResponsiveText(
+                      Text(
                         _isOffline ? 'Offline Mode' : 'Empowering Education',
                         style: AppTextStyles.bodyLarge(context).copyWith(
                           color: _isOffline
@@ -497,14 +467,14 @@ class _SplashScreenState extends State<SplashScreen>
                   ),
                 ),
               ),
-              ResponsiveSizedBox(height: AppSpacing.splash),
+              const ResponsiveSizedBox(height: AppSpacing.splash),
               _buildStatusIndicator(),
               const ResponsiveSizedBox(height: AppSpacing.l),
               FadeTransition(
                 opacity: _textOpacityAnimation,
-                child: ResponsiveColumn(
+                child: Column(
                   children: [
-                    _buildGlassContainer(
+                    AppCard.glass(
                       child: Container(
                         padding: EdgeInsets.symmetric(
                           horizontal: ResponsiveValues.spacingL(context),
@@ -544,7 +514,7 @@ class _SplashScreenState extends State<SplashScreen>
                             ResponsiveValues.radiusFull(context),
                           ),
                         ),
-                        child: ResponsiveText(
+                        child: Text(
                           _currentStatus,
                           style: AppTextStyles.labelMedium(context).copyWith(
                             color: _hasError
@@ -561,21 +531,21 @@ class _SplashScreenState extends State<SplashScreen>
                     ),
                     const ResponsiveSizedBox(height: AppSpacing.s),
                     if (_isInitializing && !_hasError && !_isOffline)
-                      ResponsiveText(
+                      Text(
                         'Please wait...',
                         style: AppTextStyles.caption(context).copyWith(
                           color: AppColors.getTextSecondary(context),
                         ),
                       ),
                     if (!_routerReady && !_hasError && !_isOffline)
-                      ResponsiveText(
+                      Text(
                         'Preparing navigation...',
                         style: AppTextStyles.caption(context).copyWith(
                           color: AppColors.getTextSecondary(context),
                         ),
                       ),
                     if (_isOffline && !_hasError)
-                      ResponsiveText(
+                      Text(
                         'Using cached data',
                         style: AppTextStyles.caption(context).copyWith(
                           color: AppColors.telegramYellow,

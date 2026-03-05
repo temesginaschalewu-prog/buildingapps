@@ -12,7 +12,6 @@ list(APPEND FLUTTER_PLUGIN_LIST
   permission_handler_windows
   syncfusion_pdfviewer_windows
   url_launcher_windows
-  volume_controller
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST

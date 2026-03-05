@@ -3,17 +3,21 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:familyacademyclient/providers/auth_provider.dart';
-import 'package:familyacademyclient/widgets/auth/auth_form_field.dart';
-import 'package:familyacademyclient/widgets/auth/password_field.dart';
-import 'package:familyacademyclient/utils/helpers.dart';
-import 'package:familyacademyclient/utils/responsive.dart';
-import 'package:familyacademyclient/utils/responsive_values.dart';
-import 'package:familyacademyclient/themes/app_themes.dart';
-import 'package:familyacademyclient/themes/app_colors.dart';
-import 'package:familyacademyclient/themes/app_text_styles.dart';
-import 'package:familyacademyclient/widgets/common/empty_state.dart';
-import 'package:familyacademyclient/widgets/common/responsive_widgets.dart';
+
+import '../../providers/auth_provider.dart';
+import '../../services/connectivity_service.dart';
+import '../../services/snackbar_service.dart';
+import '../../widgets/common/app_button.dart';
+import '../../widgets/common/app_card.dart';
+import '../../widgets/common/app_text_field.dart';
+import '../../widgets/common/app_empty_state.dart';
+import '../../utils/responsive.dart';
+import '../../utils/responsive_values.dart';
+import '../../themes/app_themes.dart';
+import '../../themes/app_colors.dart';
+import '../../themes/app_text_styles.dart';
+import '../../utils/helpers.dart';
+import '../../widgets/common/responsive_widgets.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -38,10 +42,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _checkConnectivity() async {
-    final hasConnection = await hasInternetConnection();
-    if (!hasConnection) {
+    final connectivityService = context.read<ConnectivityService>();
+    if (!connectivityService.isOnline) {
       setState(() => _isOffline = true);
-      showOfflineMessage(context);
     }
   }
 
@@ -87,13 +90,9 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final hasConnection = await hasInternetConnection();
-    if (!hasConnection) {
-      showTopSnackBar(
-        context,
-        'You are offline. Please check your internet connection.',
-        isError: true,
-      );
+    final connectivityService = context.read<ConnectivityService>();
+    if (!connectivityService.isOnline) {
+      SnackbarService().showOffline(context, action: 'login');
       setState(() => _isOffline = true);
       return;
     }
@@ -101,7 +100,7 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final authProvider = context.read<AuthProvider>();
       final deviceId = await authProvider.deviceService.getDeviceId();
 
       await _saveUsername(_usernameController.text.trim());
@@ -119,6 +118,8 @@ class _LoginScreenState extends State<LoginScreen> {
         final nextStep = result['next_step'] ?? 'home';
         _passwordController.clear();
 
+        SnackbarService().showSuccess(context, 'Login successful!');
+
         if (nextStep == 'select_school') {
           context.go('/school-selection');
         } else {
@@ -127,12 +128,14 @@ class _LoginScreenState extends State<LoginScreen> {
       } else if (result['requiresDeviceChange'] == true) {
         await context.push('/device-change', extra: result['data']);
       } else {
-        showTopSnackBar(context, result['message'] ?? 'Login failed',
-            isError: true);
+        SnackbarService().showError(
+          context,
+          result['message'] ?? 'Login failed',
+        );
       }
     } catch (e) {
       if (!mounted) return;
-      showTopSnackBar(context, formatErrorMessage(e), isError: true);
+      SnackbarService().showError(context, formatErrorMessage(e));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -145,7 +148,7 @@ class _LoginScreenState extends State<LoginScreen> {
       margin: EdgeInsets.only(bottom: ResponsiveValues.spacingXXL(context)),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF2AABEE), Color(0xFF5856D6)],
+          colors: AppColors.telegramGradient,
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -193,19 +196,19 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget _buildFormFields() {
     return ResponsiveColumn(
       children: [
-        AuthFormField(
+        AppTextField(
           controller: _usernameController,
           label: 'Username',
-          hintText: 'Enter your username',
+          hint: 'Enter your username',
           prefixIcon: Icons.person_outline_rounded,
-          validator: _validateUsername,
           enabled: !_isLoading,
+          validator: _validateUsername,
         ),
         const ResponsiveSizedBox(height: AppSpacing.l),
-        PasswordField(
+        AppTextField.password(
           controller: _passwordController,
           label: 'Password',
-          hintText: 'Enter your password',
+          hint: 'Enter your password',
           enabled: !_isLoading,
           validator: _validatePassword,
         ),
@@ -214,36 +217,11 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _buildLoginButton() {
-    return SizedBox(
-      height: ResponsiveValues.buttonHeightLarge(context),
-      child: ElevatedButton(
-        onPressed: _isLoading ? null : _handleLogin,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.telegramBlue,
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(
-              ResponsiveValues.radiusMedium(context),
-            ),
-          ),
-          elevation: 0,
-        ),
-        child: _isLoading
-            ? SizedBox(
-                width: ResponsiveValues.iconSizeM(context),
-                height: ResponsiveValues.iconSizeM(context),
-                child: const CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation(Colors.white),
-                ),
-              )
-            : ResponsiveText(
-                'Login',
-                style: AppTextStyles.buttonLarge(context).copyWith(
-                  color: Colors.white,
-                ),
-              ),
-      ),
+    return AppButton.primary(
+      label: 'Login',
+      onPressed: _isLoading ? null : _handleLogin,
+      isLoading: _isLoading,
+      expanded: true,
     );
   }
 
@@ -274,8 +252,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Widget _buildContent() {
     if (_isOffline) {
-      return OfflineState(
-        dataType: 'login',
+      return AppEmptyState.offline(
         message:
             'You are offline. Please check your internet connection to login.',
         onRetry: () {
@@ -309,9 +286,11 @@ class _LoginScreenState extends State<LoginScreen> {
       body: SafeArea(
         child: SingleChildScrollView(
           padding: ResponsiveValues.screenPadding(context),
-          child: ResponsiveContainer(
-            maxWidth: 400,
-            child: _buildContent(),
+          child: AppCard.glass(
+            child: ResponsiveContainer(
+              maxWidth: 400,
+              child: _buildContent(),
+            ),
           ),
         ),
       ),
@@ -324,9 +303,11 @@ class _LoginScreenState extends State<LoginScreen> {
         child: Center(
           child: SingleChildScrollView(
             padding: ResponsiveValues.screenPadding(context),
-            child: ResponsiveContainer(
-              maxWidth: 500,
-              child: _buildContent(),
+            child: AppCard.glass(
+              child: ResponsiveContainer(
+                maxWidth: 500,
+                child: _buildContent(),
+              ),
             ),
           ),
         ),
@@ -340,9 +321,11 @@ class _LoginScreenState extends State<LoginScreen> {
         child: Center(
           child: SingleChildScrollView(
             padding: ResponsiveValues.screenPadding(context),
-            child: ResponsiveContainer(
-              maxWidth: 500,
-              child: _buildContent(),
+            child: AppCard.glass(
+              child: ResponsiveContainer(
+                maxWidth: 500,
+                child: _buildContent(),
+              ),
             ),
           ),
         ),

@@ -1,25 +1,29 @@
+// lib/screens/settings/parent_link_screen.dart
+
 import 'dart:async';
-import 'dart:ui';
-import 'package:familyacademyclient/themes/app_colors.dart';
-import 'package:familyacademyclient/themes/app_text_styles.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:familyacademyclient/utils/responsive.dart';
-import 'package:familyacademyclient/utils/responsive_values.dart';
 import 'package:pull_to_refresh/pull_to_refresh.dart' hide RefreshIndicator;
-import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
+
 import '../../providers/parent_link_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../services/connectivity_service.dart';
+import '../../services/snackbar_service.dart';
+import '../../widgets/common/app_card.dart';
+import '../../widgets/common/app_button.dart';
+import '../../widgets/common/app_shimmer.dart';
+import '../../widgets/common/app_dialog.dart';
 import '../../themes/app_themes.dart';
+import '../../themes/app_colors.dart';
+import '../../themes/app_text_styles.dart';
+import '../../utils/responsive.dart';
+import '../../utils/responsive_values.dart';
 import '../../utils/helpers.dart';
 import '../../widgets/common/responsive_widgets.dart';
-import '../../widgets/common/app_bar.dart';
-import '../../widgets/common/empty_state.dart';
 
 class ParentLinkScreen extends StatefulWidget {
   const ParentLinkScreen({super.key});
@@ -36,6 +40,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
   bool _isOffline = false;
   String _refreshSubtitle = '';
   final RefreshController _refreshController = RefreshController();
+  StreamSubscription? _connectivitySubscription;
 
   late AnimationController _pulseAnimationController;
 
@@ -49,6 +54,17 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
     WidgetsBinding.instance.addObserver(this);
     _initializeData();
     _setupTimers();
+    _setupConnectivityListener();
+  }
+
+  void _setupConnectivityListener() {
+    final connectivityService = context.read<ConnectivityService>();
+    _connectivitySubscription =
+        connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (mounted) {
+        setState(() => _isOffline = !isOnline);
+      }
+    });
   }
 
   @override
@@ -61,108 +77,9 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
     _refreshTimer.cancel();
     _pulseAnimationController.dispose();
     _refreshController.dispose();
+    _connectivitySubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
-  }
-
-  Widget _buildGlassContainer({required Widget child}) {
-    return ClipRRect(
-      borderRadius:
-          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.getCard(context).withValues(alpha: 0.4),
-                AppColors.getCard(context).withValues(alpha: 0.2),
-              ],
-            ),
-            borderRadius:
-                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-            border: Border.all(
-              color: AppColors.telegramBlue.withValues(alpha: 0.2),
-            ),
-          ),
-          child: child,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGlassButton({
-    required String label,
-    required VoidCallback? onPressed,
-    required List<Color> gradient,
-    IconData? icon,
-    bool isLoading = false,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: onPressed != null ? LinearGradient(colors: gradient) : null,
-        color: onPressed != null
-            ? null
-            : AppColors.getTextSecondary(context).withValues(alpha: 0.2),
-        borderRadius:
-            BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-        boxShadow: onPressed != null
-            ? [
-                BoxShadow(
-                  color: gradient.first.withValues(alpha: 0.3),
-                  blurRadius: ResponsiveValues.spacingS(context),
-                  offset: Offset(0, ResponsiveValues.spacingXS(context)),
-                ),
-              ]
-            : null,
-      ),
-      child: Material(
-        color: onPressed != null ? Colors.transparent : Colors.transparent,
-        child: InkWell(
-          onTap: onPressed,
-          borderRadius:
-              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-          child: Container(
-            padding: EdgeInsets.symmetric(
-              vertical: ResponsiveValues.spacingL(context),
-            ),
-            alignment: Alignment.center,
-            child: isLoading
-                ? SizedBox(
-                    width: ResponsiveValues.iconSizeM(context),
-                    height: ResponsiveValues.iconSizeM(context),
-                    child: const CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation(Colors.white),
-                    ),
-                  )
-                : ResponsiveRow(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (icon != null) ...[
-                        Icon(
-                          icon,
-                          size: ResponsiveValues.iconSizeS(context),
-                          color: Colors.white,
-                        ),
-                        ResponsiveSizedBox(width: AppSpacing.s),
-                      ],
-                      ResponsiveText(
-                        label,
-                        style: AppTextStyles.buttonMedium(context).copyWith(
-                          color: onPressed != null
-                              ? Colors.white
-                              : AppColors.getTextSecondary(context),
-                        ),
-                      ),
-                    ],
-                  ),
-          ),
-        ),
-      ),
-    );
   }
 
   void _setupTimers() {
@@ -172,8 +89,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
   }
 
   Future<void> _initializeData() async {
-    final parentLinkProvider =
-        Provider.of<ParentLinkProvider>(context, listen: false);
+    final parentLinkProvider = context.read<ParentLinkProvider>();
 
     try {
       await parentLinkProvider.getParentLinkStatus(forceRefresh: true);
@@ -187,8 +103,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
     _isRefreshing = true;
 
     try {
-      final parentLinkProvider =
-          Provider.of<ParentLinkProvider>(context, listen: false);
+      final parentLinkProvider = context.read<ParentLinkProvider>();
       await parentLinkProvider.getParentLinkStatus(forceRefresh: true);
     } finally {
       if (mounted) setState(() => _isRefreshing = false);
@@ -198,12 +113,11 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
   Future<void> _manualRefresh() async {
     if (_isRefreshing) return;
 
-    final hasConnection = await hasInternetConnection();
-    if (!hasConnection) {
+    final connectivityService = context.read<ConnectivityService>();
+    if (!connectivityService.isOnline) {
       setState(() => _isOffline = true);
       _refreshController.refreshFailed();
-      showTopSnackBar(context, 'You are offline. Using cached data.',
-          isError: true);
+      SnackbarService().showOffline(context);
       return;
     }
 
@@ -213,17 +127,15 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
     });
 
     try {
-      final parentLinkProvider =
-          Provider.of<ParentLinkProvider>(context, listen: false);
+      final parentLinkProvider = context.read<ParentLinkProvider>();
       await parentLinkProvider.clearCache();
       await parentLinkProvider.getParentLinkStatus(forceRefresh: true);
 
       setState(() => _isOffline = false);
-      showTopSnackBar(context, 'Status updated');
+      SnackbarService().showSuccess(context, 'Status updated');
     } catch (e) {
       setState(() => _isOffline = true);
-      showTopSnackBar(context, 'Refresh failed, using cached data',
-          isError: true);
+      SnackbarService().showError(context, 'Refresh failed, using cached data');
     } finally {
       setState(() {
         _isRefreshing = false;
@@ -239,14 +151,15 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
     if (showLoading) setState(() => _isRefreshing = true);
 
     try {
-      final parentLinkProvider =
-          Provider.of<ParentLinkProvider>(context, listen: false);
+      final parentLinkProvider = context.read<ParentLinkProvider>();
       await parentLinkProvider.clearCache();
       await parentLinkProvider.getParentLinkStatus(forceRefresh: true);
 
       _refreshController.refreshCompleted();
 
-      if (showLoading && mounted) showTopSnackBar(context, 'Status updated');
+      if (showLoading && mounted) {
+        SnackbarService().showSuccess(context, 'Status updated');
+      }
     } catch (e) {
       _refreshController.refreshFailed();
     } finally {
@@ -255,8 +168,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
   }
 
   Future<void> _generateToken() async {
-    final parentLinkProvider =
-        Provider.of<ParentLinkProvider>(context, listen: false);
+    final parentLinkProvider = context.read<ParentLinkProvider>();
 
     try {
       await parentLinkProvider.generateParentToken();
@@ -268,89 +180,54 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
         _showTokenDialog(token, expiresAt);
       }
     } catch (e) {
-      showTopSnackBar(
-          context, 'Failed to generate token: ${formatErrorMessage(e)}',
-          isError: true);
+      SnackbarService().showError(
+          context, 'Failed to generate token: ${formatErrorMessage(e)}');
     }
   }
 
   Future<void> _unlinkParent() async {
-    final confirmed = await showConfirmDialog(
-      context,
-      'Unlink Parent',
-      'Are you sure you want to unlink the parent? This will stop all progress updates.',
-      () async {
-        final parentLinkProvider =
-            Provider.of<ParentLinkProvider>(context, listen: false);
-        try {
-          await parentLinkProvider.unlinkParent();
-          await Future.delayed(const Duration(milliseconds: 500));
-          await parentLinkProvider.getParentLinkStatus(forceRefresh: true);
-
-          if (mounted) showTopSnackBar(context, 'Parent unlinked successfully');
-        } catch (e) {
-          if (mounted) {
-            showTopSnackBar(
-                context, 'Failed to unlink: ${formatErrorMessage(e)}',
-                isError: true);
-          }
-        }
-      },
+    final confirmed = await AppDialog.confirm(
+      context: context,
+      title: 'Unlink Parent',
+      message:
+          'Are you sure you want to unlink the parent? This will stop all progress updates.',
+      confirmText: 'Unlink',
     );
+    if (confirmed == true) {
+      final parentLinkProvider = context.read<ParentLinkProvider>();
+      try {
+        await parentLinkProvider.unlinkParent();
+        await Future.delayed(const Duration(milliseconds: 500));
+        await parentLinkProvider.getParentLinkStatus(forceRefresh: true);
+
+        if (mounted) {
+          SnackbarService()
+              .showSuccess(context, 'Parent unlinked successfully');
+        }
+      } catch (e) {
+        if (mounted) {
+          SnackbarService()
+              .showError(context, 'Failed to unlink: ${formatErrorMessage(e)}');
+        }
+      }
+    }
   }
 
   Widget _buildSkeletonLoader() {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       body: Center(
-        child: _buildGlassContainer(
+        child: AppCard.glass(
           child: Padding(
             padding: ResponsiveValues.dialogPadding(context),
-            child: ResponsiveColumn(
+            child: const Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Shimmer.fromColors(
-                  baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                  highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
-                  child: Container(
-                    width: ResponsiveValues.avatarSizeLarge(context),
-                    height: ResponsiveValues.avatarSizeLarge(context),
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ),
+                AppShimmer(type: ShimmerType.circle),
                 ResponsiveSizedBox(height: AppSpacing.xl),
-                Shimmer.fromColors(
-                  baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                  highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
-                  child: Container(
-                    width: ResponsiveValues.spacingXXXL(context) * 4,
-                    height: ResponsiveValues.spacingXL(context),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(
-                        ResponsiveValues.radiusSmall(context),
-                      ),
-                    ),
-                  ),
-                ),
+                AppShimmer(type: ShimmerType.textLine, customWidth: 200),
                 ResponsiveSizedBox(height: AppSpacing.l),
-                Shimmer.fromColors(
-                  baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                  highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
-                  child: Container(
-                    width: ResponsiveValues.spacingXXXL(context) * 5,
-                    height: ResponsiveValues.spacingL(context),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(
-                        ResponsiveValues.radiusSmall(context),
-                      ),
-                    ),
-                  ),
-                ),
+                AppShimmer(type: ShimmerType.textLine, customWidth: 250),
               ],
             ),
           ),
@@ -360,205 +237,19 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
   }
 
   void _showTokenDialog(String token, DateTime expiresAt) {
-    showDialog(
+    AppDialog.showToken(
       context: context,
-      barrierDismissible: false,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: _buildGlassContainer(
-          child: Padding(
-            padding: ResponsiveValues.dialogPadding(context),
-            child: Container(
-              constraints: BoxConstraints(
-                maxWidth: ScreenSize.isMobile(context) ? 400 : 500,
-              ),
-              child: ResponsiveColumn(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ResponsiveRow(
-                    children: [
-                      Container(
-                        padding:
-                            EdgeInsets.all(ResponsiveValues.spacingM(context)),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              AppColors.telegramBlue.withValues(alpha: 0.2),
-                              AppColors.telegramPurple.withValues(alpha: 0.1),
-                            ],
-                          ),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.link_rounded,
-                            color: AppColors.telegramBlue, size: 24),
-                      ),
-                      ResponsiveSizedBox(width: AppSpacing.l),
-                      ResponsiveText(
-                        'Link Token',
-                        style: AppTextStyles.titleMedium(context).copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                  ResponsiveSizedBox(height: AppSpacing.l),
-                  ResponsiveText(
-                    'Share this token with parent:',
-                    style: AppTextStyles.bodyMedium(context).copyWith(
-                      color: AppColors.getTextSecondary(context),
-                    ),
-                  ),
-                  ResponsiveSizedBox(height: AppSpacing.l),
-                  _buildGlassContainer(
-                    child: Padding(
-                      padding: ResponsiveValues.cardPadding(context),
-                      child: ResponsiveColumn(
-                        children: [
-                          SelectableText(
-                            token,
-                            style: TextStyle(
-                              fontSize:
-                                  ResponsiveValues.fontTitleLarge(context),
-                              fontWeight: FontWeight.w700,
-                              fontFamily: 'monospace',
-                              letterSpacing: 2,
-                              color: AppColors.telegramBlue,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                          ResponsiveSizedBox(height: AppSpacing.l),
-                          Consumer<ParentLinkProvider>(
-                            builder: (context, provider, child) {
-                              final remainingTime = provider.remainingTime;
-                              final isExpiringSoon =
-                                  remainingTime.inMinutes < 5;
-
-                              return Container(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal:
-                                      ResponsiveValues.spacingM(context),
-                                  vertical: ResponsiveValues.spacingXS(context),
-                                ),
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: isExpiringSoon
-                                        ? [
-                                            AppColors.telegramRed
-                                                .withValues(alpha: 0.2),
-                                            AppColors.telegramRed
-                                                .withValues(alpha: 0.1),
-                                          ]
-                                        : [
-                                            AppColors.telegramGreen
-                                                .withValues(alpha: 0.2),
-                                            AppColors.telegramGreen
-                                                .withValues(alpha: 0.1),
-                                          ],
-                                  ),
-                                  borderRadius: BorderRadius.circular(
-                                    ResponsiveValues.radiusFull(context),
-                                  ),
-                                  border: Border.all(
-                                    color: isExpiringSoon
-                                        ? AppColors.telegramRed
-                                        : AppColors.telegramGreen,
-                                  ),
-                                ),
-                                child: ResponsiveRow(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.timer_rounded,
-                                      size:
-                                          ResponsiveValues.iconSizeXS(context),
-                                      color: isExpiringSoon
-                                          ? AppColors.telegramRed
-                                          : AppColors.telegramGreen,
-                                    ),
-                                    ResponsiveSizedBox(width: AppSpacing.xs),
-                                    ResponsiveText(
-                                      'Expires in: ${provider.remainingTimeFormatted}',
-                                      style: AppTextStyles.labelSmall(context)
-                                          .copyWith(
-                                        color: isExpiringSoon
-                                            ? AppColors.telegramRed
-                                            : AppColors.telegramGreen,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  ResponsiveSizedBox(height: AppSpacing.l),
-                  ResponsiveText(
-                    'Instructions:',
-                    style: AppTextStyles.titleSmall(context).copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  ResponsiveSizedBox(height: AppSpacing.m),
-                  _buildInstruction(
-                    '1. Send this token to your parent via Telegram',
-                    Icons.send_rounded,
-                  ),
-                  _buildInstruction(
-                    '2. Parent uses /link command in Telegram with the token',
-                    Icons.telegram,
-                  ),
-                  _buildInstruction(
-                    '3. Connection will be established automatically',
-                    Icons.link_rounded,
-                  ),
-                  ResponsiveSizedBox(height: AppSpacing.xl),
-                  ResponsiveRow(
-                    children: [
-                      Expanded(
-                        child: TextButton(
-                          onPressed: () => GoRouter.of(context).pop(),
-                          style: TextButton.styleFrom(
-                            foregroundColor:
-                                AppColors.getTextSecondary(context),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(
-                                ResponsiveValues.radiusMedium(context),
-                              ),
-                            ),
-                            padding: EdgeInsets.symmetric(
-                              vertical: ResponsiveValues.spacingM(context),
-                            ),
-                          ),
-                          child: const Text('Close'),
-                        ),
-                      ),
-                      ResponsiveSizedBox(width: AppSpacing.m),
-                      Expanded(
-                        child: _buildGlassButton(
-                          label: 'Copy',
-                          onPressed: () async {
-                            await Clipboard.setData(ClipboardData(text: token));
-                            showTopSnackBar(context, 'Copied to clipboard');
-                            GoRouter.of(context).pop();
-                          },
-                          gradient: AppColors.blueGradient,
-                          icon: Icons.copy_rounded,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
+      token: token,
+      expiresIn: _formatDuration(expiresAt.difference(DateTime.now())),
     );
+  }
+
+  String _formatDuration(Duration duration) {
+    if (duration.inMinutes < 1) return 'Less than a minute';
+    if (duration.inMinutes < 60) {
+      return '${duration.inMinutes} minute${duration.inMinutes > 1 ? 's' : ''}';
+    }
+    return '${duration.inHours} hour${duration.inHours > 1 ? 's' : ''}';
   }
 
   Widget _buildInstruction(String text, IconData icon) {
@@ -566,7 +257,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
       padding: EdgeInsets.only(
         bottom: ResponsiveValues.spacingM(context),
       ),
-      child: ResponsiveRow(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
@@ -587,9 +278,9 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
               color: AppColors.telegramBlue,
             ),
           ),
-          ResponsiveSizedBox(width: AppSpacing.m),
+          const ResponsiveSizedBox(width: AppSpacing.m),
           Expanded(
-            child: ResponsiveText(
+            child: Text(
               text,
               style: AppTextStyles.bodyMedium(context),
             ),
@@ -600,10 +291,10 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
   }
 
   Widget _buildLinkedState(ParentLinkProvider provider) {
-    return _buildGlassContainer(
+    return AppCard.glass(
       child: Padding(
         padding: ResponsiveValues.dialogPadding(context),
-        child: ResponsiveColumn(
+        child: Column(
           children: [
             Stack(
               alignment: Alignment.center,
@@ -632,7 +323,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                   height: ResponsiveValues.avatarSizeLarge(context),
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
-                      colors: [Color(0xFF34C759), Color(0xFF2CAE4A)],
+                      colors: AppColors.successGradient,
                     ),
                     shape: BoxShape.circle,
                     boxShadow: [
@@ -648,28 +339,28 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                 ),
               ],
             ),
-            ResponsiveSizedBox(height: AppSpacing.l),
-            ResponsiveText(
+            const ResponsiveSizedBox(height: AppSpacing.l),
+            Text(
               'Parent Connected',
               style: AppTextStyles.headlineSmall(context).copyWith(
                 fontWeight: FontWeight.w600,
               ),
             ),
-            ResponsiveSizedBox(height: AppSpacing.m),
+            const ResponsiveSizedBox(height: AppSpacing.m),
             if (provider.parentTelegramUsername != null)
-              _buildGlassContainer(
+              AppCard.glass(
                 child: Padding(
                   padding: EdgeInsets.symmetric(
                     horizontal: ResponsiveValues.spacingL(context),
                     vertical: ResponsiveValues.spacingM(context),
                   ),
-                  child: ResponsiveRow(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const Icon(Icons.telegram,
                           size: 20, color: AppColors.telegramBlue),
-                      ResponsiveSizedBox(width: AppSpacing.s),
-                      ResponsiveText(
+                      const ResponsiveSizedBox(width: AppSpacing.s),
+                      Text(
                         '@${provider.parentTelegramUsername}',
                         style: AppTextStyles.bodyMedium(context).copyWith(
                           fontWeight: FontWeight.w500,
@@ -679,14 +370,14 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                   ),
                 ),
               ),
-            ResponsiveSizedBox(height: AppSpacing.xl),
+            const ResponsiveSizedBox(height: AppSpacing.xl),
             SizedBox(
               width: double.infinity,
-              child: _buildGlassButton(
+              child: AppButton.danger(
                 label: 'Disconnect Parent',
-                onPressed: _unlinkParent,
-                gradient: AppColors.pinkGradient,
                 icon: Icons.link_off_rounded,
+                onPressed: _unlinkParent,
+                expanded: true,
               ),
             ),
           ],
@@ -702,10 +393,10 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
     final statusColor =
         isExpiringSoon ? AppColors.telegramRed : AppColors.telegramBlue;
 
-    return _buildGlassContainer(
+    return AppCard.glass(
       child: Padding(
         padding: ResponsiveValues.dialogPadding(context),
-        child: ResponsiveColumn(
+        child: Column(
           children: [
             Stack(
               alignment: Alignment.center,
@@ -735,8 +426,8 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: isExpiringSoon
-                          ? [AppColors.telegramRed, AppColors.telegramOrange]
-                          : [AppColors.telegramBlue, AppColors.telegramPurple],
+                          ? AppColors.dangerGradient
+                          : AppColors.telegramGradient,
                     ),
                     shape: BoxShape.circle,
                     boxShadow: [
@@ -752,21 +443,21 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                 ),
               ],
             ),
-            ResponsiveSizedBox(height: AppSpacing.l),
-            ResponsiveText(
+            const ResponsiveSizedBox(height: AppSpacing.l),
+            Text(
               'Token Active',
               style: AppTextStyles.headlineSmall(context).copyWith(
                 fontWeight: FontWeight.w600,
               ),
             ),
-            ResponsiveSizedBox(height: AppSpacing.m),
-            _buildGlassContainer(
+            const ResponsiveSizedBox(height: AppSpacing.m),
+            AppCard.glass(
               child: Padding(
                 padding: EdgeInsets.symmetric(
                   horizontal: ResponsiveValues.spacingL(context),
                   vertical: ResponsiveValues.spacingM(context),
                 ),
-                child: ResponsiveRow(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
@@ -774,8 +465,8 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                       size: ResponsiveValues.iconSizeS(context),
                       color: statusColor,
                     ),
-                    ResponsiveSizedBox(width: AppSpacing.s),
-                    ResponsiveText(
+                    const ResponsiveSizedBox(width: AppSpacing.s),
+                    Text(
                       provider.remainingTimeFormatted,
                       style: AppTextStyles.titleMedium(context).copyWith(
                         color: statusColor,
@@ -786,11 +477,12 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                 ),
               ),
             ),
-            ResponsiveSizedBox(height: AppSpacing.xl),
+            const ResponsiveSizedBox(height: AppSpacing.xl),
             SizedBox(
               width: double.infinity,
-              child: _buildGlassButton(
+              child: AppButton.primary(
                 label: 'Show Token',
+                icon: Icons.visibility_rounded,
                 onPressed: () {
                   if (provider.parentToken != null &&
                       provider.tokenExpiresAt != null) {
@@ -798,36 +490,14 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                         provider.parentToken!, provider.tokenExpiresAt!);
                   }
                 },
-                gradient: AppColors.blueGradient,
-                icon: Icons.visibility_rounded,
+                expanded: true,
               ),
             ),
-            ResponsiveSizedBox(height: AppSpacing.m),
-            TextButton(
+            const ResponsiveSizedBox(height: AppSpacing.m),
+            AppButton.text(
+              label: 'Generate New Token',
+              icon: Icons.refresh_rounded,
               onPressed: _generateToken,
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.telegramBlue,
-                padding: EdgeInsets.symmetric(
-                  horizontal: ResponsiveValues.spacingXL(context),
-                  vertical: ResponsiveValues.spacingM(context),
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(
-                    ResponsiveValues.radiusMedium(context),
-                  ),
-                ),
-              ),
-              child: ResponsiveRow(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.refresh_rounded, size: 18),
-                  ResponsiveSizedBox(width: AppSpacing.xs),
-                  ResponsiveText(
-                    'Generate New Token',
-                    style: AppTextStyles.buttonMedium(context),
-                  ),
-                ],
-              ),
             ),
           ],
         ),
@@ -837,10 +507,10 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
   }
 
   Widget _buildNotLinkedState() {
-    return _buildGlassContainer(
+    return AppCard.glass(
       child: Padding(
         padding: ResponsiveValues.dialogPadding(context),
-        child: ResponsiveColumn(
+        child: Column(
           children: [
             Container(
               width: ResponsiveValues.avatarSizeLarge(context),
@@ -857,15 +527,15 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
               child: const Icon(Icons.person_add_alt_1_rounded,
                   size: 40, color: AppColors.telegramBlue),
             ),
-            ResponsiveSizedBox(height: AppSpacing.l),
-            ResponsiveText(
+            const ResponsiveSizedBox(height: AppSpacing.l),
+            Text(
               'Connect Parent',
               style: AppTextStyles.headlineSmall(context).copyWith(
                 fontWeight: FontWeight.w600,
               ),
             ),
-            ResponsiveSizedBox(height: AppSpacing.m),
-            ResponsiveText(
+            const ResponsiveSizedBox(height: AppSpacing.m),
+            Text(
               'Generate a token to link your parent\'s Telegram account and share your progress.',
               textAlign: TextAlign.center,
               style: AppTextStyles.bodyLarge(context).copyWith(
@@ -873,14 +543,14 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                 height: 1.5,
               ),
             ),
-            ResponsiveSizedBox(height: AppSpacing.xl),
+            const ResponsiveSizedBox(height: AppSpacing.xl),
             SizedBox(
               width: double.infinity,
-              child: _buildGlassButton(
+              child: AppButton.primary(
                 label: 'Generate Token',
-                onPressed: _generateToken,
-                gradient: AppColors.blueGradient,
                 icon: Icons.add_link_rounded,
+                onPressed: _generateToken,
+                expanded: true,
               ),
             ),
           ],
@@ -891,16 +561,16 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
   }
 
   Widget _buildInfoSection() {
-    final settingsProvider = Provider.of<SettingsProvider>(context);
+    final settingsProvider = context.read<SettingsProvider>();
     final telegramBotUrl = settingsProvider.getTelegramBotUrl();
 
-    return _buildGlassContainer(
+    return AppCard.glass(
       child: Padding(
         padding: ResponsiveValues.cardPadding(context),
-        child: ResponsiveColumn(
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ResponsiveRow(
+            Row(
               children: [
                 Container(
                   width: ResponsiveValues.iconSizeL(context),
@@ -917,8 +587,8 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                   child: const Icon(Icons.info_rounded,
                       color: AppColors.telegramBlue, size: 20),
                 ),
-                ResponsiveSizedBox(width: AppSpacing.m),
-                ResponsiveText(
+                const ResponsiveSizedBox(width: AppSpacing.m),
+                Text(
                   'What parents can see',
                   style: AppTextStyles.titleMedium(context).copyWith(
                     fontWeight: FontWeight.w600,
@@ -926,7 +596,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                 ),
               ],
             ),
-            ResponsiveSizedBox(height: AppSpacing.l),
+            const ResponsiveSizedBox(height: AppSpacing.l),
             _buildInfoItem(
               icon: Icons.trending_up_rounded,
               text: 'Study progress and completion',
@@ -943,20 +613,20 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
               icon: Icons.calendar_month_rounded,
               text: 'Weekly progress summary',
             ),
-            ResponsiveSizedBox(height: AppSpacing.l),
-            _buildGlassContainer(
+            const ResponsiveSizedBox(height: AppSpacing.l),
+            AppCard.glass(
               child: Padding(
                 padding: ResponsiveValues.cardPadding(context),
-                child: ResponsiveColumn(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    ResponsiveRow(
+                    Row(
                       children: [
                         const Icon(Icons.telegram,
                             size: 20, color: AppColors.telegramBlue),
-                        ResponsiveSizedBox(width: AppSpacing.m),
+                        const ResponsiveSizedBox(width: AppSpacing.m),
                         Expanded(
-                          child: ResponsiveText(
+                          child: Text(
                             'Parent Telegram Bot',
                             style: AppTextStyles.titleSmall(context).copyWith(
                               fontWeight: FontWeight.w600,
@@ -965,9 +635,9 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                         ),
                       ],
                     ),
-                    ResponsiveSizedBox(height: AppSpacing.s),
+                    const ResponsiveSizedBox(height: AppSpacing.s),
                     GestureDetector(
-                      onTap: () => _openTelegramBot(telegramBotUrl!),
+                      onTap: () => _openTelegramBot(telegramBotUrl),
                       child: Container(
                         padding: ResponsiveValues.cardPadding(context),
                         decoration: BoxDecoration(
@@ -981,10 +651,10 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                             ResponsiveValues.radiusMedium(context),
                           ),
                         ),
-                        child: ResponsiveRow(
+                        child: Row(
                           children: [
                             Expanded(
-                              child: ResponsiveText(
+                              child: Text(
                                 telegramBotUrl!,
                                 style:
                                     AppTextStyles.bodySmall(context).copyWith(
@@ -1000,8 +670,8 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                         ),
                       ),
                     ),
-                    ResponsiveSizedBox(height: AppSpacing.s),
-                    ResponsiveText(
+                    const ResponsiveSizedBox(height: AppSpacing.s),
+                    Text(
                       'Parents receive updates via Telegram. They cannot modify your account.',
                       style: AppTextStyles.bodySmall(context).copyWith(
                         color: AppColors.getTextSecondary(context),
@@ -1026,7 +696,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
-      showTopSnackBar(context, 'Cannot open Telegram', isError: true);
+      SnackbarService().showError(context, 'Cannot open Telegram');
     }
   }
 
@@ -1035,7 +705,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
       padding: EdgeInsets.only(
         bottom: ResponsiveValues.spacingM(context),
       ),
-      child: ResponsiveRow(
+      child: Row(
         children: [
           Container(
             width: ResponsiveValues.iconSizeL(context),
@@ -1055,9 +725,9 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
               color: AppColors.telegramGreen,
             ),
           ),
-          ResponsiveSizedBox(width: AppSpacing.m),
+          const ResponsiveSizedBox(width: AppSpacing.m),
           Expanded(
-            child: ResponsiveText(
+            child: Text(
               text,
               style: AppTextStyles.bodyMedium(context),
             ),
@@ -1068,10 +738,10 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
   }
 
   Widget _buildUserInfo(AuthProvider authProvider) {
-    return _buildGlassContainer(
+    return AppCard.glass(
       child: Padding(
         padding: ResponsiveValues.cardPadding(context),
-        child: ResponsiveRow(
+        child: Row(
           children: [
             Container(
               width: ResponsiveValues.avatarSizeMedium(context),
@@ -1085,12 +755,11 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                   BoxShadow(
                     color: AppColors.telegramBlue,
                     blurRadius: 10,
-                    spreadRadius: 0,
                   ),
                 ],
               ),
               child: Center(
-                child: ResponsiveText(
+                child: Text(
                   authProvider.currentUser!.username
                       .substring(0, 1)
                       .toUpperCase(),
@@ -1101,19 +770,19 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                 ),
               ),
             ),
-            ResponsiveSizedBox(width: AppSpacing.l),
+            const ResponsiveSizedBox(width: AppSpacing.l),
             Expanded(
-              child: ResponsiveColumn(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  ResponsiveText(
+                  Text(
                     authProvider.currentUser!.username,
                     style: AppTextStyles.titleSmall(context).copyWith(
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  ResponsiveSizedBox(height: AppSpacing.xs),
-                  ResponsiveText(
+                  const ResponsiveSizedBox(height: AppSpacing.xs),
+                  Text(
                     'Student ID: ${authProvider.currentUser!.id}',
                     style: AppTextStyles.bodySmall(context).copyWith(
                       color: AppColors.getTextSecondary(context),
@@ -1131,8 +800,8 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
   }
 
   Widget _buildMobileLayout() {
-    final parentLinkProvider = Provider.of<ParentLinkProvider>(context);
-    final authProvider = Provider.of<AuthProvider>(context);
+    final parentLinkProvider = context.watch<ParentLinkProvider>();
+    final authProvider = context.watch<AuthProvider>();
 
     if (!_isInitialized) {
       return Scaffold(
@@ -1150,7 +819,6 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
         child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
-            // App bar with back button
             SliverToBoxAdapter(
               child: Padding(
                 padding: EdgeInsets.only(
@@ -1162,26 +830,9 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                 ),
                 child: Row(
                   children: [
-                    Container(
-                      width: ResponsiveValues.appBarButtonSize(context),
-                      height: ResponsiveValues.appBarButtonSize(context),
-                      decoration: BoxDecoration(
-                        color: AppColors.getSurface(context)
-                            .withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(
-                          ResponsiveValues.radiusFull(context) / 2,
-                        ),
-                      ),
-                      child: IconButton(
-                        icon: ResponsiveIcon(
-                          Icons.arrow_back_rounded,
-                          size: ResponsiveValues.appBarIconSize(context),
-                          color: AppColors.getTextPrimary(context),
-                        ),
-                        onPressed: () => context.pop(),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                      ),
+                    AppButton.icon(
+                      icon: Icons.arrow_back_rounded,
+                      onPressed: () => context.pop(),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
@@ -1213,8 +864,6 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                 ),
               ),
             ),
-
-            // Main content
             SliverPadding(
               padding: ResponsiveValues.screenPadding(context),
               sliver: SliverToBoxAdapter(
@@ -1228,7 +877,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                         desktop: 800,
                       ),
                     ),
-                    child: ResponsiveColumn(
+                    child: Column(
                       children: [
                         if (_isOffline)
                           Container(
@@ -1252,13 +901,13 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                                     .withValues(alpha: 0.3),
                               ),
                             ),
-                            child: ResponsiveRow(
+                            child: Row(
                               children: [
                                 const Icon(Icons.wifi_off_rounded,
                                     color: AppColors.telegramYellow, size: 20),
-                                ResponsiveSizedBox(width: AppSpacing.m),
+                                const ResponsiveSizedBox(width: AppSpacing.m),
                                 Expanded(
-                                  child: ResponsiveText(
+                                  child: Text(
                                     'Offline mode - showing cached data',
                                     style: AppTextStyles.bodySmall(context)
                                         .copyWith(
@@ -1276,13 +925,13 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                           _buildTokenState(parentLinkProvider)
                         else
                           _buildNotLinkedState(),
-                        ResponsiveSizedBox(height: AppSpacing.xl),
+                        const ResponsiveSizedBox(height: AppSpacing.xl),
                         _buildInfoSection(),
                         if (authProvider.currentUser != null) ...[
-                          ResponsiveSizedBox(height: AppSpacing.l),
+                          const ResponsiveSizedBox(height: AppSpacing.l),
                           _buildUserInfo(authProvider),
                         ],
-                        ResponsiveSizedBox(height: AppSpacing.xxl),
+                        const ResponsiveSizedBox(height: AppSpacing.xxl),
                       ],
                     ),
                   ),

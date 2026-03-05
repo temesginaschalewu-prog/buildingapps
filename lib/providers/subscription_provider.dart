@@ -1,11 +1,11 @@
 import 'dart:async';
-import 'package:familyacademyclient/providers/category_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../services/user_session.dart';
 import '../models/subscription_model.dart';
+import '../providers/category_provider.dart';
 import '../utils/constants.dart';
 import '../utils/helpers.dart';
 
@@ -79,6 +79,31 @@ class SubscriptionProvider with ChangeNotifier {
       _subscriptionsUpdateController.stream;
   Stream<int> get subscriptionStatusChanged =>
       _subscriptionStatusChangedController.stream;
+
+  bool hasActiveSubscriptionForCategory(int categoryId) {
+    if (_categoryAccessCache.containsKey(categoryId)) {
+      return _categoryAccessCache[categoryId]!;
+    }
+
+    final subscription = _subscriptionsByCategory[categoryId];
+    if (subscription != null) {
+      final isActive = subscription.isActive;
+      _categoryAccessCache[categoryId] = isActive;
+      _categoryCheckComplete[categoryId] = true;
+      _lastCheckTime[categoryId] = DateTime.now();
+      return isActive;
+    }
+
+    return false;
+  }
+
+  List<int> getCategoriesWithActiveSubscription() {
+    final List<int> result = [];
+    _categoryAccessCache.forEach((categoryId, hasAccess) {
+      if (hasAccess) result.add(categoryId);
+    });
+    return result;
+  }
 
   void _initBackgroundRefresh() {
     _backgroundRefreshTimer = Timer.periodic(_backgroundRefreshInterval, (_) {
@@ -288,23 +313,6 @@ class SubscriptionProvider with ChangeNotifier {
     for (final categoryId in _categoryAccessCache.keys) {
       _subscriptionStatusChangedController.add(categoryId);
     }
-  }
-
-  bool hasActiveSubscriptionForCategory(int categoryId) {
-    if (_categoryAccessCache.containsKey(categoryId)) {
-      return _categoryAccessCache[categoryId]!;
-    }
-
-    final subscription = _subscriptionsByCategory[categoryId];
-    if (subscription != null) {
-      final isActive = subscription.isActive;
-      _categoryAccessCache[categoryId] = isActive;
-      _categoryCheckComplete[categoryId] = true;
-      _lastCheckTime[categoryId] = DateTime.now();
-      return isActive;
-    }
-
-    return false;
   }
 
   Future<bool> checkHasActiveSubscriptionForCategory(int categoryId) async {
@@ -527,14 +535,12 @@ class SubscriptionProvider with ChangeNotifier {
     await deviceService.clearCacheByPrefix('subscriptions');
     await loadSubscriptions(forceRefresh: true);
 
-    debugLog('SubscriptionProvider', ' All categories refreshed');
+    debugLog('SubscriptionProvider', '✅ All categories refreshed');
   }
 
-  /// 🔵 FIX: Clear user data ONLY for different user logout
   Future<void> clearUserData() async {
     debugLog('SubscriptionProvider', ' Clearing subscription data');
 
-    // Only clear if this is a different user logout
     final session = UserSession();
     final isDifferentUser = !await session.isSameUser();
     final isLoggingOut = await _isLoggingOut();

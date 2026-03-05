@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../utils/parsers.dart';
 
 class ChatbotConversation {
   final int id;
@@ -21,15 +22,13 @@ class ChatbotConversation {
 
   factory ChatbotConversation.fromJson(Map<String, dynamic> json) {
     return ChatbotConversation(
-      id: json['id'] ?? 0,
-      title: json['title'] ?? 'New Conversation',
-      createdAt: DateTime.parse(
-          json['created_at'] ?? DateTime.now().toIso8601String()),
-      updatedAt: DateTime.parse(
-          json['updated_at'] ?? DateTime.now().toIso8601String()),
-      lastMessage: json['last_message'],
-      lastMessageRole: json['last_message_role'],
-      messageCount: json['message_count'] ?? 0,
+      id: Parsers.parseInt(json['id']),
+      title: json['title']?.toString() ?? 'New Conversation',
+      createdAt: Parsers.parseDate(json['created_at']) ?? DateTime.now(),
+      updatedAt: Parsers.parseDate(json['updated_at']) ?? DateTime.now(),
+      lastMessage: json['last_message']?.toString(),
+      lastMessageRole: json['last_message_role']?.toString(),
+      messageCount: Parsers.parseInt(json['message_count']),
     );
   }
 
@@ -50,7 +49,7 @@ class ChatbotConversation {
 
 class ChatbotMessage {
   final int id;
-  final String role; // 'user' or 'assistant'
+  final String role;
   final String content;
   final DateTime timestamp;
 
@@ -63,11 +62,10 @@ class ChatbotMessage {
 
   factory ChatbotMessage.fromJson(Map<String, dynamic> json) {
     return ChatbotMessage(
-      id: json['id'] ?? 0,
-      role: json['role'] ?? 'assistant',
-      content: json['content'] ?? '',
-      timestamp:
-          DateTime.parse(json['timestamp'] ?? DateTime.now().toIso8601String()),
+      id: Parsers.parseInt(json['id']),
+      role: json['role']?.toString() ?? 'assistant',
+      content: json['content']?.toString() ?? '',
+      timestamp: Parsers.parseDate(json['timestamp']) ?? DateTime.now(),
     );
   }
 
@@ -105,11 +103,11 @@ class ChatbotUsageStats {
   factory ChatbotUsageStats.fromJson(Map<String, dynamic> json) {
     final daily = json['daily'] ?? {};
     return ChatbotUsageStats(
-      remaining: daily['remaining'] ?? 30,
-      limit: daily['limit'] ?? 30,
-      used: daily['used'] ?? 0,
-      totalMessages: json['total_messages'] ?? 0,
-      totalConversations: json['total_conversations'] ?? 0,
+      remaining: Parsers.parseInt(daily['remaining'], 30),
+      limit: Parsers.parseInt(daily['limit'], 30),
+      used: Parsers.parseInt(daily['used']),
+      totalMessages: Parsers.parseInt(json['total_messages']),
+      totalConversations: Parsers.parseInt(json['total_conversations']),
       weeklyUsage: List<Map<String, dynamic>>.from(json['weekly_usage'] ?? []),
     );
   }
@@ -126,8 +124,6 @@ class ChatbotUsageStats {
       'weekly_usage': weeklyUsage,
     };
   }
-
-  String toJsonString() => jsonEncode(toJson());
 
   double get usagePercentage => limit > 0 ? used / limit : 0;
   bool get hasRemaining => remaining > 0;

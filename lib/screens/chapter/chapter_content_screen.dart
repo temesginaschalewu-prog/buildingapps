@@ -1,33 +1,10 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:familyacademyclient/models/chapter_model.dart';
-import 'package:familyacademyclient/models/video_model.dart';
-import 'package:familyacademyclient/models/note_model.dart';
-import 'package:familyacademyclient/models/question_model.dart';
-import 'package:familyacademyclient/models/course_model.dart';
-import 'package:familyacademyclient/models/category_model.dart';
-import 'package:familyacademyclient/providers/video_provider.dart';
-import 'package:familyacademyclient/providers/note_provider.dart';
-import 'package:familyacademyclient/providers/question_provider.dart';
-import 'package:familyacademyclient/providers/chapter_provider.dart';
-import 'package:familyacademyclient/providers/course_provider.dart';
-import 'package:familyacademyclient/providers/category_provider.dart';
-import 'package:familyacademyclient/providers/subscription_provider.dart';
-import 'package:familyacademyclient/providers/auth_provider.dart';
-import 'package:familyacademyclient/providers/progress_provider.dart';
-import 'package:familyacademyclient/services/user_session.dart';
-import 'package:familyacademyclient/themes/app_themes.dart';
-import 'package:familyacademyclient/utils/responsive.dart';
-import 'package:familyacademyclient/utils/responsive_values.dart';
-import 'package:familyacademyclient/utils/helpers.dart';
-import 'package:familyacademyclient/widgets/common/loading_indicator.dart';
-import 'package:familyacademyclient/widgets/common/empty_state.dart';
 import 'package:chewie/chewie.dart';
 import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -36,25 +13,45 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:dio/dio.dart';
 import 'package:path/path.dart' as path;
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
-import 'package:shimmer/shimmer.dart';
-import 'package:familyacademyclient/themes/app_colors.dart';
-import 'package:familyacademyclient/themes/app_text_styles.dart';
 import 'package:media_kit/media_kit.dart' as media_kit;
 import 'package:media_kit_video/media_kit_video.dart' as media_kit_video;
-import 'package:cached_network_image/cached_network_image.dart';
-import '../../widgets/common/error_widget.dart' as custom;
+
+import '../../models/chapter_model.dart';
+import '../../models/video_model.dart';
+import '../../models/note_model.dart';
+import '../../models/question_model.dart';
+import '../../models/course_model.dart';
+import '../../models/category_model.dart';
+
+import '../../providers/video_provider.dart';
+import '../../providers/note_provider.dart';
+import '../../providers/question_provider.dart';
+import '../../providers/chapter_provider.dart';
+import '../../providers/course_provider.dart';
+import '../../providers/category_provider.dart';
+import '../../providers/subscription_provider.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/progress_provider.dart';
+
+import '../../services/connectivity_service.dart';
+import '../../services/snackbar_service.dart';
+
+import '../../widgets/chapter/video_card.dart';
+import '../../widgets/chapter/note_card.dart';
+import '../../widgets/chapter/practice_question_card.dart';
+import '../../widgets/common/app_card.dart';
+import '../../widgets/common/app_button.dart';
+import '../../widgets/common/app_dialog.dart';
+import '../../widgets/common/app_shimmer.dart';
+import '../../widgets/common/app_empty_state.dart';
+
+import '../../themes/app_themes.dart';
+import '../../themes/app_colors.dart';
+import '../../themes/app_text_styles.dart';
+import '../../utils/responsive.dart';
+import '../../utils/responsive_values.dart';
+import '../../utils/helpers.dart';
 import '../../widgets/common/responsive_widgets.dart';
-
-enum VideoQuality {
-  low(360, '360p'),
-  medium(480, '480p'),
-  high(720, '720p'),
-  highest(1080, '1080p');
-
-  final int height;
-  final String label;
-  const VideoQuality(this.height, this.label);
-}
 
 class ChapterContentScreen extends StatefulWidget {
   final int chapterId;
@@ -102,7 +99,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   bool _isPlayingVideo = false;
   bool _isVideoDialogOpen = false;
   bool _useMediaKit =
-      Platform.isLinux || Platform.isMacOS || Platform.isWindows;
+      !Platform.isLinux && (Platform.isMacOS || Platform.isWindows);
   bool _isPlayerInitialized = false;
 
   final Map<int, String?> _selectedAnswers = {};
@@ -121,6 +118,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   StreamSubscription? _videoUpdateSubscription;
   StreamSubscription? _noteUpdateSubscription;
   StreamSubscription? _questionUpdateSubscription;
+  StreamSubscription? _connectivitySubscription;
   Timer? _refreshTimer;
 
   String? _currentUserId;
@@ -142,6 +140,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) => _initialize());
+    _setupConnectivityListener();
   }
 
   @override
@@ -151,96 +150,21 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     _getCurrentUserId();
   }
 
-  Widget _buildGlassContainer({required Widget child}) {
-    return ClipRRect(
-      borderRadius:
-          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.getCard(context).withValues(alpha: 0.4),
-                AppColors.getCard(context).withValues(alpha: 0.2),
-              ],
-            ),
-            borderRadius:
-                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-            border: Border.all(
-              color: AppColors.telegramBlue.withValues(alpha: 0.2),
-            ),
-          ),
-          child: child,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGradientButton({
-    required String label,
-    required VoidCallback? onPressed,
-    required List<Color> gradient,
-    bool isLoading = false,
-    bool isEnabled = true,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: isEnabled ? LinearGradient(colors: gradient) : null,
-        borderRadius:
-            BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-        boxShadow: isEnabled
-            ? [
-                BoxShadow(
-                  color: gradient.first.withValues(alpha: 0.3),
-                  blurRadius: ResponsiveValues.spacingS(context),
-                  offset: Offset(0, ResponsiveValues.spacingXS(context)),
-                ),
-              ]
-            : null,
-      ),
-      child: Material(
-        color: isEnabled
-            ? Colors.transparent
-            : AppColors.getSurface(context).withValues(alpha: 0.1),
-        child: InkWell(
-          onTap: isEnabled ? onPressed : null,
-          borderRadius:
-              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-          child: Container(
-            padding: EdgeInsets.symmetric(
-              vertical: ResponsiveValues.spacingM(context),
-            ),
-            alignment: Alignment.center,
-            child: isLoading
-                ? SizedBox(
-                    width: ResponsiveValues.iconSizeM(context),
-                    height: ResponsiveValues.iconSizeM(context),
-                    child: const CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation(Colors.white),
-                    ),
-                  )
-                : ResponsiveText(
-                    label,
-                    style: AppTextStyles.buttonMedium(context).copyWith(
-                      color: isEnabled
-                          ? Colors.white
-                          : AppColors.getTextSecondary(context)
-                              .withValues(alpha: 0.5),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-          ),
-        ),
-      ),
-    );
+  void _setupConnectivityListener() {
+    final connectivityService = context.read<ConnectivityService>();
+    _connectivitySubscription =
+        connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (mounted) {
+        setState(() => _isOffline = !isOnline);
+        if (isOnline && !_isRefreshing && _chapter != null) {
+          _refreshInBackground();
+        }
+      }
+    });
   }
 
   Future<void> _getCurrentUserId() async {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final authProvider = context.read<AuthProvider>();
     _currentUserId = authProvider.currentUser?.id.toString();
   }
 
@@ -249,6 +173,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     _disposeAllPlayers();
     _cleanupResources();
     WidgetsBinding.instance.removeObserver(this);
+    _connectivitySubscription?.cancel();
     super.dispose();
   }
 
@@ -263,7 +188,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         _mediaKitPlayer?.dispose();
         _mediaKitPlayer = null;
       }
-    } catch (e) {
     } finally {
       _mediaKitVideoController = null;
     }
@@ -299,11 +223,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   }
 
   Future<void> _checkConnectivity() async {
-    final hasConnection = await hasInternetConnection();
-    if (!hasConnection && mounted) {
-      setState(() => _isOffline = true);
-      showOfflineMessage(context);
-    }
+    final connectivityService = context.read<ConnectivityService>();
+    setState(() => _isOffline = !connectivityService.isOnline);
   }
 
   Future<void> _initialize() async {
@@ -379,9 +300,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         qualities.forEach((key, value) {
           final videoId = int.tryParse(key);
           if (videoId != null) {
-            _downloadQuality[videoId] = VideoQuality.values.firstWhere(
-              (q) => q.label == value,
-              orElse: () => VideoQuality.medium,
+            _downloadQuality[videoId] = VideoQuality(
+              label: value.toString(),
+              url: '',
+              height: _getHeightFromLabel(value.toString()),
             );
           }
         });
@@ -391,6 +313,21 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           'Loaded ${_cachedVideoPaths.length} cached videos, ${_cachedNotePaths.length} cached notes');
     } catch (e) {
       debugLog('ChapterContent', 'Error loading cache: $e');
+    }
+  }
+
+  int _getHeightFromLabel(String label) {
+    switch (label) {
+      case '360p':
+        return 360;
+      case '480p':
+        return 480;
+      case '720p':
+        return 720;
+      case '1080p':
+        return 1080;
+      default:
+        return 480;
     }
   }
 
@@ -439,7 +376,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
     try {
       await _checkAccessAndLoadData(forceRefresh: true);
-    } catch (e) {
     } finally {
       _isRefreshing = false;
     }
@@ -448,9 +384,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   Future<void> _manualRefresh() async {
     if (_isRefreshing) return;
 
-    final hasConnection = await hasInternetConnection();
-    if (!hasConnection) {
+    final connectivityService = context.read<ConnectivityService>();
+    if (!connectivityService.isOnline) {
       setState(() => _isOffline = true);
+      SnackbarService().showOffline(context);
       return;
     }
 
@@ -458,12 +395,13 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
     try {
       await _checkAccessAndLoadData(forceRefresh: true);
-      if (mounted) showTopSnackBar(context, 'Content updated');
+      if (mounted) SnackbarService().showSuccess(context, 'Content updated');
     } catch (e) {
       setState(() => _isOffline = true);
-      if (mounted)
-        showTopSnackBar(context, 'Refresh failed, using cached data',
-            isError: true);
+      if (mounted) {
+        SnackbarService()
+            .showError(context, 'Refresh failed, using cached data');
+      }
     } finally {
       setState(() => _isRefreshing = false);
     }
@@ -514,9 +452,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     final courseProvider = context.read<CourseProvider>();
     final categoryProvider = context.read<CategoryProvider>();
 
-    if (categoryProvider.categories.isEmpty)
+    if (categoryProvider.categories.isEmpty) {
       await categoryProvider.loadCategories(
           forceRefresh: forceRefresh && !_isOffline);
+    }
 
     for (final category in categoryProvider.categories) {
       if (!courseProvider.hasLoadedCategory(category.id)) {
@@ -565,8 +504,9 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
   void _setupBackgroundRefresh() {
     _refreshTimer = Timer.periodic(const Duration(minutes: 5), (_) async {
-      if (mounted && _hasAccess && !_isRefreshing && !_isOffline)
+      if (mounted && _hasAccess && !_isRefreshing && !_isOffline) {
         await _refreshInBackground();
+      }
     });
   }
 
@@ -601,11 +541,13 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     if (!_isPlayingVideo || _isVideoDialogOpen || !_isPlayerInitialized) return;
     try {
       if (_useMediaKit) {
-        if (_mediaKitPlayer != null && !_mediaKitPlayer!.state.playing)
+        if (_mediaKitPlayer != null && !_mediaKitPlayer!.state.playing) {
           _mediaKitPlayer?.play();
+        }
       } else {
-        if (_chewieController != null && !_chewieController!.isPlaying)
+        if (_chewieController != null && !_chewieController!.isPlaying) {
           _chewieController?.play();
+        }
       }
     } catch (e) {}
     try {
@@ -613,143 +555,115 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     } catch (e) {}
   }
 
+  void _showDeleteDownloadDialog(Video video) {
+    AppDialog.delete(
+      context: context,
+      title: 'Remove Download',
+      message: 'Remove downloaded video "${video.title}"?',
+    ).then((confirmed) {
+      if (confirmed == true) {
+        final videoProvider = context.read<VideoProvider>();
+        videoProvider.removeDownload(video.id).then((_) {
+          setState(() {
+            _cachedVideoPaths.remove(video.id);
+            _downloadQuality.remove(video.id);
+          });
+          SnackbarService().showSuccess(context, 'Download removed');
+        });
+      }
+    });
+  }
+
+  /// 🔵 FIXED: Quality selector now properly handles "Recommended" option
   Future<VideoQuality?> _showQualitySelector(Video video,
       {bool forPlayback = false}) async {
     if (_cachedVideoPaths.containsKey(video.id)) return null;
-    if (!video.hasQualities) return VideoQuality.medium;
 
-    final availableQualities = VideoQuality.values
-        .where((q) => video.getQualityUrl(q.name) != null)
-        .toList()
-      ..sort((a, b) => b.height.compareTo(a.height));
+    final availableQualities = video.availableQualities;
 
-    if (availableQualities.isEmpty) return VideoQuality.medium;
+    if (availableQualities.isEmpty) {
+      return VideoQuality(label: '480p', url: video.fullVideoUrl, height: 480);
+    }
 
+    final recommendedQuality = video.getRecommendedQuality();
     final currentQuality = _downloadQuality[video.id] ??
-        (forPlayback ? VideoQuality.medium : VideoQuality.medium);
+        (forPlayback ? recommendedQuality : availableQualities.first);
 
     final Completer<VideoQuality?> completer = Completer();
 
     bool didSelectQuality = false;
 
-    await showModalBottomSheet(
+    await AppDialog.showBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) => WillPopScope(
-        onWillPop: () async {
-          if (!didSelectQuality) {
-            completer.complete(null);
-          }
-          return true;
-        },
-        child: Container(
-          decoration: BoxDecoration(
-            color: AppColors.getCard(context),
-            borderRadius: BorderRadius.vertical(
-              top: Radius.circular(ResponsiveValues.radiusXLarge(context)),
-            ),
-          ),
-          child: ResponsiveColumn(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                margin:
-                    EdgeInsets.only(top: ResponsiveValues.spacingM(context)),
-                width: ResponsiveValues.spacingXXL(context),
-                height: ResponsiveValues.spacingXS(context),
-                decoration: BoxDecoration(
-                  color: AppColors.getTextSecondary(context)
-                      .withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(
-                    ResponsiveValues.radiusSmall(context),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: ResponsiveValues.cardPadding(context),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  forPlayback ? 'Select Quality' : 'Download Quality',
+                  style: AppTextStyles.titleMedium(context).copyWith(
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-              ),
-              Padding(
-                padding: ResponsiveValues.cardPadding(context),
-                child: ResponsiveRow(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    ResponsiveText(
-                      forPlayback ? 'Select Quality' : 'Download Quality',
-                      style: AppTextStyles.titleMedium(context).copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () {
-                        Navigator.pop(context);
-                        completer.complete(null);
-                      },
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
-                  ],
-                ),
-              ),
-              if (forPlayback) ...[
-                _buildQualityOption(
-                  context,
-                  quality: null,
-                  label: 'Auto (Recommended)',
-                  subtitle:
-                      'Let us choose the best quality for your connection',
-                  isSelected: false,
-                  onTap: () {
-                    didSelectQuality = true;
-                    Navigator.pop(context);
-                    completer.complete(null);
-                  },
-                ),
-                const Divider(height: 1, indent: 16, endIndent: 16),
-              ],
-              ...availableQualities.map(
-                (quality) => _buildQualityOption(
-                  context,
-                  quality: quality,
-                  label: quality.label,
-                  subtitle: _getQualityDescription(quality),
-                  isSelected: currentQuality == quality,
-                  onTap: () {
-                    didSelectQuality = true;
-                    Navigator.pop(context);
-                    completer.complete(quality);
-                  },
-                ),
-              ),
-              ResponsiveSizedBox(height: AppSpacing.l),
-              Padding(
-                padding: ResponsiveValues.screenPadding(context),
-                child: TextButton(
+                AppButton.icon(
+                  icon: Icons.close,
                   onPressed: () {
                     Navigator.pop(context);
                     completer.complete(null);
                   },
-                  style: TextButton.styleFrom(
-                    minimumSize: Size(
-                      double.infinity,
-                      ResponsiveValues.buttonHeightMedium(context),
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(
-                        ResponsiveValues.radiusMedium(context),
-                      ),
-                    ),
-                  ),
-                  child: ResponsiveText(
-                    'Cancel',
-                    style: AppTextStyles.labelLarge(context).copyWith(
-                      color: AppColors.getTextSecondary(context),
-                    ),
-                  ),
                 ),
-              ),
-              ResponsiveSizedBox(height: AppSpacing.s),
-            ],
+              ],
+            ),
           ),
-        ),
+          if (forPlayback) ...[
+            _buildQualityOption(
+              context,
+              quality: null,
+              label: 'Auto (Recommended)',
+              subtitle:
+                  '${recommendedQuality.label} - Optimized for your connection',
+              isSelected: currentQuality.label == recommendedQuality.label,
+              onTap: () {
+                didSelectQuality = true;
+                Navigator.pop(context);
+                // Return the recommended quality
+                completer.complete(recommendedQuality);
+              },
+            ),
+            const Divider(height: 1, indent: 16, endIndent: 16),
+          ],
+          ...availableQualities.map(
+            (quality) => _buildQualityOption(
+              context,
+              quality: quality,
+              label: quality.label,
+              subtitle: _getQualityDescription(quality),
+              isSelected: currentQuality.label == quality.label,
+              onTap: () {
+                didSelectQuality = true;
+                Navigator.pop(context);
+                completer.complete(quality);
+              },
+            ),
+          ),
+          const ResponsiveSizedBox(height: AppSpacing.l),
+          Padding(
+            padding: ResponsiveValues.screenPadding(context),
+            child: AppButton.outline(
+              label: 'Cancel',
+              onPressed: () {
+                Navigator.pop(context);
+                completer.complete(null);
+              },
+              expanded: true,
+            ),
+          ),
+          const ResponsiveSizedBox(height: AppSpacing.s),
+        ],
       ),
     );
 
@@ -774,7 +688,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         onTap: onTap,
         child: Padding(
           padding: ResponsiveValues.listItemPadding(context),
-          child: ResponsiveRow(
+          child: Row(
             children: [
               Container(
                 width: ResponsiveValues.iconSizeXL(context),
@@ -786,7 +700,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   shape: BoxShape.circle,
                 ),
                 child: Center(
-                  child: ResponsiveText(
+                  child: Text(
                     quality?.height.toString() ?? 'A',
                     style: AppTextStyles.labelMedium(context).copyWith(
                       color: isSelected
@@ -797,12 +711,12 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   ),
                 ),
               ),
-              ResponsiveSizedBox(width: AppSpacing.m),
+              const ResponsiveSizedBox(width: AppSpacing.m),
               Expanded(
-                child: ResponsiveColumn(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    ResponsiveText(
+                    Text(
                       label,
                       style: AppTextStyles.bodyLarge(context).copyWith(
                         fontWeight:
@@ -812,8 +726,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                             : AppColors.getTextPrimary(context),
                       ),
                     ),
-                    ResponsiveSizedBox(height: AppSpacing.xxs),
-                    ResponsiveText(
+                    const ResponsiveSizedBox(height: AppSpacing.xxs),
+                    Text(
                       subtitle,
                       style: AppTextStyles.caption(context).copyWith(
                         color: AppColors.getTextSecondary(context),
@@ -861,8 +775,15 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   Future<void> _playVideo(Video video) async {
     if (_isVideoDialogOpen) return;
 
+    // Handle local files
     if (_cachedVideoPaths.containsKey(video.id)) {
-      _playWithUrl(video, _cachedVideoPaths[video.id]!);
+      final localPath = _cachedVideoPaths[video.id]!;
+      debugLog('VideoCard', 'Playing from local file: $localPath');
+
+      // For local files, always use video_player (more reliable)
+      _useMediaKit = false;
+      final uri = Uri.file(localPath);
+      _playWithUrl(video, uri.toString());
       return;
     }
 
@@ -870,6 +791,12 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
     if (video.hasQualities) {
       selectedQuality = await _showQualitySelector(video, forPlayback: true);
+      if (selectedQuality == null) {
+        // If user cancelled, use recommended quality
+        selectedQuality = video.getRecommendedQuality();
+      }
+    } else {
+      selectedQuality = video.getRecommendedQuality();
     }
 
     if (selectedQuality == null) {
@@ -877,15 +804,18 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       return;
     }
 
-    String videoUrl;
-    if (selectedQuality != null && video.hasQualities) {
-      videoUrl =
-          video.getQualityUrl(selectedQuality.name) ?? video.fullVideoUrl;
-    } else {
-      videoUrl = video.fullVideoUrl;
-    }
+    final String videoUrl = selectedQuality.url;
+    debugLog('VideoCard', 'Playing from URL: $videoUrl');
 
-    _playWithUrl(video, videoUrl);
+    // Try with current player, fallback to other if it fails
+    try {
+      await _playWithUrl(video, videoUrl);
+    } catch (e) {
+      debugLog('VideoCard', 'Primary player failed: $e, trying fallback');
+      // Toggle player and retry
+      _useMediaKit = !_useMediaKit;
+      await _playWithUrl(video, videoUrl);
+    }
   }
 
   Future<void> _playWithUrl(Video video, String videoUrl) async {
@@ -917,101 +847,184 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         _useMediaKit = false;
         await _playVideo(video);
       } else {
-        if (mounted)
-          showTopSnackBar(context, 'Failed to play video: $e', isError: true);
+        if (mounted) {
+          SnackbarService().showError(context, 'Failed to play video: $e');
+        }
       }
     }
   }
 
+  /// 🔵 CROSS-PLATFORM: Bulletproof MediaKit player with proper error handling
   Future<void> _playWithMediaKit(Video video, String videoUrl) async {
-    _mediaKitPlayer = media_kit.Player();
-    _mediaKitVideoController =
-        media_kit_video.VideoController(_mediaKitPlayer!);
+    // Always dispose previous player first
+    _disposeAllPlayers();
 
-    await _mediaKitPlayer!.open(media_kit.Media(videoUrl), play: true);
-    await _mediaKitPlayer!.setVolume(1.0);
-    await _mediaKitPlayer!.setRate(1.0);
-
-    setState(() => _isPlayerInitialized = true);
     try {
-      await WakelockPlus.enable();
-    } catch (e) {}
+      _mediaKitPlayer = media_kit.Player();
+      _mediaKitVideoController =
+          media_kit_video.VideoController(_mediaKitPlayer!);
 
-    if (!mounted) return;
+      // Set up error handler with proper null checks
+      _mediaKitPlayer!.stream.error.listen((error) {
+        debugLog('VideoCard', 'MediaKit error: $error');
+        if (mounted) {
+          // On error, fall back to video_player
+          _useMediaKit = false;
+          SnackbarService()
+              .showInfo(context, 'Switching to alternate player...');
+          _playVideo(video);
+        }
+      });
 
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => Dialog(
-        insetPadding: EdgeInsets.all(
-          ScreenSize.responsiveDouble(
-            context: context,
-            mobile: 16,
-            tablet: 32,
-            desktop: 64,
-          ),
-        ),
-        backgroundColor: Colors.transparent,
-        child: ClipRRect(
-          borderRadius:
-              BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
-          child: Stack(
-            children: [
-              AspectRatio(
-                aspectRatio: 16 / 9,
-                child: media_kit_video.Video(
-                  controller: _mediaKitVideoController!,
-                  controls: media_kit_video.MaterialVideoControls,
-                  fill: Colors.black,
-                ),
+      // Set playback options
+      await _mediaKitPlayer!.open(media_kit.Media(videoUrl), play: true);
+      await _mediaKitPlayer!.setVolume(1.0);
+      await _mediaKitPlayer!.setRate(1.0);
+
+      if (!mounted) return;
+
+      setState(() => _isPlayerInitialized = true);
+
+      // Enable wakelock on all platforms
+      try {
+        await WakelockPlus.enable();
+      } catch (e) {
+        debugLog('VideoCard', 'Wakelock error (non-critical): $e');
+      }
+
+      if (!mounted) return;
+
+      // Create dialog with proper context handling
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) {
+          // Create local references to avoid closure issues
+          final player = _mediaKitPlayer;
+          final videoController = _mediaKitVideoController;
+
+          return Dialog(
+            insetPadding: EdgeInsets.all(
+              ScreenSize.responsiveDouble(
+                context: dialogContext,
+                mobile: 8, // Smaller on mobile
+                tablet: 16,
+                desktop: 32,
               ),
-              Positioned(
-                top: ResponsiveValues.spacingL(context),
-                right: ResponsiveValues.spacingL(context),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.5),
-                    shape: BoxShape.circle,
+            ),
+            backgroundColor: Colors.transparent,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(
+                  ResponsiveValues.radiusLarge(dialogContext)),
+              child: Stack(
+                children: [
+                  if (videoController != null)
+                    AspectRatio(
+                      aspectRatio: 16 / 9,
+                      child: media_kit_video.Video(
+                        controller: videoController,
+                        controls: media_kit_video.MaterialVideoControls,
+                      ),
+                    )
+                  else
+                    Container(
+                      color: Colors.black,
+                      child: const Center(
+                        child: CircularProgressIndicator(),
+                      ),
+                    ),
+                  Positioned(
+                    top: ResponsiveValues.spacingM(dialogContext),
+                    right: ResponsiveValues.spacingM(dialogContext),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.5),
+                        shape: BoxShape.circle,
+                      ),
+                      child: IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white),
+                        onPressed: () {
+                          // Clean up player
+                          if (player != null) {
+                            try {
+                              player.pause();
+                              player.dispose();
+                            } catch (e) {
+                              debugLog(
+                                  'VideoCard', 'Error disposing player: $e');
+                            }
+                          }
+                          Navigator.pop(dialogContext);
+                          if (mounted) {
+                            _onVideoClosed(video);
+                          }
+                        },
+                      ),
+                    ),
                   ),
-                  child: IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white),
-                    onPressed: () async {
-                      if (_mediaKitPlayer != null)
-                        try {
-                          await _mediaKitPlayer!.pause();
-                        } catch (e) {}
-                      Navigator.pop(context);
-                      _onVideoClosed(video);
-                    },
-                  ),
-                ),
+                ],
               ),
-            ],
-          ),
-        ),
-      ),
-    );
+            ),
+          );
+        },
+      );
+    } catch (e) {
+      debugLog('VideoCard', 'Error in _playWithMediaKit: $e');
+      if (mounted) {
+        // Try fallback to video_player
+        _useMediaKit = false;
+        await _playWithVideoPlayer(video, videoUrl);
+      }
+    }
   }
 
+  /// 🔵 FIXED: Cross-platform video_player implementation
   Future<void> _playWithVideoPlayer(Video video, String videoUrl) async {
     try {
+      // Dispose any existing controllers
+      if (_videoController != null) {
+        await _videoController!.dispose();
+        _videoController = null;
+      }
+      if (_chewieController != null) {
+        _chewieController!.dispose();
+        _chewieController = null;
+      }
+
       String fixedUrl = videoUrl;
 
-      if (fixedUrl.startsWith('http')) {
+      // Handle different URL types
+      if (fixedUrl.startsWith('file://')) {
+        // Local file
+        final filePath = fixedUrl.replaceFirst('file://', '');
+        _videoController = VideoPlayerController.file(File(filePath));
+      } else if (fixedUrl.startsWith('http')) {
+        // Network URL
         try {
           final uri = Uri.parse(fixedUrl);
           _videoController = VideoPlayerController.networkUrl(uri);
         } catch (e) {
           debugLog('VideoCard', 'URL parsing error: $e');
-          _videoController = VideoPlayerController.networkUrl(
-              Uri.parse(Uri.encodeFull(fixedUrl)));
+          _videoController = VideoPlayerController.network(
+            Uri.encodeFull(fixedUrl),
+          );
         }
       } else {
+        // Assume it's a file path
         _videoController = VideoPlayerController.file(File(fixedUrl));
       }
 
-      await _videoController!.initialize();
+      // Initialize with timeout
+      await _videoController!.initialize().timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          throw Exception('Video initialization timeout');
+        },
+      );
 
+      if (!mounted) return;
+
+      // Create Chewie controller
       _chewieController = ChewieController(
         videoPlayerController: _videoController!,
         autoPlay: true,
@@ -1022,21 +1035,22 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         materialProgressColors: ChewieProgressColors(
           playedColor: AppColors.telegramBlue,
           handleColor: AppColors.telegramBlue,
-          backgroundColor: Theme.of(context).colorScheme.surfaceVariant,
-          bufferedColor: Theme.of(context).colorScheme.surfaceVariant,
+          backgroundColor:
+              Theme.of(context).colorScheme.surfaceContainerHighest,
+          bufferedColor: Theme.of(context).colorScheme.surfaceContainerHighest,
         ),
         placeholder: Container(
           color: Theme.of(context).colorScheme.surface,
           child: Center(
-            child: ResponsiveColumn(
+            child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const CircularProgressIndicator(
                   valueColor:
                       AlwaysStoppedAnimation<Color>(AppColors.telegramBlue),
                 ),
-                ResponsiveSizedBox(height: AppSpacing.l),
-                ResponsiveText(
+                const SizedBox(height: 16),
+                Text(
                   'Loading video...',
                   style: AppTextStyles.bodySmall(context).copyWith(
                     color: AppColors.getTextSecondary(context),
@@ -1047,17 +1061,18 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           ),
         ),
         errorBuilder: (context, errorMessage) => Center(
-          child: ResponsiveColumn(
+          child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const Icon(Icons.error_outline_rounded,
                   color: AppColors.telegramRed, size: 48),
-              ResponsiveSizedBox(height: AppSpacing.l),
-              ResponsiveText(
+              const SizedBox(height: 16),
+              Text(
                 'Error loading video: $errorMessage',
                 style: AppTextStyles.bodyMedium(context).copyWith(
                   color: AppColors.getTextPrimary(context),
                 ),
+                textAlign: TextAlign.center,
               ),
             ],
           ),
@@ -1065,62 +1080,90 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       );
 
       setState(() => _isPlayerInitialized = true);
+
+      // Enable wakelock
       try {
         await WakelockPlus.enable();
-      } catch (e) {}
+      } catch (e) {
+        debugLog('VideoCard', 'Wakelock error (non-critical): $e');
+      }
 
       if (!mounted) return;
 
+      // Show video dialog
       await showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => Dialog(
-          insetPadding: EdgeInsets.all(
-            ScreenSize.responsiveDouble(
-              context: context,
-              mobile: 16,
-              tablet: 32,
-              desktop: 64,
+        builder: (dialogContext) {
+          final chewieController = _chewieController;
+
+          return Dialog(
+            insetPadding: EdgeInsets.all(
+              ScreenSize.responsiveDouble(
+                context: dialogContext,
+                mobile: 8,
+                tablet: 16,
+                desktop: 32,
+              ),
             ),
-          ),
-          backgroundColor: Colors.transparent,
-          child: ClipRRect(
-            borderRadius:
-                BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
-            child: Stack(
-              children: [
-                AspectRatio(
-                  aspectRatio: 16 / 9,
-                  child: Chewie(controller: _chewieController!),
-                ),
-                Positioned(
-                  top: ResponsiveValues.spacingL(context),
-                  right: ResponsiveValues.spacingL(context),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.5),
-                      shape: BoxShape.circle,
+            backgroundColor: Colors.transparent,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(
+                  ResponsiveValues.radiusLarge(dialogContext)),
+              child: Stack(
+                children: [
+                  if (chewieController != null &&
+                      chewieController
+                          .videoPlayerController.value.isInitialized)
+                    AspectRatio(
+                      aspectRatio: 16 / 9,
+                      child: Chewie(controller: chewieController),
+                    )
+                  else
+                    Container(
+                      color: Colors.black,
+                      child: const Center(
+                        child: CircularProgressIndicator(),
+                      ),
                     ),
-                    child: IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white),
-                      onPressed: () {
-                        if (_chewieController != null)
-                          try {
-                            _chewieController?.pause();
-                          } catch (e) {}
-                        Navigator.pop(context);
-                        _onVideoClosed(video);
-                      },
+                  Positioned(
+                    top: ResponsiveValues.spacingM(dialogContext),
+                    right: ResponsiveValues.spacingM(dialogContext),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.5),
+                        shape: BoxShape.circle,
+                      ),
+                      child: IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white),
+                        onPressed: () {
+                          if (_chewieController != null) {
+                            try {
+                              _chewieController?.pause();
+                            } catch (e) {}
+                          }
+                          Navigator.pop(dialogContext);
+                          if (mounted) {
+                            _onVideoClosed(video);
+                          }
+                        },
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ),
+          );
+        },
       );
     } catch (e) {
       debugLog('VideoCard', 'Error in _playWithVideoPlayer: $e');
+      if (mounted) {
+        SnackbarService().showError(
+          context,
+          'Failed to play video. Please try downloading first.',
+        );
+      }
       rethrow;
     }
   }
@@ -1155,7 +1198,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       await progressProvider.saveChapterProgress(
           chapterId: widget.chapterId, videoProgress: progress);
       if (progress >= 30) await videoProvider.incrementViewCount(video.id);
-    } catch (e) {
     } finally {
       _disposeAllPlayers();
     }
@@ -1167,8 +1209,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       return;
     }
 
-    final selectedQuality =
-        await _showQualitySelector(video, forPlayback: false);
+    final selectedQuality = await _showQualitySelector(video);
 
     if (selectedQuality != null) {
       setState(() {
@@ -1181,11 +1222,12 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   Future<void> _downloadVideo(Video video) async {
     if (_isDownloading[video.id] == true) return;
     if (_currentUserId == null) {
-      showTopSnackBar(context, 'Please login to download', isError: true);
+      SnackbarService().showError(context, 'Please login to download');
       return;
     }
 
-    final quality = _downloadQuality[video.id] ?? VideoQuality.medium;
+    final quality = _downloadQuality[video.id] ??
+        VideoQuality(label: '480p', url: video.fullVideoUrl, height: 480);
 
     setState(() {
       _isDownloading[video.id] = true;
@@ -1198,17 +1240,35 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           'vid_${video.id}_${quality.height}_${DateTime.now().millisecondsSinceEpoch}.mp4';
       final filePath = '${cacheDir.path}/$fileName';
 
-      final downloadUrl = video.fullVideoUrl;
+      // 🔵 FIX: Ensure download URL is properly formatted
+      String downloadUrl = quality.url;
+
+      // Fix common URL issues
+      if (downloadUrl.startsWith('https:/') &&
+          !downloadUrl.startsWith('https://')) {
+        downloadUrl = downloadUrl.replaceFirst('https:/', 'https://');
+      }
+      if (downloadUrl.startsWith('http:/') &&
+          !downloadUrl.startsWith('http://')) {
+        downloadUrl = downloadUrl.replaceFirst('http:/', 'http://');
+      }
 
       debugLog('VideoCard', 'Downloading from: $downloadUrl');
+
+      // Create a cancel token for potential cancellation
+      final cancelToken = CancelToken();
 
       await _dio.download(
         downloadUrl,
         filePath,
+        cancelToken: cancelToken,
         options: Options(
           receiveTimeout: const Duration(minutes: 10),
           sendTimeout: const Duration(minutes: 10),
-          headers: {'Accept-Encoding': 'identity'},
+          headers: {
+            'Accept-Encoding': 'identity',
+            'User-Agent': 'FamilyAcademy/1.0',
+          },
         ),
         onReceiveProgress: (received, total) {
           if (total != -1 && mounted) {
@@ -1218,7 +1278,18 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       );
 
       final file = File(filePath);
-      if (!await file.exists()) throw Exception('Download failed');
+      if (!await file.exists()) {
+        throw Exception('Download failed - file not created');
+      }
+
+      // Verify file size
+      final fileSize = await file.length();
+      if (fileSize < 1024) {
+        // Less than 1KB - probably an error page
+        await file.delete();
+        throw Exception(
+            'Downloaded file is too small ($fileSize bytes) - possibly an error page');
+      }
 
       setState(() {
         _cachedVideoPaths[video.id] = filePath;
@@ -1229,23 +1300,50 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       await _saveCacheMetadata();
 
       if (mounted) {
-        showTopSnackBar(context, '${quality.label} video downloaded');
+        SnackbarService().showSuccess(context,
+            '${quality.label} video downloaded (${(fileSize / 1024 / 1024).toStringAsFixed(1)} MB)');
       }
+    } on DioException catch (e) {
+      String errorMessage = 'Download failed';
+      if (e.type == DioExceptionType.connectionTimeout) {
+        errorMessage = 'Connection timeout - check your internet';
+      } else if (e.type == DioExceptionType.receiveTimeout) {
+        errorMessage = 'Receive timeout - server too slow';
+      } else if (e.type == DioExceptionType.cancel) {
+        errorMessage = 'Download cancelled';
+      } else if (e.response?.statusCode == 404) {
+        errorMessage = 'Video not found on server';
+      } else if (e.response?.statusCode == 403) {
+        errorMessage = 'Access denied to video';
+      } else {
+        errorMessage = 'Network error: ${e.message}';
+      }
+
+      if (mounted) {
+        setState(() {
+          _isDownloading[video.id] = false;
+          _downloadProgress.remove(video.id);
+        });
+        SnackbarService().showError(context, errorMessage);
+      }
+      debugLog('VideoCard', 'Download error: $e');
     } catch (e) {
       if (mounted) {
         setState(() {
           _isDownloading[video.id] = false;
           _downloadProgress.remove(video.id);
         });
-        showTopSnackBar(context, 'Download failed: $e', isError: true);
+        SnackbarService()
+            .showError(context, 'Download failed: ${e.toString()}');
       }
+      debugLog('VideoCard', 'Download error: $e');
     }
   }
 
   Future<void> _downloadNote(Note note) async {
     if (_isDownloading[note.id] == true) return;
     if (_currentUserId == null) {
-      showTopSnackBar(context, 'Please login to download', isError: true);
+      SnackbarService().showError(context, 'Please login to download');
       return;
     }
 
@@ -1256,8 +1354,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
     try {
       if (note.filePath == null || note.filePath!.isEmpty) {
-        showTopSnackBar(context, 'Note has no downloadable file',
-            isError: true);
+        SnackbarService().showError(context, 'Note has no downloadable file');
         setState(() {
           _isDownloading[note.id] = false;
           _downloadProgress.remove(note.id);
@@ -1271,8 +1368,9 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
 
       final fullFilePath = note.fullNoteFilePath;
-      if (fullFilePath == null || fullFilePath.isEmpty)
+      if (fullFilePath == null || fullFilePath.isEmpty) {
         throw Exception('Invalid file path');
+      }
 
       final extension = path.extension(note.filePath!) ?? '.pdf';
       final fileName =
@@ -1287,8 +1385,9 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           sendTimeout: const Duration(minutes: 5),
         ),
         onReceiveProgress: (received, total) {
-          if (total != -1 && mounted)
+          if (total != -1 && mounted) {
             setState(() => _downloadProgress[note.id] = received / total);
+          }
         },
       );
 
@@ -1301,7 +1400,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       await _saveCacheMetadata();
 
       if (mounted) {
-        showTopSnackBar(context, 'Note downloaded for offline viewing');
+        SnackbarService()
+            .showSuccess(context, 'Note downloaded for offline viewing');
       }
     } catch (e) {
       if (mounted) {
@@ -1309,7 +1409,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           _isDownloading[note.id] = false;
           _downloadProgress.remove(note.id);
         });
-        showTopSnackBar(context, 'Download failed: $e', isError: true);
+        SnackbarService().showError(context, 'Download failed: $e');
       }
     }
   }
@@ -1322,16 +1422,19 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       final deviceService = authProvider.deviceService;
 
       final videoPaths = <String, String>{};
-      for (final entry in _cachedVideoPaths.entries)
+      for (final entry in _cachedVideoPaths.entries) {
         videoPaths[entry.key.toString()] = entry.value;
+      }
 
       final notePaths = <String, String>{};
-      for (final entry in _cachedNotePaths.entries)
+      for (final entry in _cachedNotePaths.entries) {
         notePaths[entry.key.toString()] = entry.value;
+      }
 
       final downloadQualities = <String, String>{};
-      for (final entry in _downloadQuality.entries)
+      for (final entry in _downloadQuality.entries) {
         downloadQualities[entry.key.toString()] = entry.value.label;
+      }
 
       await deviceService.saveCacheItem(
         'cached_videos_chapter_${widget.chapterId}_$_currentUserId',
@@ -1382,13 +1485,16 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   }
 
   Future<void> _clearAllDownloads() async {
-    showDialog(
+    final confirmed = await AppDialog.delete(
       context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(),
-      ),
+      title: 'Clear Downloads',
+      message:
+          'Are you sure you want to remove all downloaded videos and notes?',
     );
+
+    if (confirmed != true) return;
+
+    AppDialog.showLoading(context, message: 'Clearing downloads...');
 
     try {
       for (final path in _cachedVideoPaths.values) {
@@ -1412,16 +1518,12 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
       await _saveCacheMetadata();
 
-      if (mounted) Navigator.pop(context);
+      AppDialog.hideLoading(context);
 
-      if (mounted) {
-        showTopSnackBar(context, 'All downloads cleared');
-      }
+      SnackbarService().showSuccess(context, 'All downloads cleared');
     } catch (e) {
-      if (mounted) Navigator.pop(context);
-      if (mounted) {
-        showTopSnackBar(context, 'Error clearing downloads', isError: true);
-      }
+      AppDialog.hideLoading(context);
+      SnackbarService().showError(context, 'Error clearing downloads');
     }
   }
 
@@ -1430,11 +1532,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     bool hasError = false;
     int correctCount = 0;
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(child: CircularProgressIndicator()),
-    );
+    AppDialog.showLoading(context, message: 'Checking answers...');
 
     for (final question in questions) {
       final questionId = question.id;
@@ -1462,17 +1560,16 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       }
     }
 
-    if (mounted) Navigator.pop(context);
+    AppDialog.hideLoading(context);
 
     await _saveQuestionProgress();
 
     if (mounted) {
-      showTopSnackBar(
+      SnackbarService().showSuccess(
         context,
         hasError
             ? 'Checked ${questions.length} questions, $correctCount correct'
             : 'All questions checked! $correctCount/${questions.length} correct',
-        isError: hasError,
       );
     }
   }
@@ -1500,6 +1597,14 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     _saveQuestionProgress();
   }
 
+  void _selectAnswer(int questionId, String option) {
+    setState(() {
+      _selectedAnswers[questionId] = option;
+      _showExplanation[questionId] = false;
+    });
+    _saveQuestionProgress();
+  }
+
   Future<void> _checkAnswer(int questionId, String selectedOption) async {
     final questionProvider = context.read<QuestionProvider>();
 
@@ -1516,17 +1621,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
       await _saveQuestionProgress();
     } catch (e) {
-      if (mounted)
-        showTopSnackBar(context, 'Failed to check answer', isError: true);
+      if (mounted) {
+        SnackbarService().showError(context, 'Failed to check answer');
+      }
     }
-  }
-
-  void _selectAnswer(int questionId, String option) {
-    setState(() {
-      _selectedAnswers[questionId] = option;
-      _showExplanation[questionId] = false;
-    });
-    _saveQuestionProgress();
   }
 
   Widget _buildAccessDeniedScreen() {
@@ -1535,17 +1633,14 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: AppBar(
-        title: ResponsiveText(
+        title: Text(
           _chapter?.name ?? 'Chapter',
           style: AppTextStyles.titleMedium(context),
         ),
         backgroundColor: AppColors.getBackground(context),
         elevation: 0,
-        leading: IconButton(
-          icon: ResponsiveIcon(
-            Icons.arrow_back_rounded,
-            color: AppColors.getTextPrimary(context),
-          ),
+        leading: AppButton.icon(
+          icon: Icons.arrow_back_rounded,
           onPressed: () => context.pop(),
         ),
       ),
@@ -1554,7 +1649,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           padding: EdgeInsets.all(
             ResponsiveValues.sectionPadding(context),
           ),
-          child: ResponsiveColumn(
+          child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
@@ -1565,26 +1660,26 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                       : AppColors.telegramRed.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
-                child: ResponsiveIcon(
+                child: Icon(
                   isFree ? Icons.schedule_rounded : Icons.lock_rounded,
                   size: ResponsiveValues.iconSizeXXL(context),
                   color:
                       isFree ? AppColors.telegramYellow : AppColors.telegramRed,
                 ),
               ),
-              ResponsiveSizedBox(height: AppSpacing.xxl),
-              ResponsiveText(
+              const ResponsiveSizedBox(height: AppSpacing.xxl),
+              Text(
                 isFree ? 'Coming Soon' : 'Chapter Locked',
                 style: AppTextStyles.headlineMedium(context).copyWith(
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              ResponsiveSizedBox(height: AppSpacing.l),
+              const ResponsiveSizedBox(height: AppSpacing.l),
               Padding(
                 padding: EdgeInsets.symmetric(
                   horizontal: ResponsiveValues.sectionPadding(context) * 2,
                 ),
-                child: ResponsiveText(
+                child: Text(
                   isFree
                       ? 'This chapter will be available soon. Stay tuned for updates!'
                       : 'Access to "${_chapter?.name ?? "this chapter"}" requires a subscription to "${_category?.name ?? "the category"}".',
@@ -1596,81 +1691,19 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                 ),
               ),
               if (!isFree) ...[
-                ResponsiveSizedBox(height: AppSpacing.xxxl),
-                ElevatedButton(
+                const ResponsiveSizedBox(height: AppSpacing.xxxl),
+                AppButton.primary(
+                  label: 'Purchase Access',
                   onPressed: () => context.push('/payment', extra: {
                     'category': _category,
                     'paymentType': 'first_time'
                   }),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.telegramBlue,
-                    foregroundColor: Colors.white,
-                    minimumSize: Size(
-                      ScreenSize.responsiveDouble(
-                        context: context,
-                        mobile: 200,
-                        tablet: 240,
-                        desktop: 280,
-                      ),
-                      ResponsiveValues.buttonHeightLarge(context),
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(
-                        ResponsiveValues.radiusLarge(context),
-                      ),
-                    ),
-                  ),
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(
-                      vertical: ResponsiveValues.spacingM(context),
-                      horizontal: ResponsiveValues.spacingXL(context),
-                    ),
-                    child: ResponsiveText(
-                      'Purchase Access',
-                      style: AppTextStyles.titleMedium(context).copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
                 ),
               ],
-              ResponsiveSizedBox(height: AppSpacing.xl),
-              OutlinedButton(
+              const ResponsiveSizedBox(height: AppSpacing.xl),
+              AppButton.outline(
+                label: 'Go Back',
                 onPressed: () => context.pop(),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.getTextPrimary(context),
-                  side: BorderSide(
-                    color: AppColors.getDivider(context),
-                    width: 1.5,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(
-                      ResponsiveValues.radiusLarge(context),
-                    ),
-                  ),
-                  minimumSize: Size(
-                    ScreenSize.responsiveDouble(
-                      context: context,
-                      mobile: 200,
-                      tablet: 240,
-                      desktop: 280,
-                    ),
-                    ResponsiveValues.buttonHeightMedium(context),
-                  ),
-                ),
-                child: Padding(
-                  padding: EdgeInsets.symmetric(
-                    vertical: ResponsiveValues.spacingM(context),
-                    horizontal: ResponsiveValues.spacingXL(context),
-                  ),
-                  child: ResponsiveText(
-                    'Go Back',
-                    style: AppTextStyles.titleMedium(context).copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
               ),
             ],
           ),
@@ -1684,11 +1717,29 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     final videos = videoProvider.getVideosByChapter(widget.chapterId);
 
     if (videoProvider.isLoadingForChapter(widget.chapterId) && videos.isEmpty) {
-      return _buildSkeletonList(itemCount: 3);
+      return ListView.builder(
+        padding: ResponsiveValues.screenPadding(context),
+        itemCount: 3,
+        itemBuilder: (context, index) => Padding(
+          padding: EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
+          child: AppShimmer(type: ShimmerType.videoCard, index: index),
+        ),
+      );
     }
 
     if (videos.isEmpty) {
-      return _buildEmptyVideos();
+      return Center(
+        child: AppEmptyState.noData(
+          dataType: 'Videos',
+          customMessage: _isOffline
+              ? 'No cached videos available. Connect to load videos.'
+              : 'There are no videos for this chapter yet.',
+          onRefresh: () => videoProvider.loadVideosByChapter(
+            widget.chapterId,
+            forceRefresh: true,
+          ),
+        ),
+      );
     }
 
     return Container(
@@ -1719,742 +1770,23 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
               padding: EdgeInsets.only(
                 bottom: ResponsiveValues.spacingL(context),
               ),
-              child: _buildVideoCard(video, index),
+              child: VideoCard(
+                video: video,
+                chapterId: widget.chapterId,
+                index: index,
+                onPlay: () => _playVideo(video),
+                onDownload: (quality) async {
+                  if (quality != null) {
+                    setState(() {
+                      _downloadQuality[video.id] = quality;
+                    });
+                    await _downloadVideo(video);
+                  }
+                },
+                onShowQualitySelector: _showQualitySelector,
+              ),
             );
           },
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmptyVideos() {
-    return Center(
-      child: ResponsiveColumn(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          ClipRRect(
-            borderRadius:
-                BorderRadius.circular(ResponsiveValues.radiusXXLarge(context)),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-              child: Container(
-                padding: ResponsiveValues.dialogPadding(context),
-                decoration: BoxDecoration(
-                  color: AppColors.getCard(context).withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(
-                      ResponsiveValues.radiusXXLarge(context)),
-                  border: Border.all(
-                    color: AppColors.telegramBlue.withValues(alpha: 0.2),
-                    width: 1,
-                  ),
-                ),
-                child: ResponsiveColumn(
-                  children: [
-                    ResponsiveIcon(
-                      Icons.videocam_off_rounded,
-                      size: ResponsiveValues.iconSizeXXL(context),
-                      color: AppColors.telegramBlue.withValues(alpha: 0.5),
-                    ),
-                    ResponsiveSizedBox(height: AppSpacing.xl),
-                    ResponsiveText(
-                      'No Videos Available',
-                      style: AppTextStyles.headlineSmall(context).copyWith(
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                    ResponsiveSizedBox(height: AppSpacing.m),
-                    ResponsiveText(
-                      _isOffline
-                          ? 'No cached videos available. Connect to load videos.'
-                          : 'There are no videos for this chapter yet.',
-                      style: AppTextStyles.bodyLarge(context).copyWith(
-                        color: AppColors.getTextSecondary(context),
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    ResponsiveSizedBox(height: AppSpacing.xl),
-                    if (!_isOffline)
-                      _buildGlassButton(
-                        context,
-                        label: 'Refresh',
-                        icon: Icons.refresh_rounded,
-                        onPressed: () => context
-                            .read<VideoProvider>()
-                            .loadVideosByChapter(widget.chapterId,
-                                forceRefresh: true),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildGlassButton(
-    BuildContext context, {
-    required String label,
-    required IconData icon,
-    required VoidCallback onPressed,
-  }) {
-    return ClipRRect(
-      borderRadius:
-          BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Material(
-          color: AppColors.getCard(context).withValues(alpha: 0.2),
-          child: InkWell(
-            onTap: onPressed,
-            child: Container(
-              padding: EdgeInsets.symmetric(
-                vertical: ResponsiveValues.spacingM(context),
-                horizontal: ResponsiveValues.spacingXL(context),
-              ),
-              decoration: BoxDecoration(
-                border: Border.all(
-                  color: AppColors.telegramBlue.withValues(alpha: 0.2),
-                  width: 1,
-                ),
-                borderRadius: BorderRadius.circular(
-                    ResponsiveValues.radiusMedium(context)),
-              ),
-              child: ResponsiveRow(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ResponsiveIcon(
-                    icon,
-                    size: ResponsiveValues.iconSizeS(context),
-                    color: AppColors.telegramBlue,
-                  ),
-                  ResponsiveSizedBox(width: AppSpacing.s),
-                  ResponsiveText(
-                    label,
-                    style: AppTextStyles.labelMedium(context).copyWith(
-                      color: AppColors.telegramBlue,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildVideoCard(Video video, int index) {
-    final isDownloaded = _cachedVideoPaths.containsKey(video.id);
-    final isDownloading = _isDownloading[video.id] == true;
-    final progress = _downloadProgress[video.id] ?? 0.0;
-    final quality = _downloadQuality[video.id] ?? VideoQuality.medium;
-    final hasMultipleQualities = video.hasQualities;
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOutCubic,
-      child: ClipRRect(
-        borderRadius:
-            BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  AppColors.getCard(context).withValues(alpha: 0.4),
-                  AppColors.getCard(context).withValues(alpha: 0.2),
-                ],
-              ),
-              borderRadius:
-                  BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-              border: Border.all(
-                color: isDownloaded
-                    ? AppColors.telegramGreen.withValues(alpha: 0.3)
-                    : AppColors.getTextSecondary(context)
-                        .withValues(alpha: 0.1),
-                width: 1.5,
-              ),
-            ),
-            child: ResponsiveColumn(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Stack(
-                  children: [
-                    ClipRRect(
-                      borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(24),
-                      ),
-                      child: AspectRatio(
-                        aspectRatio: 16 / 9,
-                        child: video.hasThumbnail
-                            ? CachedNetworkImage(
-                                imageUrl: video.fullThumbnailUrl!,
-                                fit: BoxFit.cover,
-                                placeholder: (context, url) => Container(
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      colors: [
-                                        AppColors.getSurface(context)
-                                            .withValues(alpha: 0.5),
-                                        AppColors.getSurface(context)
-                                            .withValues(alpha: 0.3),
-                                      ],
-                                    ),
-                                  ),
-                                  child: Center(
-                                    child: ResponsiveIcon(
-                                      Icons.movie,
-                                      size:
-                                          ResponsiveValues.iconSizeXL(context),
-                                      color:
-                                          Colors.white.withValues(alpha: 0.3),
-                                    ),
-                                  ),
-                                ),
-                                errorWidget: (context, url, error) => Container(
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      colors: [
-                                        AppColors.getSurface(context)
-                                            .withValues(alpha: 0.5),
-                                        AppColors.getSurface(context)
-                                            .withValues(alpha: 0.3),
-                                      ],
-                                    ),
-                                  ),
-                                  child: Center(
-                                    child: ResponsiveIcon(
-                                      Icons.broken_image,
-                                      size:
-                                          ResponsiveValues.iconSizeXL(context),
-                                      color:
-                                          Colors.white.withValues(alpha: 0.3),
-                                    ),
-                                  ),
-                                ),
-                              )
-                            : Container(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      AppColors.getSurface(context)
-                                          .withValues(alpha: 0.5),
-                                      AppColors.getSurface(context)
-                                          .withValues(alpha: 0.3),
-                                    ],
-                                  ),
-                                ),
-                                child: Center(
-                                  child: ResponsiveIcon(
-                                    Icons.play_circle_outline,
-                                    size: ResponsiveValues.iconSizeXXL(context),
-                                    color: Colors.white.withValues(alpha: 0.3),
-                                  ),
-                                ),
-                              ),
-                      ),
-                    ),
-                    Positioned.fill(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(24),
-                          ),
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.transparent,
-                              Colors.black.withValues(alpha: 0.7),
-                            ],
-                            stops: const [0.6, 1.0],
-                          ),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      top: ResponsiveValues.spacingM(context),
-                      right: ResponsiveValues.spacingM(context),
-                      child: _buildVideoBadge(
-                        context,
-                        icon: Icons.access_time,
-                        label: video.formattedDuration,
-                        color: Colors.white,
-                        backgroundColor: Colors.black.withValues(alpha: 0.8),
-                      ),
-                    ),
-                    if (hasMultipleQualities)
-                      Positioned(
-                        bottom: ResponsiveValues.spacingM(context),
-                        left: ResponsiveValues.spacingM(context),
-                        child: _buildVideoBadge(
-                          context,
-                          icon: Icons.hd,
-                          label: 'HD',
-                          color: Colors.white,
-                          backgroundColor: AppColors.telegramBlue,
-                          gradient: AppColors.blueGradient,
-                        ),
-                      ),
-                    if (isDownloaded && !isDownloading)
-                      Positioned(
-                        bottom: ResponsiveValues.spacingM(context),
-                        right: ResponsiveValues.spacingM(context),
-                        child: _buildVideoBadge(
-                          context,
-                          icon: Icons.check_circle,
-                          label: quality.label,
-                          color: Colors.white,
-                          backgroundColor: AppColors.telegramGreen,
-                          gradient: AppColors.greenGradient,
-                        ),
-                      ),
-                    Positioned.fill(
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: () => _playVideo(video),
-                          borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(24),
-                          ),
-                          child: Center(
-                            child: Container(
-                              width:
-                                  ResponsiveValues.iconSizeXXL(context) * 1.5,
-                              height:
-                                  ResponsiveValues.iconSizeXXL(context) * 1.5,
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  colors: AppColors.blueGradient,
-                                ),
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: AppColors.telegramBlue
-                                        .withValues(alpha: 0.5),
-                                    blurRadius:
-                                        ResponsiveValues.spacingXL(context),
-                                    spreadRadius:
-                                        ResponsiveValues.spacingXS(context),
-                                  ),
-                                ],
-                              ),
-                              child: const Icon(
-                                Icons.play_arrow_rounded,
-                                color: Colors.white,
-                                size: 40,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                Padding(
-                  padding: ResponsiveValues.cardPadding(context),
-                  child: ResponsiveColumn(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      ResponsiveText(
-                        video.title,
-                        style: AppTextStyles.titleMedium(context).copyWith(
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: -0.3,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      ResponsiveSizedBox(height: AppSpacing.m),
-                      ResponsiveRow(
-                        children: [
-                          _buildMetadataChip(
-                            context,
-                            icon: Icons.visibility_rounded,
-                            label: '${video.viewCount} views',
-                          ),
-                          ResponsiveSizedBox(width: AppSpacing.s),
-                          _buildMetadataChip(
-                            context,
-                            icon: Icons.calendar_today_rounded,
-                            label: video.createdAt
-                                .toLocal()
-                                .toString()
-                                .split(' ')[0],
-                          ),
-                        ],
-                      ),
-                      if (isDownloading) ...[
-                        ResponsiveSizedBox(height: AppSpacing.l),
-                        _buildDownloadProgress(context, progress),
-                      ],
-                    ],
-                  ),
-                ),
-                Divider(
-                  height: 1,
-                  thickness: 1,
-                  color: AppColors.getDivider(context).withValues(alpha: 0.2),
-                ),
-                Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: ResponsiveValues.spacingS(context),
-                    vertical: ResponsiveValues.spacingXS(context),
-                  ),
-                  child: ResponsiveRow(
-                    children: [
-                      Expanded(
-                        child: _buildVideoActionButton(
-                          context,
-                          label: 'Play',
-                          icon: Icons.play_arrow_rounded,
-                          color: AppColors.telegramBlue,
-                          gradient: AppColors.blueGradient,
-                          onPressed: () => _playVideo(video),
-                        ),
-                      ),
-                      Container(
-                        width: 1,
-                        height: ResponsiveValues.spacingXL(context),
-                        color: AppColors.getDivider(context)
-                            .withValues(alpha: 0.2),
-                      ),
-                      Expanded(
-                        child: _buildVideoActionButton(
-                          context,
-                          label: isDownloaded
-                              ? 'Downloaded'
-                              : isDownloading
-                                  ? 'Downloading'
-                                  : 'Download',
-                          icon: isDownloaded
-                              ? Icons.check_circle_rounded
-                              : isDownloading
-                                  ? Icons.hourglass_empty_rounded
-                                  : Icons.cloud_download_rounded,
-                          color: isDownloaded
-                              ? AppColors.telegramGreen
-                              : isDownloading
-                                  ? AppColors.telegramBlue
-                                  : AppColors.telegramBlue,
-                          gradient: isDownloaded
-                              ? AppColors.greenGradient
-                              : AppColors.blueGradient,
-                          onPressed: () => _showDownloadQualityDialog(video),
-                          isEnabled: !isDownloading,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    )
-        .animate()
-        .fadeIn(
-          duration: 400.ms,
-          delay: (index * 100).ms,
-          curve: Curves.easeOutQuad,
-        )
-        .scale(
-          begin: const Offset(0.95, 0.95),
-          end: const Offset(1, 1),
-          duration: 400.ms,
-          delay: (index * 100).ms,
-          curve: Curves.easeOutCubic,
-        );
-  }
-
-  Widget _buildVideoBadge(
-    BuildContext context, {
-    required IconData icon,
-    required String label,
-    required Color color,
-    required Color backgroundColor,
-    List<Color>? gradient,
-  }) {
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: ResponsiveValues.spacingS(context),
-        vertical: ResponsiveValues.spacingXS(context),
-      ),
-      decoration: BoxDecoration(
-        gradient: gradient != null ? LinearGradient(colors: gradient) : null,
-        color: gradient == null ? backgroundColor : null,
-        borderRadius:
-            BorderRadius.circular(ResponsiveValues.radiusFull(context)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.2),
-            blurRadius: ResponsiveValues.spacingS(context),
-            offset: Offset(0, ResponsiveValues.spacingXXS(context)),
-          ),
-        ],
-      ),
-      child: ResponsiveRow(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            icon,
-            size: ResponsiveValues.iconSizeXXS(context),
-            color: color,
-          ),
-          ResponsiveSizedBox(width: AppSpacing.xs),
-          ResponsiveText(
-            label,
-            style: AppTextStyles.caption(context).copyWith(
-              color: color,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildVideoActionButton(
-    BuildContext context, {
-    required String label,
-    required IconData icon,
-    required Color color,
-    required List<Color> gradient,
-    required VoidCallback onPressed,
-    bool isEnabled = true,
-  }) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeInOut,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: isEnabled ? onPressed : null,
-          borderRadius:
-              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-          child: Container(
-            padding: EdgeInsets.symmetric(
-              vertical: ResponsiveValues.spacingM(context),
-            ),
-            decoration: BoxDecoration(
-              gradient: isEnabled
-                  ? LinearGradient(colors: gradient)
-                  : LinearGradient(
-                      colors: [
-                        AppColors.getSurface(context).withValues(alpha: 0.3),
-                        AppColors.getSurface(context).withValues(alpha: 0.3),
-                      ],
-                    ),
-              borderRadius:
-                  BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-              boxShadow: isEnabled
-                  ? [
-                      BoxShadow(
-                        color: gradient.first.withValues(alpha: 0.3),
-                        blurRadius: ResponsiveValues.spacingS(context),
-                        offset: Offset(0, ResponsiveValues.spacingXXS(context)),
-                      ),
-                    ]
-                  : null,
-            ),
-            child: ResponsiveRow(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                ResponsiveIcon(
-                  icon,
-                  size: ResponsiveValues.iconSizeS(context),
-                  color: isEnabled
-                      ? Colors.white
-                      : AppColors.getTextSecondary(context)
-                          .withValues(alpha: 0.5),
-                ),
-                ResponsiveSizedBox(width: AppSpacing.xs),
-                ResponsiveText(
-                  label,
-                  style: AppTextStyles.labelMedium(context).copyWith(
-                    color: isEnabled
-                        ? Colors.white
-                        : AppColors.getTextSecondary(context)
-                            .withValues(alpha: 0.5),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMetadataChip(
-    BuildContext context, {
-    required IconData icon,
-    required String label,
-    Color? color,
-  }) {
-    final effectiveColor = color ?? AppColors.getTextSecondary(context);
-
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: ResponsiveValues.spacingS(context),
-        vertical: ResponsiveValues.spacingXXS(context),
-      ),
-      decoration: BoxDecoration(
-        color: effectiveColor.withValues(alpha: 0.1),
-        borderRadius:
-            BorderRadius.circular(ResponsiveValues.radiusFull(context)),
-        border: Border.all(
-          color: effectiveColor.withValues(alpha: 0.2),
-          width: 1,
-        ),
-      ),
-      child: ResponsiveRow(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            icon,
-            size: ResponsiveValues.iconSizeXXS(context),
-            color: effectiveColor,
-          ),
-          ResponsiveSizedBox(width: AppSpacing.xs),
-          ResponsiveText(
-            label,
-            style: AppTextStyles.caption(context).copyWith(
-              color: effectiveColor,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showDeleteDownloadDialog(Video video) {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: ClipRRect(
-          borderRadius:
-              BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    AppColors.getCard(context).withValues(alpha: 0.4),
-                    AppColors.getCard(context).withValues(alpha: 0.2),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(
-                    ResponsiveValues.radiusXLarge(context)),
-                border: Border.all(
-                  color: AppColors.telegramRed.withValues(alpha: 0.3),
-                  width: 1,
-                ),
-              ),
-              padding: ResponsiveValues.dialogPadding(context),
-              child: ResponsiveColumn(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
-                    decoration: BoxDecoration(
-                      color: AppColors.telegramRed.withValues(alpha: 0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: ResponsiveIcon(
-                      Icons.delete_outline_rounded,
-                      size: ResponsiveValues.iconSizeXL(context),
-                      color: AppColors.telegramRed,
-                    ),
-                  ),
-                  ResponsiveSizedBox(height: AppSpacing.l),
-                  ResponsiveText(
-                    'Remove Download',
-                    style: AppTextStyles.titleMedium(context).copyWith(
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.5,
-                    ),
-                  ),
-                  ResponsiveSizedBox(height: AppSpacing.s),
-                  ResponsiveText(
-                    'Remove downloaded video "${video.title}"?',
-                    style: AppTextStyles.bodyMedium(context).copyWith(
-                      color: AppColors.getTextSecondary(context),
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  ResponsiveSizedBox(height: AppSpacing.xl),
-                  ResponsiveRow(
-                    children: [
-                      Expanded(
-                        child: TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          style: TextButton.styleFrom(
-                            padding: EdgeInsets.symmetric(
-                              vertical: ResponsiveValues.spacingM(context),
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(
-                                ResponsiveValues.radiusMedium(context),
-                              ),
-                            ),
-                          ),
-                          child: ResponsiveText(
-                            'Cancel',
-                            style: AppTextStyles.labelLarge(context).copyWith(
-                              color: AppColors.getTextSecondary(context),
-                            ),
-                          ),
-                        ),
-                      ),
-                      ResponsiveSizedBox(width: AppSpacing.m),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () {
-                            setState(() {
-                              _cachedVideoPaths.remove(video.id);
-                              _downloadQuality.remove(video.id);
-                            });
-                            _saveCacheMetadata();
-                            Navigator.pop(context);
-                            showTopSnackBar(context, 'Download removed');
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.telegramRed,
-                            foregroundColor: Colors.white,
-                            padding: EdgeInsets.symmetric(
-                              vertical: ResponsiveValues.spacingM(context),
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(
-                                ResponsiveValues.radiusMedium(context),
-                              ),
-                            ),
-                            elevation: 0,
-                          ),
-                          child: const Text('Remove'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
         ),
       ),
     );
@@ -2465,11 +1797,29 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     final notes = noteProvider.getNotesByChapter(widget.chapterId);
 
     if (noteProvider.isLoadingForChapter(widget.chapterId) && notes.isEmpty) {
-      return _buildSkeletonList(itemCount: 3, type: 'note');
+      return ListView.builder(
+        padding: ResponsiveValues.screenPadding(context),
+        itemCount: 3,
+        itemBuilder: (context, index) => Padding(
+          padding: EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
+          child: AppShimmer(type: ShimmerType.noteCard, index: index),
+        ),
+      );
     }
 
     if (notes.isEmpty) {
-      return _buildEmptyNotes();
+      return Center(
+        child: AppEmptyState.noData(
+          dataType: 'Notes',
+          customMessage: _isOffline
+              ? 'No cached notes available. Connect to load notes.'
+              : 'There are no notes for this chapter yet.',
+          onRefresh: () => noteProvider.loadNotesByChapter(
+            widget.chapterId,
+            forceRefresh: true,
+          ),
+        ),
+      );
     }
 
     return Container(
@@ -2496,128 +1846,28 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           itemCount: notes.length,
           itemBuilder: (context, index) {
             final note = notes[index];
+            final isDownloaded = _cachedNotePaths.containsKey(note.id);
+            final isDownloading = _isDownloading[note.id] == true;
+            final downloadProgress = _downloadProgress[note.id] ?? 0.0;
+
             return Padding(
               padding: EdgeInsets.only(
                 bottom: ResponsiveValues.spacingL(context),
               ),
-              child: _buildNoteCard(note, index),
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmptyNotes() {
-    return Center(
-      child: ResponsiveColumn(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          ClipRRect(
-            borderRadius:
-                BorderRadius.circular(ResponsiveValues.radiusXXLarge(context)),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-              child: Container(
-                padding: ResponsiveValues.dialogPadding(context),
-                decoration: BoxDecoration(
-                  color: AppColors.getCard(context).withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(
-                      ResponsiveValues.radiusXXLarge(context)),
-                  border: Border.all(
-                    color: AppColors.telegramBlue.withValues(alpha: 0.2),
-                    width: 1,
-                  ),
-                ),
-                child: ResponsiveColumn(
-                  children: [
-                    ResponsiveIcon(
-                      Icons.note_alt_outlined,
-                      size: ResponsiveValues.iconSizeXXL(context),
-                      color: AppColors.telegramBlue.withValues(alpha: 0.5),
-                    ),
-                    ResponsiveSizedBox(height: AppSpacing.xl),
-                    ResponsiveText(
-                      'No Notes Available',
-                      style: AppTextStyles.headlineSmall(context).copyWith(
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                    ResponsiveSizedBox(height: AppSpacing.m),
-                    ResponsiveText(
-                      _isOffline
-                          ? 'No cached notes available. Connect to load notes.'
-                          : 'There are no notes for this chapter yet.',
-                      style: AppTextStyles.bodyLarge(context).copyWith(
-                        color: AppColors.getTextSecondary(context),
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    ResponsiveSizedBox(height: AppSpacing.xl),
-                    if (!_isOffline)
-                      _buildGlassButton(
-                        context,
-                        label: 'Refresh',
-                        icon: Icons.refresh_rounded,
-                        onPressed: () => context
-                            .read<NoteProvider>()
-                            .loadNotesByChapter(widget.chapterId,
-                                forceRefresh: true),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNoteCard(Note note, int index) {
-    final isDownloaded = _cachedNotePaths.containsKey(note.id);
-    final isDownloading = _isDownloading[note.id] == true;
-    final progress = _downloadProgress[note.id] ?? 0.0;
-    final isPdf = note.filePath?.toLowerCase().endsWith('.pdf') ?? false;
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOutCubic,
-      child: ClipRRect(
-        borderRadius:
-            BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  AppColors.getCard(context).withValues(alpha: 0.4),
-                  AppColors.getCard(context).withValues(alpha: 0.2),
-                ],
-              ),
-              borderRadius:
-                  BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-              border: Border.all(
-                color: isDownloaded
-                    ? AppColors.telegramGreen.withValues(alpha: 0.3)
-                    : AppColors.getTextSecondary(context)
-                        .withValues(alpha: 0.1),
-                width: 1.5,
-              ),
-            ),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
+              child: NoteCard(
+                note: note,
+                chapterId: widget.chapterId,
+                index: index,
+                isDownloaded: isDownloaded,
+                isDownloading: isDownloading,
+                downloadProgress: downloadProgress,
                 onTap: () {
                   final progressProvider = context.read<ProgressProvider>();
                   progressProvider.saveChapterProgress(
                     chapterId: note.chapterId,
                     notesViewed: true,
                   );
+                  noteProvider.markNoteAsViewed(note.id);
                   Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -2628,406 +1878,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                     ),
                   );
                 },
-                borderRadius: BorderRadius.circular(
-                    ResponsiveValues.radiusXLarge(context)),
-                child: Padding(
-                  padding: ResponsiveValues.cardPadding(context),
-                  child: ResponsiveRow(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: ResponsiveValues.iconSizeXXL(context),
-                        height: ResponsiveValues.iconSizeXXL(context),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: isPdf
-                                ? [
-                                    AppColors.telegramRed,
-                                    AppColors.telegramOrange
-                                  ]
-                                : [
-                                    AppColors.telegramBlue,
-                                    AppColors.telegramPurple
-                                  ],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          borderRadius: BorderRadius.circular(
-                              ResponsiveValues.radiusLarge(context)),
-                          boxShadow: [
-                            BoxShadow(
-                              color: (isPdf
-                                      ? AppColors.telegramRed
-                                      : AppColors.telegramBlue)
-                                  .withValues(alpha: 0.3),
-                              blurRadius: ResponsiveValues.spacingM(context),
-                              offset: Offset(
-                                  0, ResponsiveValues.spacingXS(context)),
-                            ),
-                          ],
-                        ),
-                        child: ResponsiveIcon(
-                          isPdf
-                              ? Icons.picture_as_pdf_rounded
-                              : Icons.note_alt_rounded,
-                          size: ResponsiveValues.iconSizeXL(context),
-                          color: Colors.white,
-                        ),
-                      ),
-                      ResponsiveSizedBox(width: AppSpacing.xl),
-                      Expanded(
-                        child: ResponsiveColumn(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            ResponsiveText(
-                              note.title,
-                              style:
-                                  AppTextStyles.titleMedium(context).copyWith(
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: -0.3,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            ResponsiveSizedBox(height: AppSpacing.m),
-                            ResponsiveRow(
-                              children: [
-                                _buildMetadataChip(
-                                  context,
-                                  icon: Icons.calendar_today_rounded,
-                                  label: note.formattedDate,
-                                ),
-                                ResponsiveSizedBox(width: AppSpacing.s),
-                                _buildMetadataChip(
-                                  context,
-                                  icon: isPdf
-                                      ? Icons.picture_as_pdf_rounded
-                                      : Icons.description_rounded,
-                                  label: isPdf ? 'PDF' : 'Document',
-                                  color: isPdf
-                                      ? AppColors.telegramRed
-                                      : AppColors.telegramBlue,
-                                ),
-                              ],
-                            ),
-                            if (isDownloading) ...[
-                              ResponsiveSizedBox(height: AppSpacing.l),
-                              _buildDownloadProgress(context, progress),
-                            ],
-                            if (isDownloaded && !isDownloading) ...[
-                              ResponsiveSizedBox(height: AppSpacing.l),
-                              _buildDownloadedBadge(context),
-                            ],
-                          ],
-                        ),
-                      ),
-                      if (note.filePath != null && note.filePath!.isNotEmpty)
-                        _buildNoteActionButton(
-                          context,
-                          note: note,
-                          isDownloaded: isDownloaded,
-                          isDownloading: isDownloading,
-                        ),
-                    ],
-                  ),
-                ),
+                onDownload: () => _downloadNote(note),
               ),
-            ),
-          ),
-        ),
-      ),
-    )
-        .animate()
-        .fadeIn(
-          duration: 400.ms,
-          delay: (index * 100).ms,
-          curve: Curves.easeOutQuad,
-        )
-        .slideX(
-          begin: 0.1,
-          end: 0,
-          duration: 400.ms,
-          delay: (index * 100).ms,
-          curve: Curves.easeOutCubic,
-        );
-  }
-
-  Widget _buildDownloadProgress(BuildContext context, double progress) {
-    return ResponsiveColumn(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ResponsiveRow(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            ResponsiveText(
-              'Downloading...',
-              style: AppTextStyles.caption(context).copyWith(
-                color: AppColors.telegramBlue,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            ResponsiveText(
-              '${(progress * 100).toInt()}%',
-              style: AppTextStyles.caption(context).copyWith(
-                color: AppColors.getTextSecondary(context),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-        ResponsiveSizedBox(height: AppSpacing.xs),
-        ClipRRect(
-          borderRadius:
-              BorderRadius.circular(ResponsiveValues.radiusSmall(context)),
-          child: Stack(
-            children: [
-              Container(
-                height: ResponsiveValues.progressBarHeight(context),
-                decoration: BoxDecoration(
-                  color: AppColors.getSurface(context).withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(
-                      ResponsiveValues.radiusSmall(context)),
-                ),
-              ),
-              FractionallySizedBox(
-                widthFactor: progress,
-                child: Container(
-                  height: ResponsiveValues.progressBarHeight(context),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: AppColors.blueGradient,
-                    ),
-                    borderRadius: BorderRadius.circular(
-                        ResponsiveValues.radiusSmall(context)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.telegramBlue.withValues(alpha: 0.5),
-                        blurRadius: ResponsiveValues.spacingXS(context),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDownloadedBadge(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: ResponsiveValues.spacingS(context),
-        vertical: ResponsiveValues.spacingXXS(context),
-      ),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            AppColors.telegramGreen.withValues(alpha: 0.2),
-            AppColors.telegramGreen.withValues(alpha: 0.05),
-          ],
-        ),
-        borderRadius:
-            BorderRadius.circular(ResponsiveValues.radiusFull(context)),
-        border: Border.all(
-          color: AppColors.telegramGreen.withValues(alpha: 0.3),
-          width: 1,
-        ),
-      ),
-      child: ResponsiveRow(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(
-            Icons.check_circle_rounded,
-            size: 14,
-            color: AppColors.telegramGreen,
-          ),
-          ResponsiveSizedBox(width: AppSpacing.xs),
-          ResponsiveText(
-            'Downloaded',
-            style: AppTextStyles.caption(context).copyWith(
-              color: AppColors.telegramGreen,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNoteActionButton(
-    BuildContext context, {
-    required Note note,
-    required bool isDownloaded,
-    required bool isDownloading,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () {
-          if (isDownloaded) {
-            _showDeleteNoteDownloadDialog(note);
-          } else if (!isDownloading) {
-            _downloadNote(note);
-          }
-        },
-        borderRadius:
-            BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-        child: Container(
-          padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
-          decoration: BoxDecoration(
-            color: isDownloaded
-                ? AppColors.telegramGreen.withValues(alpha: 0.1)
-                : isDownloading
-                    ? AppColors.telegramBlue.withValues(alpha: 0.1)
-                    : AppColors.getSurface(context).withValues(alpha: 0.1),
-            borderRadius:
-                BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-            border: Border.all(
-              color: isDownloaded
-                  ? AppColors.telegramGreen.withValues(alpha: 0.3)
-                  : isDownloading
-                      ? AppColors.telegramBlue.withValues(alpha: 0.3)
-                      : AppColors.getTextSecondary(context)
-                          .withValues(alpha: 0.1),
-              width: 1,
-            ),
-          ),
-          child: ResponsiveIcon(
-            isDownloaded
-                ? Icons.check_circle_rounded
-                : isDownloading
-                    ? Icons.hourglass_empty_rounded
-                    : Icons.cloud_download_rounded,
-            size: ResponsiveValues.iconSizeL(context),
-            color: isDownloaded
-                ? AppColors.telegramGreen
-                : isDownloading
-                    ? AppColors.telegramBlue
-                    : AppColors.getTextSecondary(context),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showDeleteNoteDownloadDialog(Note note) {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: ClipRRect(
-          borderRadius:
-              BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    AppColors.getCard(context).withValues(alpha: 0.4),
-                    AppColors.getCard(context).withValues(alpha: 0.2),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(
-                    ResponsiveValues.radiusXLarge(context)),
-                border: Border.all(
-                  color: AppColors.telegramRed.withValues(alpha: 0.3),
-                  width: 1,
-                ),
-              ),
-              padding: ResponsiveValues.dialogPadding(context),
-              child: ResponsiveColumn(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
-                    decoration: BoxDecoration(
-                      color: AppColors.telegramRed.withValues(alpha: 0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: ResponsiveIcon(
-                      Icons.delete_outline_rounded,
-                      size: ResponsiveValues.iconSizeXL(context),
-                      color: AppColors.telegramRed,
-                    ),
-                  ),
-                  ResponsiveSizedBox(height: AppSpacing.l),
-                  ResponsiveText(
-                    'Remove Download',
-                    style: AppTextStyles.titleMedium(context).copyWith(
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.5,
-                    ),
-                  ),
-                  ResponsiveSizedBox(height: AppSpacing.s),
-                  ResponsiveText(
-                    'Remove downloaded note "${note.title}"?',
-                    style: AppTextStyles.bodyMedium(context).copyWith(
-                      color: AppColors.getTextSecondary(context),
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  ResponsiveSizedBox(height: AppSpacing.xl),
-                  ResponsiveRow(
-                    children: [
-                      Expanded(
-                        child: TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          style: TextButton.styleFrom(
-                            padding: EdgeInsets.symmetric(
-                              vertical: ResponsiveValues.spacingM(context),
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(
-                                ResponsiveValues.radiusMedium(context),
-                              ),
-                            ),
-                          ),
-                          child: ResponsiveText(
-                            'Cancel',
-                            style: AppTextStyles.labelLarge(context).copyWith(
-                              color: AppColors.getTextSecondary(context),
-                            ),
-                          ),
-                        ),
-                      ),
-                      ResponsiveSizedBox(width: AppSpacing.m),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () {
-                            setState(() {
-                              _cachedNotePaths.remove(note.id);
-                            });
-                            _saveCacheMetadata();
-                            Navigator.pop(context);
-                            showTopSnackBar(context, 'Download removed');
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.telegramRed,
-                            foregroundColor: Colors.white,
-                            padding: EdgeInsets.symmetric(
-                              vertical: ResponsiveValues.spacingM(context),
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(
-                                ResponsiveValues.radiusMedium(context),
-                              ),
-                            ),
-                            elevation: 0,
-                          ),
-                          child: const Text('Remove'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
+            );
+          },
         ),
       ),
     );
@@ -3039,25 +1893,28 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
     if (questionProvider.isLoadingForChapter(widget.chapterId) &&
         questions.isEmpty) {
-      return _buildSkeletonList(itemCount: 3, type: 'question');
+      return ListView.builder(
+        padding: ResponsiveValues.screenPadding(context),
+        itemCount: 3,
+        itemBuilder: (context, index) => Padding(
+          padding: EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
+          child:
+              const AppShimmer(type: ShimmerType.rectangle, customHeight: 200),
+        ),
+      );
     }
 
     if (questions.isEmpty) {
       return Center(
-        child: EmptyState(
-          icon: Icons.quiz_outlined,
-          title: 'No Practice Questions',
-          message: _isOffline
+        child: AppEmptyState.noData(
+          dataType: 'Practice Questions',
+          customMessage: _isOffline
               ? 'No cached questions available. Connect to load questions.'
               : 'Practice questions will be added soon.',
-          type: EmptyStateType.noData,
-          actionText: 'Refresh',
-          onAction: _isOffline
-              ? null
-              : () => questionProvider.loadPracticeQuestions(
-                    widget.chapterId,
-                    forceRefresh: true,
-                  ),
+          onRefresh: () => questionProvider.loadPracticeQuestions(
+            widget.chapterId,
+            forceRefresh: true,
+          ),
         ),
       );
     }
@@ -3082,111 +1939,90 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           SliverToBoxAdapter(
             child: Container(
               margin: ResponsiveValues.screenPadding(context),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(
-                    ResponsiveValues.radiusXLarge(context)),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: AppColors.getCard(context).withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(
-                          ResponsiveValues.radiusXLarge(context)),
-                      border: Border.all(
-                        color: AppColors.telegramBlue.withValues(alpha: 0.1),
-                        width: 1,
-                      ),
-                    ),
-                    child: Padding(
-                      padding: ResponsiveValues.cardPadding(context),
-                      child: ResponsiveColumn(
+              child: AppCard.glass(
+                child: Padding(
+                  padding: ResponsiveValues.cardPadding(context),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          ResponsiveRow(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              ResponsiveText(
-                                'Practice Progress',
-                                style:
-                                    AppTextStyles.titleMedium(context).copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: -0.5,
-                                ),
-                              ),
-                              Container(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal:
-                                      ResponsiveValues.spacingM(context),
-                                  vertical:
-                                      ResponsiveValues.spacingXXS(context),
-                                ),
-                                decoration: BoxDecoration(
-                                  gradient: const LinearGradient(
-                                    colors: AppColors.blueGradient,
-                                  ),
-                                  borderRadius: BorderRadius.circular(
-                                      ResponsiveValues.radiusFull(context)),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: AppColors.telegramBlue
-                                          .withValues(alpha: 0.3),
-                                      blurRadius:
-                                          ResponsiveValues.spacingS(context),
-                                      offset: Offset(0,
-                                          ResponsiveValues.spacingXXS(context)),
-                                    ),
-                                  ],
-                                ),
-                                child: ResponsiveText(
-                                  '$answeredCount/$totalCount',
-                                  style: AppTextStyles.labelSmall(context)
-                                      .copyWith(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                            ],
+                          Text(
+                            'Practice Progress',
+                            style: AppTextStyles.titleMedium(context).copyWith(
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: -0.5,
+                            ),
                           ),
-                          ResponsiveSizedBox(height: AppSpacing.l),
-                          Stack(
-                            children: [
-                              Container(
-                                height:
-                                    ResponsiveValues.progressBarHeight(context),
-                                decoration: BoxDecoration(
-                                  color: AppColors.getSurface(context)
+                          Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: ResponsiveValues.spacingM(context),
+                              vertical: ResponsiveValues.spacingXXS(context),
+                            ),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: AppColors.blueGradient,
+                              ),
+                              borderRadius: BorderRadius.circular(
+                                  ResponsiveValues.radiusFull(context)),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: AppColors.telegramBlue
                                       .withValues(alpha: 0.3),
-                                  borderRadius: BorderRadius.circular(
-                                      ResponsiveValues.radiusSmall(context)),
+                                  blurRadius:
+                                      ResponsiveValues.spacingS(context),
+                                  offset: Offset(
+                                      0, ResponsiveValues.spacingXXS(context)),
                                 ),
+                              ],
+                            ),
+                            child: Text(
+                              '$answeredCount/$totalCount',
+                              style: AppTextStyles.labelSmall(context).copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
                               ),
-                              FractionallySizedBox(
-                                widthFactor: progress,
-                                child: Container(
-                                  height: ResponsiveValues.progressBarHeight(
-                                      context),
-                                  decoration: BoxDecoration(
-                                    gradient: const LinearGradient(
-                                      colors: AppColors.blueGradient,
-                                    ),
-                                    borderRadius: BorderRadius.circular(
-                                        ResponsiveValues.radiusSmall(context)),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: AppColors.telegramBlue
-                                            .withValues(alpha: 0.5),
-                                        blurRadius:
-                                            ResponsiveValues.spacingXS(context),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
+                            ),
                           ),
                         ],
                       ),
-                    ),
+                      const ResponsiveSizedBox(height: AppSpacing.l),
+                      Stack(
+                        children: [
+                          Container(
+                            height: ResponsiveValues.progressBarHeight(context),
+                            decoration: BoxDecoration(
+                              color: AppColors.getSurface(context)
+                                  .withValues(alpha: 0.3),
+                              borderRadius: BorderRadius.circular(
+                                  ResponsiveValues.radiusSmall(context)),
+                            ),
+                          ),
+                          FractionallySizedBox(
+                            widthFactor: progress,
+                            child: Container(
+                              height:
+                                  ResponsiveValues.progressBarHeight(context),
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: AppColors.blueGradient,
+                                ),
+                                borderRadius: BorderRadius.circular(
+                                    ResponsiveValues.radiusSmall(context)),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: AppColors.telegramBlue
+                                        .withValues(alpha: 0.5),
+                                    blurRadius:
+                                        ResponsiveValues.spacingXS(context),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -3195,28 +2031,26 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           SliverToBoxAdapter(
             child: Padding(
               padding: ResponsiveValues.screenPadding(context),
-              child: ResponsiveRow(
+              child: Row(
                 children: [
                   Expanded(
-                    child: _buildActionButton(
-                      context,
+                    child: AppButton.primary(
                       label: 'Check All',
                       icon: Icons.checklist_rounded,
-                      isEnabled: _selectedAnswers.values
-                          .any((v) => v != null && v.isNotEmpty),
-                      gradient: AppColors.blueGradient,
-                      onPressed: () => _checkAllAnswers(questions),
+                      onPressed: _selectedAnswers.values
+                              .any((v) => v != null && v.isNotEmpty)
+                          ? () => _checkAllAnswers(questions)
+                          : null,
+                      expanded: true,
                     ),
                   ),
-                  ResponsiveSizedBox(width: AppSpacing.m),
+                  const ResponsiveSizedBox(width: AppSpacing.m),
                   Expanded(
-                    child: _buildActionButton(
-                      context,
+                    child: AppButton.glass(
                       label: answeredCount > 0 ? 'Reset All' : 'Reset',
                       icon: Icons.refresh_rounded,
-                      isEnabled: answeredCount > 0,
-                      gradient: AppColors.orangeGradient,
-                      onPressed: _resetAllQuestions,
+                      onPressed: answeredCount > 0 ? _resetAllQuestions : null,
+                      expanded: true,
                     ),
                   ),
                 ],
@@ -3227,8 +2061,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
             SliverToBoxAdapter(
               child: Padding(
                 padding: ResponsiveValues.screenPadding(context),
-                child: _buildGlassButton(
-                  context,
+                child: AppButton.glass(
                   label: _showAllExplanations
                       ? 'Hide All Explanations'
                       : 'Show All Explanations',
@@ -3239,873 +2072,42 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                 ),
               ),
             ),
-          SliverToBoxAdapter(child: ResponsiveSizedBox(height: AppSpacing.s)),
+          const SliverToBoxAdapter(
+              child: ResponsiveSizedBox(height: AppSpacing.s)),
           SliverList(
             delegate: SliverChildBuilderDelegate(
               (context, index) {
                 final question = questions[index];
                 return Padding(
                   padding: ResponsiveValues.screenPadding(context),
-                  child: _buildPracticeQuestionCard(question, index),
+                  child: PracticeQuestionCard(
+                    question: question,
+                    index: index,
+                    selectedAnswers: _selectedAnswers,
+                    showExplanation: _showExplanation,
+                    isQuestionCorrect: _isQuestionCorrect,
+                    questionAnswered: _questionAnswered,
+                    onSelectAnswer: _selectAnswer,
+                    onCheckAnswer: _checkAnswer,
+                  ),
                 );
               },
               childCount: questions.length,
             ),
           ),
-          SliverToBoxAdapter(child: ResponsiveSizedBox(height: AppSpacing.xl)),
+          const SliverToBoxAdapter(
+              child: ResponsiveSizedBox(height: AppSpacing.xl)),
         ],
       ),
     );
-  }
-
-  Widget _buildActionButton(
-    BuildContext context, {
-    required String label,
-    required IconData icon,
-    required bool isEnabled,
-    required List<Color> gradient,
-    required VoidCallback onPressed,
-  }) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeInOut,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: isEnabled ? onPressed : null,
-          borderRadius:
-              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-          child: Container(
-            padding: EdgeInsets.symmetric(
-              vertical: ResponsiveValues.spacingM(context),
-            ),
-            decoration: BoxDecoration(
-              gradient: isEnabled
-                  ? LinearGradient(colors: gradient)
-                  : LinearGradient(
-                      colors: [
-                        AppColors.getSurface(context).withValues(alpha: 0.3),
-                        AppColors.getSurface(context).withValues(alpha: 0.3),
-                      ],
-                    ),
-              borderRadius:
-                  BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-              border: Border.all(
-                color: isEnabled
-                    ? Colors.transparent
-                    : AppColors.getTextSecondary(context)
-                        .withValues(alpha: 0.2),
-                width: 1,
-              ),
-              boxShadow: isEnabled
-                  ? [
-                      BoxShadow(
-                        color: gradient.first.withValues(alpha: 0.3),
-                        blurRadius: ResponsiveValues.spacingM(context),
-                        offset: Offset(0, ResponsiveValues.spacingXS(context)),
-                      ),
-                    ]
-                  : null,
-            ),
-            child: ResponsiveRow(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                ResponsiveIcon(
-                  icon,
-                  size: ResponsiveValues.iconSizeS(context),
-                  color: isEnabled
-                      ? Colors.white
-                      : AppColors.getTextSecondary(context)
-                          .withValues(alpha: 0.5),
-                ),
-                ResponsiveSizedBox(width: AppSpacing.s),
-                ResponsiveText(
-                  label,
-                  style: AppTextStyles.labelLarge(context).copyWith(
-                    color: isEnabled
-                        ? Colors.white
-                        : AppColors.getTextSecondary(context)
-                            .withValues(alpha: 0.5),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPracticeQuestionCard(Question question, int index) {
-    final questionId = question.id;
-    _showExplanation[questionId] ??= false;
-    _isQuestionCorrect[questionId] ??= false;
-    _questionAnswered[questionId] ??= false;
-
-    final difficultyColor = _getDifficultyColor(question.difficulty);
-    final isAnswered = _questionAnswered[questionId] == true;
-    final isCorrect = _isQuestionCorrect[questionId] == true;
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOutCubic,
-      child: ClipRRect(
-        borderRadius:
-            BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  AppColors.getCard(context).withValues(alpha: 0.4),
-                  AppColors.getCard(context).withValues(alpha: 0.2),
-                ],
-              ),
-              borderRadius:
-                  BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-              border: Border.all(
-                color: isAnswered
-                    ? (isCorrect
-                        ? AppColors.telegramGreen.withValues(alpha: 0.3)
-                        : AppColors.telegramRed.withValues(alpha: 0.3))
-                    : AppColors.getTextSecondary(context)
-                        .withValues(alpha: 0.1),
-                width: 1.5,
-              ),
-            ),
-            child: Padding(
-              padding: ResponsiveValues.cardPadding(context),
-              child: ResponsiveColumn(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ResponsiveRow(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      _buildDifficultyBadge(question.difficulty),
-                      _buildQuestionNumberBadge(
-                          index + 1, isAnswered, isCorrect),
-                    ],
-                  ),
-                  ResponsiveSizedBox(height: AppSpacing.xl),
-                  ShaderMask(
-                    shaderCallback: (bounds) => LinearGradient(
-                      colors: [
-                        AppColors.getTextPrimary(context),
-                        AppColors.getTextPrimary(context)
-                            .withValues(alpha: 0.8),
-                      ],
-                      begin: Alignment.centerLeft,
-                      end: Alignment.centerRight,
-                    ).createShader(bounds),
-                    child: ResponsiveText(
-                      question.questionText,
-                      style: AppTextStyles.titleMedium(context).copyWith(
-                        fontWeight: FontWeight.w600,
-                        height: 1.5,
-                        letterSpacing: -0.3,
-                      ),
-                    ),
-                  ),
-                  ResponsiveSizedBox(height: AppSpacing.xl),
-                  ..._buildPracticeQuestionOptions(question, questionId),
-                  ResponsiveSizedBox(height: AppSpacing.xl),
-                  _buildCheckAnswerButton(question, questionId),
-                  if (_showExplanation[questionId]!)
-                    _buildExplanationSection(question, questionId),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    )
-        .animate()
-        .fadeIn(
-          duration: 400.ms,
-          delay: (index * 100).ms,
-          curve: Curves.easeOutQuad,
-        )
-        .scale(
-          begin: const Offset(0.95, 0.95),
-          end: const Offset(1, 1),
-          duration: 400.ms,
-          delay: (index * 100).ms,
-          curve: Curves.easeOutCubic,
-        );
-  }
-
-  Widget _buildDifficultyBadge(String difficulty) {
-    final color = _getDifficultyColor(difficulty);
-
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: ResponsiveValues.spacingM(context),
-        vertical: ResponsiveValues.spacingXXS(context),
-      ),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            color.withValues(alpha: 0.2),
-            color.withValues(alpha: 0.05),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius:
-            BorderRadius.circular(ResponsiveValues.radiusXXLarge(context)),
-        border: Border.all(
-          color: color.withValues(alpha: 0.3),
-          width: 1,
-        ),
-      ),
-      child: ResponsiveRow(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: ResponsiveValues.spacingXS(context),
-            height: ResponsiveValues.spacingXS(context),
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: color.withValues(alpha: 0.5),
-                  blurRadius: ResponsiveValues.spacingXS(context),
-                ),
-              ],
-            ),
-          ),
-          ResponsiveSizedBox(width: AppSpacing.s),
-          ResponsiveText(
-            difficulty.toUpperCase(),
-            style: AppTextStyles.labelSmall(context).copyWith(
-              color: color,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.5,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildQuestionNumberBadge(
-      int number, bool isAnswered, bool isCorrect) {
-    Color backgroundColor;
-    Color borderColor;
-    IconData? icon;
-
-    if (isAnswered) {
-      if (isCorrect) {
-        backgroundColor = AppColors.telegramGreen.withValues(alpha: 0.15);
-        borderColor = AppColors.telegramGreen.withValues(alpha: 0.3);
-        icon = Icons.check_circle_rounded;
-      } else {
-        backgroundColor = AppColors.telegramRed.withValues(alpha: 0.15);
-        borderColor = AppColors.telegramRed.withValues(alpha: 0.3);
-        icon = Icons.cancel_rounded;
-      }
-    } else {
-      backgroundColor = Colors.transparent;
-      borderColor = AppColors.getTextSecondary(context).withValues(alpha: 0.2);
-      icon = null;
-    }
-
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: ResponsiveValues.spacingM(context),
-        vertical: ResponsiveValues.spacingXXS(context),
-      ),
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        borderRadius:
-            BorderRadius.circular(ResponsiveValues.radiusXXLarge(context)),
-        border: Border.all(color: borderColor, width: 1),
-      ),
-      child: ResponsiveRow(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (icon != null) ...[
-            Icon(
-              icon,
-              size: ResponsiveValues.iconSizeXXS(context),
-              color:
-                  isCorrect ? AppColors.telegramGreen : AppColors.telegramRed,
-            ),
-            ResponsiveSizedBox(width: AppSpacing.xs),
-          ],
-          ResponsiveText(
-            'Q$number',
-            style: AppTextStyles.labelSmall(context).copyWith(
-              color: isAnswered
-                  ? (isCorrect
-                      ? AppColors.telegramGreen
-                      : AppColors.telegramRed)
-                  : AppColors.getTextSecondary(context),
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  List<Widget> _buildPracticeQuestionOptions(
-      Question question, int questionId) {
-    final options = _getQuestionOptions(question);
-
-    return options.asMap().entries.map((entry) {
-      final optionIndex = entry.key;
-      final option = entry.value;
-      final optionLetter = String.fromCharCode(65 + optionIndex);
-
-      final isSelected = _selectedAnswers[questionId] == optionLetter;
-      final showExplanation = _showExplanation[questionId] == true;
-      final isCorrectAnswer = question.correctOption == optionLetter;
-      final isUserSelection = optionLetter == _selectedAnswers[questionId];
-
-      Color optionColor;
-      Color borderColor;
-      IconData? icon;
-
-      if (showExplanation) {
-        if (isCorrectAnswer) {
-          optionColor = AppColors.telegramGreen.withValues(alpha: 0.1);
-          borderColor = AppColors.telegramGreen.withValues(alpha: 0.5);
-          icon = Icons.check_circle_rounded;
-        } else if (isUserSelection) {
-          optionColor = AppColors.telegramRed.withValues(alpha: 0.1);
-          borderColor = AppColors.telegramRed.withValues(alpha: 0.5);
-          icon = Icons.cancel_rounded;
-        } else {
-          optionColor = Colors.transparent;
-          borderColor =
-              AppColors.getTextSecondary(context).withValues(alpha: 0.1);
-          icon = null;
-        }
-      } else {
-        if (isSelected) {
-          optionColor = AppColors.telegramBlue.withValues(alpha: 0.1);
-          borderColor = AppColors.telegramBlue;
-          icon = null;
-        } else {
-          optionColor = Colors.transparent;
-          borderColor =
-              AppColors.getTextSecondary(context).withValues(alpha: 0.1);
-          icon = null;
-        }
-      }
-
-      return AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeInOut,
-        margin: const EdgeInsets.only(bottom: 12),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: showExplanation
-                ? null
-                : () => _selectAnswer(questionId, optionLetter),
-            borderRadius:
-                BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-            child: Container(
-              padding: ResponsiveValues.cardPadding(context),
-              decoration: BoxDecoration(
-                color: optionColor,
-                borderRadius: BorderRadius.circular(
-                    ResponsiveValues.radiusMedium(context)),
-                border: Border.all(
-                  color: borderColor,
-                  width: isSelected ? 2 : 1,
-                ),
-              ),
-              child: ResponsiveRow(
-                children: [
-                  Container(
-                    width: ResponsiveValues.iconSizeL(context),
-                    height: ResponsiveValues.iconSizeL(context),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: isSelected && !showExplanation
-                          ? const LinearGradient(
-                              colors: AppColors.blueGradient,
-                            )
-                          : null,
-                      color: isSelected && !showExplanation
-                          ? null
-                          : Colors.transparent,
-                      border: Border.all(
-                        color: isSelected && !showExplanation
-                            ? Colors.transparent
-                            : showExplanation && isCorrectAnswer
-                                ? AppColors.telegramGreen
-                                : showExplanation && isUserSelection
-                                    ? AppColors.telegramRed
-                                    : AppColors.getTextSecondary(context)
-                                        .withValues(alpha: 0.3),
-                        width: 2,
-                      ),
-                    ),
-                    child: Center(
-                      child: icon != null
-                          ? Icon(
-                              icon,
-                              size: ResponsiveValues.iconSizeXS(context),
-                              color: isCorrectAnswer
-                                  ? AppColors.telegramGreen
-                                  : AppColors.telegramRed,
-                            )
-                          : ResponsiveText(
-                              optionLetter,
-                              style:
-                                  AppTextStyles.labelMedium(context).copyWith(
-                                color: isSelected && !showExplanation
-                                    ? Colors.white
-                                    : showExplanation && isCorrectAnswer
-                                        ? AppColors.telegramGreen
-                                        : showExplanation && isUserSelection
-                                            ? AppColors.telegramRed
-                                            : AppColors.getTextSecondary(
-                                                context),
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                    ),
-                  ),
-                  ResponsiveSizedBox(width: AppSpacing.l),
-                  Expanded(
-                    child: ResponsiveText(
-                      option,
-                      style: AppTextStyles.bodyMedium(context).copyWith(
-                        color: showExplanation && isCorrectAnswer
-                            ? AppColors.telegramGreen
-                            : showExplanation &&
-                                    isUserSelection &&
-                                    !isCorrectAnswer
-                                ? AppColors.telegramRed
-                                : AppColors.getTextPrimary(context),
-                        fontWeight:
-                            isSelected || (showExplanation && isCorrectAnswer)
-                                ? FontWeight.w600
-                                : FontWeight.normal,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }).toList();
-  }
-
-  Widget _buildCheckAnswerButton(Question question, int questionId) {
-    final isSelected = _selectedAnswers[questionId] != null;
-    final showExplanation = _showExplanation[questionId] == true;
-    final isCorrect = _isQuestionCorrect[questionId] == true;
-
-    if (showExplanation) {
-      return Container(
-        padding: ResponsiveValues.cardPadding(context),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: isCorrect
-                ? [
-                    AppColors.telegramGreen.withValues(alpha: 0.1),
-                    AppColors.telegramGreen.withValues(alpha: 0.05),
-                  ]
-                : [
-                    AppColors.telegramRed.withValues(alpha: 0.1),
-                    AppColors.telegramRed.withValues(alpha: 0.05),
-                  ],
-          ),
-          borderRadius:
-              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-          border: Border.all(
-            color: isCorrect
-                ? AppColors.telegramGreen.withValues(alpha: 0.3)
-                : AppColors.telegramRed.withValues(alpha: 0.3),
-            width: 1,
-          ),
-        ),
-        child: ResponsiveRow(
-          children: [
-            Container(
-              padding: EdgeInsets.all(ResponsiveValues.spacingS(context)),
-              decoration: BoxDecoration(
-                color: isCorrect
-                    ? AppColors.telegramGreen.withValues(alpha: 0.2)
-                    : AppColors.telegramRed.withValues(alpha: 0.2),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                isCorrect ? Icons.check_rounded : Icons.close_rounded,
-                color:
-                    isCorrect ? AppColors.telegramGreen : AppColors.telegramRed,
-                size: ResponsiveValues.iconSizeS(context),
-              ),
-            ),
-            ResponsiveSizedBox(width: AppSpacing.m),
-            Expanded(
-              child: ResponsiveColumn(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ResponsiveText(
-                    isCorrect ? 'Correct Answer!' : 'Incorrect',
-                    style: AppTextStyles.titleSmall(context).copyWith(
-                      color: isCorrect
-                          ? AppColors.telegramGreen
-                          : AppColors.telegramRed,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  if (!isCorrect)
-                    ResponsiveText(
-                      'The correct answer is option ${question.correctOption.toUpperCase()}',
-                      style: AppTextStyles.caption(context).copyWith(
-                        color: AppColors.getTextSecondary(context),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: isSelected
-              ? () => _checkAnswer(questionId, _selectedAnswers[questionId]!)
-              : null,
-          borderRadius:
-              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-          child: Container(
-            padding: EdgeInsets.symmetric(
-              vertical: ResponsiveValues.spacingL(context),
-            ),
-            decoration: BoxDecoration(
-              gradient: isSelected
-                  ? const LinearGradient(
-                      colors: AppColors.blueGradient,
-                    )
-                  : LinearGradient(
-                      colors: [
-                        AppColors.getSurface(context).withValues(alpha: 0.3),
-                        AppColors.getSurface(context).withValues(alpha: 0.3),
-                      ],
-                    ),
-              borderRadius:
-                  BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-              border: Border.all(
-                color: isSelected
-                    ? Colors.transparent
-                    : AppColors.getTextSecondary(context)
-                        .withValues(alpha: 0.2),
-                width: 1,
-              ),
-              boxShadow: isSelected
-                  ? [
-                      BoxShadow(
-                        color: AppColors.telegramBlue.withValues(alpha: 0.3),
-                        blurRadius: ResponsiveValues.spacingM(context),
-                        offset: Offset(0, ResponsiveValues.spacingXS(context)),
-                      ),
-                    ]
-                  : null,
-            ),
-            child: Center(
-              child: ResponsiveText(
-                'Check Answer',
-                style: AppTextStyles.labelLarge(context).copyWith(
-                  color: isSelected
-                      ? Colors.white
-                      : AppColors.getTextSecondary(context),
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildExplanationSection(Question question, int questionId) {
-    final isCorrect = _isQuestionCorrect[questionId] == true;
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOutCubic,
-      margin: const EdgeInsets.only(top: 20),
-      child: ClipRRect(
-        borderRadius:
-            BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  AppColors.getCard(context).withValues(alpha: 0.3),
-                  AppColors.getCard(context).withValues(alpha: 0.1),
-                ],
-              ),
-              borderRadius:
-                  BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
-              border: Border.all(
-                color: isCorrect
-                    ? AppColors.telegramGreen.withValues(alpha: 0.3)
-                    : AppColors.telegramBlue.withValues(alpha: 0.3),
-                width: 1,
-              ),
-            ),
-            padding: ResponsiveValues.cardPadding(context),
-            child: ResponsiveColumn(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ResponsiveRow(
-                  children: [
-                    Container(
-                      padding:
-                          EdgeInsets.all(ResponsiveValues.spacingXS(context)),
-                      decoration: BoxDecoration(
-                        color: isCorrect
-                            ? AppColors.telegramGreen.withValues(alpha: 0.2)
-                            : AppColors.telegramBlue.withValues(alpha: 0.2),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        isCorrect
-                            ? Icons.lightbulb_rounded
-                            : Icons.info_rounded,
-                        color: isCorrect
-                            ? AppColors.telegramGreen
-                            : AppColors.telegramBlue,
-                        size: ResponsiveValues.iconSizeXS(context),
-                      ),
-                    ),
-                    ResponsiveSizedBox(width: AppSpacing.s),
-                    ResponsiveText(
-                      'Explanation',
-                      style: AppTextStyles.titleSmall(context).copyWith(
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.3,
-                      ),
-                    ),
-                  ],
-                ),
-                ResponsiveSizedBox(height: AppSpacing.l),
-                ResponsiveText(
-                  question.explanation ?? 'No explanation provided.',
-                  style: AppTextStyles.bodyMedium(context).copyWith(
-                    color: AppColors.getTextSecondary(context),
-                    height: 1.6,
-                  ),
-                ),
-                if (!isCorrect) ...[
-                  ResponsiveSizedBox(height: AppSpacing.l),
-                  Container(
-                    padding: ResponsiveValues.cardPadding(context),
-                    decoration: BoxDecoration(
-                      color: AppColors.telegramGreen.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(
-                          ResponsiveValues.radiusMedium(context)),
-                      border: Border.all(
-                        color: AppColors.telegramGreen.withValues(alpha: 0.2),
-                      ),
-                    ),
-                    child: ResponsiveRow(
-                      children: [
-                        const Icon(
-                          Icons.check_circle_rounded,
-                          color: AppColors.telegramGreen,
-                          size: 20,
-                        ),
-                        ResponsiveSizedBox(width: AppSpacing.m),
-                        Expanded(
-                          child: ResponsiveText(
-                            'Correct answer: Option ${question.correctOption.toUpperCase()}',
-                            style: AppTextStyles.bodyMedium(context).copyWith(
-                              color: AppColors.telegramGreen,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSkeletonList({required int itemCount, String type = 'video'}) {
-    return ListView.builder(
-      padding: ResponsiveValues.screenPadding(context),
-      itemCount: itemCount,
-      itemBuilder: (context, index) {
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 16),
-          child: Shimmer.fromColors(
-            baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-            highlightColor: Colors.grey[100]!.withValues(alpha: 0.5),
-            period: const Duration(milliseconds: 1500),
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(
-                    ResponsiveValues.radiusXLarge(context)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: ResponsiveValues.spacingS(context),
-                    offset: Offset(0, ResponsiveValues.spacingXS(context)),
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(
-                    ResponsiveValues.radiusXLarge(context)),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
-                  child: Container(
-                    padding: ResponsiveValues.cardPadding(context),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          Colors.white.withValues(alpha: 0.4),
-                          Colors.white.withValues(alpha: 0.2),
-                        ],
-                      ),
-                    ),
-                    child: ResponsiveRow(
-                      children: [
-                        Container(
-                          width: type == 'video'
-                              ? ResponsiveValues.spacingXXXL(context) * 3
-                              : ResponsiveValues.iconSizeXXL(context),
-                          height: type == 'video'
-                              ? ResponsiveValues.spacingXXL(context) * 2
-                              : ResponsiveValues.iconSizeXXL(context),
-                          decoration: BoxDecoration(
-                            color: Colors.grey[300]!.withValues(alpha: 0.5),
-                            borderRadius: BorderRadius.circular(
-                              type == 'video'
-                                  ? ResponsiveValues.radiusMedium(context)
-                                  : ResponsiveValues.radiusLarge(context),
-                            ),
-                          ),
-                        ),
-                        ResponsiveSizedBox(width: AppSpacing.xl),
-                        Expanded(
-                          child: ResponsiveColumn(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Container(
-                                width: double.infinity,
-                                height: ResponsiveValues.spacingXL(context),
-                                decoration: BoxDecoration(
-                                  color:
-                                      Colors.grey[300]!.withValues(alpha: 0.5),
-                                  borderRadius: BorderRadius.circular(
-                                    ResponsiveValues.radiusSmall(context),
-                                  ),
-                                ),
-                              ),
-                              ResponsiveSizedBox(height: AppSpacing.m),
-                              ResponsiveRow(
-                                children: [
-                                  Container(
-                                    width:
-                                        ResponsiveValues.spacingXXL(context) *
-                                            2,
-                                    height: ResponsiveValues.spacingL(context),
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey[300]!
-                                          .withValues(alpha: 0.5),
-                                      borderRadius: BorderRadius.circular(
-                                        ResponsiveValues.radiusMedium(context),
-                                      ),
-                                    ),
-                                  ),
-                                  ResponsiveSizedBox(width: AppSpacing.s),
-                                  Container(
-                                    width:
-                                        ResponsiveValues.spacingXXL(context) *
-                                            1.5,
-                                    height: ResponsiveValues.spacingL(context),
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey[300]!
-                                          .withValues(alpha: 0.5),
-                                      borderRadius: BorderRadius.circular(
-                                        ResponsiveValues.radiusMedium(context),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  List<String> _getQuestionOptions(Question question) {
-    final options = <String>[];
-    if (question.optionA?.isNotEmpty ?? false) options.add(question.optionA!);
-    if (question.optionB?.isNotEmpty ?? false) options.add(question.optionB!);
-    if (question.optionC?.isNotEmpty ?? false) options.add(question.optionC!);
-    if (question.optionD?.isNotEmpty ?? false) options.add(question.optionD!);
-    if (question.optionE?.isNotEmpty ?? false) options.add(question.optionE!);
-    if (question.optionF?.isNotEmpty ?? false) options.add(question.optionF!);
-    return options;
-  }
-
-  Color _getDifficultyColor(String difficulty) {
-    switch (difficulty.toLowerCase()) {
-      case 'easy':
-        return AppColors.telegramGreen;
-      case 'medium':
-        return AppColors.telegramYellow;
-      case 'hard':
-        return AppColors.telegramRed;
-      default:
-        return AppColors.telegramBlue;
-    }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.inactive) _pauseVideo();
+        state == AppLifecycleState.inactive) {
+      _pauseVideo();
+    }
     if (state == AppLifecycleState.resumed) _resumeVideoIfNeeded();
   }
 
@@ -4114,19 +2116,19 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
         appBar: AppBar(
-          title: Shimmer.fromColors(
-            baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-            highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
-            child: Container(
-              width: ResponsiveValues.spacingXXXL(context) * 4,
-              height: ResponsiveValues.spacingXL(context),
-              color: Colors.white,
-            ),
-          ),
+          title: const AppShimmer(type: ShimmerType.textLine, customWidth: 200),
           backgroundColor: AppColors.getBackground(context),
           elevation: 0,
         ),
-        body: _buildSkeletonList(itemCount: 5),
+        body: ListView.builder(
+          padding: ResponsiveValues.screenPadding(context),
+          itemCount: 5,
+          itemBuilder: (context, index) => Padding(
+            padding:
+                EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
+            child: AppShimmer(type: ShimmerType.videoCard, index: index),
+          ),
+        ),
       );
     }
 
@@ -4134,27 +2136,22 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
         appBar: AppBar(
-          title: ResponsiveText(
+          title: Text(
             'Error',
             style: AppTextStyles.titleMedium(context),
           ),
           backgroundColor: AppColors.getBackground(context),
           elevation: 0,
-          leading: IconButton(
-            icon: ResponsiveIcon(
-              Icons.arrow_back_rounded,
-              color: AppColors.getTextPrimary(context),
-            ),
+          leading: AppButton.icon(
+            icon: Icons.arrow_back_rounded,
             onPressed: () => context.pop(),
           ),
         ),
         body: Center(
-          child: custom.ErrorWidget(
+          child: AppEmptyState.error(
             title: 'Something went wrong',
             message: _errorMessage!,
             onRetry: _initialize,
-            type: custom.ErrorType.general,
-            fullScreen: false,
           ),
         ),
       );
@@ -4164,30 +2161,24 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
         appBar: AppBar(
-          title: ResponsiveText(
+          title: Text(
             'Not Found',
             style: AppTextStyles.titleMedium(context),
           ),
           backgroundColor: AppColors.getBackground(context),
           elevation: 0,
-          leading: IconButton(
-            icon: ResponsiveIcon(
-              Icons.arrow_back_rounded,
-              color: AppColors.getTextPrimary(context),
-            ),
+          leading: AppButton.icon(
+            icon: Icons.arrow_back_rounded,
             onPressed: () => context.pop(),
           ),
         ),
         body: Center(
-          child: EmptyState(
-            icon: Icons.error_outline,
+          child: AppEmptyState.error(
             title: 'Chapter not found',
             message: _isOffline
                 ? 'No cached data available. Please check your connection.'
                 : 'The chapter you\'re looking for doesn\'t exist.',
-            type: EmptyStateType.error,
-            actionText: 'Retry',
-            onAction: _manualRefresh,
+            onRetry: _manualRefresh,
           ),
         ),
       );
@@ -4198,7 +2189,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: AppBar(
-        title: ResponsiveText(
+        title: Text(
           _chapter!.name,
           style: AppTextStyles.titleMedium(context),
           maxLines: 1,
@@ -4206,16 +2197,13 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         ),
         backgroundColor: AppColors.getBackground(context),
         elevation: 0,
-        leading: IconButton(
-          icon: ResponsiveIcon(
-            Icons.arrow_back_rounded,
-            color: AppColors.getTextPrimary(context),
-          ),
+        leading: AppButton.icon(
+          icon: Icons.arrow_back_rounded,
           onPressed: () => context.pop(),
         ),
         actions: [
           PopupMenuButton<String>(
-            icon: ResponsiveIcon(
+            icon: Icon(
               Icons.more_vert_rounded,
               color: AppColors.getTextPrimary(context),
             ),
@@ -4271,7 +2259,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           ),
         ),
       ),
-      body: ResponsiveColumn(
+      body: Column(
         children: [
           Expanded(
             child: TabBarView(
@@ -4318,16 +2306,15 @@ class NoteDetailScreen extends StatelessWidget {
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri);
       } else {
-        showTopSnackBar(context, 'Cannot open file', isError: true);
+        SnackbarService().showError(context, 'Cannot open file');
       }
     } catch (e) {
-      showTopSnackBar(context, 'Error opening file: $e', isError: true);
+      SnackbarService().showError(context, 'Error opening file: $e');
     }
   }
 
   Widget _buildPdfViewer(String filePath) {
-    return SfPdfViewer.file(File(filePath),
-        canShowPaginationDialog: true, canShowScrollHead: true);
+    return SfPdfViewer.file(File(filePath));
   }
 
   Widget _buildTextContent(BuildContext context, String content) {
@@ -4358,7 +2345,7 @@ class NoteDetailScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: AppBar(
-        title: ResponsiveText(
+        title: Text(
           note.title,
           style: AppTextStyles.titleMedium(context).copyWith(
             fontWeight: FontWeight.w600,
@@ -4368,24 +2355,19 @@ class NoteDetailScreen extends StatelessWidget {
         ),
         backgroundColor: AppColors.getBackground(context),
         elevation: 0,
-        leading: IconButton(
-          icon: ResponsiveIcon(
-            Icons.arrow_back_rounded,
-            color: AppColors.getTextPrimary(context),
-          ),
+        leading: AppButton.icon(
+          icon: Icons.arrow_back_rounded,
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
           if (hasFile && cachedPath != null)
-            IconButton(
-              icon: const Icon(Icons.open_in_new_rounded,
-                  color: AppColors.telegramBlue),
+            AppButton.icon(
+              icon: Icons.open_in_new_rounded,
               onPressed: () => _openFile(context, cachedPath!),
-              tooltip: 'Open File',
             ),
         ],
       ),
-      body: ResponsiveColumn(
+      body: Column(
         children: [
           if (hasFile)
             Container(
@@ -4399,7 +2381,7 @@ class NoteDetailScreen extends StatelessWidget {
                   ),
                 ),
               ),
-              child: ResponsiveRow(
+              child: Row(
                 children: [
                   Container(
                     width: ResponsiveValues.iconSizeXL(context) * 1.5,
@@ -4410,7 +2392,7 @@ class NoteDetailScreen extends StatelessWidget {
                         ResponsiveValues.radiusMedium(context),
                       ),
                     ),
-                    child: ResponsiveIcon(
+                    child: Icon(
                       isPdf
                           ? Icons.picture_as_pdf_rounded
                           : Icons.note_alt_rounded,
@@ -4418,22 +2400,22 @@ class NoteDetailScreen extends StatelessWidget {
                       color: AppColors.telegramBlue,
                     ),
                   ),
-                  ResponsiveSizedBox(width: AppSpacing.l),
+                  const ResponsiveSizedBox(width: AppSpacing.l),
                   Expanded(
-                    child: ResponsiveColumn(
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        ResponsiveText(
+                        Text(
                           isPdf ? 'PDF Document' : 'Text Document',
                           style: AppTextStyles.titleSmall(context),
                         ),
                         if (cachedPath != null)
-                          ResponsiveRow(
+                          Row(
                             children: [
                               const Icon(Icons.check_circle_rounded,
                                   size: 14, color: AppColors.telegramGreen),
-                              ResponsiveSizedBox(width: AppSpacing.xs),
-                              ResponsiveText(
+                              const ResponsiveSizedBox(width: AppSpacing.xs),
+                              Text(
                                 'Available Offline',
                                 style: AppTextStyles.caption(context).copyWith(
                                   color: AppColors.telegramGreen,

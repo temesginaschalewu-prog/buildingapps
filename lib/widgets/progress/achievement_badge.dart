@@ -1,10 +1,11 @@
-import 'dart:ui';
-import 'package:familyacademyclient/themes/app_colors.dart';
-import 'package:familyacademyclient/themes/app_text_styles.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+
+import '../../themes/app_colors.dart';
+import '../../themes/app_text_styles.dart';
 import '../../themes/app_themes.dart';
 import '../../utils/responsive_values.dart';
+import '../common/app_card.dart';
 import '../common/responsive_widgets.dart';
 
 class AchievementBadge extends StatelessWidget {
@@ -27,37 +28,6 @@ class AchievementBadge extends StatelessWidget {
     this.earnedDate,
   });
 
-  Widget _buildGlassContainer(BuildContext context, {required Widget child}) {
-    return ClipRRect(
-      borderRadius:
-          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.getCard(context).withValues(alpha: 0.4),
-                AppColors.getCard(context).withValues(alpha: 0.2),
-              ],
-            ),
-            borderRadius:
-                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-            border: Border.all(
-              color: unlocked
-                  ? color
-                  : AppColors.telegramBlue.withValues(alpha: 0.2),
-              width: 1.5,
-            ),
-          ),
-          child: child,
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final padding = ResponsiveValues.cardPadding(context);
@@ -67,8 +37,7 @@ class AchievementBadge extends StatelessWidget {
     final descSize = ResponsiveValues.fontBodySmall(context);
     final badgeSize = ResponsiveValues.fontLabelSmall(context);
 
-    return _buildGlassContainer(
-      context,
+    return AppCard.glass(
       child: Padding(
         padding: padding,
         child: ResponsiveColumn(

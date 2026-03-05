@@ -1,6 +1,5 @@
 import 'dart:convert';
-
-import 'package:flutter/foundation.dart';
+import '../utils/parsers.dart';
 
 class Setting {
   final int id;
@@ -30,28 +29,19 @@ class Setting {
   });
 
   factory Setting.fromJson(Map<String, dynamic> json) {
-    try {
-      return Setting(
-        id: json['id'] is String ? int.parse(json['id']) : json['id'] ?? 0,
-        settingKey: json['setting_key']?.toString() ?? '',
-        settingValue: json['setting_value']?.toString(),
-        displayName: json['display_name']?.toString() ?? '',
-        category: json['category']?.toString() ?? '',
-        dataType: json['data_type']?.toString() ?? 'string',
-        isPublic: json['is_public'] == true,
-        displayOrder: json['display_order'] is String
-            ? int.parse(json['display_order'])
-            : json['display_order'] ?? 0,
-        description: json['description']?.toString(),
-        createdAt: DateTime.parse(
-            json['created_at']?.toString() ?? DateTime.now().toIso8601String()),
-        updatedAt: DateTime.parse(
-            json['updated_at']?.toString() ?? DateTime.now().toIso8601String()),
-      );
-    } catch (e) {
-      debugPrint('Error parsing Setting: $e');
-      rethrow;
-    }
+    return Setting(
+      id: Parsers.parseInt(json['id']),
+      settingKey: json['setting_key']?.toString() ?? '',
+      settingValue: json['setting_value']?.toString(),
+      displayName: json['display_name']?.toString() ?? '',
+      category: json['category']?.toString() ?? '',
+      dataType: json['data_type']?.toString() ?? 'string',
+      isPublic: Parsers.parseBool(json['is_public']),
+      displayOrder: Parsers.parseInt(json['display_order']),
+      description: json['description']?.toString(),
+      createdAt: Parsers.parseDate(json['created_at']) ?? DateTime.now(),
+      updatedAt: Parsers.parseDate(json['updated_at']) ?? DateTime.now(),
+    );
   }
 
   Map<String, dynamic> toJson() {
@@ -76,28 +66,12 @@ class Setting {
   bool get isJson => dataType == 'json';
   bool get isArray => dataType == 'array';
 
-  int? get intValue {
-    if (settingValue == null) return null;
-    try {
-      return int.parse(settingValue!);
-    } catch (e) {
-      return null;
-    }
-  }
-
-  double? get doubleValue {
-    if (settingValue == null) return null;
-    try {
-      return double.parse(settingValue!);
-    } catch (e) {
-      return null;
-    }
-  }
-
-  bool? get boolValue {
-    if (settingValue == null) return null;
-    return settingValue!.toLowerCase() == 'true';
-  }
+  int? get intValue =>
+      settingValue != null ? Parsers.parseInt(settingValue) : null;
+  double? get doubleValue =>
+      settingValue != null ? Parsers.parseDouble(settingValue) : null;
+  bool? get boolValue =>
+      settingValue != null ? Parsers.parseBool(settingValue) : null;
 
   List<String>? get arrayValue {
     if (settingValue == null) return null;
@@ -107,17 +81,9 @@ class Setting {
   Map<String, dynamic>? get jsonValue {
     if (settingValue == null) return null;
     try {
-      if (settingValue is Map<String, dynamic>) {
-        return settingValue as Map<String, dynamic>;
-      }
-
       final decoded = jsonDecode(settingValue!);
-      if (decoded is Map<String, dynamic>) {
-        return decoded;
-      }
-    } catch (e) {
-      debugPrint('Error parsing JSON value: $e');
-    }
+      if (decoded is Map<String, dynamic>) return decoded;
+    } catch (e) {}
     return null;
   }
 }

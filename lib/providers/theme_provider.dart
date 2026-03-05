@@ -21,6 +21,9 @@ class ThemeProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   GlobalKey get rootKey => _rootKey;
 
+  bool get isDarkMode => _themeMode == ThemeMode.dark;
+  bool get isLightMode => _themeMode == ThemeMode.light;
+
   Future<void> _loadTheme() async {
     if (_hasLoaded) return;
 

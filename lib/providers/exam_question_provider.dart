@@ -11,6 +11,7 @@ import '../models/exam_question_model.dart';
 import '../utils/constants.dart';
 import '../utils/helpers.dart';
 import '../utils/api_response.dart';
+import '../utils/parsers.dart';
 
 class ExamQuestionProvider with ChangeNotifier {
   final ApiService apiService;
@@ -64,6 +65,14 @@ class ExamQuestionProvider with ChangeNotifier {
 
   List<ExamQuestion> getQuestionsByExam(int examId) {
     return List.unmodifiable(_questionsByExam[examId] ?? []);
+  }
+
+  ExamQuestion? getQuestionById(int id) {
+    try {
+      return _examQuestions.firstWhere((q) => q.id == id);
+    } catch (e) {
+      return null;
+    }
   }
 
   Future<bool> checkExamAccess(int examId, {bool forceCheck = false}) async {
@@ -199,11 +208,12 @@ class ExamQuestionProvider with ChangeNotifier {
             if (item is Map<String, dynamic>) {
               try {
                 final examQuestion = ExamQuestion(
-                  id: item['id'] ?? 0,
+                  id: Parsers.parseInt(item['id']),
                   examId: examId,
-                  questionId: item['id'] ?? item['exam_question_id'] ?? 0,
-                  displayOrder: item['display_order'] ?? 0,
-                  marks: item['marks'] ?? 1,
+                  questionId:
+                      Parsers.parseInt(item['id'] ?? item['exam_question_id']),
+                  displayOrder: Parsers.parseInt(item['display_order']),
+                  marks: Parsers.parseInt(item['marks'], 1),
                   questionText: item['question_text']?.toString() ?? '',
                   optionA: item['option_a']?.toString(),
                   optionB: item['option_b']?.toString(),
@@ -213,8 +223,7 @@ class ExamQuestionProvider with ChangeNotifier {
                   optionF: item['option_f']?.toString(),
                   difficulty: (item['difficulty']?.toString() ?? 'medium')
                       .toLowerCase(),
-                  hasAnswer: item['correct_option'] != null &&
-                      (item['correct_option']?.toString() ?? '').isNotEmpty,
+                  hasAnswer: Parsers.parseBool(item['correct_option']),
                 );
                 questions.add(examQuestion);
                 debugLog('ExamQuestionProvider',
@@ -332,56 +341,6 @@ class ExamQuestionProvider with ChangeNotifier {
     }
   }
 
-  Future<void> clearExamAccessCache(int examId) async {
-    _examAccessChecked.remove(examId);
-    _examHasAccess.remove(examId);
-    await deviceService.removeCacheItem(AppConstants.examAccessKey(examId),
-        isUserSpecific: true);
-    _notifySafely();
-  }
-
-  Future<void> refreshAllExamAccess() async {
-    debugLog('ExamQuestionProvider', 'Refreshing all exam access');
-    _examAccessChecked.clear();
-    _examHasAccess.clear();
-
-    await deviceService.clearCacheByPrefix('exam_access_');
-
-    _examAccessController.add({});
-    _notifySafely();
-  }
-
-  Future<Map<String, dynamic>> saveExamProgress(
-    int examResultId,
-    List<Map<String, dynamic>> answers,
-  ) async {
-    _isLoading = true;
-    _error = null;
-    _notifySafely();
-
-    try {
-      debugLog('ExamQuestionProvider',
-          'Saving progress for exam result: $examResultId');
-      final response = await apiService.saveExamProgress(examResultId, answers);
-      return response.data ?? {};
-    } catch (e) {
-      _error = e.toString();
-      debugLog('ExamQuestionProvider', 'saveExamProgress error: $e');
-      rethrow;
-    } finally {
-      _isLoading = false;
-      _notifySafely();
-    }
-  }
-
-  ExamQuestion? getQuestionById(int id) {
-    try {
-      return _examQuestions.firstWhere((q) => q.id == id);
-    } catch (e) {
-      return null;
-    }
-  }
-
   Future<void> _cleanupExpiredCache() async {
     debugLog(
         'ExamQuestionProvider', '🔄 Cleaning up expired exam question cache');
@@ -412,11 +371,73 @@ class ExamQuestionProvider with ChangeNotifier {
     }
   }
 
-  /// 🔵 FIX: Clear user data ONLY for different user logout
+  Future<Map<String, dynamic>> saveExamProgress(
+    int examResultId,
+    List<Map<String, dynamic>> answers,
+  ) async {
+    _isLoading = true;
+    _error = null;
+    _notifySafely();
+
+    try {
+      debugLog('ExamQuestionProvider',
+          'Saving progress for exam result: $examResultId');
+      final response = await apiService.saveExamProgress(examResultId, answers);
+      return response.data ?? {};
+    } catch (e) {
+      _error = e.toString();
+      debugLog('ExamQuestionProvider', 'saveExamProgress error: $e');
+      rethrow;
+    } finally {
+      _isLoading = false;
+      _notifySafely();
+    }
+  }
+
+  Future<void> clearExamAccessCache(int examId) async {
+    _examAccessChecked.remove(examId);
+    _examHasAccess.remove(examId);
+    await deviceService.removeCacheItem(AppConstants.examAccessKey(examId),
+        isUserSpecific: true);
+    _notifySafely();
+  }
+
+  Future<void> refreshAllExamAccess() async {
+    debugLog('ExamQuestionProvider', 'Refreshing all exam access');
+    _examAccessChecked.clear();
+    _examHasAccess.clear();
+
+    await deviceService.clearCacheByPrefix('exam_access_');
+
+    _examAccessController.add({});
+    _notifySafely();
+  }
+
+  Future<void> clearExamQuestionsForExam(int examId) async {
+    await deviceService.removeCacheItem(AppConstants.examQuestionsKey(examId),
+        isUserSpecific: true);
+    await deviceService.removeCacheItem(AppConstants.examAccessKey(examId),
+        isUserSpecific: true);
+
+    final examQuestions = _questionsByExam[examId] ?? [];
+    _examQuestions.removeWhere(
+        (question) => examQuestions.any((q) => q.id == question.id));
+
+    _questionsByExam.remove(examId);
+    _lastLoadedTime.remove(examId);
+    _isLoadingExam.remove(examId);
+    _examAccessChecked.remove(examId);
+    _examHasAccess.remove(examId);
+
+    _questionsUpdateController.add({examId: []});
+    _examAccessController.add({examId: false});
+
+    _notifySafely();
+  }
+
   Future<void> clearUserData() async {
     debugLog('ExamQuestionProvider', 'Clearing exam question data');
 
-    // Only clear if this is a different user logout
     final session = UserSession();
     final isDifferentUser = !await session.isSameUser();
     final isLoggingOut = await _isLoggingOut();
@@ -460,28 +481,6 @@ class ExamQuestionProvider with ChangeNotifier {
     return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
   }
 
-  Future<void> clearExamQuestionsForExam(int examId) async {
-    await deviceService.removeCacheItem(AppConstants.examQuestionsKey(examId),
-        isUserSpecific: true);
-    await deviceService.removeCacheItem(AppConstants.examAccessKey(examId),
-        isUserSpecific: true);
-
-    final examQuestions = _questionsByExam[examId] ?? [];
-    _examQuestions.removeWhere(
-        (question) => examQuestions.any((q) => q.id == question.id));
-
-    _questionsByExam.remove(examId);
-    _lastLoadedTime.remove(examId);
-    _isLoadingExam.remove(examId);
-    _examAccessChecked.remove(examId);
-    _examHasAccess.remove(examId);
-
-    _questionsUpdateController.add({examId: []});
-    _examAccessController.add({examId: false});
-
-    _notifySafely();
-  }
-
   void clearError() {
     _error = null;
     _notifySafely();
@@ -504,6 +503,4 @@ class ExamQuestionProvider with ChangeNotifier {
       });
     }
   }
-
-  int min(int a, int b) => a < b ? a : b;
 }

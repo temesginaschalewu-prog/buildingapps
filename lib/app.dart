@@ -4,7 +4,8 @@ import 'dart:convert';
 import 'package:familyacademyclient/providers/payment_provider.dart';
 import 'package:familyacademyclient/providers/settings_provider.dart';
 import 'package:familyacademyclient/providers/user_provider.dart';
-import 'package:familyacademyclient/services/user_session.dart';
+import 'package:familyacademyclient/services/connectivity_service.dart';
+import 'package:familyacademyclient/services/snackbar_service.dart';
 import 'package:familyacademyclient/utils/screen_protection.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -43,7 +44,9 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
   final Map<String, DateTime> _lastRouteVisited = {};
   Timer? _sessionCheckTimer;
   StreamSubscription? _deviceDeactivatedSubscription;
+  StreamSubscription? _connectivitySubscription;
   bool _mounted = true;
+  bool _wasOffline = false;
 
   @override
   void initState() {
@@ -51,6 +54,7 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
     WidgetsBinding.instance.addObserver(this);
     _initializeApp();
     _startSessionChecker();
+    _setupConnectivityListener();
   }
 
   @override
@@ -74,7 +78,34 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
     WidgetsBinding.instance.removeObserver(this);
     _sessionCheckTimer?.cancel();
     _deviceDeactivatedSubscription?.cancel();
+    _connectivitySubscription?.cancel();
     super.dispose();
+  }
+
+  void _setupConnectivityListener() {
+    final connectivityService = Provider.of<ConnectivityService>(
+      context,
+      listen: false,
+    );
+
+    _connectivitySubscription =
+        connectivityService.onConnectivityChanged.listen(
+      (isOnline) {
+        if (!_mounted || !context.mounted) return;
+
+        if (isOnline && _wasOffline) {
+          SnackbarService().showSuccess(
+            context,
+            'Back online! Refreshing content...',
+          );
+          _refreshAllData();
+        } else if (!isOnline && !_wasOffline) {
+          SnackbarService().showOffline(context);
+        }
+
+        _wasOffline = !isOnline;
+      },
+    );
   }
 
   @override
@@ -226,6 +257,13 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
 
   Future<void> _refreshAllData() async {
     if (!_isAppInForeground || !_mounted || !context.mounted) return;
+
+    final connectivityService = Provider.of<ConnectivityService>(
+      context,
+      listen: false,
+    );
+    if (!connectivityService.isOnline) return;
+
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     if (authProvider.isAuthenticated) {
       final subscriptionProvider =
@@ -357,7 +395,6 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
                         : 1.0),
               ),
               child: PopScope(
-                canPop: true,
                 onPopInvokedWithResult: (didPop, result) {
                   if (didPop && _isAppInForeground) {
                     ScreenProtectionService.enableOnResume();

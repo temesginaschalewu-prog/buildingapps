@@ -1,25 +1,29 @@
-import 'dart:ui';
-import 'package:familyacademyclient/themes/app_colors.dart';
-import 'package:familyacademyclient/themes/app_text_styles.dart';
+// lib/screens/settings/support_screen.dart
+
+import 'dart:async';
+import 'package:familyacademyclient/widgets/common/app_dialog.dart';
+import 'package:familyacademyclient/widgets/common/app_empty_state.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:shimmer/shimmer.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:badges/badges.dart' as badges;
 import 'package:pull_to_refresh/pull_to_refresh.dart' hide RefreshIndicator;
-import 'package:flutter/services.dart';
-import 'package:familyacademyclient/providers/settings_provider.dart';
-import 'package:familyacademyclient/utils/responsive.dart';
-import 'package:familyacademyclient/utils/responsive_values.dart';
-import 'package:familyacademyclient/themes/app_themes.dart';
-import 'package:familyacademyclient/utils/helpers.dart';
-import 'package:familyacademyclient/widgets/common/error_widget.dart' as custom;
-import '../../widgets/common/responsive_widgets.dart';
-import '../../widgets/common/app_bar.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-// ContactType is now imported from settings_provider
+import '../../providers/settings_provider.dart';
+import '../../services/connectivity_service.dart';
+import '../../services/snackbar_service.dart';
+import '../../widgets/common/app_card.dart';
+import '../../widgets/common/app_button.dart';
+import '../../widgets/common/app_shimmer.dart';
+import '../../widgets/common/app_bar.dart';
+import '../../themes/app_themes.dart';
+import '../../themes/app_colors.dart';
+import '../../themes/app_text_styles.dart';
+import '../../utils/responsive.dart';
+import '../../utils/responsive_values.dart';
 
 class SupportScreen extends StatefulWidget {
   const SupportScreen({super.key});
@@ -38,6 +42,7 @@ class _SupportScreenState extends State<SupportScreen>
   bool _isRefreshing = false;
   bool _isOffline = false;
   String _refreshSubtitle = '';
+  StreamSubscription? _connectivitySubscription;
 
   late AnimationController _pulseAnimationController;
 
@@ -56,6 +61,17 @@ class _SupportScreenState extends State<SupportScreen>
 
     _checkConnectivity();
     _loadContactSettings();
+    _setupConnectivityListener();
+  }
+
+  void _setupConnectivityListener() {
+    final connectivityService = context.read<ConnectivityService>();
+    _connectivitySubscription =
+        connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (mounted) {
+        setState(() => _isOffline = !isOnline);
+      }
+    });
   }
 
   @override
@@ -65,84 +81,13 @@ class _SupportScreenState extends State<SupportScreen>
     for (var controller in _refreshControllers) {
       controller.dispose();
     }
+    _connectivitySubscription?.cancel();
     super.dispose();
   }
 
   Future<void> _checkConnectivity() async {
-    final hasConnection = await hasInternetConnection();
-    if (!hasConnection && mounted) {
-      setState(() => _isOffline = true);
-    }
-  }
-
-  Widget _buildGlassContainer({required Widget child}) {
-    return ClipRRect(
-      borderRadius:
-          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.getCard(context).withValues(alpha: 0.4),
-                AppColors.getCard(context).withValues(alpha: 0.2),
-              ],
-            ),
-            borderRadius:
-                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-            border: Border.all(
-              color: AppColors.telegramBlue.withValues(alpha: 0.2),
-            ),
-          ),
-          child: child,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGradientButton({
-    required String label,
-    required VoidCallback onPressed,
-    required List<Color> gradient,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(colors: gradient),
-        borderRadius:
-            BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-        boxShadow: [
-          BoxShadow(
-            color: gradient.first.withValues(alpha: 0.3),
-            blurRadius: ResponsiveValues.spacingS(context),
-            offset: Offset(0, ResponsiveValues.spacingXS(context)),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onPressed,
-          borderRadius:
-              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-          child: Container(
-            padding: EdgeInsets.symmetric(
-              vertical: ResponsiveValues.spacingM(context),
-            ),
-            alignment: Alignment.center,
-            child: ResponsiveText(
-              label,
-              style: AppTextStyles.labelLarge(context).copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
+    final connectivityService = context.read<ConnectivityService>();
+    setState(() => _isOffline = !connectivityService.isOnline);
   }
 
   Future<void> _loadContactSettings() async {
@@ -155,8 +100,7 @@ class _SupportScreenState extends State<SupportScreen>
     });
 
     try {
-      final settingsProvider =
-          Provider.of<SettingsProvider>(context, listen: false);
+      final settingsProvider = context.read<SettingsProvider>();
       await settingsProvider.getAllSettings();
       await settingsProvider.loadContactSettings(forceRefresh: true);
       setState(() => _isLoading = false);
@@ -172,11 +116,10 @@ class _SupportScreenState extends State<SupportScreen>
   Future<void> _manualRefresh(int tabIndex) async {
     if (_isRefreshing) return;
 
-    final hasConnection = await hasInternetConnection();
-    if (!hasConnection) {
+    final connectivityService = context.read<ConnectivityService>();
+    if (!connectivityService.isOnline) {
       setState(() => _isOffline = true);
-      showTopSnackBar(context, 'You are offline. Using cached data.',
-          isError: true);
+      SnackbarService().showOffline(context);
       return;
     }
 
@@ -186,8 +129,7 @@ class _SupportScreenState extends State<SupportScreen>
     });
 
     try {
-      final settingsProvider =
-          Provider.of<SettingsProvider>(context, listen: false);
+      final settingsProvider = context.read<SettingsProvider>();
       await settingsProvider.getAllSettings();
       await settingsProvider.loadContactSettings(forceRefresh: true);
 
@@ -198,14 +140,14 @@ class _SupportScreenState extends State<SupportScreen>
         _isOffline = false;
       });
 
-      showTopSnackBar(context, 'Support information refreshed');
+      SnackbarService().showSuccess(context, 'Support information refreshed');
     } catch (e) {
       setState(() {
         _hasError = true;
         _errorMessage = e.toString();
       });
       _refreshControllers[tabIndex].refreshFailed();
-      showTopSnackBar(context, 'Refresh failed: $e', isError: true);
+      SnackbarService().showError(context, 'Refresh failed: $e');
     } finally {
       if (mounted) {
         setState(() {
@@ -222,78 +164,43 @@ class _SupportScreenState extends State<SupportScreen>
       body: CustomScrollView(
         physics: const NeverScrollableScrollPhysics(),
         slivers: [
-          // App bar - no shimmer, shows immediately
           SliverToBoxAdapter(
             child: CustomAppBar(
               title: 'Support',
               subtitle: 'Loading...',
-              leading: IconButton(
-                icon: ResponsiveIcon(
-                  Icons.arrow_back_rounded,
-                  color: AppColors.getTextPrimary(context),
-                ),
+              leading: AppButton.icon(
+                icon: Icons.arrow_back_rounded,
                 onPressed: () => GoRouter.of(context).pop(),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
               ),
             ),
           ),
-
-          // Hero section shimmer
           SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.symmetric(
                 horizontal: ResponsiveValues.spacingL(context),
                 vertical: ResponsiveValues.spacingL(context),
               ),
-              child: _buildGlassContainer(
+              child: AppCard.glass(
                 child: Container(
                   height: 120,
                   padding: ResponsiveValues.cardPadding(context),
-                  child: Row(
+                  child: const Row(
                     children: [
-                      Shimmer.fromColors(
-                        baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                        highlightColor:
-                            Colors.grey[100]!.withValues(alpha: 0.6),
-                        child: Container(
-                          width: 44,
-                          height: 44,
-                          decoration: const BoxDecoration(
-                            color: Colors.white,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
+                      AppShimmer(
+                          type: ShimmerType.circle,
+                          customWidth: 44,
+                          customHeight: 44),
+                      SizedBox(width: 16),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Shimmer.fromColors(
-                              baseColor:
-                                  Colors.grey[300]!.withValues(alpha: 0.3),
-                              highlightColor:
-                                  Colors.grey[100]!.withValues(alpha: 0.6),
-                              child: Container(
-                                height: 20,
-                                width: 150,
-                                color: Colors.white,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Shimmer.fromColors(
-                              baseColor:
-                                  Colors.grey[300]!.withValues(alpha: 0.3),
-                              highlightColor:
-                                  Colors.grey[100]!.withValues(alpha: 0.6),
-                              child: Container(
-                                height: 14,
-                                width: 250,
-                                color: Colors.white,
-                              ),
-                            ),
+                            AppShimmer(
+                                type: ShimmerType.textLine, customWidth: 150),
+                            SizedBox(height: 8),
+                            AppShimmer(
+                                type: ShimmerType.textLine, customWidth: 250),
                           ],
                         ),
                       ),
@@ -303,28 +210,15 @@ class _SupportScreenState extends State<SupportScreen>
               ),
             ),
           ),
-
-          // Tab bar shimmer
           SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.symmetric(
                 horizontal: ResponsiveValues.spacingL(context),
               ),
-              child: Shimmer.fromColors(
-                baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
-                child: Container(
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-              ),
+              child: const AppShimmer(
+                  type: ShimmerType.rectangle, customHeight: 48),
             ),
           ),
-
-          // Content shimmers - matching actual card shapes
           SliverPadding(
             padding: EdgeInsets.symmetric(
               horizontal: ResponsiveValues.spacingL(context),
@@ -335,89 +229,8 @@ class _SupportScreenState extends State<SupportScreen>
                 (context, index) => Padding(
                   padding: EdgeInsets.only(
                       bottom: ResponsiveValues.spacingL(context)),
-                  child: _buildGlassContainer(
-                    child: Padding(
-                      padding: ResponsiveValues.cardPadding(context),
-                      child: Row(
-                        children: [
-                          Shimmer.fromColors(
-                            baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                            highlightColor:
-                                Colors.grey[100]!.withValues(alpha: 0.6),
-                            child: Container(
-                              width: ResponsiveValues.iconSizeXL(context) * 1.5,
-                              height:
-                                  ResponsiveValues.iconSizeXL(context) * 1.5,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(
-                                  ResponsiveValues.radiusMedium(context),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Shimmer.fromColors(
-                                  baseColor:
-                                      Colors.grey[300]!.withValues(alpha: 0.3),
-                                  highlightColor:
-                                      Colors.grey[100]!.withValues(alpha: 0.6),
-                                  child: Container(
-                                    height: 18,
-                                    width: 120,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Shimmer.fromColors(
-                                  baseColor:
-                                      Colors.grey[300]!.withValues(alpha: 0.3),
-                                  highlightColor:
-                                      Colors.grey[100]!.withValues(alpha: 0.6),
-                                  child: Container(
-                                    height: 14,
-                                    width: double.infinity,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Shimmer.fromColors(
-                                  baseColor:
-                                      Colors.grey[300]!.withValues(alpha: 0.3),
-                                  highlightColor:
-                                      Colors.grey[100]!.withValues(alpha: 0.6),
-                                  child: Container(
-                                    height: 14,
-                                    width: 200,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Shimmer.fromColors(
-                            baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                            highlightColor:
-                                Colors.grey[100]!.withValues(alpha: 0.6),
-                            child: Container(
-                              width: 24,
-                              height: 24,
-                              decoration: const BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                  child:
+                      AppShimmer(type: ShimmerType.contactCard, index: index),
                 ),
                 childCount: 3,
               ),
@@ -493,7 +306,7 @@ class _SupportScreenState extends State<SupportScreen>
         if (type == ContactType.other || type == ContactType.website) {
           _showCopyDialog(context, value);
         } else {
-          showTopSnackBar(context, 'Cannot open $value', isError: true);
+          SnackbarService().showError(context, 'Cannot open $value');
         }
       }
     } catch (e) {
@@ -502,68 +315,16 @@ class _SupportScreenState extends State<SupportScreen>
   }
 
   void _showCopyDialog(BuildContext context, String value) {
-    showDialog(
+    AppDialog.input(
       context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: _buildGlassContainer(
-          child: Padding(
-            padding: ResponsiveValues.dialogPadding(context),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Copy to Clipboard',
-                  style: AppTextStyles.titleLarge(context).copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                _buildGlassContainer(
-                  child: Padding(
-                    padding: ResponsiveValues.cardPadding(context),
-                    child: SelectableText(
-                      value,
-                      style: AppTextStyles.bodyMedium(context).copyWith(
-                        color: AppColors.telegramBlue,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: Text(
-                          'Cancel',
-                          style: AppTextStyles.buttonMedium(context).copyWith(
-                            color: AppColors.getTextSecondary(context),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildGradientButton(
-                        label: 'Copy',
-                        onPressed: () {
-                          Clipboard.setData(ClipboardData(text: value));
-                          Navigator.pop(context);
-                          showTopSnackBar(context, 'Copied to clipboard');
-                        },
-                        gradient: AppColors.blueGradient,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+      title: 'Copy to Clipboard',
+      initialValue: value,
+      hintText: value,
+      confirmText: 'Copy',
+    ).then((_) {
+      Clipboard.setData(ClipboardData(text: value));
+      SnackbarService().showSuccess(context, 'Copied to clipboard');
+    });
   }
 
   Widget _buildContactCard(BuildContext context, String title, String value,
@@ -576,7 +337,8 @@ class _SupportScreenState extends State<SupportScreen>
       margin: EdgeInsets.only(
         bottom: ResponsiveValues.spacingL(context),
       ),
-      child: _buildGlassContainer(
+      child: AppCard.contact(
+        accentColor: color,
         child: Material(
           color: Colors.transparent,
           child: InkWell(
@@ -606,7 +368,7 @@ class _SupportScreenState extends State<SupportScreen>
                       border: Border.all(color: color, width: 1.5),
                     ),
                     child: Center(
-                      child: ResponsiveIcon(
+                      child: Icon(
                         icon,
                         size: ResponsiveValues.iconSizeL(context),
                         color: color,
@@ -650,7 +412,7 @@ class _SupportScreenState extends State<SupportScreen>
                                 ),
                               ),
                               const SizedBox(width: 4),
-                              ResponsiveIcon(
+                              Icon(
                                 type == ContactType.other
                                     ? Icons.copy_rounded
                                     : Icons.open_in_new_rounded,
@@ -664,7 +426,7 @@ class _SupportScreenState extends State<SupportScreen>
                     ),
                   ),
                   if (canTap)
-                    ResponsiveIcon(
+                    Icon(
                       Icons.chevron_right_rounded,
                       size: ResponsiveValues.iconSizeS(context),
                       color: AppColors.getTextSecondary(context),
@@ -689,7 +451,7 @@ class _SupportScreenState extends State<SupportScreen>
   Widget _buildQuickActionCard(BuildContext context, String title,
       String subtitle, IconData icon, VoidCallback onTap, Color color,
       {int index = 0}) {
-    return _buildGlassContainer(
+    return AppCard.glass(
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -720,7 +482,7 @@ class _SupportScreenState extends State<SupportScreen>
                     border: Border.all(color: color, width: 1.5),
                   ),
                   child: Center(
-                    child: ResponsiveIcon(
+                    child: Icon(
                       icon,
                       size: ResponsiveValues.iconSizeS(context),
                       color: color,
@@ -769,7 +531,7 @@ class _SupportScreenState extends State<SupportScreen>
       margin: EdgeInsets.only(
         bottom: ResponsiveValues.spacingL(context),
       ),
-      child: _buildGlassContainer(
+      child: AppCard.glass(
         child: Theme(
           data: Theme.of(context).copyWith(
             dividerColor: Colors.transparent,
@@ -871,7 +633,7 @@ class _SupportScreenState extends State<SupportScreen>
   }
 
   Widget _buildContactTab(BuildContext context) {
-    final settingsProvider = Provider.of<SettingsProvider>(context);
+    final settingsProvider = context.watch<SettingsProvider>();
     final contactInfo = settingsProvider.getContactInfoList();
 
     return CustomScrollView(
@@ -886,12 +648,12 @@ class _SupportScreenState extends State<SupportScreen>
             delegate: SliverChildListDelegate([
               _buildSectionHeader('Contact Information'),
               if (contactInfo.isEmpty)
-                _buildGlassContainer(
+                AppCard.glass(
                   child: Padding(
                     padding: ResponsiveValues.dialogPadding(context),
                     child: Column(
                       children: [
-                        ResponsiveIcon(
+                        Icon(
                           Icons.contact_support_rounded,
                           size: ResponsiveValues.iconSizeXXL(context),
                           color: AppColors.getTextSecondary(context),
@@ -985,7 +747,7 @@ class _SupportScreenState extends State<SupportScreen>
                   index: entry.key)),
               const SizedBox(height: 24),
               _buildSectionHeader('Still Need Help?'),
-              _buildGlassContainer(
+              AppCard.glass(
                 child: Padding(
                   padding: ResponsiveValues.cardPadding(context),
                   child: Column(
@@ -1053,16 +815,14 @@ class _SupportScreenState extends State<SupportScreen>
       crossAxisCount: 2,
       crossAxisSpacing: ResponsiveValues.gridSpacing(context),
       mainAxisSpacing: ResponsiveValues.gridRunSpacing(context),
-      childAspectRatio: 1.0,
       children: [
         _buildQuickActionCard(
           context,
           'Chat with Us',
           'Start a live chat',
           Icons.chat_rounded,
-          () => showTopSnackBar(context, 'Live chat coming soon'),
+          () => SnackbarService().showInfo(context, 'Live chat coming soon'),
           AppColors.telegramGreen,
-          index: 0,
         ),
         _buildQuickActionCard(
           context,
@@ -1078,7 +838,7 @@ class _SupportScreenState extends State<SupportScreen>
   }
 
   Widget _buildResponseTimeCard(BuildContext context) {
-    return _buildGlassContainer(
+    return AppCard.glass(
       child: Padding(
         padding: ResponsiveValues.cardPadding(context),
         child: Column(
@@ -1127,10 +887,10 @@ class _SupportScreenState extends State<SupportScreen>
   }
 
   Widget _buildSupportHoursCard(BuildContext context) {
-    final settingsProvider = Provider.of<SettingsProvider>(context);
+    final settingsProvider = context.read<SettingsProvider>();
     final hours = settingsProvider.getOfficeHours();
 
-    return _buildGlassContainer(
+    return AppCard.glass(
       child: Padding(
         padding: ResponsiveValues.cardPadding(context),
         child: Column(
@@ -1164,12 +924,12 @@ class _SupportScreenState extends State<SupportScreen>
   }
 
   Widget _buildHeroSection(BuildContext context) {
-    return _buildGlassContainer(
+    return AppCard.glass(
       child: Container(
         padding: ResponsiveValues.dialogPadding(context),
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: AppColors.blueGradient,
+          gradient: const LinearGradient(
+            colors: AppColors.telegramGradient,
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -1226,14 +986,9 @@ class _SupportScreenState extends State<SupportScreen>
         subtitle: _isRefreshing
             ? 'Refreshing...'
             : (_isOffline ? 'Offline mode' : 'Get help'),
-        leading: IconButton(
-          icon: ResponsiveIcon(
-            Icons.arrow_back_rounded,
-            color: AppColors.getTextPrimary(context),
-          ),
+        leading: AppButton.icon(
+          icon: Icons.arrow_back_rounded,
           onPressed: () => GoRouter.of(context).pop(),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(),
         ),
       ),
       body: Column(
@@ -1287,14 +1042,9 @@ class _SupportScreenState extends State<SupportScreen>
         subtitle: _isRefreshing
             ? 'Refreshing...'
             : (_isOffline ? 'Offline mode' : 'Get help'),
-        leading: IconButton(
-          icon: ResponsiveIcon(
-            Icons.arrow_back_rounded,
-            color: AppColors.getTextPrimary(context),
-          ),
+        leading: AppButton.icon(
+          icon: Icons.arrow_back_rounded,
           onPressed: () => GoRouter.of(context).pop(),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(),
         ),
       ),
       body: RefreshIndicator(
@@ -1356,18 +1106,13 @@ class _SupportScreenState extends State<SupportScreen>
         appBar: CustomAppBar(
           title: 'Support',
           subtitle: 'Error loading',
-          leading: IconButton(
-            icon: ResponsiveIcon(
-              Icons.arrow_back_rounded,
-              color: AppColors.getTextPrimary(context),
-            ),
+          leading: AppButton.icon(
+            icon: Icons.arrow_back_rounded,
             onPressed: () => GoRouter.of(context).pop(),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
           ),
         ),
         body: Center(
-          child: custom.ErrorWidget(
+          child: AppEmptyState.error(
             title: 'Failed to Load',
             message: _errorMessage ?? 'Unable to load support information.',
             onRetry: _loadContactSettings,

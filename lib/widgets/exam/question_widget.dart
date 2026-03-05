@@ -4,9 +4,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../models/exam_question_model.dart';
-import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
-import '../../utils/app_enums.dart';
 import '../common/responsive_widgets.dart';
 
 class QuestionWidget extends StatefulWidget {

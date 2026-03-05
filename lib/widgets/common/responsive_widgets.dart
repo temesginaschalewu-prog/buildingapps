@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
-import '../../utils/app_enums.dart';
-import '../../themes/app_themes.dart';
 
 class ResponsiveBuilder extends StatelessWidget {
   final Widget Function(
@@ -327,9 +325,9 @@ class ResponsiveRow extends StatelessWidget {
             child: Wrap(
               spacing: effectiveSpacing,
               runSpacing: effectiveSpacing,
-              children: children,
               alignment: _getWrapAlignment(mainAxisAlignment),
               crossAxisAlignment: _getWrapCrossAlignment(crossAxisAlignment),
+              children: children,
             ),
           );
         }

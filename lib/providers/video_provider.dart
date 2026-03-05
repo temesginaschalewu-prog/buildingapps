@@ -27,7 +27,6 @@ class VideoProvider with ChangeNotifier {
   final DeviceService deviceService;
   final Dio _dio = Dio();
 
-  // State
   final List<Video> _videos = [];
   final Map<int, List<Video>> _videosByChapter = {};
   final Map<int, bool> _hasLoadedForChapter = {};
@@ -35,7 +34,6 @@ class VideoProvider with ChangeNotifier {
   final Map<int, int> _videoViewCounts = {};
   final Map<int, DateTime> _lastLoadedTime = {};
 
-  // Download management - SINGLE source of truth
   final Map<int, String> _downloadedVideoPaths = {};
   final Map<int, VideoQualityLevel> _downloadedQualities = {};
   final Map<int, bool> _isDownloading = {};
@@ -47,16 +45,14 @@ class VideoProvider with ChangeNotifier {
   bool _isLoading = false;
   String? _error;
 
-  static const Duration _cacheDuration =
-      Duration(hours: 24); // Increased to 24 hours
+  static const Duration _cacheDuration = Duration(hours: 24);
   static const Duration _downloadMetadataCache = Duration(days: 30);
 
   VideoProvider({required this.apiService, required this.deviceService}) {
     _initDio();
-    _loadDownloadedVideos(); // Load from DeviceService only
+    _loadDownloadedVideos();
   }
 
-  // Getters
   List<Video> get videos => List.unmodifiable(_videos);
   bool get isLoading => _isLoading;
   String? get error => _error;
@@ -78,13 +74,39 @@ class VideoProvider with ChangeNotifier {
   List<Video> getVideosByChapter(int chapterId) =>
       List.unmodifiable(_videosByChapter[chapterId] ?? []);
 
+  List<VideoQuality> getAvailableQualities(Video video) {
+    return video.availableQualities;
+  }
+
+  VideoQuality getRecommendedQuality(Video video, [String? connectionType]) {
+    return video.getRecommendedQuality(connectionType);
+  }
+
+  VideoQuality? getBestQuality(Video video) {
+    return video.bestQuality;
+  }
+
   void _initDio() {
     _dio.options.connectTimeout = const Duration(seconds: 30);
     _dio.options.receiveTimeout = const Duration(seconds: 30);
     _dio.options.sendTimeout = const Duration(seconds: 30);
+
+    // Configure SSL handling
+    (_dio.httpClientAdapter as dynamic).onHttpClientCreate =
+        (HttpClient client) {
+      client.badCertificateCallback =
+          (X509Certificate cert, String host, int port) {
+        // Accept certificates for Cloudinary domains
+        if (host.contains('cloudinary.com') ||
+            host.contains('res.cloudinary.com')) {
+          return true;
+        }
+        return false;
+      };
+      return client;
+    };
   }
 
-  /// Load downloaded videos metadata from DeviceService (SINGLE source)
   Future<void> _loadDownloadedVideos() async {
     try {
       final paths = await deviceService.getCacheItem<Map<String, dynamic>>(
@@ -140,7 +162,6 @@ class VideoProvider with ChangeNotifier {
     }
   }
 
-  /// Save download metadata to DeviceService
   Future<void> _saveDownloadMetadata() async {
     try {
       final paths = <String, String>{};
@@ -151,19 +172,21 @@ class VideoProvider with ChangeNotifier {
       final qualities = <String, String>{};
       for (final entry in _downloadedQualities.entries) {
         String key = '';
-        switch (entry.value) {
-          case VideoQualityLevel.low:
+        switch (entry.value.height) {
+          case 360:
             key = 'low';
             break;
-          case VideoQualityLevel.medium:
+          case 480:
             key = 'medium';
             break;
-          case VideoQualityLevel.high:
+          case 720:
             key = 'high';
             break;
-          case VideoQualityLevel.highest:
+          case 1080:
             key = 'highest';
             break;
+          default:
+            key = 'medium';
         }
         qualities[entry.key.toString()] = key;
       }
@@ -186,12 +209,10 @@ class VideoProvider with ChangeNotifier {
     }
   }
 
-  /// Load videos for a chapter (uses SINGLE endpoint)
   Future<void> loadVideosByChapter(int chapterId,
       {bool forceRefresh = false}) async {
     if (_isLoadingForChapter[chapterId] == true && !forceRefresh) return;
 
-    // Check if we have valid cached data
     final lastLoaded = _lastLoadedTime[chapterId];
     final hasCache = _hasLoadedForChapter[chapterId] == true;
     final isCacheValid = lastLoaded != null &&
@@ -203,7 +224,6 @@ class VideoProvider with ChangeNotifier {
       return;
     }
 
-    // Try cache first
     if (!forceRefresh) {
       try {
         final cached = await deviceService.getCacheItem<List<dynamic>>(
@@ -226,7 +246,6 @@ class VideoProvider with ChangeNotifier {
             _hasLoadedForChapter[chapterId] = true;
             _lastLoadedTime[chapterId] = DateTime.now();
 
-            // Update global videos list
             for (final video in list) {
               if (!_videos.any((v) => v.id == video.id)) {
                 _videos.add(video);
@@ -243,7 +262,6 @@ class VideoProvider with ChangeNotifier {
             debugLog('VideoProvider',
                 '✅ Loaded ${list.length} videos from cache for chapter $chapterId');
 
-            // Background refresh
             unawaited(_refreshInBackground(chapterId));
             return;
           }
@@ -285,14 +303,12 @@ class VideoProvider with ChangeNotifier {
       _hasLoadedForChapter[chapterId] = true;
       _lastLoadedTime[chapterId] = DateTime.now();
 
-      // Update global videos list
       for (final video in list) {
         if (!_videos.any((v) => v.id == video.id)) {
           _videos.add(video);
         }
       }
 
-      // Cache in DeviceService
       await deviceService.saveCacheItem(
         AppConstants.videosByChapterKey(chapterId),
         list.map((v) => v.toJson()).toList(),
@@ -312,7 +328,6 @@ class VideoProvider with ChangeNotifier {
       _error = e.toString();
       debugLog('VideoProvider', '❌ Error loading videos: $e');
 
-      // Keep existing data on error
       if (!_hasLoadedForChapter.containsKey(chapterId)) {
         _videosByChapter[chapterId] = [];
         _hasLoadedForChapter[chapterId] = true;
@@ -352,7 +367,6 @@ class VideoProvider with ChangeNotifier {
           _videosByChapter[chapterId] = list;
           _lastLoadedTime[chapterId] = DateTime.now();
 
-          // Update global videos list
           for (final video in list) {
             if (!_videos.any((v) => v.id == video.id)) {
               _videos.add(video);
@@ -384,12 +398,10 @@ class VideoProvider with ChangeNotifier {
     }
   }
 
-  /// Download video with specific quality
   Future<void> downloadVideo(
       Video video, VideoQualityLevel quality, CancelToken cancelToken) async {
     if (_isDownloading[video.id] == true) return;
 
-    // Get quality-specific URL
     String? qualityUrl;
     switch (quality) {
       case VideoQualityLevel.low:
@@ -452,12 +464,16 @@ class VideoProvider with ChangeNotifier {
 
       debugLog('VideoProvider', '✅ Download complete for video ${video.id}');
       _notifySafely();
+    } on DioException catch (e) {
+      _isDownloading[video.id] = false;
+      _downloadProgress.remove(video.id);
+      _downloadedQualities.remove(video.id);
+
+      String errorMessage = _getUserFriendlyError(e);
+
+      _notifySafely();
+      throw Exception(errorMessage);
     } catch (e) {
-      if (e is DioException && e.type == DioExceptionType.cancel) {
-        debugLog('VideoProvider', 'Download cancelled');
-      } else {
-        debugLog('VideoProvider', '❌ Download error: $e');
-      }
       _isDownloading[video.id] = false;
       _downloadProgress.remove(video.id);
       _downloadedQualities.remove(video.id);
@@ -466,7 +482,28 @@ class VideoProvider with ChangeNotifier {
     }
   }
 
-  /// Remove downloaded video
+  String _getUserFriendlyError(DioException e) {
+    if (e.type == DioExceptionType.cancel) {
+      return 'Download cancelled';
+    } else if (e.type == DioExceptionType.connectionTimeout) {
+      return 'Connection timeout - check your internet';
+    } else if (e.type == DioExceptionType.receiveTimeout) {
+      return 'Receive timeout - server too slow';
+    } else if (e.type == DioExceptionType.connectionError) {
+      if (e.message?.contains('CERTIFICATE_VERIFY_FAILED') ?? false) {
+        return 'SSL certificate error - please try again';
+      }
+      return 'Connection error - check your internet';
+    } else if (e.response?.statusCode == 404) {
+      return 'Video not found on server';
+    } else if (e.response?.statusCode == 403) {
+      return 'Access denied to video';
+    } else if (e.response?.statusCode == 400) {
+      return 'Invalid video URL';
+    }
+    return 'Download failed: ${e.message}';
+  }
+
   Future<void> removeDownload(int videoId) async {
     final path = _downloadedVideoPaths[videoId];
     if (path != null) {
@@ -493,7 +530,6 @@ class VideoProvider with ChangeNotifier {
     _notifySafely();
   }
 
-  /// Clear all downloaded videos
   Future<void> clearAllDownloads() async {
     try {
       for (final path in _downloadedVideoPaths.values) {
@@ -533,7 +569,6 @@ class VideoProvider with ChangeNotifier {
     }
   }
 
-  /// Increment view count when video is watched
   Future<void> incrementViewCount(int videoId) async {
     try {
       debugLog('VideoProvider', 'Incrementing view count for video: $videoId');
@@ -582,11 +617,9 @@ class VideoProvider with ChangeNotifier {
     return _videoViewCounts[videoId] ?? 0;
   }
 
-  /// 🔵 FIX: Clear user data ONLY for different user logout
   Future<void> clearUserData() async {
     debugLog('VideoProvider', 'Clearing user data');
 
-    // Only clear if this is a different user logout
     final session = UserSession();
     final isDifferentUser = !await session.isSameUser();
     final isLoggingOut = await _isLoggingOut();
@@ -605,10 +638,6 @@ class VideoProvider with ChangeNotifier {
     _isLoadingForChapter.clear();
     _videoViewCounts.clear();
     _lastLoadedTime.clear();
-
-    // Keep downloads (user might want to keep them after logout)
-    // If you want to clear downloads on logout, uncomment:
-    // await clearAllDownloads();
 
     _videoUpdateController.add({'type': 'all_videos_cleared'});
     _notifySafely();

@@ -1,13 +1,13 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:familyacademyclient/services/api_service.dart';
-import 'package:familyacademyclient/services/device_service.dart';
-import 'package:familyacademyclient/services/user_session.dart';
-import 'package:familyacademyclient/models/parent_link_model.dart';
-import 'package:familyacademyclient/utils/constants.dart';
-import 'package:familyacademyclient/utils/helpers.dart';
-import 'package:familyacademyclient/utils/api_response.dart';
+import '../services/api_service.dart';
+import '../services/device_service.dart';
+import '../services/user_session.dart';
+import '../models/parent_link_model.dart';
+import '../utils/constants.dart';
+import '../utils/helpers.dart';
+import '../utils/api_response.dart';
 
 class ParentLinkProvider with ChangeNotifier {
   final ApiService apiService;
@@ -86,7 +86,6 @@ class ParentLinkProvider with ChangeNotifier {
     return _currentServerTime.isAfter(_tokenExpiresAt!);
   }
 
-  // 🔵 FIX: Method to clear cache - only when needed
   Future<void> clearCache() async {
     debugLog('ParentLinkProvider', ' Clearing cache');
     await deviceService.removeCacheItem(AppConstants.parentLinkStatusKey);
@@ -171,7 +170,6 @@ class ParentLinkProvider with ChangeNotifier {
     _notifySafely();
 
     try {
-      // 🔵 FIX: Clear cache before generating
       await deviceService.removeCacheItem(AppConstants.parentTokenKey);
       await deviceService.removeCacheItem(AppConstants.parentLinkStatusKey);
 
@@ -197,7 +195,6 @@ class ParentLinkProvider with ChangeNotifier {
       _parentName = null;
       _parentLinkData = null;
 
-      // Save new token to cache
       await deviceService.saveCacheItem(
           AppConstants.parentTokenKey,
           {
@@ -237,7 +234,6 @@ class ParentLinkProvider with ChangeNotifier {
     _notifySafely();
 
     try {
-      // 🔵 FIX: Force remove cache if refresh requested
       if (forceRefresh) {
         await deviceService.removeCacheItem(AppConstants.parentLinkStatusKey);
       }
@@ -249,7 +245,6 @@ class ParentLinkProvider with ChangeNotifier {
       if (response.success && response.data != null) {
         _parentLinkData = response.data;
 
-        // 🔵 FIX: Always refresh from server, don't cache if forceRefresh
         if (!forceRefresh) {
           await deviceService.saveCacheItem(
               AppConstants.parentLinkStatusKey, _parentLinkData!,
@@ -261,7 +256,6 @@ class ParentLinkProvider with ChangeNotifier {
         debugLog(
             'ParentLinkProvider', 'Parent link status: isLinked=$_isLinked');
       } else {
-        // If API returns no data, clear everything
         _parentLinkData = null;
         _isLinked = false;
         _parentTelegramUsername = null;
@@ -330,7 +324,6 @@ class ParentLinkProvider with ChangeNotifier {
       final response = await apiService.unlinkParent();
 
       if (response.success) {
-        // 🔵 FIX: Clear cache immediately
         await deviceService.removeCacheItem(AppConstants.parentLinkStatusKey);
         await deviceService.removeCacheItem(AppConstants.parentTokenKey);
 
@@ -396,11 +389,9 @@ class ParentLinkProvider with ChangeNotifier {
     _notifySafely();
   }
 
-  /// 🔵 FIX: Clear user data ONLY for different user logout
   Future<void> clearUserData() async {
     debugLog('ParentLinkProvider', 'Clearing parent link data');
 
-    // Only clear if this is a different user logout
     final session = UserSession();
     final isDifferentUser = !await session.isSameUser();
     final isLoggingOut = await _isLoggingOut();

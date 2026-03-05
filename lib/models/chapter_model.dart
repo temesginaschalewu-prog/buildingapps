@@ -1,3 +1,5 @@
+import '../utils/parsers.dart';
+
 class Chapter {
   final int id;
   final String name;
@@ -17,14 +19,12 @@ class Chapter {
 
   factory Chapter.fromJson(Map<String, dynamic> json) {
     return Chapter(
-      id: json['id'],
-      name: json['name'],
-      status: json['status'],
-      releaseDate: json['release_date'] != null
-          ? DateTime.parse(json['release_date'])
-          : null,
-      createdAt: DateTime.parse(json['created_at']),
-      accessible: json['accessible'] ?? false,
+      id: Parsers.parseInt(json['id']),
+      name: json['name']?.toString() ?? '',
+      status: json['status']?.toString() ?? '',
+      releaseDate: Parsers.parseDate(json['release_date']),
+      createdAt: Parsers.parseDate(json['created_at']) ?? DateTime.now(),
+      accessible: Parsers.parseBool(json['accessible']),
     );
   }
 
@@ -41,8 +41,5 @@ class Chapter {
 
   bool get isFree => status == 'free';
   bool get isLocked => status == 'locked';
-
-  bool get canAccessContent {
-    return isFree || accessible;
-  }
+  bool get canAccessContent => isFree || accessible;
 }

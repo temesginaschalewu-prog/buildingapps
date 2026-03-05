@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:familyacademyclient/utils/helpers.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
@@ -7,6 +6,9 @@ import '../services/device_service.dart';
 import '../services/user_session.dart';
 import '../models/setting_model.dart';
 import '../utils/constants.dart';
+import '../utils/helpers.dart';
+import '../utils/parsers.dart';
+import '../utils/ui_helpers.dart';
 
 class SettingsProvider with ChangeNotifier {
   final ApiService apiService;
@@ -48,15 +50,6 @@ class SettingsProvider with ChangeNotifier {
     return _settingsMap[key]?.displayName;
   }
 
-  bool _shouldLoadCategory(String category, {bool forceRefresh = false}) {
-    if (forceRefresh) return true;
-    final lastLoad = _lastCategoryLoadTime[category];
-    if (lastLoad == null) return true;
-    final minutesSinceLastLoad = DateTime.now().difference(lastLoad).inMinutes;
-    return minutesSinceLastLoad >= 5;
-  }
-
-  // Get ALL contact settings
   List<ContactInfo> getContactInfoList() {
     final contacts = <ContactInfo>[];
     final contactSettings = _settingsByCategory['contact'] ?? [];
@@ -192,7 +185,6 @@ class SettingsProvider with ChangeNotifier {
         value.contains('wa.me');
   }
 
-  // Get ALL payment methods
   List<PaymentMethod> getPaymentMethods() {
     final methods = <PaymentMethod>[];
 
@@ -416,6 +408,14 @@ class SettingsProvider with ChangeNotifier {
     return getSettingValue('admin_email') ?? 'admin@familyacademy.com';
   }
 
+  bool _shouldLoadCategory(String category, {bool forceRefresh = false}) {
+    if (forceRefresh) return true;
+    final lastLoad = _lastCategoryLoadTime[category];
+    if (lastLoad == null) return true;
+    final minutesSinceLastLoad = DateTime.now().difference(lastLoad).inMinutes;
+    return minutesSinceLastLoad >= 5;
+  }
+
   Future<void> getAllSettings() async {
     if (_isLoading) return;
 
@@ -563,11 +563,9 @@ class SettingsProvider with ChangeNotifier {
     }
   }
 
-  /// 🔵 FIX: Clear user data ONLY for different user logout
   Future<void> clearUserData() async {
     debugLog('SettingsProvider', 'Clearing settings data');
 
-    // Only clear if this is a different user logout
     final session = UserSession();
     final isDifferentUser = !await session.isSameUser();
     final isLoggingOut = await _isLoggingOut();

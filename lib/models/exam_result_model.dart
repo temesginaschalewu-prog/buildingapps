@@ -1,4 +1,4 @@
-import 'dart:ui';
+import '../utils/parsers.dart';
 
 class ExamResult {
   final int id;
@@ -40,40 +40,24 @@ class ExamResult {
   });
 
   factory ExamResult.fromJson(Map<String, dynamic> json) {
-    // Parse score correctly - handle both string and number
-    double parsedScore = 0.0;
-    if (json['score'] != null) {
-      if (json['score'] is double) {
-        parsedScore = json['score'];
-      } else if (json['score'] is int) {
-        parsedScore = (json['score'] as int).toDouble();
-      } else if (json['score'] is String) {
-        parsedScore = double.tryParse(json['score']) ?? 0.0;
-      }
-    }
-
     return ExamResult(
-      id: json['id'] ?? 0,
-      examId: json['exam_id'] ?? 0,
-      userId: json['user_id'] ?? 0,
-      score: parsedScore,
-      totalQuestions: json['total_questions'] ?? 0,
-      correctAnswers: json['correct_answers'] ?? 0,
-      timeTaken: json['time_taken'] ?? 0,
-      startedAt: json['started_at'] != null
-          ? DateTime.parse(json['started_at']).toLocal()
-          : DateTime.now(),
-      completedAt: json['completed_at'] != null
-          ? DateTime.parse(json['completed_at']).toLocal()
-          : null,
-      status: json['status'] ?? 'unknown',
-      examCode: json['exam_code'],
+      id: Parsers.parseInt(json['id']),
+      examId: Parsers.parseInt(json['exam_id']),
+      userId: Parsers.parseInt(json['user_id']),
+      score: Parsers.parseDouble(json['score']),
+      totalQuestions: Parsers.parseInt(json['total_questions']),
+      correctAnswers: Parsers.parseInt(json['correct_answers']),
+      timeTaken: Parsers.parseInt(json['time_taken']),
+      startedAt: Parsers.parseDate(json['started_at']) ?? DateTime.now(),
+      completedAt: Parsers.parseDate(json['completed_at']),
+      status: json['status']?.toString() ?? 'unknown',
+      examCode: json['exam_code']?.toString(),
       answerDetails: json['answer_details'],
-      title: json['title'] ?? 'Unknown Exam',
-      examType: json['exam_type'] ?? 'unknown',
-      duration: json['duration'] ?? 0,
-      passingScore: json['passing_score'] ?? 50,
-      courseName: json['course_name'] ?? 'Unknown Course',
+      title: json['title']?.toString() ?? 'Unknown Exam',
+      examType: json['exam_type']?.toString() ?? 'unknown',
+      duration: Parsers.parseInt(json['duration']),
+      passingScore: Parsers.parseInt(json['passing_score'], 50),
+      courseName: json['course_name']?.toString() ?? 'Unknown Course',
     );
   }
 
@@ -102,26 +86,19 @@ class ExamResult {
   bool get isCompleted => status == 'completed';
   bool get isInProgress => status == 'in_progress';
   bool get isAbandoned => status == 'abandoned';
-
   bool get passed => totalQuestions > 0 && score >= passingScore;
 
-  double get percentage {
-    if (totalQuestions == 0) return 0;
-    return (correctAnswers / totalQuestions) * 100;
-  }
+  double get percentage =>
+      totalQuestions > 0 ? (correctAnswers / totalQuestions) * 100 : 0;
 
   String get formattedTime {
     final minutes = (timeTaken / 60).floor();
     final seconds = timeTaken % 60;
-    if (minutes > 0) {
-      return '${minutes}m ${seconds}s';
-    }
-    return '${seconds}s';
+    return minutes > 0 ? '${minutes}m ${seconds}s' : '${seconds}s';
   }
 
   String get formattedScore {
     if (score == 0 && totalQuestions > 0 && correctAnswers > 0) {
-      // Calculate from correct answers if score is 0 but we have data
       final calculatedScore = (correctAnswers / totalQuestions) * 100;
       return '${calculatedScore.toStringAsFixed(1)}%';
     }
@@ -132,13 +109,5 @@ class ExamResult {
     if (isCompleted) return passed ? 'Passed' : 'Failed';
     if (isInProgress) return 'In Progress';
     return status;
-  }
-
-  Color get statusColor {
-    if (isCompleted) {
-      return passed ? const Color(0xFF34C759) : const Color(0xFFFF3B30);
-    }
-    if (isInProgress) return const Color(0xFF007AFF);
-    return const Color(0xFF8E8E93);
   }
 }

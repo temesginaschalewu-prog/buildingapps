@@ -1,3 +1,5 @@
+import '../utils/parsers.dart';
+
 class School {
   final int id;
   final String name;
@@ -12,16 +14,11 @@ class School {
   });
 
   factory School.fromJson(Map<String, dynamic> json) {
-    // Handle null values safely
     return School(
-      id: json['id'] ?? 0,
+      id: Parsers.parseInt(json['id']),
       name: json['name']?.toString() ?? 'Unknown School',
-      createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'].toString())
-          : DateTime.now(),
-      updatedAt: json['updated_at'] != null
-          ? DateTime.parse(json['updated_at'].toString())
-          : DateTime.now(),
+      createdAt: Parsers.parseDate(json['created_at']) ?? DateTime.now(),
+      updatedAt: Parsers.parseDate(json['updated_at']) ?? DateTime.now(),
     );
   }
 

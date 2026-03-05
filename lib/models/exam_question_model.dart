@@ -1,3 +1,4 @@
+import '../utils/parsers.dart';
 
 class ExamQuestion {
   final int id;
@@ -34,11 +35,11 @@ class ExamQuestion {
 
   factory ExamQuestion.fromJson(Map<String, dynamic> json) {
     return ExamQuestion(
-      id: json['id'] ?? 0,
-      examId: json['exam_id'] ?? 0,
-      questionId: json['question_id'] ?? 0,
-      displayOrder: json['display_order'] ?? 0,
-      marks: json['marks'] ?? 1,
+      id: Parsers.parseInt(json['id']),
+      examId: Parsers.parseInt(json['exam_id']),
+      questionId: Parsers.parseInt(json['question_id']),
+      displayOrder: Parsers.parseInt(json['display_order']),
+      marks: Parsers.parseInt(json['marks'], 1),
       questionText: json['question_text']?.toString() ?? '',
       optionA: json['option_a']?.toString(),
       optionB: json['option_b']?.toString(),
@@ -47,7 +48,7 @@ class ExamQuestion {
       optionE: json['option_e']?.toString(),
       optionF: json['option_f']?.toString(),
       difficulty: (json['difficulty']?.toString() ?? 'medium').toLowerCase(),
-      hasAnswer: json['has_answer'] ?? false,
+      hasAnswer: Parsers.parseBool(json['has_answer']),
     );
   }
 
@@ -72,27 +73,20 @@ class ExamQuestion {
 
   List<String> get options {
     final options = <String>[];
-    if (optionA != null && optionA!.isNotEmpty) options.add(optionA!);
-    if (optionB != null && optionB!.isNotEmpty) options.add(optionB!);
-    if (optionC != null && optionC!.isNotEmpty) options.add(optionC!);
-    if (optionD != null && optionD!.isNotEmpty) options.add(optionD!);
-    if (optionE != null && optionE!.isNotEmpty) options.add(optionE!);
-    if (optionF != null && optionF!.isNotEmpty) options.add(optionF!);
+    if (optionA?.isNotEmpty ?? false) options.add(optionA!);
+    if (optionB?.isNotEmpty ?? false) options.add(optionB!);
+    if (optionC?.isNotEmpty ?? false) options.add(optionC!);
+    if (optionD?.isNotEmpty ?? false) options.add(optionD!);
+    if (optionE?.isNotEmpty ?? false) options.add(optionE!);
+    if (optionF?.isNotEmpty ?? false) options.add(optionF!);
     return options;
   }
 
-  String? get correctOption {
-    return null;
-  }
-
-  String? get explanation {
-    return null;
-  }
+  String? get correctOption => null;
+  String? get explanation => null;
 
   @override
   String toString() {
-    return 'ExamQuestion(id: $id, examId: $examId, questionText: ${questionText.substring(0, min(30, questionText.length))}...)';
+    return 'ExamQuestion(id: $id, examId: $examId, questionText: ${questionText.substring(0, Parsers.min(30, questionText.length))}...)';
   }
-
-  int min(int a, int b) => a < b ? a : b;
 }

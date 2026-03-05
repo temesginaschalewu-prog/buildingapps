@@ -1,3 +1,5 @@
+import '../utils/parsers.dart';
+
 class Exam {
   final int id;
   final String title;
@@ -59,37 +61,37 @@ class Exam {
 
   factory Exam.fromJson(Map<String, dynamic> json) {
     return Exam(
-      id: json['id'] ?? 0,
-      title: json['title'] ?? '',
-      examType: json['exam_type'] ?? '',
-      startDate: json['start_date'] != null
-          ? DateTime.parse(json['start_date'])
-          : DateTime.now(),
-      endDate: json['end_date'] != null
-          ? DateTime.parse(json['end_date'])
-          : DateTime.now(),
-      duration: json['duration'] ?? 0,
-      userTimeLimit: json['user_time_limit'],
-      passingScore: json['passing_score'] ?? 50,
-      maxAttempts: json['max_attempts'] ?? 1,
-      autoSubmit: json['auto_submit'] ?? true,
-      showResultsImmediately: json['show_results_immediately'] ?? false,
-      courseName: json['course_name'] ?? '',
-      courseId: json['course_id'] ?? 0,
-      categoryId: json['category_id'] ?? 0,
-      categoryName: json['category_name'] ?? '',
-      categoryStatus: json['category_status'] ?? '',
-      attemptsTaken: json['attempts_taken'] ?? 0,
-      lastAttemptStatus: json['last_attempt_status'],
-      questionCount: json['question_count'] ?? 0,
-      status: json['status'] ?? 'unknown',
-      message: json['message'] ?? '',
-      canTakeExam: json['canTakeExam'] ?? false,
-      requiresPayment: json['requiresPayment'] ?? false,
-      hasAccess: json['hasAccess'] ?? false,
-      actualDuration: json['actual_duration'] ?? json['duration'] ?? 0,
-      timingType: json['timing_type'] ?? 'exam_wide',
-      hasPendingPayment: json['hasPendingPayment'] ?? false,
+      id: Parsers.parseInt(json['id']),
+      title: json['title']?.toString() ?? '',
+      examType: json['exam_type']?.toString() ?? '',
+      startDate: Parsers.parseDate(json['start_date']) ?? DateTime.now(),
+      endDate: Parsers.parseDate(json['end_date']) ?? DateTime.now(),
+      duration: Parsers.parseInt(json['duration']),
+      userTimeLimit: json['user_time_limit'] != null
+          ? Parsers.parseInt(json['user_time_limit'])
+          : null,
+      passingScore: Parsers.parseInt(json['passing_score'], 50),
+      maxAttempts: Parsers.parseInt(json['max_attempts'], 1),
+      autoSubmit: Parsers.parseBool(json['auto_submit'], true),
+      showResultsImmediately:
+          Parsers.parseBool(json['show_results_immediately']),
+      courseName: json['course_name']?.toString() ?? '',
+      courseId: Parsers.parseInt(json['course_id']),
+      categoryId: Parsers.parseInt(json['category_id']),
+      categoryName: json['category_name']?.toString() ?? '',
+      categoryStatus: json['category_status']?.toString() ?? '',
+      attemptsTaken: Parsers.parseInt(json['attempts_taken']),
+      lastAttemptStatus: json['last_attempt_status']?.toString(),
+      questionCount: Parsers.parseInt(json['question_count']),
+      status: json['status']?.toString() ?? 'unknown',
+      message: json['message']?.toString() ?? '',
+      canTakeExam: Parsers.parseBool(json['canTakeExam']),
+      requiresPayment: Parsers.parseBool(json['requiresPayment']),
+      hasAccess: Parsers.parseBool(json['hasAccess']),
+      actualDuration:
+          Parsers.parseInt(json['actual_duration'] ?? json['duration']),
+      timingType: json['timing_type']?.toString() ?? 'exam_wide',
+      hasPendingPayment: Parsers.parseBool(json['hasPendingPayment']),
     );
   }
 
@@ -125,15 +127,12 @@ class Exam {
     };
   }
 
-  // Add this missing getter
   bool get hasUserTimeLimit => userTimeLimit != null && userTimeLimit! > 0;
-
   bool get isUpcoming => DateTime.now().isBefore(startDate);
   bool get isEnded => DateTime.now().isAfter(endDate);
   bool get isInProgress =>
       !isUpcoming && !isEnded && !canTakeExam && attemptsTaken > 0;
   bool get maxAttemptsReached => attemptsTaken >= maxAttempts;
-
   bool get isBlockedByPendingPayment =>
       requiresPayment && !hasAccess && hasPendingPayment;
 }

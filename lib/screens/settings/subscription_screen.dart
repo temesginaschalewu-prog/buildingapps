@@ -1,23 +1,25 @@
 import 'dart:async';
-import 'dart:ui';
-import 'package:familyacademyclient/services/user_session.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:familyacademyclient/utils/helpers.dart';
-import 'package:familyacademyclient/utils/responsive.dart';
-import 'package:familyacademyclient/utils/responsive_values.dart';
-import 'package:familyacademyclient/themes/app_themes.dart';
-import 'package:familyacademyclient/themes/app_colors.dart';
-import 'package:familyacademyclient/themes/app_text_styles.dart';
-import 'package:shimmer/shimmer.dart';
-import '../../providers/subscription_provider.dart';
-import '../../widgets/common/loading_indicator.dart';
-import '../../widgets/common/empty_state.dart';
+
 import '../../models/subscription_model.dart';
+import '../../providers/subscription_provider.dart';
+import '../../services/connectivity_service.dart';
+import '../../services/snackbar_service.dart';
+import '../../utils/ui_helpers.dart';
+import '../../widgets/common/app_card.dart';
+import '../../widgets/common/app_button.dart';
+import '../../widgets/common/app_shimmer.dart';
+import '../../widgets/common/app_empty_state.dart';
+import '../../themes/app_themes.dart';
+import '../../themes/app_colors.dart';
+import '../../themes/app_text_styles.dart';
+import '../../utils/responsive.dart';
+import '../../utils/responsive_values.dart';
+import '../../utils/helpers.dart';
 import '../../widgets/common/responsive_widgets.dart';
-import '../../widgets/common/app_bar.dart';
 
 class SubscriptionScreen extends StatefulWidget {
   const SubscriptionScreen({super.key});
@@ -32,6 +34,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
   bool _isOffline = false;
   Timer? _refreshTimer;
   String _refreshSubtitle = '';
+  StreamSubscription? _connectivitySubscription;
 
   @override
   void initState() {
@@ -44,108 +47,34 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
     _refreshTimer = Timer.periodic(const Duration(minutes: 5), (_) {
       if (mounted && !_isOffline) _loadSubscriptions(forceRefresh: true);
     });
+
+    _setupConnectivityListener();
+  }
+
+  void _setupConnectivityListener() {
+    final connectivityService = context.read<ConnectivityService>();
+    _connectivitySubscription =
+        connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (mounted) {
+        setState(() => _isOffline = !isOnline);
+      }
+    });
   }
 
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _connectivitySubscription?.cancel();
     super.dispose();
   }
 
-  Widget _buildGlassContainer({required Widget child}) {
-    return ClipRRect(
-      borderRadius:
-          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.getCard(context).withValues(alpha: 0.4),
-                AppColors.getCard(context).withValues(alpha: 0.2),
-              ],
-            ),
-            borderRadius:
-                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-            border: Border.all(
-              color: AppColors.telegramBlue.withValues(alpha: 0.2),
-            ),
-          ),
-          child: child,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGradientButton({
-    required String label,
-    required VoidCallback? onPressed,
-    required List<Color> gradient,
-    bool isLoading = false,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: onPressed != null ? LinearGradient(colors: gradient) : null,
-        borderRadius:
-            BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-        boxShadow: onPressed != null
-            ? [
-                BoxShadow(
-                  color: gradient.first.withValues(alpha: 0.3),
-                  blurRadius: ResponsiveValues.spacingS(context),
-                  offset: Offset(0, ResponsiveValues.spacingXS(context)),
-                ),
-              ]
-            : null,
-      ),
-      child: Material(
-        color: onPressed != null ? Colors.transparent : Colors.transparent,
-        child: InkWell(
-          onTap: onPressed,
-          borderRadius:
-              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-          child: Container(
-            padding: EdgeInsets.symmetric(
-              vertical: ResponsiveValues.spacingL(context),
-            ),
-            alignment: Alignment.center,
-            child: isLoading
-                ? SizedBox(
-                    width: ResponsiveValues.iconSizeM(context),
-                    height: ResponsiveValues.iconSizeM(context),
-                    child: const CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation(Colors.white),
-                    ),
-                  )
-                : ResponsiveText(
-                    label,
-                    style: AppTextStyles.buttonMedium(context).copyWith(
-                      color: onPressed != null
-                          ? Colors.white
-                          : AppColors.getTextSecondary(context),
-                    ),
-                  ),
-          ),
-        ),
-      ),
-    );
-  }
-
   Future<void> _checkConnectivity() async {
-    final hasConnection = await hasInternetConnection();
-    if (!hasConnection) {
-      setState(() => _isOffline = true);
-      showOfflineMessage(context);
-    }
+    final connectivityService = context.read<ConnectivityService>();
+    setState(() => _isOffline = !connectivityService.isOnline);
   }
 
   Future<void> _loadSubscriptions({bool forceRefresh = false}) async {
-    final subscriptionProvider =
-        Provider.of<SubscriptionProvider>(context, listen: false);
+    final subscriptionProvider = context.read<SubscriptionProvider>();
     await subscriptionProvider.loadSubscriptions(
         forceRefresh: forceRefresh && !_isOffline);
   }
@@ -153,11 +82,10 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
   Future<void> _manualRefresh() async {
     if (_isRefreshing) return;
 
-    final hasConnection = await hasInternetConnection();
-    if (!hasConnection) {
+    final connectivityService = context.read<ConnectivityService>();
+    if (!connectivityService.isOnline) {
       setState(() => _isOffline = true);
-      showTopSnackBar(context, 'You are offline. Using cached data.',
-          isError: true);
+      SnackbarService().showOffline(context);
       return;
     }
 
@@ -167,19 +95,47 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
     });
 
     try {
-      final subscriptionProvider =
-          Provider.of<SubscriptionProvider>(context, listen: false);
+      final subscriptionProvider = context.read<SubscriptionProvider>();
       await subscriptionProvider.loadSubscriptions(forceRefresh: true);
       setState(() => _isOffline = false);
-      showTopSnackBar(context, 'Subscriptions refreshed');
+      SnackbarService().showSuccess(context, 'Subscriptions refreshed');
     } catch (e) {
-      showTopSnackBar(context, 'Refresh failed: $e', isError: true);
+      SnackbarService().showError(context, 'Refresh failed: $e');
     } finally {
       setState(() {
         _isRefreshing = false;
         _refreshSubtitle = '';
       });
     }
+  }
+
+  Color _getStatusColor(String status) {
+    return UiHelpers.getSubscriptionStatusColor(status);
+  }
+
+  String _getStatusText(String status) {
+    switch (status) {
+      case 'active':
+        return 'ACTIVE';
+      case 'expiring_soon':
+        return 'EXPIRING SOON';
+      case 'expired':
+        return 'EXPIRED';
+      default:
+        return status.toUpperCase();
+    }
+  }
+
+  IconData _getCategoryIcon(String categoryName) {
+    final name = categoryName.toLowerCase();
+    if (name.contains('math')) return Icons.calculate_rounded;
+    if (name.contains('science')) return Icons.science_rounded;
+    if (name.contains('language')) return Icons.language_rounded;
+    if (name.contains('history')) return Icons.history_edu_rounded;
+    if (name.contains('art')) return Icons.palette_rounded;
+    if (name.contains('music')) return Icons.music_note_rounded;
+    if (name.contains('computer')) return Icons.computer_rounded;
+    return Icons.category_rounded;
   }
 
   Widget _buildSubscriptionCard(Subscription subscription) {
@@ -189,8 +145,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
 
     final status =
         isExpired ? 'expired' : (isExpiringSoon ? 'expiring_soon' : 'active');
-    final statusColor = AppColors.getStatusColor(status, context);
-    final statusBgColor = AppColors.getStatusBackground(status, context);
+    final statusColor = _getStatusColor(status);
 
     final daysRemaining = subscription.daysRemaining;
     final progressValue = daysRemaining / 30;
@@ -200,7 +155,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
         horizontal: ResponsiveValues.spacingL(context),
         vertical: ResponsiveValues.spacingS(context),
       ),
-      child: _buildGlassContainer(
+      child: AppCard.subscription(
+        statusColor: statusColor,
         child: Material(
           color: Colors.transparent,
           child: InkWell(
@@ -228,10 +184,10 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
             highlightColor: Colors.transparent,
             child: Padding(
               padding: ResponsiveValues.cardPadding(context),
-              child: ResponsiveColumn(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  ResponsiveRow(
+                  Row(
                     children: [
                       Container(
                         width: ResponsiveValues.iconSizeXL(context) * 1.5,
@@ -249,19 +205,19 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                           border: Border.all(color: statusColor, width: 1.5),
                         ),
                         child: Center(
-                          child: ResponsiveIcon(
+                          child: Icon(
                             _getCategoryIcon(subscription.categoryName ?? ''),
                             size: ResponsiveValues.iconSizeL(context),
                             color: statusColor,
                           ),
                         ),
                       ),
-                      ResponsiveSizedBox(width: AppSpacing.l),
+                      const ResponsiveSizedBox(width: AppSpacing.l),
                       Expanded(
-                        child: ResponsiveColumn(
+                        child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            ResponsiveText(
+                            Text(
                               subscription.categoryName ?? 'Unknown Category',
                               style:
                                   AppTextStyles.titleMedium(context).copyWith(
@@ -270,8 +226,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
-                            ResponsiveSizedBox(height: AppSpacing.xs),
-                            ResponsiveText(
+                            const ResponsiveSizedBox(height: AppSpacing.xs),
+                            Text(
                               subscription.billingCycle == 'monthly'
                                   ? 'Monthly Subscription'
                                   : 'Semester Subscription',
@@ -299,7 +255,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                           ),
                           border: Border.all(color: statusColor),
                         ),
-                        child: ResponsiveText(
+                        child: Text(
                           _getStatusText(status),
                           style: AppTextStyles.statusBadge(context).copyWith(
                             color: statusColor,
@@ -309,20 +265,20 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                       ),
                     ],
                   ),
-                  ResponsiveSizedBox(height: AppSpacing.l),
+                  const ResponsiveSizedBox(height: AppSpacing.l),
                   if (isActive && !isExpired && isExpiringSoon)
-                    ResponsiveColumn(
+                    Column(
                       children: [
-                        ResponsiveRow(
+                        Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            ResponsiveText(
+                            Text(
                               'Expires in $daysRemaining days',
                               style: AppTextStyles.labelSmall(context).copyWith(
                                 color: AppColors.getTextSecondary(context),
                               ),
                             ),
-                            ResponsiveText(
+                            Text(
                               '${((1 - progressValue) * 100).toInt()}% used',
                               style: AppTextStyles.labelSmall(context).copyWith(
                                 color: statusColor,
@@ -331,7 +287,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                             ),
                           ],
                         ),
-                        ResponsiveSizedBox(height: AppSpacing.s),
+                        const ResponsiveSizedBox(height: AppSpacing.s),
                         ClipRRect(
                           borderRadius: BorderRadius.circular(
                             ResponsiveValues.radiusFull(context),
@@ -345,20 +301,20 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                                 ResponsiveValues.progressBarHeight(context),
                           ),
                         ),
-                        ResponsiveSizedBox(height: AppSpacing.l),
+                        const ResponsiveSizedBox(height: AppSpacing.l),
                       ],
                     ),
-                  _buildGlassContainer(
+                  AppCard.glass(
                     child: Padding(
                       padding: ResponsiveValues.cardPadding(context),
-                      child: ResponsiveColumn(
+                      child: Column(
                         children: [
                           _buildInfoRow(
                             icon: Icons.calendar_today_rounded,
                             label: 'Start Date',
                             value: _formatDate(subscription.startDate),
                           ),
-                          ResponsiveSizedBox(height: AppSpacing.m),
+                          const ResponsiveSizedBox(height: AppSpacing.m),
                           _buildInfoRow(
                             icon: isExpired
                                 ? Icons.event_busy_rounded
@@ -367,7 +323,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                             value: _formatDate(subscription.expiryDate),
                             valueColor: isExpired ? statusColor : null,
                           ),
-                          ResponsiveSizedBox(height: AppSpacing.m),
+                          const ResponsiveSizedBox(height: AppSpacing.m),
                           _buildInfoRow(
                             icon: Icons.repeat_rounded,
                             label: 'Billing Cycle',
@@ -376,7 +332,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                                 : 'Semester',
                           ),
                           if (subscription.price != null) ...[
-                            ResponsiveSizedBox(height: AppSpacing.m),
+                            const ResponsiveSizedBox(height: AppSpacing.m),
                             _buildInfoRow(
                               icon: Icons.payments_rounded,
                               label: 'Price',
@@ -386,7 +342,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                             ),
                           ],
                           if (isActive && !isExpired) ...[
-                            ResponsiveSizedBox(height: AppSpacing.m),
+                            const ResponsiveSizedBox(height: AppSpacing.m),
                             _buildInfoRow(
                               icon: Icons.timer_rounded,
                               label: 'Days Remaining',
@@ -399,27 +355,44 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                     ),
                   ),
                   if ((isExpired || isExpiringSoon) && !_isOffline) ...[
-                    ResponsiveSizedBox(height: AppSpacing.xl),
+                    const ResponsiveSizedBox(height: AppSpacing.xl),
                     SizedBox(
                       width: double.infinity,
-                      child: _buildGradientButton(
-                        label: isExpired ? 'Renew Now' : 'Extend Now',
-                        onPressed: () {
-                          context.push('/payment', extra: {
-                            'category': {
-                              'id': subscription.categoryId,
-                              'name': subscription.categoryName ?? 'Category',
-                              'price': subscription.price,
-                              'billing_cycle': subscription.billingCycle,
-                              'isFree': false,
-                            },
-                            'paymentType': 'repayment',
-                          });
-                        },
-                        gradient: isExpired
-                            ? [AppColors.telegramRed, AppColors.telegramOrange]
-                            : AppColors.blueGradient,
-                      ),
+                      child: isExpired
+                          ? AppButton.danger(
+                              label: 'Renew Now',
+                              onPressed: () {
+                                context.push('/payment', extra: {
+                                  'category': {
+                                    'id': subscription.categoryId,
+                                    'name':
+                                        subscription.categoryName ?? 'Category',
+                                    'price': subscription.price,
+                                    'billing_cycle': subscription.billingCycle,
+                                    'isFree': false,
+                                  },
+                                  'paymentType': 'repayment',
+                                });
+                              },
+                              expanded: true,
+                            )
+                          : AppButton.primary(
+                              label: 'Extend Now',
+                              onPressed: () {
+                                context.push('/payment', extra: {
+                                  'category': {
+                                    'id': subscription.categoryId,
+                                    'name':
+                                        subscription.categoryName ?? 'Category',
+                                    'price': subscription.price,
+                                    'billing_cycle': subscription.billingCycle,
+                                    'isFree': false,
+                                  },
+                                  'paymentType': 'repayment',
+                                });
+                              },
+                              expanded: true,
+                            ),
                     ),
                   ],
                 ],
@@ -432,38 +405,13 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
         begin: 0.1, end: 0, duration: AppThemes.animationDurationMedium);
   }
 
-  IconData _getCategoryIcon(String categoryName) {
-    final name = categoryName.toLowerCase();
-    if (name.contains('math')) return Icons.calculate_rounded;
-    if (name.contains('science')) return Icons.science_rounded;
-    if (name.contains('language')) return Icons.language_rounded;
-    if (name.contains('history')) return Icons.history_edu_rounded;
-    if (name.contains('art')) return Icons.palette_rounded;
-    if (name.contains('music')) return Icons.music_note_rounded;
-    if (name.contains('computer')) return Icons.computer_rounded;
-    return Icons.category_rounded;
-  }
-
-  String _getStatusText(String status) {
-    switch (status) {
-      case 'active':
-        return 'ACTIVE';
-      case 'expiring_soon':
-        return 'EXPIRING SOON';
-      case 'expired':
-        return 'EXPIRED';
-      default:
-        return status.toUpperCase();
-    }
-  }
-
   Widget _buildInfoRow({
     required IconData icon,
     required String label,
     required String value,
     Color? valueColor,
   }) {
-    return ResponsiveRow(
+    return Row(
       children: [
         Container(
           width: ResponsiveValues.iconSizeL(context),
@@ -483,16 +431,16 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
             color: AppColors.telegramBlue,
           ),
         ),
-        ResponsiveSizedBox(width: AppSpacing.m),
+        const ResponsiveSizedBox(width: AppSpacing.m),
         Expanded(
-          child: ResponsiveText(
+          child: Text(
             label,
             style: AppTextStyles.bodyMedium(context).copyWith(
               color: AppColors.getTextSecondary(context),
             ),
           ),
         ),
-        ResponsiveText(
+        Text(
           value,
           style: AppTextStyles.bodyMedium(context).copyWith(
             color: valueColor ?? AppColors.getTextPrimary(context),
@@ -512,65 +460,35 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
       margin: EdgeInsets.symmetric(
         horizontal: ResponsiveValues.spacingL(context),
       ),
-      child: _buildGlassContainer(
+      child: AppCard.glass(
         child: Padding(
           padding: ResponsiveValues.cardPadding(context),
-          child: ResponsiveColumn(
+          child: Column(
             children: List.generate(
               5,
               (index) => Padding(
                 padding: EdgeInsets.only(
                   bottom: ResponsiveValues.spacingL(context),
                 ),
-                child: ResponsiveRow(
+                child: Row(
                   children: [
-                    Shimmer.fromColors(
-                      baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                      highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
-                      child: Container(
-                        width: ResponsiveValues.iconSizeXL(context) * 1.5,
-                        height: ResponsiveValues.iconSizeXL(context) * 1.5,
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
+                    AppShimmer(
+                      type: ShimmerType.circle,
+                      customWidth: ResponsiveValues.iconSizeXL(context) * 1.5,
+                      customHeight: ResponsiveValues.iconSizeXL(context) * 1.5,
                     ),
-                    ResponsiveSizedBox(width: AppSpacing.l),
-                    Expanded(
-                      child: ResponsiveColumn(
+                    const ResponsiveSizedBox(width: AppSpacing.l),
+                    const Expanded(
+                      child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Shimmer.fromColors(
-                            baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                            highlightColor:
-                                Colors.grey[100]!.withValues(alpha: 0.6),
-                            child: Container(
-                              height: ResponsiveValues.spacingXL(context),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(
-                                  ResponsiveValues.radiusSmall(context),
-                                ),
-                              ),
-                            ),
-                          ),
+                          AppShimmer(
+                              type: ShimmerType.textLine, customHeight: 20),
                           ResponsiveSizedBox(height: AppSpacing.s),
-                          Shimmer.fromColors(
-                            baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                            highlightColor:
-                                Colors.grey[100]!.withValues(alpha: 0.6),
-                            child: Container(
-                              width: ResponsiveValues.spacingXXXL(context) * 2,
-                              height: ResponsiveValues.spacingL(context),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(
-                                  ResponsiveValues.radiusSmall(context),
-                                ),
-                              ),
-                            ),
-                          ),
+                          AppShimmer(
+                              type: ShimmerType.textLine,
+                              customWidth: 150,
+                              customHeight: 16),
                         ],
                       ),
                     ),
@@ -593,11 +511,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
         appBar: AppBar(
-          leading: IconButton(
-            icon: ResponsiveIcon(
-              Icons.arrow_back_rounded,
-              color: AppColors.getTextPrimary(context),
-            ),
+          leading: AppButton.icon(
+            icon: Icons.arrow_back_rounded,
             onPressed: () => context.pop(),
           ),
           backgroundColor: Colors.transparent,
@@ -616,7 +531,6 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
         child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
-            // App bar with back button
             SliverToBoxAdapter(
               child: Padding(
                 padding: EdgeInsets.only(
@@ -628,26 +542,9 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                 ),
                 child: Row(
                   children: [
-                    Container(
-                      width: ResponsiveValues.appBarButtonSize(context),
-                      height: ResponsiveValues.appBarButtonSize(context),
-                      decoration: BoxDecoration(
-                        color: AppColors.getSurface(context)
-                            .withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(
-                          ResponsiveValues.radiusFull(context) / 2,
-                        ),
-                      ),
-                      child: IconButton(
-                        icon: ResponsiveIcon(
-                          Icons.arrow_back_rounded,
-                          size: ResponsiveValues.appBarIconSize(context),
-                          color: AppColors.getTextPrimary(context),
-                        ),
-                        onPressed: () => context.pop(),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                      ),
+                    AppButton.icon(
+                      icon: Icons.arrow_back_rounded,
+                      onPressed: () => context.pop(),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
@@ -685,7 +582,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                   horizontal: ResponsiveValues.spacingL(context),
                   vertical: ResponsiveValues.spacingL(context),
                 ),
-                child: ResponsiveText(
+                child: Text(
                   _isOffline
                       ? 'Offline mode - showing cached subscriptions'
                       : 'Your active and expired subscriptions',
@@ -716,13 +613,13 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                       color: AppColors.telegramYellow.withValues(alpha: 0.3),
                     ),
                   ),
-                  child: ResponsiveRow(
+                  child: Row(
                     children: [
                       const Icon(Icons.wifi_off_rounded,
                           color: AppColors.telegramYellow, size: 20),
-                      ResponsiveSizedBox(width: AppSpacing.m),
+                      const ResponsiveSizedBox(width: AppSpacing.m),
                       Expanded(
-                        child: ResponsiveText(
+                        child: Text(
                           'Offline mode - showing cached subscriptions',
                           style: AppTextStyles.bodySmall(context).copyWith(
                             color: AppColors.telegramYellow,
@@ -742,10 +639,10 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                   ResponsiveValues.spacingS(context),
                 ),
                 sliver: SliverToBoxAdapter(
-                  child: ResponsiveRow(
+                  child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      ResponsiveText(
+                      Text(
                         'Active',
                         style: AppTextStyles.titleLarge(context).copyWith(
                           fontWeight: FontWeight.w600,
@@ -767,7 +664,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                             ResponsiveValues.radiusFull(context),
                           ),
                         ),
-                        child: ResponsiveText(
+                        child: Text(
                           '${activeSubscriptions.length}',
                           style: AppTextStyles.labelMedium(context).copyWith(
                             color: AppColors.telegramGreen,
@@ -796,10 +693,10 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                   ResponsiveValues.spacingS(context),
                 ),
                 sliver: SliverToBoxAdapter(
-                  child: ResponsiveRow(
+                  child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      ResponsiveText(
+                      Text(
                         'Expired',
                         style: AppTextStyles.titleLarge(context).copyWith(
                           fontWeight: FontWeight.w600,
@@ -821,7 +718,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                             ResponsiveValues.radiusFull(context),
                           ),
                         ),
-                        child: ResponsiveText(
+                        child: Text(
                           '${expiredSubscriptions.length}',
                           style: AppTextStyles.labelMedium(context).copyWith(
                             color: AppColors.telegramRed,
@@ -845,8 +742,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
               SliverFillRemaining(
                 child: Center(
                   child: _isOffline
-                      ? OfflineState(
-                          dataType: 'subscriptions',
+                      ? AppEmptyState.offline(
                           message: 'No cached subscriptions available.',
                           onRetry: () {
                             setState(() => _isOffline = false);
@@ -854,14 +750,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                             _manualRefresh();
                           },
                         )
-                      : EmptyState(
-                          lottieAsset: 'assets/lottie/empty_subscriptions.json',
-                          title: 'No Subscriptions',
-                          message:
+                      : AppEmptyState.noData(
+                          dataType: 'subscriptions',
+                          customMessage:
                               'You don\'t have any subscriptions yet.\nBrowse categories to get started.',
-                          actionText: 'Browse Categories',
-                          onAction: () => context.go('/'),
-                          type: EmptyStateType.noData,
+                          onRefresh: () => context.go('/'),
                         ),
                 ),
               ),
@@ -870,14 +763,15 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                 child: Padding(
                   padding: EdgeInsets.all(24),
                   child: Center(
-                    child: LoadingIndicator(
-                      size: 32,
-                      color: AppColors.telegramBlue,
+                    child: SizedBox(
+                      width: 32,
+                      height: 32,
+                      child: AppShimmer(type: ShimmerType.circle),
                     ),
                   ),
                 ),
               ),
-            SliverToBoxAdapter(
+            const SliverToBoxAdapter(
               child: ResponsiveSizedBox(height: AppSpacing.xxl),
             ),
           ],
@@ -901,7 +795,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
 
   @override
   Widget build(BuildContext context) {
-    final subscriptionProvider = Provider.of<SubscriptionProvider>(context);
+    final subscriptionProvider = context.watch<SubscriptionProvider>();
 
     return ResponsiveLayout(
       mobile: _buildMobileLayout(subscriptionProvider),

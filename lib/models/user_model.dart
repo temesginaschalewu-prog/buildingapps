@@ -1,4 +1,5 @@
-import 'package:familyacademyclient/utils/constants.dart';
+import '../utils/constants.dart';
+import '../utils/parsers.dart';
 
 class User {
   final int id;
@@ -19,7 +20,7 @@ class User {
   final String? adminNotes;
   final DateTime createdAt;
   final DateTime updatedAt;
-  final List<Map<String, dynamic>>? subscriptions; // Add this
+  final List<Map<String, dynamic>>? subscriptions;
 
   User({
     required this.id,
@@ -40,61 +41,43 @@ class User {
     this.adminNotes,
     required this.createdAt,
     required this.updatedAt,
-    this.subscriptions, // Add this
+    this.subscriptions,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
-    int parseId(dynamic value) {
-      if (value == null) return 0;
-      if (value is int) return value;
-      if (value is String) return int.tryParse(value) ?? 0;
-      if (value is double) return value.toInt();
-      return 0;
-    }
-
-    DateTime? parseDate(dynamic value) {
-      if (value == null) return null;
-      try {
-        if (value is String) return DateTime.parse(value);
-        if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
-        return null;
-      } catch (e) {
-        return null;
-      }
-    }
-
-    // Parse subscriptions if available
     List<Map<String, dynamic>>? parseSubscriptions(dynamic value) {
       if (value == null) return null;
       if (value is List) {
-        return value.map((item) {
-          if (item is Map<String, dynamic>) return item;
-          return <String, dynamic>{};
-        }).toList();
+        return value
+            .map((item) =>
+                item is Map<String, dynamic> ? item : <String, dynamic>{})
+            .toList();
       }
       return null;
     }
 
     return User(
-      id: parseId(json['id']),
+      id: Parsers.parseInt(json['id']),
       username: json['username']?.toString() ?? '',
       email: json['email']?.toString(),
       phone: json['phone']?.toString(),
       profileImage: json['profile_image']?.toString(),
-      schoolId: json['school_id'] != null ? parseId(json['school_id']) : null,
+      schoolId: json['school_id'] != null
+          ? Parsers.parseInt(json['school_id'])
+          : null,
       accountStatus: json['account_status']?.toString() ?? 'unpaid',
       primaryDeviceId: json['primary_device_id']?.toString(),
       tvDeviceId: json['tv_device_id']?.toString(),
-      parentLinked: json['parent_linked'] == true,
+      parentLinked: Parsers.parseBool(json['parent_linked']),
       parentTelegramUsername: json['parent_telegram_username']?.toString(),
-      parentLinkDate: parseDate(json['parent_link_date']),
-      streakCount: parseId(json['streak_count']),
-      lastStreakDate: parseDate(json['last_streak_date']),
-      totalStudyTime: parseId(json['total_study_time']),
+      parentLinkDate: Parsers.parseDate(json['parent_link_date']),
+      streakCount: Parsers.parseInt(json['streak_count']),
+      lastStreakDate: Parsers.parseDate(json['last_streak_date']),
+      totalStudyTime: Parsers.parseInt(json['total_study_time']),
       adminNotes: json['admin_notes']?.toString(),
-      createdAt: parseDate(json['created_at']) ?? DateTime.now(),
-      updatedAt: parseDate(json['updated_at']) ?? DateTime.now(),
-      subscriptions: parseSubscriptions(json['subscriptions']), // Add this
+      createdAt: Parsers.parseDate(json['created_at']) ?? DateTime.now(),
+      updatedAt: Parsers.parseDate(json['updated_at']) ?? DateTime.now(),
+      subscriptions: parseSubscriptions(json['subscriptions']),
     );
   }
 
@@ -118,23 +101,38 @@ class User {
       'admin_notes': adminNotes,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
-      'subscriptions': subscriptions, // Add this
+      'subscriptions': subscriptions,
     };
   }
 
   bool get isActive => accountStatus == 'active';
   bool get isUnpaid => accountStatus == 'unpaid';
   bool get isExpired => accountStatus == 'expired';
-  // Check if user has any active subscription
+  bool get hasTvDevice => tvDeviceId?.isNotEmpty ?? false;
+  bool get hasParentLinked => parentLinked;
+  bool get needsSchoolSelection => schoolId == null || schoolId == 0;
+
+  String? get fullProfileImageUrl {
+    if (profileImage?.isEmpty ?? true) return null;
+
+    if (profileImage!.startsWith('http://') ||
+        profileImage!.startsWith('https://')) {
+      return profileImage;
+    }
+
+    final cleanPath = profileImage!.startsWith('/')
+        ? profileImage!.substring(1)
+        : profileImage!;
+    return '${AppConstants.baseUrl}/$cleanPath';
+  }
+
   bool get hasActiveSubscription {
     if (subscriptions == null || subscriptions!.isEmpty) return false;
-
     final now = DateTime.now();
     return subscriptions!.any((sub) {
       final status = sub['status']?.toString() ?? '';
       final expiryStr = sub['expiry_date']?.toString();
       if (expiryStr == null) return false;
-
       try {
         final expiryDate = DateTime.parse(expiryStr);
         return status == 'active' && expiryDate.isAfter(now);
@@ -143,26 +141,6 @@ class User {
       }
     });
   }
-
-  bool get hasTvDevice => tvDeviceId != null && tvDeviceId!.isNotEmpty;
-  bool get hasParentLinked => parentLinked;
-
-  String? get fullProfileImageUrl {
-    if (profileImage == null || profileImage!.isEmpty) return null;
-
-    if (profileImage!.startsWith('http://') ||
-        profileImage!.startsWith('https://')) {
-      return profileImage;
-    }
-
-    final String cleanPath = profileImage!.startsWith('/')
-        ? profileImage!.substring(1)
-        : profileImage!;
-
-    return '${AppConstants.baseUrl}/$cleanPath';
-  }
-
-  bool get needsSchoolSelection => schoolId == null || schoolId == 0;
 
   User copyWith({
     int? id,
@@ -210,9 +188,8 @@ class User {
   }
 
   @override
-  String toString() {
-    return 'User(id: $id, username: $username, schoolId: $schoolId, status: $accountStatus, hasSubscriptions: ${subscriptions != null && subscriptions!.isNotEmpty})';
-  }
+  String toString() =>
+      'User(id: $id, username: $username, schoolId: $schoolId, status: $accountStatus)';
 
   @override
   bool operator ==(Object other) {

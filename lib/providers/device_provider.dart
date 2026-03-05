@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
@@ -37,6 +38,22 @@ class DeviceProvider with ChangeNotifier {
   bool get isPairingExpired => _pairingExpiresAt == null
       ? true
       : DateTime.now().isAfter(_pairingExpiresAt!);
+
+  Duration get pairingRemainingTime {
+    if (_pairingExpiresAt == null) return Duration.zero;
+    final now = DateTime.now();
+    if (now.isAfter(_pairingExpiresAt!)) return Duration.zero;
+    return _pairingExpiresAt!.difference(now);
+  }
+
+  String get formattedPairingTime {
+    final duration = pairingRemainingTime;
+    if (duration.inMinutes <= 0) return 'Expired';
+
+    final minutes = duration.inMinutes;
+    final seconds = duration.inSeconds % 60;
+    return '$minutes:${seconds.toString().padLeft(2, '0')}';
+  }
 
   Future<void> _initializeAsync() async {
     try {
@@ -185,11 +202,6 @@ class DeviceProvider with ChangeNotifier {
     await _clearPairingState();
   }
 
-  void clearError() {
-    _error = null;
-    notifyListeners();
-  }
-
   Future<Map<String, dynamic>> getDeviceInfo() async {
     if (!_isInitialized) await initialize();
     try {
@@ -227,5 +239,10 @@ class DeviceProvider with ChangeNotifier {
   Future<bool> _isLoggingOut() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
+  }
+
+  void clearError() {
+    _error = null;
+    notifyListeners();
   }
 }

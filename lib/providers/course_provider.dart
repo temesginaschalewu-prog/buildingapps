@@ -5,6 +5,7 @@ import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../services/user_session.dart';
 import '../models/course_model.dart';
+import '../utils/constants.dart';
 import '../utils/helpers.dart';
 
 class CourseProvider with ChangeNotifier {
@@ -19,8 +20,7 @@ class CourseProvider with ChangeNotifier {
   bool _isLoading = false;
   String? _error;
 
-  static const Duration _cacheDuration =
-      Duration(hours: 24); // Increased to 24 hours
+  static const Duration _cacheDuration = Duration(hours: 24);
 
   StreamController<Map<int, List<Course>>> _coursesUpdateController =
       StreamController<Map<int, List<Course>>>.broadcast();
@@ -30,7 +30,6 @@ class CourseProvider with ChangeNotifier {
   List<Course> get courses => List.unmodifiable(_courses);
   bool get isLoading => _isLoading;
   String? get error => _error;
-
   Stream<Map<int, List<Course>>> get coursesUpdates =>
       _coursesUpdateController.stream;
 
@@ -46,16 +45,40 @@ class CourseProvider with ChangeNotifier {
     return _isLoadingCategory[categoryId] ?? false;
   }
 
+  Course? getCourseById(int id) {
+    try {
+      return _courses.firstWhere((c) => c.id == id);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  bool hasAccessToCourse(int courseId, bool hasActiveSubscription) {
+    final course = getCourseById(courseId);
+    if (course == null) return false;
+    return course.hasFullAccess(hasActiveSubscription);
+  }
+
+  List<Course> getAccessibleCourses(bool hasActiveSubscription) {
+    return _courses
+        .where((course) => course.hasFullAccess(hasActiveSubscription))
+        .toList();
+  }
+
+  String getCourseAccessStatus(int courseId, bool hasActiveSubscription) {
+    final course = getCourseById(courseId);
+    if (course == null) return 'unknown';
+    return course.hasFullAccess(hasActiveSubscription) ? 'full' : 'limited';
+  }
+
   Future<void> loadCoursesByCategory(int categoryId,
       {bool forceRefresh = false, bool? hasAccess}) async {
-    // Prevent multiple simultaneous loads for same category
     if (_isLoadingCategory[categoryId] == true && !forceRefresh) {
       debugLog('CourseProvider',
           '⏳ Already loading courses for category $categoryId');
       return;
     }
 
-    // Check if we have valid cached data
     if (!forceRefresh && _hasLoadedCategory[categoryId] == true) {
       final lastLoaded = _lastLoadedTime[categoryId];
       if (lastLoaded != null &&
@@ -75,7 +98,6 @@ class CourseProvider with ChangeNotifier {
       debugLog(
           'CourseProvider', '📥 Loading courses for category: $categoryId');
 
-      // Try to load from cache first if not forcing refresh
       if (!forceRefresh) {
         final cachedCourses = await deviceService
             .getCacheItem<List<Course>>('courses_$categoryId');
@@ -95,13 +117,11 @@ class CourseProvider with ChangeNotifier {
           debugLog('CourseProvider',
               '✅ Loaded ${cachedCourses.length} courses from cache for category $categoryId');
 
-          // Refresh in background
           unawaited(_refreshInBackground(categoryId, hasAccess));
           return;
         }
       }
 
-      // No cache or force refresh, load from API
       final response = await apiService.getCoursesByCategory(categoryId);
 
       if (!response.success) {
@@ -142,7 +162,6 @@ class CourseProvider with ChangeNotifier {
           }
         }
 
-        // Save to cache
         await deviceService.saveCacheItem('courses_$categoryId', parsedCourses,
             ttl: _cacheDuration);
 
@@ -174,7 +193,6 @@ class CourseProvider with ChangeNotifier {
       _error = e.toString();
       debugLog('CourseProvider', '❌ loadCoursesByCategory error: $e');
 
-      // If we have cached data, keep it even on error
       if (!_hasLoadedCategory.containsKey(categoryId) ||
           _coursesByCategory[categoryId]?.isEmpty == true) {
         _coursesByCategory[categoryId] = [];
@@ -280,19 +298,9 @@ class CourseProvider with ChangeNotifier {
     }
   }
 
-  Course? getCourseById(int id) {
-    try {
-      return _courses.firstWhere((c) => c.id == id);
-    } catch (e) {
-      return null;
-    }
-  }
-
-  /// 🔵 FIX: Clear user data ONLY for different user logout
   Future<void> clearUserData() async {
     debugLog('CourseProvider', 'Clearing course data');
 
-    // Only clear if this is a different user logout
     final session = UserSession();
     final isDifferentUser = !await session.isSameUser();
     final isLoggingOut = await _isLoggingOut();

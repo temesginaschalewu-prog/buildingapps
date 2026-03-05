@@ -1,28 +1,33 @@
+import 'dart:async' show StreamSubscription;
 import 'dart:io';
-import 'dart:ui';
-import 'package:familyacademyclient/services/device_service.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter/services.dart';
-import 'package:familyacademyclient/services/user_session.dart';
-import 'package:familyacademyclient/utils/responsive.dart';
-import 'package:familyacademyclient/utils/responsive_values.dart';
-import 'package:familyacademyclient/themes/app_themes.dart';
-import 'package:familyacademyclient/themes/app_colors.dart';
-import 'package:familyacademyclient/themes/app_text_styles.dart';
-import 'package:shimmer/shimmer.dart';
+
 import '../../models/category_model.dart';
 import '../../providers/payment_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../providers/category_provider.dart';
+import '../../services/device_service.dart';
+import '../../services/connectivity_service.dart';
+import '../../services/snackbar_service.dart';
+import '../../widgets/common/app_card.dart';
+import '../../widgets/common/app_button.dart';
+import '../../widgets/common/app_text_field.dart';
+import '../../widgets/common/app_shimmer.dart';
+import '../../widgets/common/app_empty_state.dart';
+import '../../utils/responsive.dart';
+import '../../utils/responsive_values.dart';
+import '../../themes/app_themes.dart';
+import '../../themes/app_colors.dart';
+import '../../themes/app_text_styles.dart';
 import '../../utils/helpers.dart';
 import '../../widgets/common/responsive_widgets.dart';
-import '../../widgets/common/app_bar.dart';
 
 class PaymentScreen extends StatefulWidget {
   final Map<String, dynamic>? extra;
@@ -60,6 +65,7 @@ class _PaymentScreenState extends State<PaymentScreen>
   List<PaymentMethod> _cachedMethods = [];
   bool _isOffline = false;
   String? _currentUserId;
+  StreamSubscription? _connectivitySubscription;
 
   @override
   void initState() {
@@ -74,6 +80,18 @@ class _PaymentScreenState extends State<PaymentScreen>
       _initializeData();
       _animationController.forward();
     });
+
+    _setupConnectivityListener();
+  }
+
+  void _setupConnectivityListener() {
+    final connectivityService = context.read<ConnectivityService>();
+    _connectivitySubscription =
+        connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (mounted) {
+        setState(() => _isOffline = !isOnline);
+      }
+    });
   }
 
   @override
@@ -81,127 +99,23 @@ class _PaymentScreenState extends State<PaymentScreen>
     _passwordController.dispose();
     _accountHolderNameController.dispose();
     _animationController.dispose();
+    _connectivitySubscription?.cancel();
     super.dispose();
   }
 
-  Widget _buildGlassContainer({required Widget child}) {
-    return ClipRRect(
-      borderRadius:
-          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.getCard(context).withValues(alpha: 0.4),
-                AppColors.getCard(context).withValues(alpha: 0.2),
-              ],
-            ),
-            borderRadius:
-                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-            border: Border.all(
-              color: AppColors.telegramBlue.withValues(alpha: 0.2),
-            ),
-          ),
-          child: child,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGradientButton({
-    required String label,
-    required VoidCallback? onPressed,
-    required List<Color> gradient,
-    IconData? icon,
-    bool isLoading = false,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: onPressed != null ? LinearGradient(colors: gradient) : null,
-        color: onPressed == null
-            ? AppColors.telegramGray.withValues(alpha: 0.2)
-            : null,
-        borderRadius:
-            BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-        boxShadow: onPressed != null
-            ? [
-                BoxShadow(
-                  color: gradient.first.withValues(alpha: 0.3),
-                  blurRadius: ResponsiveValues.spacingS(context),
-                  offset: Offset(0, ResponsiveValues.spacingXS(context)),
-                ),
-              ]
-            : null,
-      ),
-      child: Material(
-        color: onPressed != null ? Colors.transparent : Colors.transparent,
-        child: InkWell(
-          onTap: onPressed,
-          borderRadius:
-              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-          child: Container(
-            padding: EdgeInsets.symmetric(
-              vertical: ResponsiveValues.spacingL(context),
-            ),
-            alignment: Alignment.center,
-            child: isLoading
-                ? SizedBox(
-                    width: ResponsiveValues.iconSizeM(context),
-                    height: ResponsiveValues.iconSizeM(context),
-                    child: const CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation(Colors.white),
-                    ),
-                  )
-                : ResponsiveRow(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (icon != null) ...[
-                        Icon(
-                          icon,
-                          size: ResponsiveValues.iconSizeS(context),
-                          color: onPressed != null
-                              ? Colors.white
-                              : AppColors.getTextSecondary(context),
-                        ),
-                        ResponsiveSizedBox(width: AppSpacing.s),
-                      ],
-                      ResponsiveText(
-                        label,
-                        style: AppTextStyles.buttonMedium(context).copyWith(
-                          color: onPressed != null
-                              ? Colors.white
-                              : AppColors.getTextSecondary(context),
-                        ),
-                      ),
-                    ],
-                  ),
-          ),
-        ),
-      ),
-    );
-  }
-
   Future<void> _getCurrentUserId() async {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final authProvider = context.read<AuthProvider>();
     _currentUserId = authProvider.currentUser?.id.toString();
   }
 
   Future<void> _checkConnectivity() async {
-    final hasConnection = await hasInternetConnection();
-    if (!hasConnection) {
-      setState(() => _isOffline = true);
-      showOfflineMessage(context);
-    }
+    final connectivityService = context.read<ConnectivityService>();
+    setState(() => _isOffline = !connectivityService.isOnline);
   }
 
   Future<void> _loadCachedPaymentMethods() async {
     try {
-      final deviceService = Provider.of<DeviceService>(context, listen: false);
+      final deviceService = context.read<DeviceService>();
       final cachedMethods = await deviceService.getCacheItem<List<dynamic>>(
         'payment_methods_$_currentUserId',
         isUserSpecific: true,
@@ -242,9 +156,8 @@ class _PaymentScreenState extends State<PaymentScreen>
         return;
       }
 
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final categoryProvider =
-          Provider.of<CategoryProvider>(context, listen: false);
+      final authProvider = context.read<AuthProvider>();
+      final categoryProvider = context.read<CategoryProvider>();
 
       Category? category;
       final dynamic categoryData = args['category'];
@@ -262,7 +175,10 @@ class _PaymentScreenState extends State<PaymentScreen>
             description: categoryData['description'],
           );
         } else {
-          category = categoryProvider.getCategoryById(categoryData['id']);
+          final categoryId = categoryData['id'];
+          if (categoryId != null) {
+            category = categoryProvider.getCategoryById(categoryId);
+          }
         }
       }
 
@@ -300,8 +216,7 @@ class _PaymentScreenState extends State<PaymentScreen>
     if (_settingsLoadAttempted) return;
     _settingsLoadAttempted = true;
 
-    final settingsProvider =
-        Provider.of<SettingsProvider>(context, listen: false);
+    final settingsProvider = context.read<SettingsProvider>();
 
     if (settingsProvider.allSettings.isEmpty && !_isOffline) {
       await settingsProvider.getAllSettings();
@@ -311,8 +226,7 @@ class _PaymentScreenState extends State<PaymentScreen>
 
     if (_cachedMethods.isNotEmpty && _currentUserId != null && !_isOffline) {
       try {
-        final deviceService =
-            Provider.of<DeviceService>(context, listen: false);
+        final deviceService = context.read<DeviceService>();
         await deviceService.saveCacheItem(
           'payment_methods_$_currentUserId',
           _cachedMethods
@@ -326,7 +240,9 @@ class _PaymentScreenState extends State<PaymentScreen>
           ttl: const Duration(days: 7),
           isUserSpecific: true,
         );
-      } catch (e) {}
+      } catch (e) {
+        debugLog('PaymentScreen', 'Error caching payment methods: $e');
+      }
     }
 
     if (mounted) setState(() => _isLoadingMethods = false);
@@ -345,15 +261,15 @@ class _PaymentScreenState extends State<PaymentScreen>
         final sizeInMB = await file.length() / (1024 * 1024);
 
         if (sizeInMB > 5) {
-          showTopSnackBar(context, 'Image must be less than 5MB',
-              isError: true);
+          SnackbarService().showError(context, 'Image must be less than 5MB');
           return;
         }
 
         setState(() => _proofImageFile = file);
       }
     } catch (e) {
-      showTopSnackBar(context, 'Failed to pick image: $e', isError: true);
+      debugLog('PaymentScreen', 'Error picking image: $e');
+      SnackbarService().showError(context, 'Failed to pick image: $e');
     }
   }
 
@@ -403,22 +319,22 @@ class _PaymentScreenState extends State<PaymentScreen>
       }
     }
 
-    return ResponsiveColumn(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ResponsiveText(
+        Text(
           'Payment Method',
           style: AppTextStyles.labelMedium(context),
         ),
-        ResponsiveSizedBox(height: AppSpacing.s),
-        _buildGlassContainer(
+        const ResponsiveSizedBox(height: AppSpacing.s),
+        AppCard.glass(
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: DropdownButtonFormField<PaymentMethod>(
-              value: _selectedPaymentMethod,
+              initialValue: _selectedPaymentMethod,
               hint: Padding(
                 padding: ResponsiveValues.listItemPadding(context),
-                child: ResponsiveText(
+                child: Text(
                   'Select a payment method',
                   style: AppTextStyles.bodyMedium(context).copyWith(
                     color: AppColors.getTextSecondary(context),
@@ -436,7 +352,7 @@ class _PaymentScreenState extends State<PaymentScreen>
               items: uniqueMethods.map((method) {
                 return DropdownMenuItem<PaymentMethod>(
                   value: method,
-                  child: ResponsiveRow(
+                  child: Row(
                     children: [
                       Container(
                         width: ResponsiveValues.iconSizeL(context),
@@ -456,7 +372,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                             size: ResponsiveValues.iconSizeXS(context),
                             color: AppColors.telegramBlue),
                       ),
-                      ResponsiveSizedBox(width: AppSpacing.m),
+                      const ResponsiveSizedBox(width: AppSpacing.m),
                       Expanded(
                         child: RichText(
                           maxLines: 2,
@@ -494,7 +410,7 @@ class _PaymentScreenState extends State<PaymentScreen>
             padding: EdgeInsets.only(
               top: ResponsiveValues.spacingS(context),
             ),
-            child: ResponsiveText(
+            child: Text(
               'Payment methods require internet connection',
               style: AppTextStyles.caption(context).copyWith(
                 color: AppColors.telegramYellow,
@@ -502,19 +418,19 @@ class _PaymentScreenState extends State<PaymentScreen>
             ),
           ),
         if (_selectedPaymentMethod != null) ...[
-          ResponsiveSizedBox(height: AppSpacing.l),
-          _buildGlassContainer(
+          const ResponsiveSizedBox(height: AppSpacing.l),
+          AppCard.glass(
             child: Padding(
               padding: ResponsiveValues.cardPadding(context),
-              child: ResponsiveColumn(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  ResponsiveRow(
+                  Row(
                     children: [
                       const Icon(Icons.info_rounded,
                           size: 16, color: AppColors.telegramBlue),
-                      ResponsiveSizedBox(width: AppSpacing.s),
-                      ResponsiveText(
+                      const ResponsiveSizedBox(width: AppSpacing.s),
+                      Text(
                         'Account Details',
                         style: AppTextStyles.labelMedium(context).copyWith(
                           fontWeight: FontWeight.w600,
@@ -522,7 +438,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                       ),
                     ],
                   ),
-                  ResponsiveSizedBox(height: AppSpacing.m),
+                  const ResponsiveSizedBox(height: AppSpacing.m),
                   Container(
                     padding: ResponsiveValues.cardPadding(context),
                     decoration: BoxDecoration(
@@ -536,10 +452,10 @@ class _PaymentScreenState extends State<PaymentScreen>
                         ResponsiveValues.radiusSmall(context),
                       ),
                     ),
-                    child: ResponsiveRow(
+                    child: Row(
                       children: [
                         Expanded(
-                          child: ResponsiveText(
+                          child: Text(
                             _selectedPaymentMethod!.accountInfo,
                             style: AppTextStyles.bodyMedium(context),
                           ),
@@ -548,7 +464,8 @@ class _PaymentScreenState extends State<PaymentScreen>
                           onTap: () {
                             Clipboard.setData(ClipboardData(
                                 text: _selectedPaymentMethod!.accountInfo));
-                            showTopSnackBar(context, 'Copied to clipboard');
+                            SnackbarService()
+                                .showSuccess(context, 'Copied to clipboard');
                           },
                           child: Container(
                             padding: EdgeInsets.all(
@@ -571,15 +488,15 @@ class _PaymentScreenState extends State<PaymentScreen>
                       ],
                     ),
                   ),
-                  ResponsiveSizedBox(height: AppSpacing.m),
-                  ResponsiveText(
+                  const ResponsiveSizedBox(height: AppSpacing.m),
+                  Text(
                     'Instructions',
                     style: AppTextStyles.labelSmall(context).copyWith(
                       color: AppColors.getTextSecondary(context),
                     ),
                   ),
-                  ResponsiveSizedBox(height: AppSpacing.xs),
-                  ResponsiveText(
+                  const ResponsiveSizedBox(height: AppSpacing.xs),
+                  Text(
                     _selectedPaymentMethod!.instructions,
                     style: AppTextStyles.bodySmall(context).copyWith(
                       height: 1.5,
@@ -601,51 +518,28 @@ class _PaymentScreenState extends State<PaymentScreen>
       body: SingleChildScrollView(
         child: Padding(
           padding: ResponsiveValues.screenPadding(context),
-          child: ResponsiveColumn(
+          child: Column(
             children: [
-              _buildGlassContainer(
+              AppCard.glass(
                 child: Padding(
                   padding: ResponsiveValues.cardPadding(context),
-                  child: ResponsiveColumn(
+                  child: Column(
                     children: List.generate(
                       5,
                       (index) => Padding(
                         padding: EdgeInsets.only(
                           bottom: ResponsiveValues.spacingM(context),
                         ),
-                        child: ResponsiveRow(
+                        child: const Row(
                           children: [
-                            Shimmer.fromColors(
-                              baseColor:
-                                  Colors.grey[300]!.withValues(alpha: 0.3),
-                              highlightColor:
-                                  Colors.grey[100]!.withValues(alpha: 0.6),
-                              child: Container(
-                                width: ResponsiveValues.iconSizeL(context),
-                                height: ResponsiveValues.iconSizeL(context),
-                                decoration: const BoxDecoration(
-                                  color: Colors.white,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                            ),
+                            AppShimmer(
+                                type: ShimmerType.circle,
+                                customWidth: 24,
+                                customHeight: 24),
                             ResponsiveSizedBox(width: AppSpacing.m),
                             Expanded(
-                              child: Shimmer.fromColors(
-                                baseColor:
-                                    Colors.grey[300]!.withValues(alpha: 0.3),
-                                highlightColor:
-                                    Colors.grey[100]!.withValues(alpha: 0.6),
-                                child: Container(
-                                  height: ResponsiveValues.spacingL(context),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(
-                                      ResponsiveValues.radiusSmall(context),
-                                    ),
-                                  ),
-                                ),
-                              ),
+                              child: AppShimmer(
+                                  type: ShimmerType.textLine, customHeight: 16),
                             ),
                           ],
                         ),
@@ -654,32 +548,19 @@ class _PaymentScreenState extends State<PaymentScreen>
                   ),
                 ),
               ),
-              ResponsiveSizedBox(height: AppSpacing.xl),
-              _buildGlassContainer(
+              const ResponsiveSizedBox(height: AppSpacing.xl),
+              AppCard.glass(
                 child: Padding(
                   padding: ResponsiveValues.cardPadding(context),
-                  child: ResponsiveColumn(
+                  child: Column(
                     children: List.generate(
                       4,
                       (index) => Padding(
                         padding: EdgeInsets.only(
                           bottom: ResponsiveValues.spacingL(context),
                         ),
-                        child: Shimmer.fromColors(
-                          baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                          highlightColor:
-                              Colors.grey[100]!.withValues(alpha: 0.6),
-                          child: Container(
-                            height:
-                                ResponsiveValues.buttonHeightMedium(context),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(
-                                ResponsiveValues.radiusMedium(context),
-                              ),
-                            ),
-                          ),
-                        ),
+                        child: const AppShimmer(
+                            type: ShimmerType.rectangle, customHeight: 48),
                       ),
                     ),
                   ),
@@ -694,49 +575,43 @@ class _PaymentScreenState extends State<PaymentScreen>
 
   Future<void> _submitPayment() async {
     if (_category == null) {
-      showTopSnackBar(context, 'Category information missing', isError: true);
+      SnackbarService().showError(context, 'Category information missing');
       return;
     }
 
     if (_amount <= 0) {
-      showTopSnackBar(context, 'Invalid payment amount', isError: true);
+      SnackbarService().showError(context, 'Invalid payment amount');
       return;
     }
 
     if (!_formKey.currentState!.validate()) return;
 
     if (_selectedPaymentMethod == null) {
-      showTopSnackBar(context, 'Please select a payment method', isError: true);
+      SnackbarService().showError(context, 'Please select a payment method');
       return;
     }
 
     if (_proofImageFile == null) {
-      showTopSnackBar(context, 'Please upload payment proof', isError: true);
+      SnackbarService().showError(context, 'Please upload payment proof');
       return;
     }
 
     if (!_confirmAccuracy) {
-      showTopSnackBar(context, 'Please confirm accuracy', isError: true);
+      SnackbarService().showError(context, 'Please confirm accuracy');
       return;
     }
 
-    final hasConnection = await hasInternetConnection();
-    if (!hasConnection) {
-      showTopSnackBar(
-        context,
-        'You are offline. Please check your internet connection.',
-        isError: true,
-      );
+    final connectivityService = context.read<ConnectivityService>();
+    if (!connectivityService.isOnline) {
+      SnackbarService().showOffline(context, action: 'submit payment');
       return;
     }
 
     setState(() => _isLoading = true);
 
-    final paymentProvider =
-        Provider.of<PaymentProvider>(context, listen: false);
-    final subscriptionProvider =
-        Provider.of<SubscriptionProvider>(context, listen: false);
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final paymentProvider = context.read<PaymentProvider>();
+    final subscriptionProvider = context.read<SubscriptionProvider>();
+    final authProvider = context.read<AuthProvider>();
 
     try {
       final paymentMethod = _selectedPaymentMethod!.method;
@@ -749,13 +624,14 @@ class _PaymentScreenState extends State<PaymentScreen>
         if (uploadResponse.success && uploadResponse.data != null) {
           proofImageUrl = uploadResponse.data;
         } else {
-          showTopSnackBar(context, 'Failed to upload payment proof',
-              isError: true);
+          SnackbarService()
+              .showError(context, 'Failed to upload payment proof');
           setState(() => _isLoading = false);
           return;
         }
       } catch (uploadError) {
-        showTopSnackBar(context, 'Failed to upload image', isError: true);
+        debugLog('PaymentScreen', 'Upload error: $uploadError');
+        SnackbarService().showError(context, 'Failed to upload image');
         setState(() => _isLoading = false);
         return;
       }
@@ -777,7 +653,8 @@ class _PaymentScreenState extends State<PaymentScreen>
         await authProvider.checkSession();
 
         if (mounted) {
-          showTopSnackBar(context, 'Payment submitted successfully!');
+          SnackbarService()
+              .showSuccess(context, 'Payment submitted successfully!');
           context.push('/payment-success', extra: {
             'category': _category,
             'category_id': _category!.id,
@@ -808,13 +685,13 @@ class _PaymentScreenState extends State<PaymentScreen>
             });
           }
         } else {
-          if (mounted) showTopSnackBar(context, message, isError: true);
+          if (mounted) SnackbarService().showError(context, message);
         }
       }
     } catch (e) {
+      debugLog('PaymentScreen', 'Payment error: $e');
       if (mounted) {
-        showTopSnackBar(context, 'Payment failed: ${e.toString()}',
-            isError: true);
+        SnackbarService().showError(context, 'Payment failed: ${e.toString()}');
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -836,14 +713,11 @@ class _PaymentScreenState extends State<PaymentScreen>
     return AppBar(
       backgroundColor: Colors.transparent,
       elevation: 0,
-      leading: IconButton(
-        icon: ResponsiveIcon(
-          Icons.arrow_back_rounded,
-          color: AppColors.getTextPrimary(context),
-        ),
+      leading: AppButton.icon(
+        icon: Icons.arrow_back_rounded,
         onPressed: () => GoRouter.of(context).pop(),
       ),
-      title: ResponsiveText(
+      title: Text(
         'Payment',
         style: AppTextStyles.appBarTitle(context),
       ),
@@ -852,13 +726,15 @@ class _PaymentScreenState extends State<PaymentScreen>
   }
 
   Widget _buildPaymentSummary() {
-    return _buildGlassContainer(
+    if (_category == null) return const SizedBox.shrink();
+
+    return AppCard.glass(
       child: Padding(
         padding: ResponsiveValues.cardPadding(context),
-        child: ResponsiveColumn(
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ResponsiveRow(
+            Row(
               children: [
                 Container(
                   width: ResponsiveValues.iconSizeXL(context) * 1.5,
@@ -877,17 +753,17 @@ class _PaymentScreenState extends State<PaymentScreen>
                   child: const Icon(Icons.payment_rounded,
                       color: AppColors.telegramBlue, size: 24),
                 ),
-                ResponsiveSizedBox(width: AppSpacing.l),
+                const ResponsiveSizedBox(width: AppSpacing.l),
                 Expanded(
-                  child: ResponsiveColumn(
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      ResponsiveText(
+                      Text(
                         _category?.name ?? 'Payment',
                         style: AppTextStyles.titleMedium(context),
                       ),
-                      ResponsiveSizedBox(height: AppSpacing.xs),
-                      ResponsiveText(
+                      const ResponsiveSizedBox(height: AppSpacing.xs),
+                      Text(
                         _getPaymentTypeText(),
                         style: AppTextStyles.bodySmall(context).copyWith(
                           color: AppColors.getTextSecondary(context),
@@ -896,17 +772,17 @@ class _PaymentScreenState extends State<PaymentScreen>
                     ],
                   ),
                 ),
-                ResponsiveColumn(
+                Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    ResponsiveText(
+                    Text(
                       _amount.toStringAsFixed(0),
                       style: AppTextStyles.displaySmall(context).copyWith(
                         color: AppColors.telegramBlue,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    ResponsiveText(
+                    Text(
                       'ETB',
                       style: AppTextStyles.labelMedium(context).copyWith(
                         color: AppColors.getTextSecondary(context),
@@ -916,30 +792,30 @@ class _PaymentScreenState extends State<PaymentScreen>
                 ),
               ],
             ),
-            ResponsiveSizedBox(height: AppSpacing.l),
+            const ResponsiveSizedBox(height: AppSpacing.l),
             Divider(
               color: AppColors.getDivider(context).withValues(alpha: 0.2),
               height: 1,
             ),
-            ResponsiveSizedBox(height: AppSpacing.l),
+            const ResponsiveSizedBox(height: AppSpacing.l),
             _buildSummaryRow(
               icon: Icons.category_rounded,
               label: 'Category',
               value: _category?.name ?? 'N/A',
             ),
-            ResponsiveSizedBox(height: AppSpacing.s),
+            const ResponsiveSizedBox(height: AppSpacing.s),
             _buildSummaryRow(
               icon: Icons.calendar_today_rounded,
               label: 'Billing Cycle',
               value: _getBillingCycleDescription(),
             ),
-            ResponsiveSizedBox(height: AppSpacing.s),
+            const ResponsiveSizedBox(height: AppSpacing.s),
             _buildSummaryRow(
               icon: Icons.timer_rounded,
               label: 'Access Duration',
               value: _getAccessDurationText(),
             ),
-            ResponsiveSizedBox(height: AppSpacing.s),
+            const ResponsiveSizedBox(height: AppSpacing.s),
             _buildSummaryRow(
               icon: Icons.person_rounded,
               label: 'Username',
@@ -960,7 +836,7 @@ class _PaymentScreenState extends State<PaymentScreen>
     required String label,
     required String value,
   }) {
-    return ResponsiveRow(
+    return Row(
       children: [
         Container(
           width: ResponsiveValues.iconSizeL(context),
@@ -980,18 +856,18 @@ class _PaymentScreenState extends State<PaymentScreen>
             color: AppColors.telegramBlue,
           ),
         ),
-        ResponsiveSizedBox(width: AppSpacing.m),
+        const ResponsiveSizedBox(width: AppSpacing.m),
         Expanded(
-          child: ResponsiveRow(
+          child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              ResponsiveText(
+              Text(
                 label,
                 style: AppTextStyles.bodySmall(context).copyWith(
                   color: AppColors.getTextSecondary(context),
                 ),
               ),
-              ResponsiveText(
+              Text(
                 value,
                 style: AppTextStyles.bodyMedium(context).copyWith(
                   fontWeight: FontWeight.w600,
@@ -1005,92 +881,48 @@ class _PaymentScreenState extends State<PaymentScreen>
   }
 
   Widget _buildPaymentForm(List<PaymentMethod> methods) {
-    return _buildGlassContainer(
+    if (_category == null) return const SizedBox.shrink();
+
+    return AppCard.glass(
       child: Padding(
         padding: ResponsiveValues.cardPadding(context),
         child: Form(
           key: _formKey,
-          child: ResponsiveColumn(
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              ResponsiveText(
+              Text(
                 'Payment Details',
                 style: AppTextStyles.titleMedium(context),
               ),
-              ResponsiveSizedBox(height: AppSpacing.l),
+              const ResponsiveSizedBox(height: AppSpacing.l),
               _buildPaymentMethodDropdown(methods),
-              ResponsiveSizedBox(height: AppSpacing.l),
-              ResponsiveText(
-                'Account Holder Name',
-                style: AppTextStyles.labelMedium(context),
-              ),
-              ResponsiveSizedBox(height: AppSpacing.s),
-              TextFormField(
+              const ResponsiveSizedBox(height: AppSpacing.l),
+              AppTextField(
                 controller: _accountHolderNameController,
-                decoration: InputDecoration(
-                  hintText: 'Enter the account holder name',
-                  hintStyle: AppTextStyles.bodyMedium(context).copyWith(
-                    color: AppColors.getTextSecondary(context),
-                  ),
-                  filled: true,
-                  fillColor:
-                      AppColors.getSurface(context).withValues(alpha: 0.3),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(
-                      ResponsiveValues.radiusMedium(context),
-                    ),
-                    borderSide: BorderSide.none,
-                  ),
-                  prefixIcon: Icon(Icons.person_outline_rounded,
-                      color: AppColors.getTextSecondary(context),
-                      size: ResponsiveValues.iconSizeS(context)),
-                  contentPadding: ResponsiveValues.listItemPadding(context),
-                ),
-                style: AppTextStyles.bodyMedium(context),
+                label: 'Account Holder Name',
+                hint: 'Enter the account holder name',
+                prefixIcon: Icons.person_outline_rounded,
+                enabled: !_isOffline,
                 validator: _validateAccountHolderName,
-                enabled: !_isOffline,
               ),
-              ResponsiveSizedBox(height: AppSpacing.l),
-              ResponsiveText(
-                'Password',
-                style: AppTextStyles.labelMedium(context),
-              ),
-              ResponsiveSizedBox(height: AppSpacing.s),
-              TextFormField(
+              const ResponsiveSizedBox(height: AppSpacing.l),
+              AppTextField.password(
                 controller: _passwordController,
-                decoration: InputDecoration(
-                  hintText: 'Enter your password',
-                  hintStyle: AppTextStyles.bodyMedium(context).copyWith(
-                    color: AppColors.getTextSecondary(context),
-                  ),
-                  filled: true,
-                  fillColor:
-                      AppColors.getSurface(context).withValues(alpha: 0.3),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(
-                      ResponsiveValues.radiusMedium(context),
-                    ),
-                    borderSide: BorderSide.none,
-                  ),
-                  prefixIcon: Icon(Icons.lock_rounded,
-                      color: AppColors.getTextSecondary(context),
-                      size: ResponsiveValues.iconSizeS(context)),
-                  contentPadding: ResponsiveValues.listItemPadding(context),
-                ),
-                obscureText: true,
-                style: AppTextStyles.bodyMedium(context),
-                validator: _validatePassword,
+                label: 'Password',
+                hint: 'Enter your password',
                 enabled: !_isOffline,
+                validator: _validatePassword,
               ),
-              ResponsiveSizedBox(height: AppSpacing.l),
-              ResponsiveText(
+              const ResponsiveSizedBox(height: AppSpacing.l),
+              Text(
                 'Payment Proof',
                 style: AppTextStyles.labelMedium(context),
               ),
-              ResponsiveSizedBox(height: AppSpacing.s),
+              const ResponsiveSizedBox(height: AppSpacing.s),
               _buildProofUploadSection(),
-              ResponsiveSizedBox(height: AppSpacing.l),
-              ResponsiveRow(
+              const ResponsiveSizedBox(height: AppSpacing.l),
+              Row(
                 children: [
                   SizedBox(
                     width: ResponsiveValues.iconSizeM(context),
@@ -1109,9 +941,9 @@ class _PaymentScreenState extends State<PaymentScreen>
                       ),
                     ),
                   ),
-                  ResponsiveSizedBox(width: AppSpacing.m),
+                  const ResponsiveSizedBox(width: AppSpacing.m),
                   Expanded(
-                    child: ResponsiveText(
+                    child: Text(
                       'I confirm that all payment information is accurate and valid',
                       style: AppTextStyles.bodyMedium(context).copyWith(
                         color: _isOffline
@@ -1142,13 +974,13 @@ class _PaymentScreenState extends State<PaymentScreen>
                         ResponsiveValues.radiusMedium(context),
                       ),
                     ),
-                    child: ResponsiveRow(
+                    child: Row(
                       children: [
                         const Icon(Icons.wifi_off_rounded,
                             color: AppColors.telegramYellow, size: 20),
-                        ResponsiveSizedBox(width: AppSpacing.m),
+                        const ResponsiveSizedBox(width: AppSpacing.m),
                         Expanded(
-                          child: ResponsiveText(
+                          child: Text(
                             'You are offline. Please connect to submit payment.',
                             style: AppTextStyles.bodySmall(context).copyWith(
                               color: AppColors.telegramYellow,
@@ -1159,16 +991,16 @@ class _PaymentScreenState extends State<PaymentScreen>
                     ),
                   ),
                 ),
-              ResponsiveSizedBox(height: AppSpacing.xl),
+              const ResponsiveSizedBox(height: AppSpacing.xl),
               SizedBox(
                 width: double.infinity,
-                child: _buildGradientButton(
+                child: AppButton.primary(
                   label: _isOffline ? 'Offline' : 'Submit Payment',
                   onPressed: _isLoading || _isOffline ? null : _submitPayment,
-                  gradient: AppColors.blueGradient,
                   icon:
                       _isOffline ? Icons.wifi_off_rounded : Icons.send_rounded,
                   isLoading: _isLoading,
+                  expanded: true,
                 ),
               ),
             ],
@@ -1251,13 +1083,13 @@ class _PaymentScreenState extends State<PaymentScreen>
                               ResponsiveValues.radiusFull(context),
                             ),
                           ),
-                          child: ResponsiveRow(
+                          child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               const Icon(Icons.delete_rounded,
                                   size: 16, color: Colors.white),
-                              ResponsiveSizedBox(width: AppSpacing.xs),
-                              ResponsiveText(
+                              const ResponsiveSizedBox(width: AppSpacing.xs),
+                              Text(
                                 'Remove',
                                 style: AppTextStyles.caption(context).copyWith(
                                   color: Colors.white,
@@ -1288,13 +1120,13 @@ class _PaymentScreenState extends State<PaymentScreen>
                             ResponsiveValues.radiusFull(context),
                           ),
                         ),
-                        child: ResponsiveRow(
+                        child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             const Icon(Icons.check_circle_rounded,
                                 size: 14, color: Colors.white),
-                            ResponsiveSizedBox(width: AppSpacing.xs),
-                            ResponsiveText(
+                            const ResponsiveSizedBox(width: AppSpacing.xs),
+                            Text(
                               'Uploaded',
                               style: AppTextStyles.caption(context).copyWith(
                                 color: Colors.white,
@@ -1308,10 +1140,10 @@ class _PaymentScreenState extends State<PaymentScreen>
                   ],
                 ),
               )
-            : ResponsiveColumn(
+            : Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  ResponsiveIcon(
+                  Icon(
                     _isOffline
                         ? Icons.wifi_off_rounded
                         : Icons.cloud_upload_rounded,
@@ -1320,8 +1152,8 @@ class _PaymentScreenState extends State<PaymentScreen>
                         ? AppColors.telegramGray
                         : AppColors.getTextSecondary(context),
                   ),
-                  ResponsiveSizedBox(height: AppSpacing.m),
-                  ResponsiveText(
+                  const ResponsiveSizedBox(height: AppSpacing.m),
+                  Text(
                     _isOffline
                         ? 'Offline - cannot upload'
                         : 'Tap to upload payment proof',
@@ -1331,8 +1163,8 @@ class _PaymentScreenState extends State<PaymentScreen>
                           : AppColors.getTextPrimary(context),
                     ),
                   ),
-                  ResponsiveSizedBox(height: AppSpacing.xs),
-                  ResponsiveText(
+                  const ResponsiveSizedBox(height: AppSpacing.xs),
+                  Text(
                     _isOffline ? 'Connect to internet' : 'JPG or PNG • Max 5MB',
                     style: AppTextStyles.caption(context).copyWith(
                       color: _isOffline
@@ -1347,16 +1179,16 @@ class _PaymentScreenState extends State<PaymentScreen>
   }
 
   Widget _buildPaymentInstructions() {
-    final settingsProvider = Provider.of<SettingsProvider>(context);
+    final settingsProvider = context.read<SettingsProvider>();
     final instructions = settingsProvider.getPaymentInstructions();
 
-    return _buildGlassContainer(
+    return AppCard.glass(
       child: Padding(
         padding: ResponsiveValues.cardPadding(context),
-        child: ResponsiveColumn(
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ResponsiveRow(
+            Row(
               children: [
                 Container(
                   width: ResponsiveValues.iconSizeL(context),
@@ -1375,39 +1207,39 @@ class _PaymentScreenState extends State<PaymentScreen>
                   child: const Icon(Icons.info_rounded,
                       color: AppColors.telegramBlue, size: 20),
                 ),
-                ResponsiveSizedBox(width: AppSpacing.m),
-                ResponsiveText(
+                const ResponsiveSizedBox(width: AppSpacing.m),
+                Text(
                   'Instructions',
                   style: AppTextStyles.titleSmall(context),
                 ),
               ],
             ),
-            ResponsiveSizedBox(height: AppSpacing.l),
+            const ResponsiveSizedBox(height: AppSpacing.l),
             Divider(
               color: AppColors.getDivider(context).withValues(alpha: 0.2),
               height: 1,
             ),
-            ResponsiveSizedBox(height: AppSpacing.l),
-            ResponsiveText(
+            const ResponsiveSizedBox(height: AppSpacing.l),
+            Text(
               instructions,
               style: AppTextStyles.bodyMedium(context).copyWith(
                 color: AppColors.getTextSecondary(context),
                 height: 1.6,
               ),
             ),
-            ResponsiveSizedBox(height: AppSpacing.l),
+            const ResponsiveSizedBox(height: AppSpacing.l),
             Divider(
               color: AppColors.getDivider(context).withValues(alpha: 0.2),
               height: 1,
             ),
-            ResponsiveSizedBox(height: AppSpacing.l),
-            ResponsiveText(
+            const ResponsiveSizedBox(height: AppSpacing.l),
+            Text(
               'Important Notes:',
               style: AppTextStyles.labelMedium(context).copyWith(
                 fontWeight: FontWeight.w600,
               ),
             ),
-            ResponsiveSizedBox(height: AppSpacing.s),
+            const ResponsiveSizedBox(height: AppSpacing.s),
             _buildNoteItem(
               'Make sure the account holder name matches the bank/mobile account',
             ),
@@ -1430,14 +1262,14 @@ class _PaymentScreenState extends State<PaymentScreen>
       padding: EdgeInsets.only(
         bottom: ResponsiveValues.spacingS(context),
       ),
-      child: ResponsiveRow(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Icon(Icons.circle_rounded,
               size: 6, color: AppColors.telegramBlue),
-          ResponsiveSizedBox(width: AppSpacing.s),
+          const ResponsiveSizedBox(width: AppSpacing.s),
           Expanded(
-            child: ResponsiveText(
+            child: Text(
               text,
               style: AppTextStyles.bodySmall(context).copyWith(
                 color: AppColors.getTextSecondary(context),
@@ -1456,43 +1288,10 @@ class _PaymentScreenState extends State<PaymentScreen>
       body: Center(
         child: Padding(
           padding: ResponsiveValues.dialogPadding(context),
-          child: ResponsiveColumn(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: ResponsiveValues.dialogPadding(context),
-                decoration: BoxDecoration(
-                  color: AppColors.telegramRed.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.error_outline_rounded,
-                    size: 64, color: AppColors.telegramRed),
-              ),
-              ResponsiveSizedBox(height: AppSpacing.xxl),
-              ResponsiveText(
-                'Payment Error',
-                style: AppTextStyles.headlineMedium(context).copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              ResponsiveSizedBox(height: AppSpacing.l),
-              ResponsiveText(
-                _errorMessage,
-                style: AppTextStyles.bodyLarge(context).copyWith(
-                  color: AppColors.getTextSecondary(context),
-                ),
-                textAlign: TextAlign.center,
-              ),
-              ResponsiveSizedBox(height: AppSpacing.xxl),
-              SizedBox(
-                width: ResponsiveValues.spacingXXXL(context) * 5,
-                child: _buildGradientButton(
-                  label: 'Go Back',
-                  onPressed: () => GoRouter.of(context).pop(),
-                  gradient: AppColors.blueGradient,
-                ),
-              ),
-            ],
+          child: AppEmptyState.error(
+            title: 'Payment Error',
+            message: _errorMessage,
+            onRetry: () => GoRouter.of(context).pop(),
           ),
         ),
       ),
@@ -1503,68 +1302,17 @@ class _PaymentScreenState extends State<PaymentScreen>
     return Center(
       child: Padding(
         padding: ResponsiveValues.dialogPadding(context),
-        child: ResponsiveColumn(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: ResponsiveValues.dialogPadding(context),
-              decoration: BoxDecoration(
-                color: AppColors.telegramYellow.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.payment_outlined,
-                  size: 64, color: AppColors.telegramYellow),
-            ),
-            ResponsiveSizedBox(height: AppSpacing.xxl),
-            ResponsiveText(
-              'No Payment Methods',
-              style: AppTextStyles.headlineSmall(context).copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            ResponsiveSizedBox(height: AppSpacing.l),
-            ResponsiveText(
+        child: AppEmptyState.noData(
+          dataType: 'payment methods',
+          customMessage:
               'Payment methods are not available.\nPlease try again or contact support.',
-              style: AppTextStyles.bodyLarge(context).copyWith(
-                color: AppColors.getTextSecondary(context),
-              ),
-              textAlign: TextAlign.center,
-            ),
-            ResponsiveSizedBox(height: AppSpacing.xxl),
-            ResponsiveRow(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _buildGradientButton(
-                  label: 'Retry',
-                  onPressed: () {
-                    setState(() {
-                      _settingsLoadAttempted = false;
-                      _isLoadingMethods = true;
-                    });
-                    _loadPaymentMethods();
-                  },
-                  gradient: AppColors.blueGradient,
-                ),
-                ResponsiveSizedBox(width: AppSpacing.l),
-                OutlinedButton(
-                  onPressed: () => GoRouter.of(context).pop(),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.getTextPrimary(context),
-                    side: BorderSide(
-                      color: AppColors.getTextSecondary(context),
-                    ),
-                    padding: ResponsiveValues.buttonPadding(context),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(
-                        ResponsiveValues.radiusMedium(context),
-                      ),
-                    ),
-                  ),
-                  child: const Text('Go Back'),
-                ),
-              ],
-            ),
-          ],
+          onRefresh: () {
+            setState(() {
+              _settingsLoadAttempted = false;
+              _isLoadingMethods = true;
+            });
+            _loadPaymentMethods();
+          },
         ),
       ),
     );
@@ -1574,51 +1322,10 @@ class _PaymentScreenState extends State<PaymentScreen>
     return Center(
       child: Padding(
         padding: ResponsiveValues.dialogPadding(context),
-        child: ResponsiveColumn(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: ResponsiveValues.dialogPadding(context),
-              decoration: BoxDecoration(
-                color: AppColors.telegramYellow.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.wifi_off_rounded,
-                  size: 64, color: AppColors.telegramYellow),
-            ),
-            ResponsiveSizedBox(height: AppSpacing.xxl),
-            ResponsiveText(
-              'No Payment Methods Available',
-              style: AppTextStyles.headlineSmall(context).copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            ResponsiveSizedBox(height: AppSpacing.l),
-            ResponsiveText(
-              'You are offline and no cached payment methods are available.\nPlease connect to the internet and try again.',
-              style: AppTextStyles.bodyLarge(context).copyWith(
-                color: AppColors.getTextSecondary(context),
-              ),
-              textAlign: TextAlign.center,
-            ),
-            ResponsiveSizedBox(height: AppSpacing.xxl),
-            OutlinedButton(
-              onPressed: () => GoRouter.of(context).pop(),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.getTextPrimary(context),
-                side: BorderSide(
-                  color: AppColors.getTextSecondary(context),
-                ),
-                padding: ResponsiveValues.buttonPadding(context),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(
-                    ResponsiveValues.radiusMedium(context),
-                  ),
-                ),
-              ),
-              child: const Text('Go Back'),
-            ),
-          ],
+        child: AppEmptyState.offline(
+          message:
+              'No cached payment methods are available.\nPlease connect to the internet and try again.',
+          onRetry: () => GoRouter.of(context).pop(),
         ),
       ),
     );
@@ -1636,15 +1343,15 @@ class _PaymentScreenState extends State<PaymentScreen>
       body: SingleChildScrollView(
         child: Padding(
           padding: ResponsiveValues.screenPadding(context),
-          child: ResponsiveColumn(
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildPaymentSummary(),
-              ResponsiveSizedBox(height: AppSpacing.xl),
+              const ResponsiveSizedBox(height: AppSpacing.xl),
               _buildPaymentForm(methods),
-              ResponsiveSizedBox(height: AppSpacing.xl),
+              const ResponsiveSizedBox(height: AppSpacing.xl),
               _buildPaymentInstructions(),
-              ResponsiveSizedBox(height: AppSpacing.xxl),
+              const ResponsiveSizedBox(height: AppSpacing.xxl),
             ],
           ),
         ),
@@ -1656,8 +1363,9 @@ class _PaymentScreenState extends State<PaymentScreen>
       BuildContext context, List<PaymentMethod> methods) {
     if (_hasError) return _buildErrorState();
     if (_isLoadingMethods) return Center(child: _buildSkeletonLoader());
-    if (methods.isEmpty && _isOffline)
+    if (methods.isEmpty && _isOffline) {
       return Center(child: _buildOfflineNoMethodsState());
+    }
     if (methods.isEmpty) return Center(child: _buildNoMethodsState());
 
     return Scaffold(
@@ -1669,24 +1377,24 @@ class _PaymentScreenState extends State<PaymentScreen>
           child: SingleChildScrollView(
             child: Padding(
               padding: ResponsiveValues.dialogPadding(context),
-              child: ResponsiveColumn(
+              child: Column(
                 children: [
                   _buildPaymentSummary(),
-                  ResponsiveSizedBox(height: AppSpacing.xxxl),
-                  ResponsiveRow(
+                  const ResponsiveSizedBox(height: AppSpacing.xxxl),
+                  Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
                         flex: 2,
                         child: _buildPaymentForm(methods),
                       ),
-                      ResponsiveSizedBox(width: AppSpacing.xxxl),
+                      const ResponsiveSizedBox(width: AppSpacing.xxxl),
                       Expanded(
                         child: _buildPaymentInstructions(),
                       ),
                     ],
                   ),
-                  ResponsiveSizedBox(height: AppSpacing.xxxl),
+                  const ResponsiveSizedBox(height: AppSpacing.xxxl),
                 ],
               ),
             ),
@@ -1715,7 +1423,7 @@ class _PaymentScreenState extends State<PaymentScreen>
         backgroundColor: AppColors.getBackground(context),
         appBar: _buildAppBar(context),
         body: Center(
-          child: ResponsiveColumn(
+          child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               SizedBox(
@@ -1727,8 +1435,8 @@ class _PaymentScreenState extends State<PaymentScreen>
                       AlwaysStoppedAnimation<Color>(AppColors.telegramBlue),
                 ),
               ),
-              ResponsiveSizedBox(height: AppSpacing.l),
-              ResponsiveText(
+              const ResponsiveSizedBox(height: AppSpacing.l),
+              Text(
                 'Loading payment details...',
                 style: AppTextStyles.bodyMedium(context).copyWith(
                   color: AppColors.getTextSecondary(context),

@@ -1,22 +1,24 @@
 import 'dart:async';
-import 'dart:ui';
-import 'package:familyacademyclient/providers/auth_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:familyacademyclient/models/notification_model.dart'
-    as AppNotification;
-import 'package:familyacademyclient/services/user_session.dart';
-import 'package:familyacademyclient/utils/responsive.dart';
-import 'package:familyacademyclient/utils/responsive_values.dart';
-import 'package:shimmer/shimmer.dart';
+
+import '../../models/notification_model.dart' as AppNotification;
+import '../../providers/auth_provider.dart';
 import '../../providers/notification_provider.dart';
+import '../../services/connectivity_service.dart';
+import '../../services/snackbar_service.dart';
+import '../../widgets/common/app_card.dart';
+import '../../widgets/common/app_button.dart';
+import '../../widgets/common/app_shimmer.dart';
+import '../../widgets/common/app_empty_state.dart';
+import '../../widgets/common/app_dialog.dart';
 import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
-import '../../utils/helpers.dart';
-import '../../widgets/common/empty_state.dart';
+import '../../utils/responsive.dart';
+import '../../utils/responsive_values.dart';
 import '../../widgets/common/responsive_widgets.dart';
 
 class NotificationsScreen extends StatefulWidget {
@@ -41,6 +43,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
   String? _currentUserId;
 
   late AnimationController _fabAnimationController;
+  StreamSubscription? _connectivitySubscription;
 
   @override
   void initState() {
@@ -79,19 +82,28 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         }
       }
     });
+
+    _setupConnectivityListener();
+  }
+
+  void _setupConnectivityListener() {
+    final connectivityService = context.read<ConnectivityService>();
+    _connectivitySubscription =
+        connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (mounted) {
+        setState(() => _isOffline = !isOnline);
+      }
+    });
   }
 
   Future<void> _getCurrentUserId() async {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final authProvider = context.read<AuthProvider>();
     _currentUserId = authProvider.currentUser?.id.toString();
   }
 
   Future<void> _checkConnectivity() async {
-    final hasConnection = await hasInternetConnection();
-    if (!hasConnection) {
-      setState(() => _isOffline = true);
-      showOfflineMessage(context);
-    }
+    final connectivityService = context.read<ConnectivityService>();
+    setState(() => _isOffline = !connectivityService.isOnline);
   }
 
   @override
@@ -100,35 +112,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     _scrollController.dispose();
     _scrollTimer?.cancel();
     _fabAnimationController.dispose();
+    _connectivitySubscription?.cancel();
     super.dispose();
-  }
-
-  Widget _buildGlassContainer({required Widget child}) {
-    return ClipRRect(
-      borderRadius:
-          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.getCard(context).withValues(alpha: 0.4),
-                AppColors.getCard(context).withValues(alpha: 0.2),
-              ],
-            ),
-            borderRadius:
-                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-            border: Border.all(
-              color: AppColors.telegramBlue.withValues(alpha: 0.2),
-            ),
-          ),
-          child: child,
-        ),
-      ),
-    );
   }
 
   Widget _buildGradientButton({
@@ -137,53 +122,10 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     required List<Color> gradient,
     IconData? icon,
   }) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(colors: gradient),
-        borderRadius:
-            BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-        boxShadow: [
-          BoxShadow(
-            color: gradient.first.withValues(alpha: 0.3),
-            blurRadius: ResponsiveValues.spacingS(context),
-            offset: Offset(0, ResponsiveValues.spacingXS(context)),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onPressed,
-          borderRadius:
-              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-          child: Container(
-            padding: EdgeInsets.symmetric(
-              vertical: ResponsiveValues.spacingM(context),
-            ),
-            alignment: Alignment.center,
-            child: ResponsiveRow(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (icon != null) ...[
-                  Icon(
-                    icon,
-                    size: ResponsiveValues.iconSizeS(context),
-                    color: Colors.white,
-                  ),
-                  ResponsiveSizedBox(width: AppSpacing.s),
-                ],
-                ResponsiveText(
-                  label,
-                  style: AppTextStyles.labelLarge(context).copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+    return AppButton.primary(
+      label: label,
+      icon: icon,
+      onPressed: onPressed,
     );
   }
 
@@ -191,15 +133,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: AppBar(
-        title: Shimmer.fromColors(
-          baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-          highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
-          child: Container(
-            width: ResponsiveValues.spacingXXXL(context) * 3,
-            height: ResponsiveValues.spacingXL(context),
-            color: Colors.white,
-          ),
-        ),
+        title: const AppShimmer(type: ShimmerType.textLine, customWidth: 200),
         backgroundColor: AppColors.getBackground(context),
         elevation: 0,
       ),
@@ -210,100 +144,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
           padding: EdgeInsets.only(
             bottom: ResponsiveValues.spacingL(context),
           ),
-          child: _buildGlassContainer(
-            child: Padding(
-              padding: ResponsiveValues.cardPadding(context),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Shimmer.fromColors(
-                    baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                    highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
-                    child: Container(
-                      width: ResponsiveValues.iconSizeXL(context) * 1.5,
-                      height: ResponsiveValues.iconSizeXL(context) * 1.5,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(
-                          ResponsiveValues.radiusMedium(context),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Shimmer.fromColors(
-                          baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                          highlightColor:
-                              Colors.grey[100]!.withValues(alpha: 0.6),
-                          child: Container(
-                            height: 18,
-                            width: double.infinity,
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Shimmer.fromColors(
-                          baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                          highlightColor:
-                              Colors.grey[100]!.withValues(alpha: 0.6),
-                          child: Container(
-                            height: 14,
-                            width: 200,
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Shimmer.fromColors(
-                              baseColor:
-                                  Colors.grey[300]!.withValues(alpha: 0.3),
-                              highlightColor:
-                                  Colors.grey[100]!.withValues(alpha: 0.6),
-                              child: Container(
-                                width: 60,
-                                height: 12,
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                              ),
-                            ),
-                            const Spacer(),
-                            Shimmer.fromColors(
-                              baseColor:
-                                  Colors.grey[300]!.withValues(alpha: 0.3),
-                              highlightColor:
-                                  Colors.grey[100]!.withValues(alpha: 0.6),
-                              child: Container(
-                                width: 40,
-                                height: 20,
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          child: AppShimmer(type: ShimmerType.notificationCard, index: index),
         ),
       ),
     );
@@ -317,7 +158,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
   }
 
   Future<void> _loadNotifications() async {
-    final provider = Provider.of<NotificationProvider>(context, listen: false);
+    final provider = context.read<NotificationProvider>();
     if (_isInitialLoad) {
       setState(() => _isRefreshing = true);
       try {
@@ -338,16 +179,15 @@ class _NotificationsScreenState extends State<NotificationsScreen>
   Future<void> _refreshNotifications() async {
     if (_isRefreshing) return;
 
-    final hasConnection = await hasInternetConnection();
-    if (!hasConnection) {
+    final connectivityService = context.read<ConnectivityService>();
+    if (!connectivityService.isOnline) {
       setState(() => _isOffline = true);
-      showTopSnackBar(context, 'You are offline. Using cached notifications.',
-          isError: true);
+      SnackbarService().showOffline(context);
       return;
     }
 
     setState(() => _isRefreshing = true);
-    final provider = Provider.of<NotificationProvider>(context, listen: false);
+    final provider = context.read<NotificationProvider>();
     try {
       await provider.loadNotifications(forceRefresh: true);
       _page = 1;
@@ -361,11 +201,11 @@ class _NotificationsScreenState extends State<NotificationsScreen>
   Future<void> _loadMoreNotifications() async {
     if (_isLoadingMore || !_hasMore) return;
 
-    final hasConnection = await hasInternetConnection();
-    if (!hasConnection) return;
+    final connectivityService = context.read<ConnectivityService>();
+    if (!connectivityService.isOnline) return;
 
     setState(() => _isLoadingMore = true);
-    final provider = Provider.of<NotificationProvider>(context, listen: false);
+    final provider = context.read<NotificationProvider>();
     try {
       _page++;
     } finally {
@@ -374,43 +214,32 @@ class _NotificationsScreenState extends State<NotificationsScreen>
   }
 
   Future<void> _refreshUnreadCount() async {
-    final provider = Provider.of<NotificationProvider>(context, listen: false);
+    final provider = context.read<NotificationProvider>();
     await provider.refreshUnreadCount();
   }
 
   Future<void> _deleteNotification(AppNotification.Notification notification,
       NotificationProvider provider) async {
     try {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
+      AppDialog.showLoading(context, message: 'Deleting...');
 
       await provider.deleteNotification(notification.logId);
 
-      if (mounted) {
-        Navigator.of(context).pop();
-        showTopSnackBar(context, 'Notification deleted');
-      }
+      AppDialog.hideLoading(context);
+      SnackbarService().showSuccess(context, 'Notification deleted');
     } catch (e) {
-      if (mounted) {
-        Navigator.of(context).pop();
-        showTopSnackBar(context, 'Failed to delete notification',
-            isError: true);
+      AppDialog.hideLoading(context);
+      SnackbarService().showError(context, 'Failed to delete notification');
 
-        final hasConnection = await hasInternetConnection();
-        if (hasConnection) {
-          await provider.loadNotifications(forceRefresh: true);
-        }
+      final connectivityService = context.read<ConnectivityService>();
+      if (connectivityService.isOnline) {
+        await provider.loadNotifications(forceRefresh: true);
       }
     }
   }
 
   Widget _buildMobileNotifications() {
-    final provider = Provider.of<NotificationProvider>(context);
+    final provider = context.watch<NotificationProvider>();
 
     if (_isInitialLoad && provider.isLoading) {
       return _buildSkeletonLoader();
@@ -419,7 +248,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: AppBar(
-        title: ResponsiveText(
+        title: Text(
           'Notifications',
           style: AppTextStyles.appBarTitle(context),
         ),
@@ -427,44 +256,44 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         backgroundColor: AppColors.getBackground(context),
         elevation: 0,
         surfaceTintColor: Colors.transparent,
-        leading: IconButton(
-          icon: ResponsiveIcon(
-            Icons.arrow_back_rounded,
-            color: AppColors.getTextPrimary(context),
-          ),
+        leading: AppButton.icon(
+          icon: Icons.arrow_back_rounded,
           onPressed: () => context.pop(),
         ),
         actions: [
           if (provider.unreadNotifications.isNotEmpty && !_isOffline)
             Container(
               margin: const EdgeInsets.only(right: 4),
-              child: IconButton(
-                icon: const Icon(Icons.mark_email_read_rounded,
-                    color: AppColors.telegramBlue),
+              child: AppButton.icon(
+                icon: Icons.mark_email_read_rounded,
                 onPressed: () => _showMarkAllAsReadDialog(context, provider),
-                tooltip: 'Mark all as read',
               ),
             ),
-          IconButton(
-            icon: _isRefreshing
-                ? SizedBox(
-                    width: ResponsiveValues.iconSizeS(context),
-                    height: ResponsiveValues.iconSizeS(context),
-                    child: const CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor:
-                          AlwaysStoppedAnimation<Color>(AppColors.telegramBlue),
-                    ),
-                  )
-                : ResponsiveIcon(
-                    _isOffline ? Icons.wifi_off_rounded : Icons.refresh_rounded,
-                    color: _isOffline
-                        ? AppColors.telegramGray
-                        : AppColors.telegramBlue,
+          if (_isRefreshing)
+            Container(
+              width: ResponsiveValues.appBarButtonSize(context),
+              height: ResponsiveValues.appBarButtonSize(context),
+              decoration: BoxDecoration(
+                color: AppColors.getSurface(context).withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: SizedBox(
+                  width: ResponsiveValues.iconSizeS(context),
+                  height: ResponsiveValues.iconSizeS(context),
+                  child: const CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor:
+                        AlwaysStoppedAnimation<Color>(AppColors.telegramBlue),
                   ),
-            onPressed: _isRefreshing ? null : _refreshNotifications,
-            tooltip: _isOffline ? 'Offline' : 'Refresh',
-          ),
+                ),
+              ),
+            )
+          else
+            AppButton.icon(
+              icon: _isOffline ? Icons.wifi_off_rounded : Icons.refresh_rounded,
+              onPressed: _isRefreshing ? null : _refreshNotifications,
+            ),
         ],
       ),
       body: _buildNotificationsContent(provider),
@@ -512,10 +341,10 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       return Center(
         child: Padding(
           padding: ResponsiveValues.dialogPadding(context),
-          child: ResponsiveColumn(
+          child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _buildGlassContainer(
+              AppCard.glass(
                 child: Container(
                   padding: ResponsiveValues.dialogPadding(context),
                   decoration: BoxDecoration(
@@ -531,26 +360,25 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                       size: 48, color: AppColors.telegramRed),
                 ),
               ),
-              ResponsiveSizedBox(height: AppSpacing.xl),
-              ResponsiveText(
+              const ResponsiveSizedBox(height: AppSpacing.xl),
+              Text(
                 'Failed to Load',
                 style: AppTextStyles.titleLarge(context),
               ),
-              ResponsiveSizedBox(height: AppSpacing.l),
-              ResponsiveText(
+              const ResponsiveSizedBox(height: AppSpacing.l),
+              Text(
                 provider.error!,
                 style: AppTextStyles.bodyMedium(context).copyWith(
                   color: AppColors.getTextSecondary(context),
                 ),
                 textAlign: TextAlign.center,
               ),
-              ResponsiveSizedBox(height: AppSpacing.xl),
+              const ResponsiveSizedBox(height: AppSpacing.xl),
               if (!_isOffline)
-                _buildGradientButton(
+                AppButton.primary(
                   label: 'Try Again',
-                  onPressed: _refreshNotifications,
-                  gradient: AppColors.blueGradient,
                   icon: Icons.refresh_rounded,
+                  onPressed: _refreshNotifications,
                 ),
             ],
           ),
@@ -561,55 +389,19 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     if (provider.notifications.isEmpty) {
       return Center(
         child: _isOffline
-            ? OfflineState(
-                dataType: 'notifications',
-                message: 'You are offline. No cached notifications available.',
+            ? AppEmptyState.offline(
+                message: 'No cached notifications available.',
                 onRetry: () {
                   setState(() => _isOffline = false);
                   _checkConnectivity();
                   _refreshNotifications();
                 },
               )
-            : ResponsiveColumn(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  _buildGlassContainer(
-                    child: Container(
-                      padding: ResponsiveValues.dialogPadding(context),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            AppColors.telegramGray.withValues(alpha: 0.2),
-                            AppColors.telegramGray.withValues(alpha: 0.1),
-                          ],
-                        ),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.notifications_off_rounded,
-                          size: 48, color: AppColors.telegramGray),
-                    ),
-                  ),
-                  ResponsiveSizedBox(height: AppSpacing.xl),
-                  ResponsiveText(
-                    'No Notifications',
-                    style: AppTextStyles.titleLarge(context),
-                  ),
-                  ResponsiveSizedBox(height: AppSpacing.l),
-                  ResponsiveText(
-                    'You\'ll see notifications here\nwhen you receive them.',
-                    textAlign: TextAlign.center,
-                    style: AppTextStyles.bodyMedium(context).copyWith(
-                      color: AppColors.getTextSecondary(context),
-                    ),
-                  ),
-                  ResponsiveSizedBox(height: AppSpacing.xl),
-                  _buildGradientButton(
-                    label: 'Refresh',
-                    onPressed: _refreshNotifications,
-                    gradient: AppColors.blueGradient,
-                    icon: Icons.refresh_rounded,
-                  ),
-                ],
+            : AppEmptyState.noData(
+                dataType: 'notifications',
+                customMessage:
+                    'You\'ll see notifications here when you receive them.',
+                onRefresh: _refreshNotifications,
               ),
       );
     }
@@ -644,13 +436,13 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                     color: AppColors.telegramYellow.withValues(alpha: 0.3),
                   ),
                 ),
-                child: ResponsiveRow(
+                child: Row(
                   children: [
                     const Icon(Icons.wifi_off_rounded,
                         color: AppColors.telegramYellow, size: 20),
-                    ResponsiveSizedBox(width: AppSpacing.m),
+                    const ResponsiveSizedBox(width: AppSpacing.m),
                     Expanded(
-                      child: ResponsiveText(
+                      child: Text(
                         'Offline mode - showing cached notifications',
                         style: AppTextStyles.bodySmall(context).copyWith(
                           color: AppColors.telegramYellow,
@@ -661,7 +453,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                 ),
               ),
             ),
-          SliverToBoxAdapter(child: ResponsiveSizedBox(height: AppSpacing.s)),
+          const SliverToBoxAdapter(
+              child: ResponsiveSizedBox(height: AppSpacing.s)),
           if (unreadNotifications.isNotEmpty) ...[
             SliverToBoxAdapter(
               child: _buildSectionHeader('Unread', unreadNotifications.length),
@@ -707,7 +500,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                 ),
               ),
             ),
-          SliverToBoxAdapter(
+          const SliverToBoxAdapter(
             child: ResponsiveSizedBox(height: AppSpacing.xxxl),
           ),
         ],
@@ -723,22 +516,22 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         ResponsiveValues.spacingL(context),
         ResponsiveValues.spacingS(context),
       ),
-      child: ResponsiveRow(
+      child: Row(
         children: [
-          ResponsiveText(
+          Text(
             title,
             style: AppTextStyles.labelLarge(context).copyWith(
               color: AppColors.getTextSecondary(context),
             ),
           ),
-          ResponsiveSizedBox(width: AppSpacing.m),
-          _buildGlassContainer(
+          const ResponsiveSizedBox(width: AppSpacing.m),
+          AppCard.glass(
             child: Container(
               padding: EdgeInsets.symmetric(
                 horizontal: ResponsiveValues.spacingS(context),
                 vertical: ResponsiveValues.spacingXXS(context),
               ),
-              child: ResponsiveText(
+              child: Text(
                 count.toString(),
                 style: AppTextStyles.labelSmall(context).copyWith(
                   color: AppColors.telegramBlue,
@@ -769,7 +562,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         ),
         decoration: BoxDecoration(
           gradient: const LinearGradient(
-            colors: [Color(0xFFFF3B30), Color(0xFFE6204A)],
+            colors: AppColors.pinkGradient,
           ),
           borderRadius:
               BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
@@ -785,7 +578,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
           horizontal: ResponsiveValues.spacingL(context),
           vertical: ResponsiveValues.spacingXS(context),
         ),
-        child: _buildGlassContainer(
+        child: AppCard.notification(
+          isUnread: isUnread,
           child: Material(
             color: Colors.transparent,
             child: InkWell(
@@ -814,14 +608,14 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                         ),
                       ),
                       child: Center(
-                        child: ResponsiveIcon(
+                        child: Icon(
                           iconData,
                           size: ResponsiveValues.iconSizeL(context),
                           color: iconColor,
                         ),
                       ),
                     ),
-                    ResponsiveSizedBox(width: AppSpacing.l),
+                    const ResponsiveSizedBox(width: AppSpacing.l),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -971,11 +765,9 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       BuildContext context,
       AppNotification.Notification notification,
       NotificationProvider provider) {
-    showModalBottomSheet(
+    AppDialog.showBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) => _buildNotificationDetails(notification, provider),
+      child: _buildNotificationDetails(notification, provider),
     );
   }
 
@@ -984,242 +776,182 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     final iconData = _getNotificationIcon(notification);
     final iconColor = _getNotificationColor(notification);
 
-    return _buildGlassContainer(
-      child: DraggableScrollableSheet(
-        initialChildSize: 0.9,
-        minChildSize: 0.5,
-        maxChildSize: 0.95,
-        expand: false,
-        builder: (context, scrollController) {
-          return ResponsiveColumn(
-            mainAxisSize: MainAxisSize.min,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: ResponsiveValues.screenPadding(context),
+          child: Row(
             children: [
               Container(
-                width: ResponsiveValues.spacingXXL(context),
-                height: ResponsiveValues.spacingXS(context),
-                margin: EdgeInsets.symmetric(
-                  vertical: ResponsiveValues.spacingL(context),
-                ),
+                width: ResponsiveValues.iconSizeXXL(context) * 1.5,
+                height: ResponsiveValues.iconSizeXXL(context) * 1.5,
                 decoration: BoxDecoration(
-                  color: AppColors.getTextSecondary(context)
-                      .withValues(alpha: 0.2),
+                  gradient: LinearGradient(
+                    colors: [
+                      iconColor.withValues(alpha: 0.2),
+                      iconColor.withValues(alpha: 0.05),
+                    ],
+                  ),
                   borderRadius: BorderRadius.circular(
-                    ResponsiveValues.radiusSmall(context),
+                    ResponsiveValues.radiusMedium(context),
                   ),
                 ),
-              ),
-              Padding(
-                padding: ResponsiveValues.screenPadding(context),
-                child: ResponsiveRow(
-                  children: [
-                    Container(
-                      width: ResponsiveValues.iconSizeXXL(context) * 1.5,
-                      height: ResponsiveValues.iconSizeXXL(context) * 1.5,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            iconColor.withValues(alpha: 0.2),
-                            iconColor.withValues(alpha: 0.05),
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(
-                          ResponsiveValues.radiusMedium(context),
-                        ),
-                      ),
-                      child: ResponsiveIcon(
-                        iconData,
-                        size: ResponsiveValues.iconSizeXL(context),
-                        color: iconColor,
-                      ),
-                    ),
-                    ResponsiveSizedBox(width: AppSpacing.l),
-                    Expanded(
-                      child: ResponsiveColumn(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          ResponsiveText(
-                            notification.title,
-                            style: AppTextStyles.titleLarge(context).copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          ResponsiveSizedBox(height: AppSpacing.xs),
-                          ResponsiveText(
-                            notification.timeAgo,
-                            style: AppTextStyles.bodySmall(context).copyWith(
-                              color: AppColors.getTextSecondary(context),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (!notification.isRead && !_isOffline)
-                      IconButton(
-                        icon: const Icon(Icons.mark_email_read_rounded,
-                            color: AppColors.telegramBlue),
-                        onPressed: () {
-                          provider.markAsRead(notification.logId);
-                          Navigator.pop(context);
-                        },
-                      ),
-                  ],
+                child: Icon(
+                  iconData,
+                  size: ResponsiveValues.iconSizeXL(context),
+                  color: iconColor,
                 ),
               ),
-              Divider(
-                color: AppColors.getDivider(context),
-                height: ResponsiveValues.spacingL(context),
-              ),
+              const ResponsiveSizedBox(width: AppSpacing.l),
               Expanded(
-                child: SingleChildScrollView(
-                  controller: scrollController,
-                  padding: ResponsiveValues.screenPadding(context),
-                  child: ResponsiveText(
-                    notification.message,
-                    style: AppTextStyles.bodyLarge(context).copyWith(
-                      height: 1.6,
-                    ),
-                  ),
-                ),
-              ),
-              Padding(
-                padding: ResponsiveValues.screenPadding(context),
-                child: ResponsiveRow(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.pop(context),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.getTextSecondary(context),
-                          side: BorderSide(
-                            color: AppColors.getTextSecondary(context),
-                          ),
-                          padding: EdgeInsets.symmetric(
-                            vertical: ResponsiveValues.spacingL(context),
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(
-                              ResponsiveValues.radiusMedium(context),
-                            ),
-                          ),
-                        ),
-                        child: const Text('Close'),
+                    Text(
+                      notification.title,
+                      style: AppTextStyles.titleLarge(context).copyWith(
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                    ResponsiveSizedBox(width: AppSpacing.m),
-                    Expanded(
-                      child: _buildGradientButton(
-                        label: 'Delete',
-                        onPressed: () {
-                          Navigator.pop(context);
-                          _deleteNotification(notification, provider);
-                        },
-                        gradient: AppColors.pinkGradient,
-                        icon: Icons.delete_rounded,
+                    const ResponsiveSizedBox(height: AppSpacing.xs),
+                    Text(
+                      notification.timeAgo,
+                      style: AppTextStyles.bodySmall(context).copyWith(
+                        color: AppColors.getTextSecondary(context),
                       ),
                     ),
                   ],
+                ),
+              ),
+              if (!notification.isRead && !_isOffline)
+                AppButton.icon(
+                  icon: Icons.mark_email_read_rounded,
+                  onPressed: () {
+                    provider.markAsRead(notification.logId);
+                    Navigator.pop(context);
+                  },
+                ),
+            ],
+          ),
+        ),
+        Divider(
+          color: AppColors.getDivider(context),
+          height: ResponsiveValues.spacingL(context),
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: ResponsiveValues.screenPadding(context),
+            child: Text(
+              notification.message,
+              style: AppTextStyles.bodyLarge(context).copyWith(
+                height: 1.6,
+              ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: ResponsiveValues.screenPadding(context),
+          child: Row(
+            children: [
+              Expanded(
+                child: AppButton.outline(
+                  label: 'Close',
+                  onPressed: () => Navigator.pop(context),
+                  expanded: true,
+                ),
+              ),
+              const ResponsiveSizedBox(width: AppSpacing.m),
+              Expanded(
+                child: AppButton.danger(
+                  label: 'Delete',
+                  icon: Icons.delete_rounded,
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _deleteNotification(notification, provider);
+                  },
+                  expanded: true,
                 ),
               ),
             ],
-          );
-        },
-      ),
-    ).animate().slideY(
-          begin: 1,
-          end: 0,
-          duration: AppThemes.animationDurationMedium,
-        );
+          ),
+        ),
+      ],
+    );
   }
 
   void _showActionSheet(
       BuildContext context,
       AppNotification.Notification notification,
       NotificationProvider provider) {
-    showModalBottomSheet(
+    AppDialog.showBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _buildGlassContainer(
-        child: ResponsiveColumn(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: ResponsiveValues.spacingXXL(context),
-              height: ResponsiveValues.spacingXS(context),
-              margin: EdgeInsets.symmetric(
-                vertical: ResponsiveValues.spacingL(context),
-              ),
-              decoration: BoxDecoration(
-                color:
-                    AppColors.getTextSecondary(context).withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(
-                  ResponsiveValues.radiusSmall(context),
-                ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: AppCard.glass(
+              child: Container(
+                width: ResponsiveValues.iconSizeXL(context),
+                height: ResponsiveValues.iconSizeXL(context),
+                padding: EdgeInsets.all(ResponsiveValues.spacingS(context)),
+                child: const Icon(Icons.delete_rounded,
+                    color: AppColors.telegramRed),
               ),
             ),
+            title: Text(
+              'Delete',
+              style: AppTextStyles.bodyLarge(context).copyWith(
+                color: AppColors.telegramRed,
+              ),
+            ),
+            onTap: () {
+              Navigator.pop(context);
+              _deleteNotification(notification, provider);
+            },
+          ),
+          if (!notification.isRead && !_isOffline)
             ListTile(
-              leading: _buildGlassContainer(
+              leading: AppCard.glass(
                 child: Container(
                   width: ResponsiveValues.iconSizeXL(context),
                   height: ResponsiveValues.iconSizeXL(context),
                   padding: EdgeInsets.all(ResponsiveValues.spacingS(context)),
-                  child: const Icon(Icons.delete_rounded,
-                      color: AppColors.telegramRed),
+                  child: const Icon(Icons.mark_email_read_rounded,
+                      color: AppColors.telegramBlue),
                 ),
               ),
-              title: ResponsiveText(
-                'Delete',
+              title: Text(
+                'Mark as read',
                 style: AppTextStyles.bodyLarge(context).copyWith(
-                  color: AppColors.telegramRed,
+                  color: AppColors.telegramBlue,
                 ),
               ),
               onTap: () {
+                provider.markAsRead(notification.logId);
                 Navigator.pop(context);
-                _deleteNotification(notification, provider);
               },
             ),
-            if (!notification.isRead && !_isOffline)
-              ListTile(
-                leading: _buildGlassContainer(
-                  child: Container(
-                    width: ResponsiveValues.iconSizeXL(context),
-                    height: ResponsiveValues.iconSizeXL(context),
-                    padding: EdgeInsets.all(ResponsiveValues.spacingS(context)),
-                    child: const Icon(Icons.mark_email_read_rounded,
-                        color: AppColors.telegramBlue),
-                  ),
-                ),
-                title: ResponsiveText(
-                  'Mark as read',
-                  style: AppTextStyles.bodyLarge(context).copyWith(
-                    color: AppColors.telegramBlue,
-                  ),
-                ),
-                onTap: () {
-                  provider.markAsRead(notification.logId);
-                  Navigator.pop(context);
-                },
+          ListTile(
+            leading: AppCard.glass(
+              child: Container(
+                width: ResponsiveValues.iconSizeXL(context),
+                height: ResponsiveValues.iconSizeXL(context),
+                padding: EdgeInsets.all(ResponsiveValues.spacingS(context)),
+                child: Icon(Icons.close_rounded,
+                    color: AppColors.getTextSecondary(context)),
               ),
-            ListTile(
-              leading: _buildGlassContainer(
-                child: Container(
-                  width: ResponsiveValues.iconSizeXL(context),
-                  height: ResponsiveValues.iconSizeXL(context),
-                  padding: EdgeInsets.all(ResponsiveValues.spacingS(context)),
-                  child: Icon(Icons.close_rounded,
-                      color: AppColors.getTextSecondary(context)),
-                ),
-              ),
-              title: ResponsiveText(
-                'Cancel',
-                style: AppTextStyles.bodyLarge(context).copyWith(
-                  color: AppColors.getTextSecondary(context),
-                ),
-              ),
-              onTap: () => Navigator.pop(context),
             ),
-            ResponsiveSizedBox(height: AppSpacing.l),
-          ],
-        ),
+            title: Text(
+              'Cancel',
+              style: AppTextStyles.bodyLarge(context).copyWith(
+                color: AppColors.getTextSecondary(context),
+              ),
+            ),
+            onTap: () => Navigator.pop(context),
+          ),
+          const ResponsiveSizedBox(height: AppSpacing.l),
+        ],
       ),
     );
   }
@@ -1228,83 +960,10 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       BuildContext context,
       AppNotification.Notification notification,
       NotificationProvider provider) async {
-    final result = await showDialog<bool>(
+    final result = await AppDialog.delete(
       context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: _buildGlassContainer(
-          child: Padding(
-            padding: ResponsiveValues.dialogPadding(context),
-            child: ResponsiveColumn(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: ResponsiveValues.iconSizeXL(context) * 1.5,
-                  height: ResponsiveValues.iconSizeXL(context) * 1.5,
-                  padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        AppColors.telegramRed.withValues(alpha: 0.2),
-                        AppColors.telegramRed.withValues(alpha: 0.1),
-                      ],
-                    ),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.delete_rounded,
-                      color: AppColors.telegramRed, size: 32),
-                ),
-                ResponsiveSizedBox(height: AppSpacing.l),
-                ResponsiveText(
-                  'Delete notification',
-                  style: AppTextStyles.titleLarge(context).copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                ResponsiveSizedBox(height: AppSpacing.m),
-                ResponsiveText(
-                  'Are you sure you want to delete this notification?',
-                  style: AppTextStyles.bodyMedium(context).copyWith(
-                    color: AppColors.getTextSecondary(context),
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                ResponsiveSizedBox(height: AppSpacing.xl),
-                ResponsiveRow(
-                  children: [
-                    Expanded(
-                      child: TextButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        style: TextButton.styleFrom(
-                          foregroundColor: AppColors.getTextSecondary(context),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(
-                              ResponsiveValues.radiusMedium(context),
-                            ),
-                          ),
-                          padding: EdgeInsets.symmetric(
-                            vertical: ResponsiveValues.spacingM(context),
-                          ),
-                        ),
-                        child: const Text('Cancel'),
-                      ),
-                    ),
-                    ResponsiveSizedBox(width: AppSpacing.m),
-                    Expanded(
-                      child: _buildGradientButton(
-                        label: 'Delete',
-                        onPressed: () => Navigator.pop(context, true),
-                        gradient: AppColors.pinkGradient,
-                        icon: Icons.delete_rounded,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+      title: 'Delete notification',
+      message: 'Are you sure you want to delete this notification?',
     );
 
     if (result == true) {
@@ -1315,89 +974,18 @@ class _NotificationsScreenState extends State<NotificationsScreen>
 
   void _showMarkAllAsReadDialog(
       BuildContext context, NotificationProvider provider) {
-    showDialog(
+    AppDialog.confirm(
       context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: _buildGlassContainer(
-          child: Padding(
-            padding: ResponsiveValues.dialogPadding(context),
-            child: ResponsiveColumn(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: ResponsiveValues.iconSizeXL(context) * 1.5,
-                  height: ResponsiveValues.iconSizeXL(context) * 1.5,
-                  padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        AppColors.telegramBlue.withValues(alpha: 0.2),
-                        AppColors.telegramPurple.withValues(alpha: 0.1),
-                      ],
-                    ),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.mark_email_read_rounded,
-                      color: AppColors.telegramBlue, size: 32),
-                ),
-                ResponsiveSizedBox(height: AppSpacing.l),
-                ResponsiveText(
-                  'Mark all as read',
-                  style: AppTextStyles.titleLarge(context).copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                ResponsiveSizedBox(height: AppSpacing.m),
-                ResponsiveText(
-                  'Mark all notifications as read?',
-                  style: AppTextStyles.bodyMedium(context).copyWith(
-                    color: AppColors.getTextSecondary(context),
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                ResponsiveSizedBox(height: AppSpacing.xl),
-                ResponsiveRow(
-                  children: [
-                    Expanded(
-                      child: TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        style: TextButton.styleFrom(
-                          foregroundColor: AppColors.getTextSecondary(context),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(
-                              ResponsiveValues.radiusMedium(context),
-                            ),
-                          ),
-                          padding: EdgeInsets.symmetric(
-                            vertical: ResponsiveValues.spacingM(context),
-                          ),
-                        ),
-                        child: const Text('Cancel'),
-                      ),
-                    ),
-                    ResponsiveSizedBox(width: AppSpacing.m),
-                    Expanded(
-                      child: _buildGradientButton(
-                        label: 'Mark all',
-                        onPressed: () {
-                          provider.markAllAsRead();
-                          Navigator.pop(context);
-                          showTopSnackBar(
-                              context, 'All notifications marked as read');
-                        },
-                        gradient: AppColors.blueGradient,
-                        icon: Icons.mark_email_read_rounded,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+      title: 'Mark all as read',
+      message: 'Mark all notifications as read?',
+      confirmText: 'Mark all',
+    ).then((confirmed) {
+      if (confirmed == true) {
+        provider.markAllAsRead();
+        SnackbarService()
+            .showSuccess(context, 'All notifications marked as read');
+      }
+    });
   }
 
   @override

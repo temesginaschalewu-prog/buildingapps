@@ -28,6 +28,7 @@ import 'package:familyacademyclient/services/device_service.dart';
 import 'package:familyacademyclient/services/storage_service.dart';
 import 'package:familyacademyclient/services/notification_service.dart';
 import 'package:familyacademyclient/services/user_session.dart';
+import 'package:familyacademyclient/services/connectivity_service.dart';
 import 'package:familyacademyclient/utils/helpers.dart';
 import 'package:familyacademyclient/utils/screen_protection.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -116,24 +117,18 @@ void _syncProviders(BuildContext context) {
 
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
-    // 🔵 FIX: Update logout callback
     authProvider.registerOnLogoutCallback(() async {
-      // Prepare for logout
       await UserSession().prepareForLogout();
 
-      // Get current user before logout
       final currentUserId = await UserSession().getCurrentUserId();
       final lastUserId = await UserSession().getLastUserId();
 
-      // Only clear provider data if different user
       if (lastUserId != null && lastUserId != currentUserId) {
         debugLog('Main', '🔄 Different user logout - clearing provider data');
 
-        // Clear all provider data for old user
         categoryProvider.clearUserData();
         subscriptionProvider.clearUserData();
 
-        // Get other providers and clear them
         Provider.of<CourseProvider>(context, listen: false).clearUserData();
         Provider.of<ChapterProvider>(context, listen: false).clearUserData();
         Provider.of<ExamProvider>(context, listen: false).clearUserData();
@@ -156,7 +151,6 @@ void _syncProviders(BuildContext context) {
         debugLog('Main', '✅ Same user logout - preserving all provider data');
       }
 
-      // Complete logout
       await UserSession().completeLogout();
     });
 
@@ -262,22 +256,27 @@ void _showDeviceDeactivatedDialog(BuildContext context, String message) {
   );
 }
 
+void _initializeMediaKit() {
+  try {
+    media_kit.MediaKit.ensureInitialized();
+    debugLog('Main', '✅ MediaKit initialized successfully');
+  } catch (e) {
+    debugLog('Main', '❌ MediaKit init error: $e - will use fallback players');
+  }
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  try {
-    media_kit.MediaKit.ensureInitialized();
+  _initializeMediaKit();
 
-    if (Platform.isAndroid) {
-      await SystemChrome.setPreferredOrientations([
-        DeviceOrientation.portraitUp,
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
-    }
-    debugLog('Main', 'MediaKit initialized successfully');
-  } catch (e) {
-    debugLog('Main', 'MediaKit init error: $e');
+  if (Platform.isAndroid || Platform.isIOS) {
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
   }
 
   try {
@@ -311,13 +310,6 @@ Future<void> main() async {
       systemNavigationBarColor: Colors.transparent,
       systemNavigationBarDividerColor: Colors.transparent,
     ));
-  } else {
-    try {
-      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
-          overlays: []);
-    } catch (e) {
-      debugLog('Main', 'System UI mode error: $e');
-    }
   }
 
   final notificationService = NotificationService();
@@ -334,22 +326,14 @@ Future<void> main() async {
       final currentSettings = await messaging.getNotificationSettings();
       if (currentSettings.authorizationStatus ==
           AuthorizationStatus.notDetermined) {
-        await messaging.requestPermission(
-          alert: true,
-          announcement: false,
-          badge: true,
-          carPlay: false,
-          criticalAlert: false,
-          provisional: false,
-          sound: true,
-        );
+        await messaging.requestPermission();
       }
 
       final token = await messaging.getToken();
       final prefs = await SharedPreferences.getInstance();
       if (token != null) {
         await prefs.setString('fcm_token', token);
-        debugLog('Main', 'FCM token saved: ${token.substring(0, 20)}...');
+        debugLog('Main', 'FCM token saved');
       }
     } catch (e) {
       debugLog('Main', 'Firebase init error: $e');
@@ -382,15 +366,21 @@ Future<void> main() async {
     debugLog('Main', 'Device service init error: $e');
   }
 
-  // Initialize UserSession
   try {
     await UserSession().init();
   } catch (e) {
     debugLog('Main', 'UserSession init error: $e');
   }
 
-  final apiService = ApiService();
+  final connectivityService = ConnectivityService();
+  try {
+    await connectivityService.initialize();
+    debugLog('Main', 'ConnectivityService initialized');
+  } catch (e) {
+    debugLog('Main', 'ConnectivityService init error: $e');
+  }
 
+  final apiService = ApiService();
   notificationService.apiService = apiService;
 
   final appLifecycleObserver = AppLifecycleObserver();
@@ -403,6 +393,7 @@ Future<void> main() async {
         Provider<DeviceService>.value(value: deviceService),
         Provider<ApiService>.value(value: apiService),
         Provider<NotificationService>.value(value: notificationService),
+        Provider<ConnectivityService>.value(value: connectivityService),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(
           create: (context) => AuthProvider(

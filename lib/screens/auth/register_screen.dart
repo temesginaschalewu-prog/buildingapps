@@ -1,23 +1,25 @@
 import 'dart:io';
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:familyacademyclient/providers/auth_provider.dart';
-import 'package:familyacademyclient/services/user_session.dart';
-import 'package:familyacademyclient/utils/responsive.dart';
-import 'package:familyacademyclient/utils/responsive_values.dart';
-import 'package:familyacademyclient/utils/helpers.dart';
-import 'package:familyacademyclient/services/device_service.dart';
-import 'package:familyacademyclient/services/notification_service.dart';
-import 'package:familyacademyclient/themes/app_colors.dart';
-import 'package:familyacademyclient/themes/app_text_styles.dart';
-import 'package:familyacademyclient/utils/router.dart';
-import 'package:familyacademyclient/widgets/common/empty_state.dart';
-import 'package:familyacademyclient/widgets/auth/auth_form_field.dart';
-import 'package:familyacademyclient/widgets/auth/password_field.dart';
-import 'package:familyacademyclient/widgets/common/responsive_widgets.dart';
+
+import '../../providers/auth_provider.dart';
+import '../../services/device_service.dart';
+import '../../services/notification_service.dart';
+import '../../services/connectivity_service.dart';
+import '../../services/snackbar_service.dart';
+import '../../widgets/common/app_button.dart';
+import '../../widgets/common/app_card.dart';
+import '../../widgets/common/app_text_field.dart';
+import '../../widgets/common/app_empty_state.dart';
+import '../../utils/responsive.dart';
+import '../../utils/responsive_values.dart';
+import '../../utils/helpers.dart';
+import '../../utils/router.dart';
+import '../../themes/app_colors.dart';
+import '../../themes/app_text_styles.dart';
+import '../../widgets/common/responsive_widgets.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -77,98 +79,10 @@ class _RegisterScreenState extends State<RegisterScreen>
   }
 
   Future<void> _checkConnectivity() async {
-    final hasConnection = await hasInternetConnection();
-    if (!hasConnection) {
+    final connectivityService = context.read<ConnectivityService>();
+    if (!connectivityService.isOnline) {
       setState(() => _isOffline = true);
-      showOfflineMessage(context);
     }
-  }
-
-  Widget _buildGlassContainer({required Widget child}) {
-    return ClipRRect(
-      borderRadius:
-          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.getCard(context).withValues(alpha: 0.4),
-                AppColors.getCard(context).withValues(alpha: 0.2),
-              ],
-            ),
-            borderRadius:
-                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-            border: Border.all(
-              color: AppColors.telegramBlue.withValues(alpha: 0.2),
-            ),
-          ),
-          child: child,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGlassButton({
-    required String label,
-    required VoidCallback onPressed,
-    required List<Color> gradient,
-    bool isLoading = false,
-    bool isEnabled = true,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: isEnabled ? LinearGradient(colors: gradient) : null,
-        color: isEnabled
-            ? null
-            : AppColors.getTextSecondary(context).withValues(alpha: 0.2),
-        borderRadius:
-            BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-        boxShadow: isEnabled
-            ? [
-                BoxShadow(
-                  color: gradient.first.withValues(alpha: 0.3),
-                  blurRadius: ResponsiveValues.spacingS(context),
-                  offset: Offset(0, ResponsiveValues.spacingXS(context)),
-                ),
-              ]
-            : null,
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: isEnabled ? onPressed : null,
-          borderRadius:
-              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-          child: Container(
-            padding: EdgeInsets.symmetric(
-              vertical: ResponsiveValues.spacingL(context),
-            ),
-            alignment: Alignment.center,
-            child: isLoading
-                ? SizedBox(
-                    width: ResponsiveValues.iconSizeM(context),
-                    height: ResponsiveValues.iconSizeM(context),
-                    child: const CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation(Colors.white),
-                    ),
-                  )
-                : ResponsiveText(
-                    label,
-                    style: AppTextStyles.buttonLarge(context).copyWith(
-                      color: isEnabled
-                          ? Colors.white
-                          : AppColors.getTextSecondary(context),
-                    ),
-                  ),
-          ),
-        ),
-      ),
-    );
   }
 
   Future<void> _initializeDeviceAndServices() async {
@@ -177,7 +91,7 @@ class _RegisterScreenState extends State<RegisterScreen>
     if (_mounted) setState(() {});
 
     try {
-      _deviceService = Provider.of<DeviceService>(context, listen: false);
+      _deviceService = context.read<DeviceService>();
       await _deviceService!.init();
 
       final deviceId = await _deviceService!.getDeviceId();
@@ -199,10 +113,9 @@ class _RegisterScreenState extends State<RegisterScreen>
       if (_mounted) {
         setState(() => _isInitializing = false);
         if (Platform.isAndroid || Platform.isIOS) {
-          showTopSnackBar(
+          SnackbarService().showError(
             context,
             'Service initialization failed. Please restart the app.',
-            isError: true,
           );
         }
       }
@@ -233,29 +146,24 @@ class _RegisterScreenState extends State<RegisterScreen>
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final hasConnection = await hasInternetConnection();
-    if (!hasConnection) {
-      showTopSnackBar(
-        context,
-        'You are offline. Please check your internet connection.',
-        isError: true,
-      );
+    final connectivityService = context.read<ConnectivityService>();
+    if (!connectivityService.isOnline) {
+      SnackbarService().showOffline(context, action: 'register');
       setState(() => _isOffline = true);
       return;
     }
 
     if (_deviceId == null || _deviceId!.isEmpty) {
-      showTopSnackBar(
+      SnackbarService().showError(
         context,
         'Device not ready. Please restart the app.',
-        isError: true,
       );
       return;
     }
 
     if (_mounted) setState(() => _isLoading = true);
 
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final authProvider = context.read<AuthProvider>();
     final username = _usernameController.text.trim();
     final password = _passwordController.text;
 
@@ -275,7 +183,7 @@ class _RegisterScreenState extends State<RegisterScreen>
       );
 
       if (result['success'] == true && _mounted) {
-        showTopSnackBar(context, 'Registration successful!');
+        SnackbarService().showSuccess(context, 'Registration successful!');
         await Future.delayed(const Duration(milliseconds: 100));
 
         if (_mounted) {
@@ -290,15 +198,14 @@ class _RegisterScreenState extends State<RegisterScreen>
           }
         }
       } else if (_mounted) {
-        showTopSnackBar(
+        SnackbarService().showError(
           context,
           result['message'] ?? 'Registration failed',
-          isError: true,
         );
       }
     } catch (e) {
       if (_mounted) {
-        showTopSnackBar(context, formatErrorMessage(e), isError: true);
+        SnackbarService().showError(context, formatErrorMessage(e));
       }
     } finally {
       if (_mounted) setState(() => _isLoading = false);
@@ -319,12 +226,13 @@ class _RegisterScreenState extends State<RegisterScreen>
             height: ResponsiveValues.avatarSizeLarge(context),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: AppColors.blueGradient,
+                colors: AppColors.telegramGradient,
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
-              borderRadius:
-                  BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
+              borderRadius: BorderRadius.circular(
+                ResponsiveValues.radiusLarge(context),
+              ),
               boxShadow: [
                 BoxShadow(
                   color: AppColors.telegramBlue.withValues(alpha: 0.3),
@@ -361,40 +269,14 @@ class _RegisterScreenState extends State<RegisterScreen>
   }
 
   Widget _buildUsernameField() {
-    return _buildGlassContainer(
-      child: TextFormField(
-        controller: _usernameController,
-        decoration: InputDecoration(
-          hintText: 'Username',
-          hintStyle: AppTextStyles.bodyMedium(context).copyWith(
-            color: AppColors.getTextSecondary(context),
-          ),
-          border: InputBorder.none,
-          contentPadding: ResponsiveValues.listItemPadding(context),
-          prefixIcon: ResponsiveIcon(
-            Icons.person_outline_rounded,
-            size: ResponsiveValues.iconSizeS(context),
-            color: AppColors.getTextSecondary(context),
-          ),
-          suffixIcon: _usernameController.text.isNotEmpty
-              ? IconButton(
-                  icon: ResponsiveIcon(
-                    Icons.clear_rounded,
-                    size: ResponsiveValues.iconSizeS(context),
-                    color: AppColors.getTextSecondary(context),
-                  ),
-                  onPressed: () {
-                    _usernameController.clear();
-                    setState(() {});
-                  },
-                )
-              : null,
-        ),
-        style: AppTextStyles.bodyLarge(context),
-        validator: _validateUsername,
-        onChanged: (value) => setState(() {}),
-        enabled: !_isLoading,
-      ),
+    return AppTextField(
+      controller: _usernameController,
+      label: 'Username',
+      hint: 'Choose a username',
+      prefixIcon: Icons.person_outline_rounded,
+      enabled: !_isLoading,
+      validator: _validateUsername,
+      onChanged: (_) => setState(() {}),
     ).animate().fadeIn(duration: 300.ms, delay: 100.ms).slideX(
           begin: -0.1,
           end: 0,
@@ -404,43 +286,12 @@ class _RegisterScreenState extends State<RegisterScreen>
   }
 
   Widget _buildPasswordField() {
-    bool obscureText = true;
-
-    return StatefulBuilder(
-      builder: (context, setState) {
-        return _buildGlassContainer(
-          child: TextFormField(
-            controller: _passwordController,
-            obscureText: obscureText,
-            decoration: InputDecoration(
-              hintText: 'Password',
-              hintStyle: AppTextStyles.bodyMedium(context).copyWith(
-                color: AppColors.getTextSecondary(context),
-              ),
-              border: InputBorder.none,
-              contentPadding: ResponsiveValues.listItemPadding(context),
-              prefixIcon: ResponsiveIcon(
-                Icons.lock_outline_rounded,
-                size: ResponsiveValues.iconSizeS(context),
-                color: AppColors.getTextSecondary(context),
-              ),
-              suffixIcon: IconButton(
-                icon: ResponsiveIcon(
-                  obscureText
-                      ? Icons.visibility_off_rounded
-                      : Icons.visibility_rounded,
-                  size: ResponsiveValues.iconSizeS(context),
-                  color: AppColors.getTextSecondary(context),
-                ),
-                onPressed: () => setState(() => obscureText = !obscureText),
-              ),
-            ),
-            style: AppTextStyles.bodyLarge(context),
-            validator: _validatePassword,
-            enabled: !_isLoading,
-          ),
-        );
-      },
+    return AppTextField.password(
+      controller: _passwordController,
+      label: 'Password',
+      hint: 'Create a password',
+      enabled: !_isLoading,
+      validator: _validatePassword,
     ).animate().fadeIn(duration: 300.ms, delay: 200.ms).slideX(
           begin: -0.1,
           end: 0,
@@ -450,43 +301,12 @@ class _RegisterScreenState extends State<RegisterScreen>
   }
 
   Widget _buildConfirmPasswordField() {
-    bool obscureText = true;
-
-    return StatefulBuilder(
-      builder: (context, setState) {
-        return _buildGlassContainer(
-          child: TextFormField(
-            controller: _confirmPasswordController,
-            obscureText: obscureText,
-            decoration: InputDecoration(
-              hintText: 'Confirm Password',
-              hintStyle: AppTextStyles.bodyMedium(context).copyWith(
-                color: AppColors.getTextSecondary(context),
-              ),
-              border: InputBorder.none,
-              contentPadding: ResponsiveValues.listItemPadding(context),
-              prefixIcon: ResponsiveIcon(
-                Icons.lock_outline_rounded,
-                size: ResponsiveValues.iconSizeS(context),
-                color: AppColors.getTextSecondary(context),
-              ),
-              suffixIcon: IconButton(
-                icon: ResponsiveIcon(
-                  obscureText
-                      ? Icons.visibility_off_rounded
-                      : Icons.visibility_rounded,
-                  size: ResponsiveValues.iconSizeS(context),
-                  color: AppColors.getTextSecondary(context),
-                ),
-                onPressed: () => setState(() => obscureText = !obscureText),
-              ),
-            ),
-            style: AppTextStyles.bodyLarge(context),
-            validator: _validateConfirmPassword,
-            enabled: !_isLoading,
-          ),
-        );
-      },
+    return AppTextField.password(
+      controller: _confirmPasswordController,
+      label: 'Confirm Password',
+      hint: 'Re-enter your password',
+      enabled: !_isLoading,
+      validator: _validateConfirmPassword,
     ).animate().fadeIn(duration: 300.ms, delay: 300.ms).slideX(
           begin: -0.1,
           end: 0,
@@ -497,8 +317,7 @@ class _RegisterScreenState extends State<RegisterScreen>
 
   Widget _buildFormContent() {
     if (_isOffline) {
-      return OfflineState(
-        dataType: 'registration',
+      return AppEmptyState.offline(
         message: 'You are offline. Please connect to create an account.',
         onRetry: () {
           setState(() => _isOffline = false);
@@ -520,14 +339,13 @@ class _RegisterScreenState extends State<RegisterScreen>
           const ResponsiveSizedBox(height: AppSpacing.l),
           _buildConfirmPasswordField(),
           const ResponsiveSizedBox(height: AppSpacing.xxl),
-          _buildGlassButton(
+          AppButton.primary(
             label: _deviceId == null
                 ? 'Initializing...'
                 : (_isLoading ? 'Creating Account...' : 'Create Account'),
-            onPressed: _register,
-            gradient: const [Color(0xFF2AABEE), Color(0xFF5856D6)],
+            onPressed: _deviceId == null || _isLoading ? null : _register,
             isLoading: _isLoading,
-            isEnabled: !_isLoading && _deviceId != null,
+            expanded: true,
           ).animate().scale(
                 duration: 300.ms,
                 curve: Curves.easeOut,
@@ -571,7 +389,9 @@ class _RegisterScreenState extends State<RegisterScreen>
       body: SafeArea(
         child: SingleChildScrollView(
           padding: ResponsiveValues.screenPadding(context),
-          child: _buildFormContent(),
+          child: AppCard.glass(
+            child: _buildFormContent(),
+          ),
         ),
       ),
     );
@@ -584,13 +404,10 @@ class _RegisterScreenState extends State<RegisterScreen>
         child: Center(
           child: SingleChildScrollView(
             padding: ResponsiveValues.screenPadding(context),
-            child: ResponsiveContainer(
-              maxWidth: 500,
-              child: _buildGlassContainer(
-                child: Padding(
-                  padding: ResponsiveValues.dialogPadding(context),
-                  child: _buildFormContent(),
-                ),
+            child: AppCard.glass(
+              child: ResponsiveContainer(
+                maxWidth: 500,
+                child: _buildFormContent(),
               ),
             ),
           ),
@@ -613,7 +430,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                     padding: ResponsiveValues.dialogPadding(context),
                     decoration: const BoxDecoration(
                       gradient: LinearGradient(
-                        colors: AppColors.blueGradient,
+                        colors: AppColors.telegramGradient,
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
@@ -673,7 +490,9 @@ class _RegisterScreenState extends State<RegisterScreen>
                     ),
                     child: SingleChildScrollView(
                       padding: ResponsiveValues.dialogPadding(context),
-                      child: _buildFormContent(),
+                      child: AppCard.glass(
+                        child: _buildFormContent(),
+                      ),
                     ),
                   ),
                 ),

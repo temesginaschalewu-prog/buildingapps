@@ -1,24 +1,25 @@
 import 'dart:async';
-import 'dart:ui';
 import 'package:familyacademyclient/providers/subscription_provider.dart';
-import 'package:familyacademyclient/widgets/common/app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shimmer/shimmer.dart';
-import 'package:familyacademyclient/providers/auth_provider.dart';
-import 'package:familyacademyclient/providers/streak_provider.dart';
-import 'package:familyacademyclient/providers/exam_provider.dart';
-import 'package:familyacademyclient/providers/progress_provider.dart';
-import 'package:familyacademyclient/providers/category_provider.dart';
-import 'package:familyacademyclient/providers/notification_provider.dart';
-import 'package:familyacademyclient/utils/responsive.dart';
-import 'package:familyacademyclient/utils/responsive_values.dart';
-import 'package:familyacademyclient/themes/app_colors.dart';
-import 'package:familyacademyclient/themes/app_text_styles.dart';
-import '../../utils/helpers.dart';
+
+import '../../providers/auth_provider.dart';
+import '../../providers/streak_provider.dart';
+import '../../providers/exam_provider.dart';
+import '../../providers/progress_provider.dart';
+import '../../providers/category_provider.dart';
+import '../../providers/notification_provider.dart';
+import '../../services/connectivity_service.dart';
+import '../../services/snackbar_service.dart';
+import '../../widgets/common/app_bar.dart';
+import '../../widgets/common/app_card.dart';
+import '../../widgets/common/app_shimmer.dart';
+import '../../widgets/common/app_empty_state.dart';
 import '../../widgets/progress/achievement_badge.dart';
-import '../../widgets/common/empty_state.dart';
-import '../../widgets/common/responsive_widgets.dart';
+import '../../utils/responsive.dart';
+import '../../utils/responsive_values.dart';
+import '../../themes/app_colors.dart';
+import '../../themes/app_text_styles.dart';
 
 class ProgressScreen extends StatefulWidget {
   const ProgressScreen({super.key});
@@ -36,6 +37,7 @@ class _ProgressScreenState extends State<ProgressScreen>
   StreamSubscription? _statsSubscription;
   StreamSubscription? _streakSubscription;
   StreamSubscription? _authSubscription;
+  StreamSubscription? _connectivitySubscription;
   bool _isInitialLoad = true;
   bool _hasInitialData = false;
   bool _isOffline = false;
@@ -57,10 +59,10 @@ class _ProgressScreenState extends State<ProgressScreen>
     WidgetsBinding.instance.addObserver(this);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _getCurrentUserId();
       _checkConnectivity();
       _initializeData();
       _setupStreamListeners();
+      _setupConnectivityListener();
       _checkSubscriptionAccess();
     });
 
@@ -69,93 +71,6 @@ class _ProgressScreenState extends State<ProgressScreen>
         _refreshDataInBackground();
       }
     });
-  }
-
-  Future<void> _getCurrentUserId() async {
-    Provider.of<AuthProvider>(context, listen: false);
-  }
-
-  Future<void> _checkConnectivity() async {
-    final hasConnection = await hasInternetConnection();
-    if (!hasConnection) {
-      setState(() => _isOffline = true);
-      showOfflineMessage(context);
-    }
-  }
-
-  Widget _buildGlassContainer({required Widget child}) {
-    return ClipRRect(
-      borderRadius:
-          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.getCard(context).withValues(alpha: 0.4),
-                AppColors.getCard(context).withValues(alpha: 0.2),
-              ],
-            ),
-            borderRadius:
-                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-            border: Border.all(
-              color: AppColors.telegramBlue.withValues(alpha: 0.2),
-            ),
-          ),
-          child: child,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatShimmer() {
-    return _buildGlassContainer(
-      child: Container(
-        width: ResponsiveValues.iconSizeXXL(context),
-        height: ResponsiveValues.iconSizeXXL(context),
-        padding: EdgeInsets.all(ResponsiveValues.spacingS(context)),
-        child: Shimmer.fromColors(
-          baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-          highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
-          child: Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _loadNotifications() async {
-    try {
-      final notificationProvider =
-          Provider.of<NotificationProvider>(context, listen: false);
-      await notificationProvider.loadNotifications();
-    } catch (e) {}
-  }
-
-  Future<void> _checkSubscriptionAccess() async {
-    try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final user = authProvider.currentUser;
-
-      if (user != null && user.accountStatus != 'active') {
-        final subscriptionProvider =
-            Provider.of<SubscriptionProvider>(context, listen: false);
-        await subscriptionProvider.loadSubscriptions();
-
-        if (subscriptionProvider.activeSubscriptions.isNotEmpty) {
-          final updatedUser = user.copyWith(accountStatus: 'active');
-          await authProvider.updateUser(updatedUser);
-          if (mounted) setState(() {});
-        }
-      }
-    } catch (e) {}
   }
 
   @override
@@ -167,15 +82,32 @@ class _ProgressScreenState extends State<ProgressScreen>
     _statsSubscription?.cancel();
     _streakSubscription?.cancel();
     _authSubscription?.cancel();
+    _connectivitySubscription?.cancel();
     super.dispose();
+  }
+
+  Future<void> _checkConnectivity() async {
+    final connectivityService = context.read<ConnectivityService>();
+    setState(() => _isOffline = !connectivityService.isOnline);
+  }
+
+  void _setupConnectivityListener() {
+    final connectivityService = context.read<ConnectivityService>();
+    _connectivitySubscription =
+        connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (mounted) {
+        setState(() => _isOffline = !isOnline);
+        if (isOnline && !_isRefreshing) {
+          _refreshDataInBackground();
+        }
+      }
+    });
   }
 
   void _setupStreamListeners() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final progressProvider =
-          Provider.of<ProgressProvider>(context, listen: false);
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      Provider.of<StreakProvider>(context, listen: false);
+      final progressProvider = context.read<ProgressProvider>();
+      final authProvider = context.read<AuthProvider>();
 
       _progressSubscription =
           progressProvider.progressUpdates.listen((progress) {
@@ -217,13 +149,10 @@ class _ProgressScreenState extends State<ProgressScreen>
 
   Future<void> _initializeData() async {
     try {
-      final streakProvider =
-          Provider.of<StreakProvider>(context, listen: false);
-      final examProvider = Provider.of<ExamProvider>(context, listen: false);
-      final progressProvider =
-          Provider.of<ProgressProvider>(context, listen: false);
-      final categoryProvider =
-          Provider.of<CategoryProvider>(context, listen: false);
+      final streakProvider = context.read<StreakProvider>();
+      final examProvider = context.read<ExamProvider>();
+      final progressProvider = context.read<ProgressProvider>();
+      final categoryProvider = context.read<CategoryProvider>();
 
       await Future.wait([
         streakProvider.loadStreak(),
@@ -251,8 +180,7 @@ class _ProgressScreenState extends State<ProgressScreen>
         setState(() {
           _isInitialLoad = false;
 
-          final progressProvider =
-              Provider.of<ProgressProvider>(context, listen: false);
+          final progressProvider = context.read<ProgressProvider>();
           if (progressProvider.hasLoadedOverall ||
               progressProvider.hasLoadedProgress) {
             _isOffline = true;
@@ -273,11 +201,9 @@ class _ProgressScreenState extends State<ProgressScreen>
     _isRefreshing = true;
 
     try {
-      final streakProvider =
-          Provider.of<StreakProvider>(context, listen: false);
-      final examProvider = Provider.of<ExamProvider>(context, listen: false);
-      final progressProvider =
-          Provider.of<ProgressProvider>(context, listen: false);
+      final streakProvider = context.read<StreakProvider>();
+      final examProvider = context.read<ExamProvider>();
+      final progressProvider = context.read<ProgressProvider>();
 
       await Future.wait([
         streakProvider.loadStreak(forceRefresh: true),
@@ -301,22 +227,19 @@ class _ProgressScreenState extends State<ProgressScreen>
   Future<void> _manualRefresh() async {
     if (_isRefreshing) return;
 
-    final hasConnection = await hasInternetConnection();
-    if (!hasConnection) {
+    final connectivityService = context.read<ConnectivityService>();
+    if (!connectivityService.isOnline) {
       setState(() => _isOffline = true);
-      showTopSnackBar(context, 'You are offline. Using cached data.',
-          isError: true);
+      SnackbarService().showOffline(context);
       return;
     }
 
     setState(() => _isRefreshing = true);
 
     try {
-      final streakProvider =
-          Provider.of<StreakProvider>(context, listen: false);
-      final examProvider = Provider.of<ExamProvider>(context, listen: false);
-      final progressProvider =
-          Provider.of<ProgressProvider>(context, listen: false);
+      final streakProvider = context.read<StreakProvider>();
+      final examProvider = context.read<ExamProvider>();
+      final progressProvider = context.read<ProgressProvider>();
 
       await Future.wait([
         streakProvider.loadStreak(forceRefresh: true),
@@ -333,18 +256,55 @@ class _ProgressScreenState extends State<ProgressScreen>
           _updateLoadingStates(progressProvider);
           _isOffline = false;
         });
-        showTopSnackBar(context, 'Progress refreshed');
+        SnackbarService().showSuccess(context, 'Progress refreshed');
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isOffline = true);
-        showTopSnackBar(
-            context, 'Failed to refresh progress. Using cached data.',
-            isError: true);
+        SnackbarService().showError(
+          context,
+          'Failed to refresh progress. Using cached data.',
+        );
       }
     } finally {
       if (mounted) setState(() => _isRefreshing = false);
     }
+  }
+
+  Future<void> _loadNotifications() async {
+    try {
+      final notificationProvider = context.read<NotificationProvider>();
+      await notificationProvider.loadNotifications();
+    } catch (e) {}
+  }
+
+  Future<void> _checkSubscriptionAccess() async {
+    try {
+      final authProvider = context.read<AuthProvider>();
+      final user = authProvider.currentUser;
+
+      if (user != null && user.accountStatus != 'active') {
+        final subscriptionProvider = context.read<SubscriptionProvider>();
+        await subscriptionProvider.loadSubscriptions();
+
+        if (subscriptionProvider.activeSubscriptions.isNotEmpty) {
+          final updatedUser = user.copyWith(accountStatus: 'active');
+          await authProvider.updateUser(updatedUser);
+          if (mounted) setState(() {});
+        }
+      }
+    } catch (e) {}
+  }
+
+  Widget _buildStatShimmer() {
+    return AppCard.glass(
+      child: Container(
+        width: ResponsiveValues.statCircleSize(context),
+        height: ResponsiveValues.statCircleSize(context),
+        padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
+        child: const AppShimmer(type: ShimmerType.circle),
+      ),
+    );
   }
 
   Widget _buildStatCircle({
@@ -356,7 +316,7 @@ class _ProgressScreenState extends State<ProgressScreen>
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _buildGlassContainer(
+        AppCard.glass(
           child: Container(
             width: ResponsiveValues.statCircleSize(context),
             height: ResponsiveValues.statCircleSize(context),
@@ -364,12 +324,12 @@ class _ProgressScreenState extends State<ProgressScreen>
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                ResponsiveIcon(
+                Icon(
                   icon,
                   size: ResponsiveValues.iconSizeS(context),
                   color: color,
                 ),
-                ResponsiveSizedBox(height: AppSpacing.xs),
+                SizedBox(height: ResponsiveValues.spacingXS(context)),
                 Text(
                   value,
                   style: AppTextStyles.titleMedium(context).copyWith(
@@ -380,7 +340,7 @@ class _ProgressScreenState extends State<ProgressScreen>
             ),
           ),
         ),
-        ResponsiveSizedBox(height: AppSpacing.s),
+        SizedBox(height: ResponsiveValues.spacingS(context)),
         Text(
           label,
           style: AppTextStyles.labelSmall(context).copyWith(
@@ -398,59 +358,45 @@ class _ProgressScreenState extends State<ProgressScreen>
     required bool isLoading,
   }) {
     if (isLoading && !_hasInitialData) {
-      return _buildGlassContainer(
-        child: Container(
-          width: double.infinity,
-          padding: EdgeInsets.symmetric(
-            vertical: ResponsiveValues.spacingXL(context),
-            horizontal: ResponsiveValues.spacingL(context),
-          ),
-          child: Wrap(
-            alignment: WrapAlignment.spaceEvenly,
-            runSpacing: ResponsiveValues.spacingL(context),
-            spacing: ResponsiveValues.spacingL(context),
-            children: List.generate(3, (index) => _buildStatShimmer()),
-          ),
-        ),
-      );
-    }
-
-    return _buildGlassContainer(
-      child: Container(
-        width: double.infinity,
-        padding: EdgeInsets.symmetric(
-          vertical: ResponsiveValues.spacingXL(context),
-          horizontal: ResponsiveValues.spacingL(context),
-        ),
+      return AppCard.stats(
         child: Wrap(
           alignment: WrapAlignment.spaceEvenly,
           runSpacing: ResponsiveValues.spacingL(context),
           spacing: ResponsiveValues.spacingL(context),
-          children: [
-            _buildStatCircle(
-              value: streakCount.toString(),
-              label: 'Day Streak',
-              color: AppColors.telegramBlue,
-              icon: Icons.local_fire_department_rounded,
-            ),
-            _buildStatCircle(
-              value: chaptersCompleted.toString(),
-              label: 'Chapters',
-              color: AppColors.telegramGreen,
-              icon: Icons.book_rounded,
-            ),
-            _buildStatCircle(
-              value: '${totalAccuracy.toStringAsFixed(0)}%',
-              label: 'Accuracy',
-              color: totalAccuracy >= 70
-                  ? AppColors.telegramGreen
-                  : totalAccuracy >= 40
-                      ? AppColors.telegramYellow
-                      : AppColors.telegramRed,
-              icon: Icons.auto_graph_rounded,
-            ),
-          ],
+          children: List.generate(3, (index) => _buildStatShimmer()),
         ),
+      );
+    }
+
+    return AppCard.stats(
+      child: Wrap(
+        alignment: WrapAlignment.spaceEvenly,
+        runSpacing: ResponsiveValues.spacingL(context),
+        spacing: ResponsiveValues.spacingL(context),
+        children: [
+          _buildStatCircle(
+            value: streakCount.toString(),
+            label: 'Day Streak',
+            color: AppColors.telegramBlue,
+            icon: Icons.local_fire_department_rounded,
+          ),
+          _buildStatCircle(
+            value: chaptersCompleted.toString(),
+            label: 'Chapters',
+            color: AppColors.telegramGreen,
+            icon: Icons.book_rounded,
+          ),
+          _buildStatCircle(
+            value: '${totalAccuracy.toStringAsFixed(0)}%',
+            label: 'Accuracy',
+            color: totalAccuracy >= 70
+                ? AppColors.telegramGreen
+                : totalAccuracy >= 40
+                    ? AppColors.telegramYellow
+                    : AppColors.telegramRed,
+            icon: Icons.auto_graph_rounded,
+          ),
+        ],
       ),
     );
   }
@@ -467,22 +413,14 @@ class _ProgressScreenState extends State<ProgressScreen>
         : 0.0;
 
     if (isLoading && !_hasInitialData) {
-      return _buildGlassContainer(
+      return AppCard.glass(
         child: Padding(
           padding: ResponsiveValues.cardPadding(context),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Shimmer.fromColors(
-                baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
-                child: Container(
-                  width: ResponsiveValues.spacingXXXL(context) * 4,
-                  height: ResponsiveValues.spacingXL(context),
-                  color: Colors.white,
-                ),
-              ),
-              ResponsiveSizedBox(height: AppSpacing.l),
+              const AppShimmer(type: ShimmerType.textLine, customWidth: 200),
+              SizedBox(height: ResponsiveValues.spacingL(context)),
               ...List.generate(
                 2,
                 (index) => Padding(
@@ -491,41 +429,24 @@ class _ProgressScreenState extends State<ProgressScreen>
                   ),
                   child: Column(
                     children: [
-                      Row(
+                      const Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Shimmer.fromColors(
-                            baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                            highlightColor:
-                                Colors.grey[100]!.withValues(alpha: 0.6),
-                            child: Container(
-                              width: ResponsiveValues.spacingXXXL(context) * 2,
-                              height: ResponsiveValues.spacingL(context),
-                              color: Colors.white,
-                            ),
+                          AppShimmer(
+                            type: ShimmerType.textLine,
+                            customWidth: 120,
                           ),
-                          Shimmer.fromColors(
-                            baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                            highlightColor:
-                                Colors.grey[100]!.withValues(alpha: 0.6),
-                            child: Container(
-                              width: ResponsiveValues.spacingXXXL(context),
-                              height: ResponsiveValues.spacingL(context),
-                              color: Colors.white,
-                            ),
+                          AppShimmer(
+                            type: ShimmerType.textLine,
+                            customWidth: 60,
                           ),
                         ],
                       ),
-                      ResponsiveSizedBox(height: AppSpacing.s),
-                      Shimmer.fromColors(
-                        baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                        highlightColor:
-                            Colors.grey[100]!.withValues(alpha: 0.6),
-                        child: Container(
-                          width: double.infinity,
-                          height: ResponsiveValues.spacingS(context),
-                          color: Colors.white,
-                        ),
+                      SizedBox(height: ResponsiveValues.spacingS(context)),
+                      AppShimmer(
+                        type: ShimmerType.rectangle,
+                        customHeight:
+                            ResponsiveValues.progressBarHeight(context),
                       ),
                     ],
                   ),
@@ -546,8 +467,8 @@ class _ProgressScreenState extends State<ProgressScreen>
             fontWeight: FontWeight.w700,
           ),
         ),
-        ResponsiveSizedBox(height: AppSpacing.l),
-        _buildGlassContainer(
+        SizedBox(height: ResponsiveValues.spacingL(context)),
+        AppCard.glass(
           child: Padding(
             padding: ResponsiveValues.cardPadding(context),
             child: Column(
@@ -562,7 +483,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                           ? AppColors.telegramBlue
                           : AppColors.telegramYellow,
                 ),
-                ResponsiveSizedBox(height: AppSpacing.xl),
+                SizedBox(height: ResponsiveValues.spacingXL(context)),
                 _buildProgressItem(
                   title: 'Question Accuracy',
                   value: '${totalAccuracy.toStringAsFixed(1)}% correct',
@@ -573,7 +494,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                           ? AppColors.telegramBlue
                           : AppColors.telegramYellow,
                 ),
-                ResponsiveSizedBox(height: AppSpacing.xl),
+                SizedBox(height: ResponsiveValues.spacingXL(context)),
                 Row(
                   children: [
                     Expanded(
@@ -586,7 +507,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                          ResponsiveSizedBox(height: AppSpacing.xs),
+                          SizedBox(height: ResponsiveValues.spacingXS(context)),
                           Text(
                             '${studyTimeHours.toStringAsFixed(1)} hours',
                             style: AppTextStyles.bodyMedium(context).copyWith(
@@ -610,7 +531,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                         ),
                       ),
                       child: Center(
-                        child: ResponsiveIcon(
+                        child: Icon(
                           Icons.timer_rounded,
                           size: ResponsiveValues.iconSizeL(context),
                           color: Colors.white,
@@ -649,7 +570,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  ResponsiveSizedBox(height: AppSpacing.xxs),
+                  SizedBox(height: ResponsiveValues.spacingXXS(context)),
                   Text(
                     value,
                     style: AppTextStyles.bodySmall(context).copyWith(
@@ -659,7 +580,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                 ],
               ),
             ),
-            ResponsiveSizedBox(width: AppSpacing.s),
+            SizedBox(width: ResponsiveValues.spacingS(context)),
             Text(
               '${percentage.toStringAsFixed(1)}%',
               style: AppTextStyles.titleMedium(context).copyWith(
@@ -669,7 +590,7 @@ class _ProgressScreenState extends State<ProgressScreen>
             ),
           ],
         ),
-        ResponsiveSizedBox(height: AppSpacing.s),
+        SizedBox(height: ResponsiveValues.spacingS(context)),
         ClipRRect(
           borderRadius: BorderRadius.circular(
             ResponsiveValues.radiusSmall(context),
@@ -688,21 +609,13 @@ class _ProgressScreenState extends State<ProgressScreen>
 
   Widget _buildExamPerformanceSection(List examResults, bool isLoading) {
     if (isLoading && !_hasInitialData) {
-      return _buildGlassContainer(
+      return AppCard.glass(
         child: Padding(
           padding: ResponsiveValues.cardPadding(context),
           child: Column(
             children: [
-              Shimmer.fromColors(
-                baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
-                child: Container(
-                  width: ResponsiveValues.spacingXXXL(context) * 3,
-                  height: ResponsiveValues.spacingXL(context),
-                  color: Colors.white,
-                ),
-              ),
-              ResponsiveSizedBox(height: AppSpacing.l),
+              const AppShimmer(type: ShimmerType.textLine, customWidth: 150),
+              SizedBox(height: ResponsiveValues.spacingL(context)),
               ...List.generate(
                 2,
                 (index) => Container(
@@ -710,18 +623,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                     bottom: ResponsiveValues.spacingM(context),
                   ),
                   height: ResponsiveValues.spacingXXL(context) * 2,
-                  child: Shimmer.fromColors(
-                    baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                    highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(
-                          ResponsiveValues.radiusMedium(context),
-                        ),
-                      ),
-                    ),
-                  ),
+                  child: const AppShimmer(type: ShimmerType.rectangle),
                 ),
               ),
             ],
@@ -756,8 +658,8 @@ class _ProgressScreenState extends State<ProgressScreen>
             fontWeight: FontWeight.w700,
           ),
         ),
-        ResponsiveSizedBox(height: AppSpacing.l),
-        _buildGlassContainer(
+        SizedBox(height: ResponsiveValues.spacingL(context)),
+        AppCard.glass(
           child: Padding(
             padding: ResponsiveValues.cardPadding(context),
             child: Column(
@@ -766,13 +668,13 @@ class _ProgressScreenState extends State<ProgressScreen>
                   Center(
                     child: Column(
                       children: [
-                        ResponsiveIcon(
+                        Icon(
                           Icons.quiz_outlined,
                           size: ResponsiveValues.iconSizeXXL(context),
                           color: AppColors.getTextSecondary(context)
                               .withValues(alpha: 0.3),
                         ),
-                        ResponsiveSizedBox(height: AppSpacing.m),
+                        SizedBox(height: ResponsiveValues.spacingM(context)),
                         Text(
                           _isOffline
                               ? 'No cached exam results'
@@ -781,7 +683,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                             color: AppColors.getTextSecondary(context),
                           ),
                         ),
-                        ResponsiveSizedBox(height: AppSpacing.xs),
+                        SizedBox(height: ResponsiveValues.spacingXS(context)),
                         Text(
                           _isOffline
                               ? 'Connect to view exam results'
@@ -824,7 +726,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                       ),
                     ],
                   ),
-                  ResponsiveSizedBox(height: AppSpacing.xl),
+                  SizedBox(height: ResponsiveValues.spacingXL(context)),
                   ...List.generate(
                     examResults.length > 3 ? 3 : examResults.length,
                     (index) {
@@ -882,14 +784,14 @@ class _ProgressScreenState extends State<ProgressScreen>
               ),
             ),
             child: Center(
-              child: ResponsiveIcon(
+              child: Icon(
                 icon,
                 size: ResponsiveValues.iconSizeS(context),
                 color: color,
               ),
             ),
           ),
-          ResponsiveSizedBox(height: AppSpacing.s),
+          SizedBox(height: ResponsiveValues.spacingS(context)),
           Text(
             value,
             style: AppTextStyles.titleSmall(context).copyWith(
@@ -914,7 +816,7 @@ class _ProgressScreenState extends State<ProgressScreen>
     final passed = exam.passed == true;
     final examType = (exam.examType?.toString() ?? 'GENERAL').toUpperCase();
 
-    return _buildGlassContainer(
+    return AppCard.glass(
       child: Container(
         padding: ResponsiveValues.cardPadding(context),
         child: Row(
@@ -939,7 +841,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                 ),
               ),
               child: Center(
-                child: ResponsiveIcon(
+                child: Icon(
                   passed ? Icons.check_rounded : Icons.close_rounded,
                   size: ResponsiveValues.iconSizeS(context),
                   color:
@@ -947,7 +849,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                 ),
               ),
             ),
-            ResponsiveSizedBox(width: AppSpacing.m),
+            SizedBox(width: ResponsiveValues.spacingM(context)),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -960,7 +862,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  ResponsiveSizedBox(height: AppSpacing.xs),
+                  SizedBox(height: ResponsiveValues.spacingXS(context)),
                   Row(
                     children: [
                       Expanded(
@@ -1012,7 +914,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                 ],
               ),
             ),
-            ResponsiveSizedBox(width: AppSpacing.s),
+            SizedBox(width: ResponsiveValues.spacingS(context)),
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
@@ -1038,22 +940,14 @@ class _ProgressScreenState extends State<ProgressScreen>
 
   Widget _buildAchievementsSection(List achievements, bool isLoading) {
     if (isLoading && !_hasInitialData) {
-      return _buildGlassContainer(
+      return AppCard.glass(
         child: Padding(
           padding: ResponsiveValues.cardPadding(context),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Shimmer.fromColors(
-                baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
-                child: Container(
-                  width: ResponsiveValues.spacingXXXL(context) * 3,
-                  height: ResponsiveValues.spacingXL(context),
-                  color: Colors.white,
-                ),
-              ),
-              ResponsiveSizedBox(height: AppSpacing.l),
+              const AppShimmer(type: ShimmerType.textLine, customWidth: 150),
+              SizedBox(height: ResponsiveValues.spacingL(context)),
               GridView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
@@ -1064,17 +958,8 @@ class _ProgressScreenState extends State<ProgressScreen>
                   childAspectRatio: 0.9,
                 ),
                 itemCount: 6,
-                itemBuilder: (context, index) => Shimmer.fromColors(
-                  baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                  highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(
-                        ResponsiveValues.radiusMedium(context),
-                      ),
-                    ),
-                  ),
+                itemBuilder: (context, index) => const AppShimmer(
+                  type: ShimmerType.rectangle,
                 ),
               ),
             ],
@@ -1096,8 +981,8 @@ class _ProgressScreenState extends State<ProgressScreen>
             fontWeight: FontWeight.w700,
           ),
         ),
-        ResponsiveSizedBox(height: AppSpacing.l),
-        _buildGlassContainer(
+        SizedBox(height: ResponsiveValues.spacingL(context)),
+        AppCard.glass(
           child: Padding(
             padding: ResponsiveValues.cardPadding(context),
             child: GridView.builder(
@@ -1190,12 +1075,12 @@ class _ProgressScreenState extends State<ProgressScreen>
             examResults.isEmpty) {
           return Scaffold(
             backgroundColor: AppColors.getBackground(context),
-            appBar: CustomAppBar(
+            appBar: const CustomAppBar(
               title: 'Progress',
               subtitle: 'Offline Mode',
             ),
             body: Center(
-              child: OfflineState(
+              child: AppEmptyState.offline(
                 dataType: 'progress',
                 message: 'You are offline. Connect to view your progress.',
                 onRetry: () {
@@ -1239,7 +1124,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                         isLoading: progressProvider.isLoadingOverall &&
                             !_hasInitialData,
                       ),
-                      ResponsiveSizedBox(height: AppSpacing.xl),
+                      SizedBox(height: ResponsiveValues.spacingXL(context)),
                       _buildOverviewSection(
                         totalChaptersAttempted: totalChaptersAttempted,
                         chaptersCompleted: chaptersCompleted,
@@ -1248,18 +1133,18 @@ class _ProgressScreenState extends State<ProgressScreen>
                         isLoading: progressProvider.isLoadingOverall &&
                             !_hasInitialData,
                       ),
-                      ResponsiveSizedBox(height: AppSpacing.xl),
+                      SizedBox(height: ResponsiveValues.spacingXL(context)),
                       _buildExamPerformanceSection(
                         examResults,
                         progressProvider.isLoadingOverall && !_hasInitialData,
                       ),
-                      ResponsiveSizedBox(height: AppSpacing.xl),
+                      SizedBox(height: ResponsiveValues.spacingXL(context)),
                       if (achievements.isNotEmpty)
                         _buildAchievementsSection(
                           achievements,
                           progressProvider.isLoadingOverall && !_hasInitialData,
                         ),
-                      ResponsiveSizedBox(height: AppSpacing.xxl),
+                      SizedBox(height: ResponsiveValues.spacingXXL(context)),
                     ]),
                   ),
                 ),

@@ -20,6 +20,7 @@ import 'package:familyacademyclient/models/school_model.dart';
 import 'package:familyacademyclient/models/setting_model.dart';
 import 'package:familyacademyclient/models/subscription_model.dart';
 import 'package:familyacademyclient/models/user_model.dart';
+import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/utils/constants.dart' show AppConstants;
 import 'package:familyacademyclient/utils/helpers.dart';
 
@@ -98,7 +99,9 @@ class ApiService {
             final expiryTime = DateTime.fromMillisecondsSinceEpoch(exp * 1000);
             final minutesUntilExpiry =
                 expiryTime.difference(DateTime.now()).inMinutes;
-            if (minutesUntilExpiry < 5) await _refreshAccessToken();
+
+            if (minutesUntilExpiry < AppConstants.tokenRefreshThresholdMinutes)
+              await _refreshAccessToken();
           }
         }
       } catch (e) {
@@ -275,7 +278,7 @@ class ApiService {
       if (refreshToken == null) return false;
 
       final response = await _dio.post(
-        '/auth/refresh-token',
+        AppConstants.refreshTokenEndpoint,
         data: {'refreshToken': refreshToken},
       );
 
@@ -340,7 +343,6 @@ class ApiService {
         return ApiResponse<Map<String, dynamic>>(
           success: false,
           message: 'Network error. Please check your internet connection.',
-          data: null,
         );
       }
       throw ApiError(
@@ -371,7 +373,6 @@ class ApiService {
         return ApiResponse<Map<String, dynamic>>(
           success: false,
           message: 'Network error. Please check your internet connection.',
-          data: null,
         );
       }
       throw ApiError(
@@ -446,7 +447,6 @@ class ApiService {
         return ApiResponse<Map<String, dynamic>>(
           success: false,
           message: 'Network error. Please check your internet connection.',
-          data: null,
         );
       }
       if (e.response?.statusCode == 403 && e.response?.data is Map) {
@@ -572,7 +572,7 @@ class ApiService {
 
   Future<bool> checkConnectivity() async {
     try {
-      final response = await _dio.get('/health',
+      final response = await _dio.get(AppConstants.healthEndpoint,
           options: Options(
             sendTimeout: const Duration(seconds: 5),
             receiveTimeout: const Duration(seconds: 5),

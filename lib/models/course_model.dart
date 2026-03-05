@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import '../utils/parsers.dart';
 
 class Course {
   final int id;
@@ -25,15 +25,15 @@ class Course {
 
   factory Course.fromJson(Map<String, dynamic> json) {
     return Course(
-      id: json['id'] ?? 0,
-      name: json['name'] ?? '',
-      categoryId: json['category_id'] ?? 0,
-      description: json['description'],
-      chapterCount: json['chapter_count'] ?? 0,
-      access: json['access'],
-      message: json['message'],
-      hasPendingPayment: json['has_pending_payment'] ?? false,
-      requiresPayment: json['requires_payment'] ?? true,
+      id: Parsers.parseInt(json['id']),
+      name: json['name']?.toString() ?? '',
+      categoryId: Parsers.parseInt(json['category_id']),
+      description: json['description']?.toString(),
+      chapterCount: Parsers.parseInt(json['chapter_count']),
+      access: json['access']?.toString(),
+      message: json['message']?.toString(),
+      hasPendingPayment: Parsers.parseBool(json['has_pending_payment']),
+      requiresPayment: Parsers.parseBool(json['requires_payment'], true),
     );
   }
 
@@ -56,47 +56,12 @@ class Course {
 
   bool hasFullAccess(bool hasActiveSubscription) {
     if (access == 'full') return true;
-
     if (hasActiveSubscription) return true;
-
     if (!requiresPayment) return true;
-
     return false;
   }
 
   bool shouldShowLock(bool hasActiveSubscription) {
     return requiresPayment && !hasActiveSubscription;
-  }
-
-  IconData getAccessIcon(bool hasActiveSubscription) {
-    if (hasFullAccess(hasActiveSubscription)) {
-      return Icons.check_circle;
-    } else if (hasPendingPayment) {
-      return Icons.pending;
-    } else {
-      return Icons.lock;
-    }
-  }
-
-  Color getAccessColor(bool hasActiveSubscription) {
-    if (hasFullAccess(hasActiveSubscription)) {
-      return Colors.green;
-    } else if (hasPendingPayment) {
-      return Colors.orange;
-    } else {
-      return Colors.orangeAccent;
-    }
-  }
-
-  String getAccessText(bool hasActiveSubscription) {
-    if (hasFullAccess(hasActiveSubscription)) {
-      return 'Full Access';
-    } else if (hasPendingPayment) {
-      return 'Pending Payment';
-    } else if (!requiresPayment) {
-      return 'Free';
-    } else {
-      return 'Purchase Required';
-    }
   }
 }

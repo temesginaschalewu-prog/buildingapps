@@ -1,25 +1,25 @@
 import 'dart:async';
-import 'dart:ui';
-import 'package:familyacademyclient/themes/app_themes.dart';
-import 'package:familyacademyclient/utils/api_response.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:pull_to_refresh/pull_to_refresh.dart' hide RefreshIndicator;
-import 'package:familyacademyclient/utils/responsive.dart';
-import 'package:familyacademyclient/utils/responsive_values.dart';
-import 'package:familyacademyclient/themes/app_colors.dart';
-import 'package:familyacademyclient/themes/app_text_styles.dart';
-import 'package:shimmer/shimmer.dart';
+
 import '../../providers/category_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../providers/notification_provider.dart';
+import '../../services/connectivity_service.dart';
+import '../../services/snackbar_service.dart';
 import '../../widgets/category/category_card.dart';
-import '../../widgets/common/empty_state.dart';
 import '../../widgets/common/app_bar.dart';
-import '../../utils/helpers.dart';
-import '../../widgets/common/responsive_widgets.dart';
+import '../../widgets/common/app_card.dart';
+import '../../widgets/common/app_shimmer.dart';
+import '../../widgets/common/app_empty_state.dart';
+import '../../utils/responsive.dart';
+import '../../utils/responsive_values.dart';
+import '../../themes/app_colors.dart';
+import '../../themes/app_text_styles.dart';
+import '../../themes/app_themes.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -61,141 +61,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         if (mounted) _setEthiopianTime();
       });
     });
-  }
-
-  Widget _buildGlassContainer({required Widget child}) {
-    return ClipRRect(
-      borderRadius:
-          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.getCard(context).withValues(alpha: 0.4),
-                AppColors.getCard(context).withValues(alpha: 0.2),
-              ],
-            ),
-            borderRadius:
-                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-            border: Border.all(
-              color: AppColors.telegramBlue.withValues(alpha: 0.2),
-            ),
-          ),
-          child: child,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSkeletonGrid() {
-    final columns = ResponsiveValues.gridColumns(context);
-
-    return CustomScrollView(
-      physics: const NeverScrollableScrollPhysics(),
-      slivers: [
-        // App bar is NOT shimmered - shows immediately
-        SliverToBoxAdapter(
-          child: CustomAppBar(
-            title: _greeting,
-            subtitle:
-                _refreshSubtitle.isNotEmpty ? _refreshSubtitle : _ethiopianTime,
-          ),
-        ),
-        SliverPadding(
-          padding: ResponsiveValues.screenPadding(context),
-          sliver: SliverToBoxAdapter(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                _buildGlassContainer(
-                  child: Container(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: ResponsiveValues.spacingM(context),
-                      vertical: ResponsiveValues.spacingXS(context),
-                    ),
-                    child: Row(
-                      children: [
-                        Shimmer.fromColors(
-                          baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                          highlightColor:
-                              Colors.grey[100]!.withValues(alpha: 0.6),
-                          child: Container(
-                            width: ResponsiveValues.iconSizeS(context),
-                            height: ResponsiveValues.iconSizeS(context),
-                            decoration: const BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Shimmer.fromColors(
-                          baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                          highlightColor:
-                              Colors.grey[100]!.withValues(alpha: 0.6),
-                          child: Container(
-                            width: 100,
-                            height: 16,
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                _buildGlassContainer(
-                  child: Container(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: ResponsiveValues.spacingM(context),
-                      vertical: ResponsiveValues.spacingXS(context),
-                    ),
-                    child: Shimmer.fromColors(
-                      baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                      highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
-                      child: Container(
-                        width: 30,
-                        height: 16,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        SliverPadding(
-          padding: EdgeInsets.symmetric(
-            horizontal: ResponsiveValues.spacingS(context),
-          ),
-          sliver: SliverGrid(
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: columns,
-              crossAxisSpacing: ResponsiveValues.gridSpacing(context),
-              mainAxisSpacing: ResponsiveValues.gridRunSpacing(context),
-              childAspectRatio: ScreenSize.cardAspectRatio(
-                context: context,
-                columns: columns,
-              ),
-            ),
-            delegate: SliverChildBuilderDelegate(
-              (context, index) => CategoryCardShimmer(index: index),
-              childCount: 6,
-            ),
-          ),
-        ),
-      ],
-    );
   }
 
   void _setGreeting() {
@@ -284,10 +149,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             .checkSubscriptionsForCategories(categoryIds);
         if (mounted) setState(() => _categorySubscriptionCache.addAll(results));
       }
-    } on ApiError {
-      setState(() {});
-    } catch (e) {
-      setState(() {});
     } finally {
       if (mounted) setState(() => _isFirstLoad = false);
     }
@@ -318,6 +179,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _manualRefresh() async {
     if (_isRefreshing) return;
 
+    final connectivityService = context.read<ConnectivityService>();
+    if (!connectivityService.isOnline) {
+      _refreshController.refreshFailed();
+      SnackbarService().showOffline(context, action: 'refresh');
+      return;
+    }
+
     setState(() {
       _isRefreshing = true;
       _refreshSubtitle = 'Refreshing...';
@@ -341,10 +209,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
 
       _setEthiopianTime();
-      showTopSnackBar(context, 'Content refreshed');
+      SnackbarService().showSuccess(context, 'Content refreshed');
     } catch (e) {
-      showTopSnackBar(context, 'Refresh failed, using cached data',
-          isError: true);
+      SnackbarService().showError(context, 'Refresh failed, using cached data');
     } finally {
       setState(() {
         _isRefreshing = false;
@@ -388,6 +255,87 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return status;
   }
 
+  Widget _buildSkeletonGrid() {
+    final columns = ResponsiveValues.gridColumns(context);
+
+    return CustomScrollView(
+      physics: const NeverScrollableScrollPhysics(),
+      slivers: [
+        SliverToBoxAdapter(
+          child: CustomAppBar(
+            title: _greeting,
+            subtitle:
+                _refreshSubtitle.isNotEmpty ? _refreshSubtitle : _ethiopianTime,
+          ),
+        ),
+        SliverPadding(
+          padding: ResponsiveValues.screenPadding(context),
+          sliver: SliverToBoxAdapter(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                AppCard.glass(
+                  child: Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: ResponsiveValues.spacingM(context),
+                      vertical: ResponsiveValues.spacingXS(context),
+                    ),
+                    child: const Row(
+                      children: [
+                        AppShimmer(
+                            type: ShimmerType.circle,
+                            customWidth: 16,
+                            customHeight: 16),
+                        SizedBox(width: 4),
+                        AppShimmer(
+                            type: ShimmerType.textLine,
+                            customWidth: 100,
+                            customHeight: 16),
+                      ],
+                    ),
+                  ),
+                ),
+                AppCard.glass(
+                  child: Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: ResponsiveValues.spacingM(context),
+                      vertical: ResponsiveValues.spacingXS(context),
+                    ),
+                    child: const AppShimmer(
+                        type: ShimmerType.textLine,
+                        customWidth: 30,
+                        customHeight: 16),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        SliverPadding(
+          padding: EdgeInsets.symmetric(
+            horizontal: ResponsiveValues.spacingS(context),
+          ),
+          sliver: SliverGrid(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: columns,
+              crossAxisSpacing: ResponsiveValues.gridSpacing(context),
+              mainAxisSpacing: ResponsiveValues.gridRunSpacing(context),
+              childAspectRatio: ScreenSize.cardAspectRatio(
+                context: context,
+                columns: columns,
+              ),
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (context, index) =>
+                  AppShimmer(type: ShimmerType.categoryCard, index: index),
+              childCount: 6,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildContent() {
     final activeCategories = _categoryProvider.activeCategories;
     final comingSoonCategories = _categoryProvider.comingSoonCategories;
@@ -395,7 +343,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (_isFirstLoad) return _buildSkeletonGrid();
 
     if (activeCategories.isEmpty && comingSoonCategories.isEmpty) {
-      return NoDataState(dataType: 'Categories', onRefresh: _manualRefresh);
+      return AppEmptyState.noData(
+        dataType: 'Categories',
+        onRefresh: _manualRefresh,
+      );
     }
 
     final columns = ResponsiveValues.gridColumns(context);
@@ -422,7 +373,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  _buildGlassContainer(
+                  AppCard.glass(
                     child: Container(
                       padding: EdgeInsets.symmetric(
                         horizontal: ResponsiveValues.spacingM(context),
@@ -447,7 +398,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       ),
                     ),
                   ),
-                  _buildGlassContainer(
+                  AppCard.glass(
                     child: Container(
                       padding: EdgeInsets.symmetric(
                         horizontal: ResponsiveValues.spacingM(context),
@@ -511,7 +462,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildGlassContainer(
+                  AppCard.glass(
                     child: Container(
                       padding: EdgeInsets.symmetric(
                         horizontal: ResponsiveValues.spacingM(context),

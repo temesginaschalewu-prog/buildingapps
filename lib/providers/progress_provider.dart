@@ -1,13 +1,14 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:familyacademyclient/models/progress_model.dart';
-import 'package:familyacademyclient/services/api_service.dart';
-import 'package:familyacademyclient/services/device_service.dart';
-import 'package:familyacademyclient/services/user_session.dart';
-import 'package:familyacademyclient/providers/streak_provider.dart';
-import 'package:familyacademyclient/utils/constants.dart';
-import 'package:familyacademyclient/utils/helpers.dart';
+import '../services/api_service.dart';
+import '../services/device_service.dart';
+import '../services/user_session.dart';
+import '../providers/streak_provider.dart';
+import '../models/progress_model.dart';
+import '../utils/constants.dart';
+import '../utils/helpers.dart';
+import '../utils/parsers.dart';
 import '../utils/api_response.dart';
 
 class ProgressProvider with ChangeNotifier {
@@ -152,7 +153,7 @@ class ProgressProvider with ChangeNotifier {
         if (_overallStats['streak_history'] != null &&
             _overallStats['streak_history'] is List) {
           _streakHistory = (_overallStats['streak_history'] as List)
-              .map((date) => DateTime.parse(date).toLocal())
+              .map((date) => Parsers.parseDate(date) ?? DateTime.now())
               .toList();
         }
 
@@ -197,7 +198,7 @@ class ProgressProvider with ChangeNotifier {
         if (_overallStats['streak_history'] != null &&
             _overallStats['streak_history'] is List) {
           _streakHistory = (_overallStats['streak_history'] as List)
-              .map((date) => DateTime.parse(date).toLocal())
+              .map((date) => Parsers.parseDate(date) ?? DateTime.now())
               .toList();
           debugLog('ProgressProvider',
               '✅ Loaded ${_streakHistory.length} streak history entries');
@@ -348,7 +349,7 @@ class ProgressProvider with ChangeNotifier {
         if (_overallStats['streak_history'] != null &&
             _overallStats['streak_history'] is List) {
           _streakHistory = (_overallStats['streak_history'] as List)
-              .map((date) => DateTime.parse(date).toLocal())
+              .map((date) => Parsers.parseDate(date) ?? DateTime.now())
               .toList();
         }
 
@@ -380,7 +381,7 @@ class ProgressProvider with ChangeNotifier {
         if (_overallStats['streak_history'] != null &&
             _overallStats['streak_history'] is List) {
           _streakHistory = (_overallStats['streak_history'] as List)
-              .map((date) => DateTime.parse(date).toLocal())
+              .map((date) => Parsers.parseDate(date) ?? DateTime.now())
               .toList();
         }
 
@@ -428,7 +429,7 @@ class ProgressProvider with ChangeNotifier {
         if (_overallStats['streak_history'] != null &&
             _overallStats['streak_history'] is List) {
           _streakHistory = (_overallStats['streak_history'] as List)
-              .map((date) => DateTime.parse(date).toLocal())
+              .map((date) => Parsers.parseDate(date) ?? DateTime.now())
               .toList();
         }
 
@@ -575,7 +576,7 @@ class ProgressProvider with ChangeNotifier {
       await deviceService.saveCacheItem(cacheKey, progress.toJson(),
           ttl: _cacheDuration, isUserSpecific: true);
 
-      final allProgressKey = AppConstants.allUserProgressKey;
+      const allProgressKey = AppConstants.allUserProgressKey;
       final allProgressData = {
         'progress': _userProgress.map((p) => p.toJson()).toList(),
         'last_updated': DateTime.now().toIso8601String(),
@@ -625,15 +626,17 @@ class ProgressProvider with ChangeNotifier {
 
       for (final item in pendingItems) {
         try {
-          final chapterId = item['chapter_id'] as int;
+          final chapterId = Parsers.parseInt(item['chapter_id']);
           final progressData = item['progress'] as Map<String, dynamic>;
 
           await apiService.saveUserProgress(
             chapterId: chapterId,
-            videoProgress: progressData['video_progress'] as int?,
-            notesViewed: progressData['notes_viewed'] as bool?,
-            questionsAttempted: progressData['questions_attempted'] as int?,
-            questionsCorrect: progressData['questions_correct'] as int?,
+            videoProgress: Parsers.parseInt(progressData['video_progress']),
+            notesViewed: Parsers.parseBool(progressData['notes_viewed']),
+            questionsAttempted:
+                Parsers.parseInt(progressData['questions_attempted']),
+            questionsCorrect:
+                Parsers.parseInt(progressData['questions_correct']),
           );
 
           debugLog(
@@ -669,11 +672,9 @@ class ProgressProvider with ChangeNotifier {
     await _syncPendingProgress();
   }
 
-  /// 🔵 FIX: Clear user data ONLY for different user logout
   Future<void> clearUserData() async {
     debugLog('ProgressProvider', 'Clearing progress data');
 
-    // Only clear if this is a different user logout
     final session = UserSession();
     final isDifferentUser = !await session.isSameUser();
     final isLoggingOut = await _isLoggingOut();

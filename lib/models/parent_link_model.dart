@@ -1,3 +1,5 @@
+import '../utils/parsers.dart';
+
 class ParentLink {
   final int id;
   final int userId;
@@ -28,41 +30,18 @@ class ParentLink {
   });
 
   factory ParentLink.fromJson(Map<String, dynamic> json) {
-    // FIXED: Proper date parsing for MySQL datetime format
-    DateTime parseDate(String? dateStr) {
-      if (dateStr == null || dateStr.isEmpty) return DateTime.now();
-      try {
-        // Try parsing as ISO string
-        return DateTime.parse(dateStr).toLocal();
-      } catch (e) {
-        try {
-          // Try parsing MySQL datetime format (YYYY-MM-DD HH:MM:SS)
-          if (dateStr.contains(' ')) {
-            return DateTime.parse(dateStr.replaceFirst(' ', 'T')).toLocal();
-          }
-          return DateTime.parse(dateStr).toLocal();
-        } catch (e2) {
-          print('Error parsing date: $dateStr');
-          return DateTime.now();
-        }
-      }
-    }
-
     return ParentLink(
-      id: json['id'] ?? 0,
-      userId: json['user_id'] ?? 0,
+      id: Parsers.parseInt(json['id']),
+      userId: Parsers.parseInt(json['user_id']),
       token: json['token']?.toString() ?? '',
       parentTelegramUsername: json['parent_telegram_username']?.toString(),
       parentTelegramId: json['parent_telegram_id'] != null
-          ? int.tryParse(json['parent_telegram_id'].toString())
+          ? Parsers.parseInt(json['parent_telegram_id'])
           : null,
-      tokenExpiresAt: parseDate(json['token_expires_at']?.toString()),
-      linkedAt: json['linked_at'] != null
-          ? parseDate(json['linked_at']?.toString())
-          : null,
-      unlinkedAt: json['unlinked_at'] != null
-          ? parseDate(json['unlinked_at']?.toString())
-          : null,
+      tokenExpiresAt:
+          Parsers.parseDate(json['token_expires_at']) ?? DateTime.now(),
+      linkedAt: Parsers.parseDate(json['linked_at']),
+      unlinkedAt: Parsers.parseDate(json['unlinked_at']),
       status: json['status']?.toString() ?? 'pending',
       username: json['username']?.toString(),
       accountStatus: json['account_status']?.toString(),

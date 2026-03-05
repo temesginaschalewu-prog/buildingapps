@@ -322,7 +322,7 @@ class _MainNavigationState extends State<MainNavigation>
                     ),
                 ],
               ),
-              ResponsiveSizedBox(height: AppSpacing.xs),
+              const ResponsiveSizedBox(height: AppSpacing.xs),
               AnimatedOpacity(
                 duration: const Duration(milliseconds: 200),
                 opacity: _showLabels ? 1.0 : 0.0,
@@ -363,7 +363,7 @@ class _MainNavigationState extends State<MainNavigation>
               ),
               child: Column(
                 children: [
-                  ResponsiveSizedBox(height: AppSpacing.xxl),
+                  const ResponsiveSizedBox(height: AppSpacing.xxl),
                   Container(
                     width: ResponsiveValues.iconSizeXL(context) * 1.5,
                     height: ResponsiveValues.iconSizeXL(context) * 1.5,
@@ -394,21 +394,21 @@ class _MainNavigationState extends State<MainNavigation>
                     activeIcon: Icons.home_rounded,
                     label: 'Home',
                   ),
-                  ResponsiveSizedBox(height: AppSpacing.m),
+                  const ResponsiveSizedBox(height: AppSpacing.m),
                   _buildTabletNavItem(
                     index: 1,
                     icon: Icons.chat_bubble_outline_rounded,
                     activeIcon: Icons.chat_bubble_rounded,
                     label: 'Chat',
                   ),
-                  ResponsiveSizedBox(height: AppSpacing.m),
+                  const ResponsiveSizedBox(height: AppSpacing.m),
                   _buildTabletNavItem(
                     index: 2,
                     icon: Icons.auto_graph_outlined,
                     activeIcon: Icons.auto_graph_rounded,
                     label: 'Progress',
                   ),
-                  ResponsiveSizedBox(height: AppSpacing.m),
+                  const ResponsiveSizedBox(height: AppSpacing.m),
                   _buildTabletNavItem(
                     index: 3,
                     icon: Icons.person_outline_rounded,
@@ -427,7 +427,7 @@ class _MainNavigationState extends State<MainNavigation>
                         child: _buildSidebarAvatar(user),
                       ),
                     ),
-                  ResponsiveSizedBox(height: AppSpacing.l),
+                  const ResponsiveSizedBox(height: AppSpacing.l),
                 ],
               ),
             ),
@@ -507,7 +507,7 @@ class _MainNavigationState extends State<MainNavigation>
                   ),
                 ],
               ),
-              ResponsiveSizedBox(height: AppSpacing.xs),
+              const ResponsiveSizedBox(height: AppSpacing.xs),
               Text(
                 label,
                 style: TextStyle(
@@ -695,7 +695,7 @@ class _MainNavigationState extends State<MainNavigation>
                       child: Row(
                         children: [
                           _buildSidebarAvatar(user),
-                          ResponsiveSizedBox(width: AppSpacing.m),
+                          const ResponsiveSizedBox(width: AppSpacing.m),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,

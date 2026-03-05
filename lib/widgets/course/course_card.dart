@@ -1,16 +1,17 @@
 import 'dart:ui';
-import 'package:familyacademyclient/themes/app_colors.dart';
-import 'package:familyacademyclient/themes/app_text_styles.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:shimmer/shimmer.dart';
+
 import '../../models/course_model.dart';
 import '../../providers/subscription_provider.dart';
-import '../../themes/app_themes.dart';
-import '../../utils/responsive.dart';
+import '../../themes/app_colors.dart';
+import '../../themes/app_text_styles.dart';
 import '../../utils/responsive_values.dart';
 import '../../utils/app_enums.dart';
+import '../../utils/ui_helpers.dart';
+import '../common/app_card.dart';
 import '../common/responsive_widgets.dart';
 
 class CourseCard extends StatelessWidget {
@@ -29,37 +30,20 @@ class CourseCard extends StatelessWidget {
     this.index = 0,
   });
 
-  Color _getAccessColor(bool hasActiveSubscription, BuildContext context) {
-    final hasFullAccess = course.hasFullAccess(hasActiveSubscription);
-    if (hasFullAccess) return AppColors.telegramGreen;
-    if (course.hasPendingPayment) return AppColors.statusPending;
-    return AppColors.telegramBlue;
-  }
-
-  Color _getAccessBackgroundColor(
-      bool hasActiveSubscription, BuildContext context) {
-    final hasFullAccess = course.hasFullAccess(hasActiveSubscription);
-    if (hasFullAccess) return AppColors.greenFaded;
-    if (course.hasPendingPayment) return AppColors.orangeFaded;
-    return AppColors.blueFaded;
-  }
-
-  String _getAccessText(bool hasActiveSubscription) {
-    final hasFullAccess = course.hasFullAccess(hasActiveSubscription);
-    if (hasFullAccess) return 'FULL ACCESS';
-    if (course.hasPendingPayment) return 'PENDING';
-    return 'LIMITED';
-  }
-
   @override
   Widget build(BuildContext context) {
     return Consumer<SubscriptionProvider>(
       builder: (context, subscriptionProvider, child) {
         final hasActiveSubscription =
             subscriptionProvider.hasActiveSubscriptionForCategory(categoryId);
-        final accessColor = _getAccessColor(hasActiveSubscription, context);
-        final accessBgColor =
-            _getAccessBackgroundColor(hasActiveSubscription, context);
+
+        final hasFullAccess = course.hasFullAccess(hasActiveSubscription);
+        final accessColor = UiHelpers.getCourseAccessColor(
+            hasFullAccess, course.hasPendingPayment);
+        final accessIcon = UiHelpers.getCourseAccessIcon(
+            hasFullAccess, course.hasPendingPayment);
+        final accessText = UiHelpers.getCourseAccessText(
+            hasFullAccess, course.hasPendingPayment, course.requiresPayment);
 
         final iconSize = ResponsiveValues.iconSizeXL(context);
         final titleSize = ResponsiveValues.fontTitleMedium(context);
@@ -67,7 +51,6 @@ class CourseCard extends StatelessWidget {
         final badgeSize = ResponsiveValues.fontBodySmall(context);
         final padding = EdgeInsets.all(ResponsiveValues.spacingM(context));
         final iconSpacing = ResponsiveValues.spacingS(context);
-        const innerSpacing = 4.0;
 
         return Container(
           margin: margin ??
@@ -109,6 +92,30 @@ class CourseCard extends StatelessWidget {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          Container(
+                            width: iconSize,
+                            height: iconSize,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  accessColor.withValues(alpha: 0.2),
+                                  accessColor.withValues(alpha: 0.05),
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(
+                                ResponsiveValues.radiusLarge(context),
+                              ),
+                              border: Border.all(
+                                color: accessColor.withValues(alpha: 0.3),
+                                width: 1.5,
+                              ),
+                            ),
+                            child: Icon(
+                              accessIcon,
+                              size: iconSize * 0.5,
+                              color: accessColor,
+                            ),
+                          ),
                           SizedBox(width: iconSpacing),
                           Expanded(
                             child: Column(
@@ -186,7 +193,8 @@ class CourseCard extends StatelessWidget {
                                         vertical: 2,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: accessBgColor,
+                                        color:
+                                            accessColor.withValues(alpha: 0.1),
                                         borderRadius: BorderRadius.circular(
                                           ResponsiveValues.radiusFull(context),
                                         ),
@@ -198,10 +206,14 @@ class CourseCard extends StatelessWidget {
                                       child: Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
+                                          Icon(
+                                            accessIcon,
+                                            size: badgeSize * 1.2,
+                                            color: accessColor,
+                                          ),
                                           const SizedBox(width: 4),
                                           Text(
-                                            _getAccessText(
-                                                hasActiveSubscription),
+                                            accessText,
                                             style: TextStyle(
                                               fontSize: badgeSize,
                                               color: accessColor,
@@ -261,13 +273,13 @@ class CourseCard extends StatelessWidget {
         )
             .animate()
             .fadeIn(
-              duration: AppThemes.animationDurationMedium,
+              duration: 400.ms,
               delay: (index * 50).ms,
             )
             .slideX(
               begin: 0.1,
               end: 0,
-              duration: AppThemes.animationDurationMedium,
+              duration: 400.ms,
               delay: (index * 50).ms,
             );
       },
@@ -285,6 +297,7 @@ class CourseCardShimmer extends StatelessWidget {
     final iconSize = ResponsiveValues.iconSizeXL(context);
     final padding = EdgeInsets.all(ResponsiveValues.spacingM(context));
     final iconSpacing = ResponsiveValues.spacingS(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
       margin: EdgeInsets.only(
@@ -316,8 +329,9 @@ class CourseCardShimmer extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Shimmer.fromColors(
-                  baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                  highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
+                  baseColor: isDark ? Colors.grey[800]! : Colors.grey[300]!,
+                  highlightColor:
+                      isDark ? Colors.grey[700]! : Colors.grey[100]!,
                   child: Container(
                     width: iconSize,
                     height: iconSize,
@@ -336,9 +350,10 @@ class CourseCardShimmer extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Shimmer.fromColors(
-                        baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                        baseColor:
+                            isDark ? Colors.grey[800]! : Colors.grey[300]!,
                         highlightColor:
-                            Colors.grey[100]!.withValues(alpha: 0.6),
+                            isDark ? Colors.grey[700]! : Colors.grey[100]!,
                         child: Container(
                           width: double.infinity,
                           height: ResponsiveValues.spacingL(context),
@@ -352,9 +367,10 @@ class CourseCardShimmer extends StatelessWidget {
                       ),
                       const SizedBox(height: 8),
                       Shimmer.fromColors(
-                        baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                        baseColor:
+                            isDark ? Colors.grey[800]! : Colors.grey[300]!,
                         highlightColor:
-                            Colors.grey[100]!.withValues(alpha: 0.6),
+                            isDark ? Colors.grey[700]! : Colors.grey[100]!,
                         child: Container(
                           width: ResponsiveValues.spacingXXXL(context) * 3,
                           height: ResponsiveValues.spacingM(context),
@@ -372,9 +388,10 @@ class CourseCardShimmer extends StatelessWidget {
                         runSpacing: iconSpacing,
                         children: [
                           Shimmer.fromColors(
-                            baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                            baseColor:
+                                isDark ? Colors.grey[800]! : Colors.grey[300]!,
                             highlightColor:
-                                Colors.grey[100]!.withValues(alpha: 0.6),
+                                isDark ? Colors.grey[700]! : Colors.grey[100]!,
                             child: Container(
                               width: ResponsiveValues.spacingXXL(context) * 2,
                               height: ResponsiveValues.spacingL(context),
@@ -387,9 +404,10 @@ class CourseCardShimmer extends StatelessWidget {
                             ),
                           ),
                           Shimmer.fromColors(
-                            baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
+                            baseColor:
+                                isDark ? Colors.grey[800]! : Colors.grey[300]!,
                             highlightColor:
-                                Colors.grey[100]!.withValues(alpha: 0.6),
+                                isDark ? Colors.grey[700]! : Colors.grey[100]!,
                             child: Container(
                               width: ResponsiveValues.spacingXXL(context) * 1.5,
                               height: ResponsiveValues.spacingL(context),
@@ -409,8 +427,9 @@ class CourseCardShimmer extends StatelessWidget {
                 Padding(
                   padding: EdgeInsets.only(left: iconSpacing),
                   child: Shimmer.fromColors(
-                    baseColor: Colors.grey[300]!.withValues(alpha: 0.3),
-                    highlightColor: Colors.grey[100]!.withValues(alpha: 0.6),
+                    baseColor: isDark ? Colors.grey[800]! : Colors.grey[300]!,
+                    highlightColor:
+                        isDark ? Colors.grey[700]! : Colors.grey[100]!,
                     child: Container(
                       width: ResponsiveValues.iconSizeM(context),
                       height: ResponsiveValues.iconSizeM(context),
@@ -427,7 +446,7 @@ class CourseCardShimmer extends StatelessWidget {
         ),
       ),
     ).animate().fadeIn(
-          duration: AppThemes.animationDurationMedium,
+          duration: 400.ms,
           delay: (index * 50).ms,
         );
   }

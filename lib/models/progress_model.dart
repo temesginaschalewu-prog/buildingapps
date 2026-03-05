@@ -1,3 +1,5 @@
+import '../utils/parsers.dart';
+
 class UserProgress {
   final int chapterId;
   final bool completed;
@@ -19,15 +21,13 @@ class UserProgress {
 
   factory UserProgress.fromJson(Map<String, dynamic> json) {
     return UserProgress(
-      chapterId: json['chapter_id'] ?? 0,
-      completed: json['completed'] == 1 || json['completed'] == true,
-      videoProgress: json['video_progress'] ?? 0,
-      notesViewed: json['notes_viewed'] == 1 || json['notes_viewed'] == true,
-      questionsAttempted: json['questions_attempted'] ?? 0,
-      questionsCorrect: json['questions_correct'] ?? 0,
-      lastAccessed: json['last_accessed'] != null
-          ? DateTime.parse(json['last_accessed']).toLocal()
-          : null,
+      chapterId: Parsers.parseInt(json['chapter_id']),
+      completed: Parsers.parseBool(json['completed']),
+      videoProgress: Parsers.parseInt(json['video_progress']),
+      notesViewed: Parsers.parseBool(json['notes_viewed']),
+      questionsAttempted: Parsers.parseInt(json['questions_attempted']),
+      questionsCorrect: Parsers.parseInt(json['questions_correct']),
+      lastAccessed: Parsers.parseDate(json['last_accessed']),
     );
   }
 
@@ -44,10 +44,9 @@ class UserProgress {
   }
 
   double get completionPercentage {
-    // Chapter is complete when: video >= 90% + notes viewed + questions attempted
     if (completed) return 100.0;
 
-    const totalItems = 3; // Videos, Notes, Questions
+    const totalItems = 3;
     var completedItems = 0;
 
     if (videoProgress >= 90) completedItems++;
@@ -68,14 +67,9 @@ class UserProgress {
     final now = DateTime.now();
     final difference = now.difference(lastAccessed!);
 
-    if (difference.inDays > 0) {
-      return '${difference.inDays}d ago';
-    } else if (difference.inHours > 0) {
-      return '${difference.inHours}h ago';
-    } else if (difference.inMinutes > 0) {
-      return '${difference.inMinutes}m ago';
-    } else {
-      return 'Just now';
-    }
+    if (difference.inDays > 0) return '${difference.inDays}d ago';
+    if (difference.inHours > 0) return '${difference.inHours}h ago';
+    if (difference.inMinutes > 0) return '${difference.inMinutes}m ago';
+    return 'Just now';
   }
 }

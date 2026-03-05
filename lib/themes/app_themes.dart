@@ -2,9 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:shimmer/shimmer.dart';
 import 'app_colors.dart';
-import 'app_text_styles.dart';
-import '../utils/responsive.dart';
-import '../utils/responsive_values.dart';
 
 class AppThemes {
   static const double spacingXS = 4.0;
@@ -55,7 +52,6 @@ class AppThemes {
         primaryContainer: AppColors.telegramBlueLight,
         secondary: AppColors.telegramGreen,
         secondaryContainer: AppColors.telegramGreenFaded,
-        surface: AppColors.lightSurface,
         surfaceContainerHighest: AppColors.lightAccent3,
         error: AppColors.telegramRed,
         onSecondary: Colors.white,
@@ -63,17 +59,17 @@ class AppThemes {
         outlineVariant: AppColors.lightAccent3,
       ),
       scaffoldBackgroundColor: AppColors.lightBackground,
-      appBarTheme: AppBarTheme(
+      appBarTheme: const AppBarTheme(
         backgroundColor: AppColors.lightBackground,
         foregroundColor: AppColors.lightTextPrimary,
         elevation: elevationNone,
         centerTitle: false,
-        titleTextStyle: const TextStyle(
+        titleTextStyle: TextStyle(
           fontSize: 18,
           fontWeight: FontWeight.w600,
           color: AppColors.lightTextPrimary,
         ),
-        iconTheme: const IconThemeData(
+        iconTheme: IconThemeData(
           color: AppColors.lightTextPrimary,
           size: iconSizeM,
         ),

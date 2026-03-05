@@ -3,12 +3,13 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
 import 'package:familyacademyclient/services/api_service.dart';
+import 'package:familyacademyclient/themes/app_colors.dart';
+import 'package:familyacademyclient/utils/constants.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest.dart' as tz;
-import '../utils/constants.dart';
 import '../utils/helpers.dart';
 
 class NotificationService {
@@ -32,14 +33,16 @@ class NotificationService {
   FirebaseMessaging? _firebaseMessaging;
   String? _fcmToken;
 
-  // 🔵 FIX: Add ApiService as a field with setter
   ApiService? _apiService;
 
-  // Setter for apiService
   set apiService(ApiService service) {
     _apiService = service;
     debugLog('NotificationService', 'ApiService set');
   }
+
+  final Map<String, DateTime> _lastNotificationTime = {};
+  final Set<String> _processedMessageIds = {};
+  final Set<String> _preventDuplicateIds = {};
 
   Future<void> init({bool forceReinit = false}) async {
     if (_isInitialized && !forceReinit) return;
@@ -78,21 +81,15 @@ class NotificationService {
     try {
       const androidSettings =
           AndroidInitializationSettings('@mipmap/ic_launcher');
-      const iosSettings = DarwinInitializationSettings(
-        requestAlertPermission: true,
-        requestBadgePermission: true,
-        requestSoundPermission: true,
-      );
-
-      // Add Linux settings for Linux platform
+      const iosSettings = DarwinInitializationSettings();
       const linuxSettings = LinuxInitializationSettings(
         defaultActionName: 'Open',
       );
 
-      final initializationSettings = InitializationSettings(
+      const initializationSettings = InitializationSettings(
         android: androidSettings,
         iOS: iosSettings,
-        linux: linuxSettings, // Add Linux support
+        linux: linuxSettings,
       );
 
       await _localNotifications.initialize(
@@ -149,11 +146,7 @@ class NotificationService {
   Future<void> _requestPermissions() async {
     try {
       if (Platform.isIOS && _firebaseMessaging != null) {
-        await _firebaseMessaging!.requestPermission(
-          alert: true,
-          badge: true,
-          sound: true,
-        );
+        await _firebaseMessaging!.requestPermission();
       }
     } catch (e) {
       debugLog('NotificationService', 'Permission request error: $e');
@@ -173,7 +166,7 @@ class NotificationService {
   Future<void> _saveFCMToken(String token) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('fcm_token', token);
+      await prefs.setString(AppConstants.fcmTokenCacheKey, token);
     } catch (e) {
       debugLog('NotificationService', 'Error saving FCM token: $e');
     }
@@ -205,6 +198,13 @@ class NotificationService {
     }
   }
 
+  String _generateNotificationId(RemoteMessage message) {
+    final title = message.notification?.title ?? '';
+    final body = message.notification?.body ?? '';
+    final dataHash = json.encode(message.data).hashCode;
+    return '${title}_${body}_$dataHash';
+  }
+
   Future<void> _handleForegroundMessage(RemoteMessage message) async {
     final String notificationId = _generateNotificationId(message);
     if (_preventDuplicateIds.contains(notificationId)) return;
@@ -218,7 +218,8 @@ class NotificationService {
     if (_processedMessageIds.contains(message.messageId)) return;
 
     final prefs = await SharedPreferences.getInstance();
-    final notificationsEnabled = prefs.getBool('notifications_enabled') ?? true;
+    final notificationsEnabled =
+        prefs.getBool(AppConstants.notificationsEnabledKey) ?? true;
     if (!notificationsEnabled) return;
 
     _processedMessageIds.add(message.messageId ?? '');
@@ -261,17 +262,6 @@ class NotificationService {
         type: notificationType,
       );
     }
-  }
-
-  final Map<String, DateTime> _lastNotificationTime = {};
-  final Set<String> _processedMessageIds = {};
-  final Set<String> _preventDuplicateIds = {};
-
-  String _generateNotificationId(RemoteMessage message) {
-    final title = message.notification?.title ?? '';
-    final body = message.notification?.body ?? '';
-    final dataHash = json.encode(message.data).hashCode;
-    return '${title}_${body}_$dataHash';
   }
 
   Future<void> _handleMessage(RemoteMessage message) async {
@@ -332,7 +322,8 @@ class NotificationService {
     _preventDuplicateIds.add(notificationId);
     if (_processedMessageIds.contains(message.messageId)) return;
     final prefs = await SharedPreferences.getInstance();
-    final notificationsEnabled = prefs.getBool('notifications_enabled') ?? true;
+    final notificationsEnabled =
+        prefs.getBool(AppConstants.notificationsEnabledKey) ?? true;
     if (!notificationsEnabled) return;
     _processedMessageIds.add(message.messageId ?? '');
     if (message.notification?.title != null &&
@@ -373,7 +364,7 @@ class NotificationService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final notificationsEnabled =
-          prefs.getBool('notifications_enabled') ?? true;
+          prefs.getBool(AppConstants.notificationsEnabledKey) ?? true;
       if (!notificationsEnabled) return;
 
       final String uniqueId = '$title$body$payload';
@@ -397,43 +388,43 @@ class NotificationService {
       Color notificationColor;
       switch (type) {
         case 'success':
-          notificationColor = const Color(0xFF4CAF50);
+          notificationColor = AppColors.notificationSuccess;
           break;
         case 'warning':
-          notificationColor = const Color(0xFFFF9800);
+          notificationColor = AppColors.notificationWarning;
           break;
         case 'error':
-          notificationColor = const Color(0xFFF44336);
+          notificationColor = AppColors.notificationError;
           break;
         case 'academic':
-          notificationColor = const Color(0xFF3F51B5);
+          notificationColor = AppColors.notificationInfo;
           break;
         case 'payment':
-          notificationColor = const Color(0xFFFF5722);
+          notificationColor = AppColors.notificationExpiring;
           break;
         default:
-          notificationColor = const Color(0xFF6200EE);
+          notificationColor = AppColors.notificationAchievement;
       }
 
       final androidDetails = AndroidNotificationDetails(
-        'family_academy_channel',
-        'Family Academy Notifications',
-        channelDescription: 'Important notifications from Family Academy',
+        AppConstants.notificationChannelId,
+        AppConstants.notificationChannelName,
+        channelDescription: AppConstants.notificationChannelDescription,
         importance: Importance.high,
         priority: Priority.high,
         color: notificationColor,
         ledColor: notificationColor,
-        ledOnMs: 1000,
-        ledOffMs: 500,
+        ledOnMs: AppConstants.notificationLedOnMs,
+        ledOffMs: AppConstants.notificationLedOffMs,
         enableLights: true,
         styleInformation: BigTextStyleInformation(
           body,
           contentTitle: title,
-          summaryText: 'Family Academy',
+          summaryText: AppConstants.appName,
         ),
         icon: '@mipmap/ic_launcher',
         largeIcon: const DrawableResourceAndroidBitmap('@mipmap/ic_launcher'),
-        ticker: 'Family Academy',
+        ticker: AppConstants.appName,
         onlyAlertOnce: true,
       );
 
@@ -441,19 +432,17 @@ class NotificationService {
         presentAlert: true,
         presentBadge: true,
         presentSound: true,
-        threadIdentifier: 'family_academy',
+        threadIdentifier: AppConstants.appName,
       );
 
-      // Add Linux notification details
       const linuxDetails = LinuxNotificationDetails(
         defaultActionName: 'Open',
-        // You can add icon here if needed
       );
 
       final notificationDetails = NotificationDetails(
         android: androidDetails,
         iOS: iosDetails,
-        linux: linuxDetails, // Add Linux support
+        linux: linuxDetails,
       );
 
       final notificationId =
@@ -487,12 +476,12 @@ class NotificationService {
 
   Future<bool> areNotificationsEnabled() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool('notifications_enabled') ?? true;
+    return prefs.getBool(AppConstants.notificationsEnabledKey) ?? true;
   }
 
   Future<void> setNotificationsEnabled(bool enabled) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('notifications_enabled', enabled);
+    await prefs.setBool(AppConstants.notificationsEnabledKey, enabled);
   }
 
   void clearProcessedMessages() {

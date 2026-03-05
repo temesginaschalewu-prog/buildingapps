@@ -1,4 +1,5 @@
-import 'package:familyacademyclient/utils/constants.dart';
+import '../utils/constants.dart';
+import '../utils/parsers.dart';
 
 class Note {
   final int id;
@@ -21,21 +22,13 @@ class Note {
 
   factory Note.fromJson(Map<String, dynamic> json) {
     return Note(
-      id: json['id'] is int
-          ? json['id']
-          : int.tryParse(json['id']?.toString() ?? '0') ?? 0,
+      id: Parsers.parseInt(json['id']),
       title: json['title']?.toString() ?? '',
-      chapterId: json['chapter_id'] is int
-          ? json['chapter_id']
-          : int.tryParse(json['chapter_id']?.toString() ?? '0') ?? 0,
+      chapterId: Parsers.parseInt(json['chapter_id']),
       content: json['content']?.toString() ?? '',
       filePath: json['file_path']?.toString(),
-      releaseDate: json['release_date'] != null
-          ? DateTime.parse(json['release_date'].toString())
-          : null,
-      createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'].toString())
-          : DateTime.now(),
+      releaseDate: Parsers.parseDate(json['release_date']),
+      createdAt: Parsers.parseDate(json['created_at']) ?? DateTime.now(),
     );
   }
 
@@ -57,9 +50,8 @@ class Note {
           : '${AppConstants.baseUrl}$filePath')
       : null;
 
-  bool get hasFile => filePath != null && filePath!.isNotEmpty;
+  bool get hasFile => filePath?.isNotEmpty ?? false;
 
-  String get formattedDate {
-    return '${createdAt.day}/${createdAt.month}/${createdAt.year}';
-  }
+  String get formattedDate =>
+      '${createdAt.day}/${createdAt.month}/${createdAt.year}';
 }

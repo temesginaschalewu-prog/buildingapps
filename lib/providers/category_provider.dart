@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
@@ -6,6 +7,8 @@ import '../services/device_service.dart';
 import '../services/user_session.dart';
 import '../models/category_model.dart';
 import '../utils/helpers.dart';
+import '../utils/parsers.dart';
+import '../utils/ui_helpers.dart';
 
 class CategoryProvider with ChangeNotifier {
   final ApiService apiService;
@@ -38,6 +41,90 @@ class CategoryProvider with ChangeNotifier {
     _initBackgroundRefresh();
   }
 
+  // ===== GETTERS =====
+
+  List<Category> get categories => List.unmodifiable(_categories);
+  List<Category> get activeCategories => List.unmodifiable(_activeCategories);
+  List<Category> get comingSoonCategories =>
+      List.unmodifiable(_comingSoonCategories);
+  bool get isLoading => _isLoading;
+  bool get hasLoaded => _hasLoaded;
+  String? get error => _error;
+  bool get isSyncingSubscription => _isSyncingSubscription;
+
+  Stream<List<Category>> get categoriesUpdates =>
+      _categoriesUpdateController.stream;
+  Stream<Map<int, bool>> get subscriptionStatusUpdates =>
+      _subscriptionStatusController.stream;
+
+  // ===== SUBSCRIPTION STATUS =====
+
+  bool getCategorySubscriptionStatus(int categoryId) {
+    return _categorySubscriptionStatus[categoryId] ?? false;
+  }
+
+  bool isCategoryStatusLoaded(int categoryId) {
+    return _categoryStatusLoaded[categoryId] ?? false;
+  }
+
+  bool shouldCheckSubscription(int categoryId) {
+    final lastCheck = _lastSubscriptionCheck[categoryId];
+    if (lastCheck == null) return true;
+    return DateTime.now().difference(lastCheck).inMinutes > 15;
+  }
+
+  // ===== UI HELPERS (NOW USING UI_HELPERS) =====
+
+  Color getCategoryAccessColor(
+    int categoryId, {
+    required bool hasActiveSubscription,
+    required bool hasPendingPayment,
+  }) {
+    final category = getCategoryById(categoryId);
+    if (category == null) return AppColors.telegramGray;
+
+    return UiHelpers.getCategoryAccessColor(
+      isComingSoon: category.isComingSoon,
+      isFree: category.isFree,
+      hasActiveSubscription: hasActiveSubscription,
+      hasPendingPayment: hasPendingPayment,
+    );
+  }
+
+  IconData getCategoryAccessIcon(
+    int categoryId, {
+    required bool hasActiveSubscription,
+    required bool hasPendingPayment,
+  }) {
+    final category = getCategoryById(categoryId);
+    if (category == null) return Icons.help;
+
+    return UiHelpers.getCategoryAccessIcon(
+      isComingSoon: category.isComingSoon,
+      isFree: category.isFree,
+      hasActiveSubscription: hasActiveSubscription,
+      hasPendingPayment: hasPendingPayment,
+    );
+  }
+
+  String getCategoryAccessLabel(
+    int categoryId, {
+    required bool hasActiveSubscription,
+    required bool hasPendingPayment,
+  }) {
+    final category = getCategoryById(categoryId);
+    if (category == null) return 'UNKNOWN';
+
+    return UiHelpers.getCategoryAccessLabel(
+      isComingSoon: category.isComingSoon,
+      isFree: category.isFree,
+      hasActiveSubscription: hasActiveSubscription,
+      hasPendingPayment: hasPendingPayment,
+    );
+  }
+
+  // ===== BACKGROUND REFRESH =====
+
   void _initBackgroundRefresh() {
     _backgroundRefreshTimer = Timer.periodic(_backgroundRefreshInterval, (_) {
       if (_hasLoaded && !_isLoading) {
@@ -56,7 +143,7 @@ class CategoryProvider with ChangeNotifier {
         List<Category> loadedCategories = [];
 
         if (response.data is List<Category>) {
-          loadedCategories = response.data!;
+          loadedCategories = response.data ?? [];
         } else if (response.data is List) {
           loadedCategories = (response.data as List)
               .map((item) => item is Category ? item : Category.fromJson(item))
@@ -69,13 +156,6 @@ class CategoryProvider with ChangeNotifier {
           debugLog('CategoryProvider', '📦 Changes detected, updating cache');
           _categories = loadedCategories;
           _updateCategoryLists();
-
-          for (final cat in _categories) {
-            if (cat.imageUrl != null) {
-              debugLog('CategoryProvider',
-                  '📸 ${cat.name} has image: ${cat.imageUrl}');
-            }
-          }
 
           await deviceService.saveCacheItem(
               'categories',
@@ -110,33 +190,12 @@ class CategoryProvider with ChangeNotifier {
     return false;
   }
 
-  List<Category> get categories => List.unmodifiable(_categories);
-  List<Category> get activeCategories => List.unmodifiable(_activeCategories);
-  List<Category> get comingSoonCategories =>
-      List.unmodifiable(_comingSoonCategories);
-  bool get isLoading => _isLoading;
-  bool get hasLoaded => _hasLoaded;
-  String? get error => _error;
-  bool get isSyncingSubscription => _isSyncingSubscription;
-
-  Stream<List<Category>> get categoriesUpdates =>
-      _categoriesUpdateController.stream;
-  Stream<Map<int, bool>> get subscriptionStatusUpdates =>
-      _subscriptionStatusController.stream;
-
-  bool getCategorySubscriptionStatus(int categoryId) {
-    return _categorySubscriptionStatus[categoryId] ?? false;
+  void _updateCategoryLists() {
+    _activeCategories = _categories.where((c) => c.isActive).toList();
+    _comingSoonCategories = _categories.where((c) => c.isComingSoon).toList();
   }
 
-  bool isCategoryStatusLoaded(int categoryId) {
-    return _categoryStatusLoaded[categoryId] ?? false;
-  }
-
-  bool shouldCheckSubscription(int categoryId) {
-    final lastCheck = _lastSubscriptionCheck[categoryId];
-    if (lastCheck == null) return true;
-    return DateTime.now().difference(lastCheck).inMinutes > 15;
-  }
+  // ===== DATA LOADING =====
 
   Future<void> loadCategories({bool forceRefresh = false}) async {
     if (_isLoading && !forceRefresh) return;
@@ -185,13 +244,6 @@ class CategoryProvider with ChangeNotifier {
           _hasLoaded = true;
           _isLoading = false;
 
-          for (final cat in _categories) {
-            if (cat.imageUrl != null) {
-              debugLog('CategoryProvider',
-                  '📸 [CACHED] ${cat.name} image: ${cat.imageUrl}');
-            }
-          }
-
           _categoriesUpdateController.add(_categories);
           _notifySafely();
 
@@ -226,15 +278,6 @@ class CategoryProvider with ChangeNotifier {
         _categories = loadedCategories;
         _updateCategoryLists();
 
-        for (final cat in _categories) {
-          if (cat.imageUrl != null) {
-            debugLog('CategoryProvider',
-                ' [API] ${cat.name} image: ${cat.imageUrl}');
-          } else {
-            debugLog('CategoryProvider', ' [API] ${cat.name} has NO image');
-          }
-        }
-
         await deviceService.saveCacheItem(
             'categories',
             {
@@ -263,11 +306,6 @@ class CategoryProvider with ChangeNotifier {
     }
   }
 
-  void _updateCategoryLists() {
-    _activeCategories = _categories.where((c) => c.isActive).toList();
-    _comingSoonCategories = _categories.where((c) => c.isComingSoon).toList();
-  }
-
   Future<void> loadCategoriesWithSubscriptionCheck(
       {bool forceRefresh = false}) async {
     await loadCategories(forceRefresh: forceRefresh);
@@ -284,7 +322,11 @@ class CategoryProvider with ChangeNotifier {
     }
   }
 
-  Future<void> _refreshCategorySubscription(int categoryId) async {}
+  Future<void> _refreshCategorySubscription(int categoryId) async {
+    // This will be handled by SubscriptionProvider
+  }
+
+  // ===== SUBSCRIPTION SYNC =====
 
   Future<void> syncSubscriptionStatus(Map<int, bool> subscriptionStatus) async {
     if (_isSyncingSubscription) return;
@@ -412,11 +454,11 @@ class CategoryProvider with ChangeNotifier {
     _notifySafely();
   }
 
-  /// 🔵 FIX: Clear user data ONLY for different user logout
+  // ===== CLEANUP =====
+
   Future<void> clearUserData() async {
     debugLog('CategoryProvider', ' Clearing category data');
 
-    // Only clear if this is a different user logout
     final session = UserSession();
     final isDifferentUser = !await session.isSameUser();
     final isLoggingOut = await _isLoggingOut();

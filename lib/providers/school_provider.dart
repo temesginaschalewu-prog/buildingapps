@@ -36,6 +36,19 @@ class SchoolProvider with ChangeNotifier {
   Stream<List<School>> get schoolsUpdates => _schoolsUpdateController.stream;
   Stream<int?> get selectedSchoolUpdates => _selectedSchoolController.stream;
 
+  School? getSchoolById(int id) {
+    try {
+      return _schools.firstWhere((s) => s.id == id);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  String? getSchoolNameById(int id) {
+    final school = getSchoolById(id);
+    return school?.name;
+  }
+
   Future<void> loadSchools({bool forceRefresh = false}) async {
     if (_isLoading && !forceRefresh) return;
 
@@ -105,19 +118,33 @@ class SchoolProvider with ChangeNotifier {
     _notifySafely();
   }
 
-  School? getSchoolById(int id) {
+  Future<void> _loadSelectedSchool() async {
     try {
-      return _schools.firstWhere((s) => s.id == id);
+      final selectedSchool =
+          await deviceService.getCacheItem<int>(AppConstants.selectedSchoolKey);
+      if (selectedSchool != null) {
+        _selectedSchoolId = selectedSchool;
+        _selectedSchoolController.add(selectedSchool);
+      }
     } catch (e) {
-      return null;
+      debugLog('SchoolProvider', 'Error loading selected school: $e');
     }
   }
 
-  /// 🔵 FIX: Clear user data ONLY for different user logout
+  void clearError() {
+    _error = null;
+    _hasError = false;
+    _notifySafely();
+  }
+
+  void retryLoadSchools() {
+    clearError();
+    loadSchools(forceRefresh: true);
+  }
+
   Future<void> clearUserData() async {
     debugLog('SchoolProvider', 'Clearing school data');
 
-    // Only clear if this is a different user logout
     final session = UserSession();
     final isDifferentUser = !await session.isSameUser();
     final isLoggingOut = await _isLoggingOut();
@@ -146,30 +173,6 @@ class SchoolProvider with ChangeNotifier {
   Future<bool> _isLoggingOut() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
-  }
-
-  void clearError() {
-    _error = null;
-    _hasError = false;
-    _notifySafely();
-  }
-
-  void retryLoadSchools() {
-    clearError();
-    loadSchools(forceRefresh: true);
-  }
-
-  Future<void> _loadSelectedSchool() async {
-    try {
-      final selectedSchool =
-          await deviceService.getCacheItem<int>(AppConstants.selectedSchoolKey);
-      if (selectedSchool != null) {
-        _selectedSchoolId = selectedSchool;
-        _selectedSchoolController.add(selectedSchool);
-      }
-    } catch (e) {
-      debugLog('SchoolProvider', 'Error loading selected school: $e');
-    }
   }
 
   void _notifySafely() {

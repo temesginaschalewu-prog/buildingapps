@@ -1,25 +1,31 @@
 import 'dart:async';
-import 'dart:ui';
-import 'package:familyacademyclient/models/exam_question_model.dart';
-import 'package:familyacademyclient/themes/app_colors.dart';
-import 'package:familyacademyclient/themes/app_text_styles.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:familyacademyclient/themes/app_themes.dart';
-import 'package:familyacademyclient/utils/responsive.dart';
-import 'package:familyacademyclient/utils/responsive_values.dart';
-import 'package:familyacademyclient/providers/auth_provider.dart';
-import 'package:familyacademyclient/providers/exam_provider.dart';
-import 'package:familyacademyclient/providers/subscription_provider.dart';
-import 'package:familyacademyclient/providers/exam_question_provider.dart';
-import 'package:familyacademyclient/models/exam_model.dart';
-import 'package:familyacademyclient/models/exam_result_model.dart';
-import 'package:familyacademyclient/widgets/common/loading_indicator.dart';
-import 'package:familyacademyclient/widgets/exam/question_widget.dart';
-import 'package:familyacademyclient/widgets/common/empty_state.dart';
+
+import '../../models/exam_question_model.dart';
+import '../../models/exam_model.dart';
+import '../../models/exam_result_model.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/exam_provider.dart';
+import '../../providers/subscription_provider.dart';
+import '../../providers/exam_question_provider.dart';
+import '../../services/connectivity_service.dart';
+import '../../services/snackbar_service.dart';
+import '../../widgets/common/app_card.dart';
+import '../../widgets/common/app_button.dart';
+import '../../widgets/common/app_dialog.dart';
+import '../../widgets/common/app_shimmer.dart';
+import '../../widgets/common/app_empty_state.dart';
+import '../../widgets/exam/question_widget.dart';
+import '../../themes/app_themes.dart';
+import '../../themes/app_colors.dart';
+import '../../themes/app_text_styles.dart';
+import '../../utils/responsive.dart';
+import '../../utils/responsive_values.dart';
 import '../../utils/helpers.dart';
 import '../../utils/api_response.dart';
+import '../../utils/ui_helpers.dart';
 import '../../widgets/common/responsive_widgets.dart';
 
 class ExamScreen extends StatefulWidget {
@@ -58,11 +64,13 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
   bool _hasReachedMaxAttempts = false;
 
   String? _currentUserId;
+  StreamSubscription? _connectivitySubscription;
 
   @override
   void initState() {
     super.initState();
     _initializeExam();
+    _setupConnectivityListener();
   }
 
   @override
@@ -80,99 +88,18 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     }
   }
 
-  Widget _buildGlassDialog(BuildContext context, {required Widget child}) {
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      child: ClipRRect(
-        borderRadius:
-            BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  AppColors.getCard(context).withValues(alpha: 0.4),
-                  AppColors.getCard(context).withValues(alpha: 0.2),
-                ],
-              ),
-              borderRadius:
-                  BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-              border: Border.all(
-                color: AppColors.telegramBlue.withValues(alpha: 0.2),
-              ),
-            ),
-            padding: ResponsiveValues.dialogPadding(context),
-            child: child,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGradientButton({
-    required String label,
-    required VoidCallback? onPressed,
-    required List<Color> gradient,
-    bool isLoading = false,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: onPressed != null ? LinearGradient(colors: gradient) : null,
-        borderRadius:
-            BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-        boxShadow: onPressed != null
-            ? [
-                BoxShadow(
-                  color: gradient.first.withValues(alpha: 0.3),
-                  blurRadius: ResponsiveValues.spacingS(context),
-                  offset: Offset(0, ResponsiveValues.spacingXS(context)),
-                ),
-              ]
-            : null,
-      ),
-      child: Material(
-        color: onPressed != null
-            ? Colors.transparent
-            : AppColors.getSurface(context).withValues(alpha: 0.1),
-        child: InkWell(
-          onTap: onPressed,
-          borderRadius:
-              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-          child: Container(
-            padding: EdgeInsets.symmetric(
-              vertical: ResponsiveValues.spacingM(context),
-            ),
-            alignment: Alignment.center,
-            child: isLoading
-                ? SizedBox(
-                    width: ResponsiveValues.iconSizeM(context),
-                    height: ResponsiveValues.iconSizeM(context),
-                    child: const CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation(Colors.white),
-                    ),
-                  )
-                : ResponsiveText(
-                    label,
-                    style: AppTextStyles.labelLarge(context).copyWith(
-                      color: onPressed != null
-                          ? Colors.white
-                          : AppColors.getTextSecondary(context)
-                              .withValues(alpha: 0.5),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-          ),
-        ),
-      ),
-    );
+  void _setupConnectivityListener() {
+    final connectivityService = context.read<ConnectivityService>();
+    _connectivitySubscription =
+        connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (mounted) {
+        setState(() => _isOffline = !isOnline);
+      }
+    });
   }
 
   Future<void> _getCurrentUserId() async {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final authProvider = context.read<AuthProvider>();
     _currentUserId = authProvider.currentUser?.id.toString();
   }
 
@@ -201,8 +128,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     if (_currentUserId == null) return;
 
     try {
-      final questionProvider =
-          Provider.of<ExamQuestionProvider>(context, listen: false);
+      final questionProvider = context.read<ExamQuestionProvider>();
       final progressData = await questionProvider.deviceService
           .getCacheItem<Map<String, dynamic>>(
         'exam_progress_${_exam.id}_$_currentUserId',
@@ -222,22 +148,21 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
           _remainingTime = Duration(seconds: remainingSeconds);
         });
       }
-    } catch (e) {}
+    } catch (e) {
+      debugLog('ExamScreen', 'Error loading cached progress: $e');
+    }
   }
 
   Future<void> _checkConnectivity() async {
-    final hasConnection = await hasInternetConnection();
-    if (!hasConnection && mounted) {
-      setState(() => _isOffline = true);
-    }
+    final connectivityService = context.read<ConnectivityService>();
+    setState(() => _isOffline = !connectivityService.isOnline);
   }
 
   Future<void> _checkExamAccess() async {
     await _checkConnectivity();
 
-    final subscriptionProvider =
-        Provider.of<SubscriptionProvider>(context, listen: false);
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final subscriptionProvider = context.read<SubscriptionProvider>();
+    final authProvider = context.read<AuthProvider>();
 
     if (!authProvider.isAuthenticated) {
       setState(() {
@@ -260,7 +185,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
         _hasAccess = true;
       }
 
-      final examProvider = Provider.of<ExamProvider>(context, listen: false);
+      final examProvider = context.read<ExamProvider>();
       final existingResult = examProvider.myExamResults.firstWhere(
         (result) => result.examId == _exam.id && result.status == 'completed',
         orElse: () => null as ExamResult,
@@ -292,7 +217,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _loadExamFromProvider() async {
-    final examProvider = Provider.of<ExamProvider>(context, listen: false);
+    final examProvider = context.read<ExamProvider>();
 
     try {
       Exam? cachedExam;
@@ -337,7 +262,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _loadExamQuestions() async {
-    final provider = Provider.of<ExamQuestionProvider>(context, listen: false);
+    final provider = context.read<ExamQuestionProvider>();
     try {
       await provider.loadExamQuestions(_exam.id);
     } catch (e) {
@@ -382,88 +307,23 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
   }
 
   void _showTimeUpWarning() {
-    showDialog(
+    AppDialog.warning(
       context: context,
-      barrierDismissible: false,
-      builder: (context) => _buildGlassDialog(
-        context,
-        child: ResponsiveColumn(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
-              decoration: BoxDecoration(
-                color: AppColors.telegramRed.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.timer_off_rounded,
-                  color: AppColors.telegramRed, size: 32),
-            ),
-            const ResponsiveSizedBox(height: AppSpacing.l),
-            ResponsiveText(
-              'Time\'s Up!',
-              style: AppTextStyles.titleLarge(context).copyWith(
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.5,
-              ),
-            ),
-            const ResponsiveSizedBox(height: AppSpacing.s),
-            ResponsiveText(
-              'The exam time has expired. Please submit your answers.',
-              style: AppTextStyles.bodyMedium(context).copyWith(
-                color: AppColors.getTextSecondary(context),
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const ResponsiveSizedBox(height: AppSpacing.xl),
-            ResponsiveRow(
-              children: [
-                Expanded(
-                  child: TextButton(
-                    onPressed: () => GoRouter.of(context).pop(),
-                    style: TextButton.styleFrom(
-                      padding: EdgeInsets.symmetric(
-                        vertical: ResponsiveValues.spacingM(context),
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(
-                          ResponsiveValues.radiusMedium(context),
-                        ),
-                      ),
-                    ),
-                    child: ResponsiveText(
-                      'OK',
-                      style: AppTextStyles.labelLarge(context).copyWith(
-                        color: AppColors.getTextSecondary(context),
-                      ),
-                    ),
-                  ),
-                ),
-                const ResponsiveSizedBox(width: AppSpacing.m),
-                Expanded(
-                  child: _buildGradientButton(
-                    label: 'Submit',
-                    onPressed: () {
-                      GoRouter.of(context).pop();
-                      _submitExam();
-                    },
-                    gradient: AppColors.blueGradient,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
+      title: 'Time\'s Up!',
+      message: 'The exam time has expired. Please submit your answers.',
+      confirmText: 'Submit',
+    ).then((confirmed) {
+      if (confirmed == true) {
+        _submitExam();
+      }
+    });
   }
 
   Future<void> _saveProgressToCache() async {
     if (_hasReachedMaxAttempts || _currentUserId == null) return;
 
     try {
-      final provider =
-          Provider.of<ExamQuestionProvider>(context, listen: false);
+      final provider = context.read<ExamQuestionProvider>();
       final progressData = {
         'exam_id': _exam.id,
         'current_index': _currentQuestionIndex,
@@ -478,15 +338,16 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
         ttl: const Duration(hours: 24),
         isUserSpecific: true,
       );
-    } catch (e) {}
+    } catch (e) {
+      debugLog('ExamScreen', 'Error saving progress: $e');
+    }
   }
 
   void _selectAnswer(String? answer) {
     if (!mounted || _hasReachedMaxAttempts) return;
 
     setState(() {
-      final provider =
-          Provider.of<ExamQuestionProvider>(context, listen: false);
+      final provider = context.read<ExamQuestionProvider>();
       final questions = provider.getQuestionsByExam(_exam.id);
 
       if (_currentQuestionIndex < questions.length) {
@@ -502,8 +363,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     if (_hasReachedMaxAttempts) return;
 
     setState(() {
-      final provider =
-          Provider.of<ExamQuestionProvider>(context, listen: false);
+      final provider = context.read<ExamQuestionProvider>();
       final questions = provider.getQuestionsByExam(_exam.id);
       if (_currentQuestionIndex < questions.length - 1) _currentQuestionIndex++;
     });
@@ -518,7 +378,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
   }
 
   bool _validateAllQuestionsAnswered() {
-    final provider = Provider.of<ExamQuestionProvider>(context, listen: false);
+    final provider = context.read<ExamQuestionProvider>();
     final questions = provider.getQuestionsByExam(_exam.id);
     for (var question in questions) {
       if (_answers[question.id] == null || _answers[question.id]!.isEmpty) {
@@ -532,90 +392,24 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     if (_isSubmitting || _hasReachedMaxAttempts) return;
 
     if (!_validateAllQuestionsAnswered()) {
-      showTopSnackBar(context, 'Please answer all questions before submitting',
-          isError: true);
+      SnackbarService()
+          .showError(context, 'Please answer all questions before submitting');
       return;
     }
 
-    final hasConnection = await hasInternetConnection();
-    if (!hasConnection) {
-      showTopSnackBar(
-        context,
-        'You are offline. Please check your internet connection.',
-        isError: true,
-      );
+    final connectivityService = context.read<ConnectivityService>();
+    if (!connectivityService.isOnline) {
+      SnackbarService().showOffline(context, action: 'submit exam');
       return;
     }
 
-    final confirmed = await showDialog<bool>(
+    final confirmed = await AppDialog.confirm(
       context: context,
-      builder: (context) => _buildGlassDialog(
-        context,
-        child: ResponsiveColumn(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
-              decoration: BoxDecoration(
-                color: AppColors.telegramBlue.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.send_rounded,
-                  color: AppColors.telegramBlue, size: 32),
-            ),
-            const ResponsiveSizedBox(height: AppSpacing.l),
-            ResponsiveText(
-              'Submit Exam',
-              style: AppTextStyles.titleLarge(context).copyWith(
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.5,
-              ),
-            ),
-            const ResponsiveSizedBox(height: AppSpacing.s),
-            ResponsiveText(
-              'Are you sure you want to submit the exam? You cannot change answers after submission.',
-              style: AppTextStyles.bodyMedium(context).copyWith(
-                color: AppColors.getTextSecondary(context),
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const ResponsiveSizedBox(height: AppSpacing.xl),
-            ResponsiveRow(
-              children: [
-                Expanded(
-                  child: TextButton(
-                    onPressed: () => GoRouter.of(context).pop(false),
-                    style: TextButton.styleFrom(
-                      padding: EdgeInsets.symmetric(
-                        vertical: ResponsiveValues.spacingM(context),
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(
-                          ResponsiveValues.radiusMedium(context),
-                        ),
-                      ),
-                    ),
-                    child: ResponsiveText(
-                      'Cancel',
-                      style: AppTextStyles.labelLarge(context).copyWith(
-                        color: AppColors.getTextSecondary(context),
-                      ),
-                    ),
-                  ),
-                ),
-                const ResponsiveSizedBox(width: AppSpacing.m),
-                Expanded(
-                  child: _buildGradientButton(
-                    label: 'Submit',
-                    onPressed: () => GoRouter.of(context).pop(true),
-                    gradient: AppColors.blueGradient,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
+      title: 'Submit Exam',
+      message:
+          'Are you sure you want to submit the exam? You cannot change answers after submission.',
+      confirmText: 'Submit',
+      cancelText: 'Cancel',
     );
 
     if (confirmed == true) await _doSubmitExam();
@@ -624,34 +418,10 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
   Future<void> _autoSubmitExam() async {
     if (_isSubmitting || _hasReachedMaxAttempts) return;
 
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => _buildGlassDialog(
-        context,
-        child: ResponsiveColumn(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              width: ResponsiveValues.iconSizeXL(context),
-              height: ResponsiveValues.iconSizeXL(context),
-              child: const CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation(AppColors.telegramBlue),
-              ),
-            ),
-            const ResponsiveSizedBox(height: AppSpacing.l),
-            ResponsiveText(
-              'Submitting Exam...',
-              style: AppTextStyles.titleMedium(context),
-            ),
-          ],
-        ),
-      ),
-    );
+    AppDialog.showLoading(context, message: 'Submitting Exam...');
 
     await _doSubmitExam();
-    if (mounted) GoRouter.of(context).pop();
+    AppDialog.hideLoading(context);
   }
 
   Future<void> _doSubmitExam() async {
@@ -661,8 +431,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     _stopTimer();
 
     try {
-      final provider =
-          Provider.of<ExamQuestionProvider>(context, listen: false);
+      final provider = context.read<ExamQuestionProvider>();
       final questions = provider.getQuestionsByExam(_exam.id);
 
       final answerList = questions.map((question) {
@@ -726,7 +495,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
               isUserSpecific: true);
         }
 
-        final examProvider = Provider.of<ExamProvider>(context, listen: false);
+        final examProvider = context.read<ExamProvider>();
         await examProvider.loadMyExamResults(forceRefresh: true);
 
         if (mounted) {
@@ -743,13 +512,13 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
         _handleUnauthorizedError();
       } else {
         if (mounted) {
-          showTopSnackBar(context, e.userFriendlyMessage, isError: true);
+          SnackbarService().showError(context, e.userFriendlyMessage);
         }
       }
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, 'Failed to submit exam. Please try again.',
-            isError: true);
+        SnackbarService()
+            .showError(context, 'Failed to submit exam. Please try again.');
       }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
@@ -757,7 +526,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
   }
 
   void _handleUnauthorizedError() {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final authProvider = context.read<AuthProvider>();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await authProvider.logout();
       if (mounted) GoRouter.of(context).go('/auth/login');
@@ -767,6 +536,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
   @override
   void dispose() {
     _stopTimer();
+    _connectivitySubscription?.cancel();
     if (!_hasReachedMaxAttempts && _currentUserId != null) {
       Future.microtask(() async {
         try {
@@ -796,7 +566,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildResultsScreen(BuildContext context) {
-    final provider = Provider.of<ExamQuestionProvider>(context);
+    final provider = context.read<ExamQuestionProvider>();
     final questions = provider.getQuestionsByExam(_exam.id);
 
     return Scaffold(
@@ -808,11 +578,8 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
         ),
         backgroundColor: AppColors.getBackground(context),
         elevation: 0,
-        leading: IconButton(
-          icon: ResponsiveIcon(
-            Icons.arrow_back_rounded,
-            color: AppColors.getTextPrimary(context),
-          ),
+        leading: AppButton.icon(
+          icon: Icons.arrow_back_rounded,
           onPressed: () => GoRouter.of(context).pop(),
         ),
       ),
@@ -820,97 +587,76 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
         padding: ResponsiveValues.screenPadding(context),
         child: ResponsiveColumn(
           children: [
-            ClipRRect(
-              borderRadius:
-                  BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                child: Container(
-                  width: double.infinity,
-                  padding: ResponsiveValues.dialogPadding(context),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        AppColors.telegramBlue.withValues(alpha: 0.3),
-                        AppColors.telegramBlue.withValues(alpha: 0.1),
+            AppCard.glass(
+              child: Padding(
+                padding: ResponsiveValues.dialogPadding(context),
+                child: ResponsiveColumn(
+                  children: [
+                    ResponsiveText(
+                      'Your Score',
+                      style: AppTextStyles.titleMedium(context).copyWith(
+                        color: Colors.white,
+                      ),
+                    ),
+                    ResponsiveSizedBox(height: AppSpacing.m),
+                    ResponsiveText(
+                      '${_submittedResult?.score.toStringAsFixed(1) ?? '0'}%',
+                      style: AppTextStyles.displayLarge(context).copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -1,
+                      ),
+                    ),
+                    ResponsiveSizedBox(height: AppSpacing.s),
+                    Container(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: ResponsiveValues.spacingL(context),
+                        vertical: ResponsiveValues.spacingS(context),
+                      ),
+                      decoration: BoxDecoration(
+                        color: (_submittedResult?.passed ?? false)
+                            ? AppColors.telegramGreen
+                            : AppColors.telegramRed,
+                        borderRadius: BorderRadius.circular(
+                          ResponsiveValues.radiusFull(context),
+                        ),
+                      ),
+                      child: ResponsiveText(
+                        (_submittedResult?.passed ?? false)
+                            ? 'PASSED'
+                            : 'FAILED',
+                        style: AppTextStyles.labelLarge(context).copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    ResponsiveSizedBox(height: AppSpacing.l),
+                    ResponsiveRow(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        _buildScoreStat(
+                          'Correct',
+                          '${_submittedResult?.correctAnswers ?? 0}',
+                          AppColors.telegramGreen,
+                        ),
+                        _buildScoreStat(
+                          'Total',
+                          '${_submittedResult?.totalQuestions ?? 0}',
+                          Colors.white,
+                        ),
+                        _buildScoreStat(
+                          'Time',
+                          _formatTime(_submittedResult?.timeTaken ?? 0),
+                          Colors.white70,
+                        ),
                       ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
                     ),
-                    borderRadius: BorderRadius.circular(
-                        ResponsiveValues.radiusXLarge(context)),
-                    border: Border.all(
-                      color: AppColors.telegramBlue.withValues(alpha: 0.3),
-                    ),
-                  ),
-                  child: ResponsiveColumn(
-                    children: [
-                      ResponsiveText(
-                        'Your Score',
-                        style: AppTextStyles.titleMedium(context).copyWith(
-                          color: Colors.white,
-                        ),
-                      ),
-                      const ResponsiveSizedBox(height: AppSpacing.m),
-                      ResponsiveText(
-                        '${_submittedResult?.score.toStringAsFixed(1) ?? '0'}%',
-                        style: AppTextStyles.displayLarge(context).copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -1,
-                        ),
-                      ),
-                      const ResponsiveSizedBox(height: AppSpacing.s),
-                      Container(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: ResponsiveValues.spacingL(context),
-                          vertical: ResponsiveValues.spacingS(context),
-                        ),
-                        decoration: BoxDecoration(
-                          color: (_submittedResult?.passed ?? false)
-                              ? AppColors.telegramGreen
-                              : AppColors.telegramRed,
-                          borderRadius: BorderRadius.circular(
-                            ResponsiveValues.radiusFull(context),
-                          ),
-                        ),
-                        child: ResponsiveText(
-                          (_submittedResult?.passed ?? false)
-                              ? 'PASSED'
-                              : 'FAILED',
-                          style: AppTextStyles.labelLarge(context).copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      const ResponsiveSizedBox(height: AppSpacing.l),
-                      ResponsiveRow(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          _buildScoreStat(
-                            'Correct',
-                            '${_submittedResult?.correctAnswers ?? 0}',
-                            AppColors.telegramGreen,
-                          ),
-                          _buildScoreStat(
-                            'Total',
-                            '${_submittedResult?.totalQuestions ?? 0}',
-                            Colors.white,
-                          ),
-                          _buildScoreStat(
-                            'Time',
-                            _formatTime(_submittedResult?.timeTaken ?? 0),
-                            Colors.white70,
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+                  ],
                 ),
               ),
             ),
-            const ResponsiveSizedBox(height: AppSpacing.xl),
+            ResponsiveSizedBox(height: AppSpacing.xl),
             ResponsiveText(
               'Answer Review',
               style: AppTextStyles.titleLarge(context).copyWith(
@@ -918,7 +664,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                 letterSpacing: -0.5,
               ),
             ),
-            const ResponsiveSizedBox(height: AppSpacing.l),
+            ResponsiveSizedBox(height: AppSpacing.l),
             ...List.generate(questions.length, (index) {
               final question = questions[index];
               final answerDetail = _answerDetails[question.id];
@@ -934,191 +680,137 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
 
               return Container(
                 margin: const EdgeInsets.only(bottom: AppThemes.spacingL),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(
-                      ResponsiveValues.radiusXLarge(context)),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
-                    child: Container(
-                      padding: ResponsiveValues.cardPadding(context),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            AppColors.getCard(context).withValues(alpha: 0.4),
-                            AppColors.getCard(context).withValues(alpha: 0.2),
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(
-                            ResponsiveValues.radiusXLarge(context)),
-                        border: Border.all(
-                          color: isCorrect
-                              ? AppColors.telegramGreen.withValues(alpha: 0.3)
-                              : AppColors.telegramRed.withValues(alpha: 0.3),
-                          width: 1.5,
-                        ),
-                      ),
-                      child: ResponsiveColumn(
-                        children: [
-                          ResponsiveRow(
-                            children: [
-                              Container(
-                                padding: EdgeInsets.all(
-                                    ResponsiveValues.spacingS(context)),
-                                decoration: BoxDecoration(
-                                  color: isCorrect
-                                      ? AppColors.greenFaded
-                                      : AppColors.redFaded,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: isCorrect
-                                        ? AppColors.telegramGreen
-                                        : AppColors.telegramRed,
-                                  ),
-                                ),
-                                child: Icon(
-                                  isCorrect ? Icons.check_circle : Icons.cancel,
+                child: AppCard.exam(
+                  statusColor: isCorrect
+                      ? AppColors.telegramGreen
+                      : AppColors.telegramRed,
+                  child: Padding(
+                    padding: ResponsiveValues.cardPadding(context),
+                    child: ResponsiveColumn(
+                      children: [
+                        ResponsiveRow(
+                          children: [
+                            Container(
+                              padding: EdgeInsets.all(
+                                  ResponsiveValues.spacingS(context)),
+                              decoration: BoxDecoration(
+                                color: isCorrect
+                                    ? AppColors.greenFaded
+                                    : AppColors.redFaded,
+                                shape: BoxShape.circle,
+                                border: Border.all(
                                   color: isCorrect
                                       ? AppColors.telegramGreen
                                       : AppColors.telegramRed,
-                                  size: ResponsiveValues.iconSizeS(context),
                                 ),
                               ),
-                              const ResponsiveSizedBox(width: AppSpacing.m),
-                              Expanded(
-                                child: ResponsiveText(
-                                  'Question ${index + 1}',
-                                  style: AppTextStyles.titleSmall(context)
-                                      .copyWith(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
+                              child: Icon(
+                                isCorrect ? Icons.check_circle : Icons.cancel,
+                                color: isCorrect
+                                    ? AppColors.telegramGreen
+                                    : AppColors.telegramRed,
+                                size: ResponsiveValues.iconSizeS(context),
                               ),
-                              Container(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal:
-                                      ResponsiveValues.spacingM(context),
-                                  vertical:
-                                      ResponsiveValues.spacingXXS(context),
-                                ),
-                                decoration: BoxDecoration(
-                                  color: AppColors.blueFaded,
-                                  borderRadius: BorderRadius.circular(
-                                    ResponsiveValues.radiusFull(context),
-                                  ),
-                                  border: Border.all(
-                                    color: AppColors.telegramBlue
-                                        .withValues(alpha: 0.3),
-                                  ),
-                                ),
-                                child: ResponsiveText(
-                                  '${question.marks} mark${question.marks > 1 ? 's' : ''}',
-                                  style:
-                                      AppTextStyles.caption(context).copyWith(
-                                    color: AppColors.telegramBlue,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const ResponsiveSizedBox(height: AppSpacing.m),
-                          ResponsiveText(
-                            question.questionText,
-                            style: AppTextStyles.bodyLarge(context).copyWith(
-                              fontWeight: FontWeight.w500,
-                              height: 1.5,
                             ),
-                          ),
-                          const ResponsiveSizedBox(height: AppSpacing.l),
-                          _buildAnswerRow(
-                            'Your answer:',
-                            _getOptionLetter(question, userAnswer),
-                            isCorrect,
-                          ),
-                          if (!isCorrect) ...[
-                            const ResponsiveSizedBox(height: AppSpacing.m),
-                            _buildAnswerRow(
-                              'Correct answer:',
-                              _getOptionLetter(question, correctAnswer),
-                              true,
-                              showIcon: false,
+                            ResponsiveSizedBox(width: AppSpacing.m),
+                            Expanded(
+                              child: ResponsiveText(
+                                'Question ${index + 1}',
+                                style:
+                                    AppTextStyles.titleSmall(context).copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            Container(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: ResponsiveValues.spacingM(context),
+                                vertical: ResponsiveValues.spacingXXS(context),
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.blueFaded,
+                                borderRadius: BorderRadius.circular(
+                                  ResponsiveValues.radiusFull(context),
+                                ),
+                                border: Border.all(
+                                  color: AppColors.telegramBlue
+                                      .withValues(alpha: 0.3),
+                                ),
+                              ),
+                              child: ResponsiveText(
+                                '${question.marks} mark${question.marks > 1 ? 's' : ''}',
+                                style: AppTextStyles.caption(context).copyWith(
+                                  color: AppColors.telegramBlue,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                             ),
                           ],
-                          if (explanation.isNotEmpty) ...[
-                            const ResponsiveSizedBox(height: AppSpacing.l),
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(
-                                ResponsiveValues.radiusMedium(context),
-                              ),
-                              child: BackdropFilter(
-                                filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
-                                child: Container(
-                                  padding:
-                                      ResponsiveValues.cardPadding(context),
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                      colors: [
-                                        AppColors.getCard(context)
-                                            .withValues(alpha: 0.2),
-                                        AppColors.getCard(context)
-                                            .withValues(alpha: 0.1),
-                                      ],
-                                    ),
-                                    borderRadius: BorderRadius.circular(
-                                      ResponsiveValues.radiusMedium(context),
-                                    ),
-                                    border: Border.all(
+                        ),
+                        ResponsiveSizedBox(height: AppSpacing.m),
+                        ResponsiveText(
+                          question.questionText,
+                          style: AppTextStyles.bodyLarge(context).copyWith(
+                            fontWeight: FontWeight.w500,
+                            height: 1.5,
+                          ),
+                        ),
+                        ResponsiveSizedBox(height: AppSpacing.l),
+                        _buildAnswerRow(
+                          'Your answer:',
+                          _getOptionLetter(question, userAnswer),
+                          isCorrect,
+                        ),
+                        if (!isCorrect) ...[
+                          ResponsiveSizedBox(height: AppSpacing.m),
+                          _buildAnswerRow(
+                            'Correct answer:',
+                            _getOptionLetter(question, correctAnswer),
+                            true,
+                            showIcon: false,
+                          ),
+                        ],
+                        if (explanation.isNotEmpty) ...[
+                          ResponsiveSizedBox(height: AppSpacing.l),
+                          AppCard.glass(
+                            child: Padding(
+                              padding: ResponsiveValues.cardPadding(context),
+                              child: ResponsiveColumn(
+                                children: [
+                                  ResponsiveText(
+                                    'Explanation:',
+                                    style: AppTextStyles.labelMedium(context)
+                                        .copyWith(
                                       color: isCorrect
                                           ? AppColors.telegramGreen
-                                              .withValues(alpha: 0.2)
-                                          : AppColors.telegramBlue
-                                              .withValues(alpha: 0.2),
+                                          : AppColors.telegramBlue,
                                     ),
                                   ),
-                                  child: ResponsiveColumn(
-                                    children: [
-                                      ResponsiveText(
-                                        'Explanation:',
-                                        style:
-                                            AppTextStyles.labelMedium(context)
-                                                .copyWith(
-                                          color: isCorrect
-                                              ? AppColors.telegramGreen
-                                              : AppColors.telegramBlue,
-                                        ),
-                                      ),
-                                      const ResponsiveSizedBox(
-                                          height: AppSpacing.xs),
-                                      ResponsiveText(
-                                        explanation,
-                                        style: AppTextStyles.bodyMedium(context)
-                                            .copyWith(
-                                          color: AppColors.getTextSecondary(
-                                              context),
-                                        ),
-                                      ),
-                                    ],
+                                  ResponsiveSizedBox(height: AppSpacing.xs),
+                                  ResponsiveText(
+                                    explanation,
+                                    style: AppTextStyles.bodyMedium(context)
+                                        .copyWith(
+                                      color:
+                                          AppColors.getTextSecondary(context),
+                                    ),
                                   ),
-                                ),
+                                ],
                               ),
                             ),
-                          ],
+                          ),
                         ],
-                      ),
+                      ],
                     ),
                   ),
                 ),
               );
             }),
-            const ResponsiveSizedBox(height: AppSpacing.xxl),
-            _buildGradientButton(
+            ResponsiveSizedBox(height: AppSpacing.xxl),
+            AppButton.primary(
               label: 'Done',
               onPressed: () => GoRouter.of(context).pop(),
-              gradient: AppColors.blueGradient,
+              expanded: true,
             ),
           ],
         ),
@@ -1160,7 +852,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                   isCorrect ? AppColors.telegramGreen : AppColors.telegramRed,
             ),
           ),
-        if (showIcon) const ResponsiveSizedBox(width: AppSpacing.s),
+        if (showIcon) ResponsiveSizedBox(width: AppSpacing.s),
         Expanded(
           child: RichText(
             text: TextSpan(
@@ -1228,11 +920,8 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
         ),
         backgroundColor: AppColors.getBackground(context),
         elevation: 0,
-        leading: IconButton(
-          icon: ResponsiveIcon(
-            Icons.arrow_back_rounded,
-            color: AppColors.getTextPrimary(context),
-          ),
+        leading: AppButton.icon(
+          icon: Icons.arrow_back_rounded,
           onPressed: () => GoRouter.of(context).pop(),
         ),
       ),
@@ -1240,71 +929,51 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
         padding: ResponsiveValues.screenPadding(context),
         child: ResponsiveColumn(
           children: [
-            ClipRRect(
-              borderRadius:
-                  BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                child: Container(
-                  padding: ResponsiveValues.cardPadding(context),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        AppColors.telegramBlue.withValues(alpha: 0.15),
-                        AppColors.telegramBlue.withValues(alpha: 0.05),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(
-                        ResponsiveValues.radiusLarge(context)),
-                    border: Border.all(
-                      color: AppColors.telegramBlue.withValues(alpha: 0.3),
-                    ),
-                  ),
-                  child: ResponsiveRow(
-                    children: [
-                      Container(
-                        padding:
-                            EdgeInsets.all(ResponsiveValues.spacingM(context)),
-                        decoration: BoxDecoration(
-                          color: AppColors.blueFaded,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.info_rounded,
-                          color: AppColors.telegramBlue,
-                          size: 24,
-                        ),
+            AppCard.glass(
+              child: Padding(
+                padding: ResponsiveValues.cardPadding(context),
+                child: ResponsiveRow(
+                  children: [
+                    Container(
+                      padding:
+                          EdgeInsets.all(ResponsiveValues.spacingM(context)),
+                      decoration: BoxDecoration(
+                        color: AppColors.blueFaded,
+                        shape: BoxShape.circle,
                       ),
-                      const ResponsiveSizedBox(width: AppSpacing.l),
-                      Expanded(
-                        child: ResponsiveColumn(
-                          children: [
-                            ResponsiveText(
-                              'Instructions',
-                              style: AppTextStyles.titleSmall(context).copyWith(
-                                color: AppColors.telegramBlue,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: -0.3,
-                              ),
-                            ),
-                            const ResponsiveSizedBox(height: AppSpacing.xs),
-                            ResponsiveText(
-                              'Please read carefully before starting',
-                              style: AppTextStyles.bodySmall(context).copyWith(
-                                color: AppColors.getTextSecondary(context),
-                              ),
-                            ),
-                          ],
-                        ),
+                      child: const Icon(
+                        Icons.info_rounded,
+                        color: AppColors.telegramBlue,
+                        size: 24,
                       ),
-                    ],
-                  ),
+                    ),
+                    ResponsiveSizedBox(width: AppSpacing.l),
+                    Expanded(
+                      child: ResponsiveColumn(
+                        children: [
+                          ResponsiveText(
+                            'Instructions',
+                            style: AppTextStyles.titleSmall(context).copyWith(
+                              color: AppColors.telegramBlue,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
+                          ResponsiveSizedBox(height: AppSpacing.xs),
+                          ResponsiveText(
+                            'Please read carefully before starting',
+                            style: AppTextStyles.bodySmall(context).copyWith(
+                              color: AppColors.getTextSecondary(context),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-            const ResponsiveSizedBox(height: AppSpacing.xl),
+            ResponsiveSizedBox(height: AppSpacing.xl),
             ResponsiveText(
               'Exam Details',
               style: AppTextStyles.titleLarge(context).copyWith(
@@ -1312,7 +981,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                 letterSpacing: -0.5,
               ),
             ),
-            const ResponsiveSizedBox(height: AppSpacing.l),
+            ResponsiveSizedBox(height: AppSpacing.l),
             _buildDetailItem(
               icon: Icons.description_rounded,
               label: 'Title:',
@@ -1358,40 +1027,26 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
               label: 'Your Attempts:',
               value: '${_exam.attemptsTaken}/${_exam.maxAttempts}',
             ),
-            const ResponsiveSizedBox(height: AppSpacing.xxl),
+            ResponsiveSizedBox(height: AppSpacing.xxl),
             if (!_hasReachedMaxAttempts)
               SizedBox(
                 width: double.infinity,
-                child: _buildGradientButton(
+                child: AppButton.primary(
                   label: 'Start Exam Now',
                   onPressed: () {
                     setState(() => _showInstructions = false);
                     _startTimer();
                   },
-                  gradient: AppColors.blueGradient,
+                  expanded: true,
                 ),
               ),
-            const ResponsiveSizedBox(height: AppSpacing.l),
+            ResponsiveSizedBox(height: AppSpacing.l),
             SizedBox(
               width: double.infinity,
-              child: TextButton(
+              child: AppButton.outline(
+                label: 'Cancel',
                 onPressed: () => GoRouter.of(context).pop(),
-                style: TextButton.styleFrom(
-                  padding: EdgeInsets.symmetric(
-                    vertical: ResponsiveValues.spacingM(context),
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(
-                      ResponsiveValues.radiusMedium(context),
-                    ),
-                  ),
-                ),
-                child: ResponsiveText(
-                  'Cancel',
-                  style: AppTextStyles.buttonMedium(context).copyWith(
-                    color: AppColors.getTextSecondary(context),
-                  ),
-                ),
+                expanded: true,
               ),
             ),
           ],
@@ -1425,7 +1080,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
               color: AppColors.telegramBlue,
             ),
           ),
-          const ResponsiveSizedBox(width: AppSpacing.m),
+          ResponsiveSizedBox(width: AppSpacing.m),
           Expanded(
             child: ResponsiveRow(
               children: [
@@ -1475,90 +1130,18 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
         ),
         backgroundColor: AppColors.getBackground(context),
         elevation: 0,
-        leading: IconButton(
-          icon: ResponsiveIcon(
-            Icons.arrow_back_rounded,
-            color: AppColors.getTextPrimary(context),
-          ),
+        leading: AppButton.icon(
+          icon: Icons.arrow_back_rounded,
           onPressed: _isSubmitting
               ? null
               : () async {
-                  final confirm = await showDialog<bool>(
+                  final confirm = await AppDialog.confirm(
                     context: context,
-                    builder: (context) => _buildGlassDialog(
-                      context,
-                      child: ResponsiveColumn(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            padding: EdgeInsets.all(
-                                ResponsiveValues.spacingL(context)),
-                            decoration: BoxDecoration(
-                              color: AppColors.telegramYellow
-                                  .withValues(alpha: 0.1),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(Icons.exit_to_app_rounded,
-                                color: AppColors.telegramYellow, size: 32),
-                          ),
-                          const ResponsiveSizedBox(height: AppSpacing.l),
-                          ResponsiveText(
-                            'Leave Exam?',
-                            style: AppTextStyles.titleLarge(context).copyWith(
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: -0.5,
-                            ),
-                          ),
-                          const ResponsiveSizedBox(height: AppSpacing.s),
-                          ResponsiveText(
-                            'Your progress will be saved. You can resume later.',
-                            style: AppTextStyles.bodyMedium(context).copyWith(
-                              color: AppColors.getTextSecondary(context),
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                          const ResponsiveSizedBox(height: AppSpacing.xl),
-                          ResponsiveRow(
-                            children: [
-                              Expanded(
-                                child: TextButton(
-                                  onPressed: () =>
-                                      GoRouter.of(context).pop(false),
-                                  style: TextButton.styleFrom(
-                                    padding: EdgeInsets.symmetric(
-                                      vertical:
-                                          ResponsiveValues.spacingM(context),
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(
-                                        ResponsiveValues.radiusMedium(context),
-                                      ),
-                                    ),
-                                  ),
-                                  child: ResponsiveText(
-                                    'Stay',
-                                    style: AppTextStyles.labelLarge(context)
-                                        .copyWith(
-                                      color:
-                                          AppColors.getTextSecondary(context),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const ResponsiveSizedBox(width: AppSpacing.m),
-                              Expanded(
-                                child: _buildGradientButton(
-                                  label: 'Leave',
-                                  onPressed: () =>
-                                      GoRouter.of(context).pop(true),
-                                  gradient: AppColors.orangeGradient,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
+                    title: 'Leave Exam?',
+                    message:
+                        'Your progress will be saved. You can resume later.',
+                    confirmText: 'Leave',
+                    cancelText: 'Stay',
                   );
                   if (confirm == true && mounted) {
                     await _saveProgressToCache();
@@ -1590,7 +1173,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                   size: ResponsiveValues.iconSizeXS(context),
                   color: timeColor,
                 ),
-                const ResponsiveSizedBox(width: AppSpacing.xs),
+                ResponsiveSizedBox(width: AppSpacing.xs),
                 ResponsiveText(
                   _getTimeString(),
                   style: AppTextStyles.labelMedium(context).copyWith(
@@ -1605,107 +1188,86 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       ),
       body: ResponsiveColumn(
         children: [
-          ClipRRect(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
-              child: Container(
-                padding: ResponsiveValues.cardPadding(context),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      AppColors.getSurface(context).withValues(alpha: 0.4),
-                      AppColors.getSurface(context).withValues(alpha: 0.2),
+          AppCard.glass(
+            child: Padding(
+              padding: ResponsiveValues.cardPadding(context),
+              child: ResponsiveColumn(
+                children: [
+                  ResponsiveRow(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      ResponsiveText(
+                        'Question ${_currentQuestionIndex + 1} of $totalQuestions',
+                        style: AppTextStyles.bodyMedium(context),
+                      ),
+                      Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: ResponsiveValues.spacingM(context),
+                          vertical: ResponsiveValues.spacingXS(context),
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.blueFaded,
+                          borderRadius: BorderRadius.circular(
+                            ResponsiveValues.radiusFull(context),
+                          ),
+                          border: Border.all(
+                            color:
+                                AppColors.telegramBlue.withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Text(
+                          '$answeredQuestions/$totalQuestions answered',
+                          style: AppTextStyles.labelSmall(context).copyWith(
+                            color: AppColors.telegramBlue,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
-                  border: Border(
-                    bottom: BorderSide(
-                      color:
-                          AppColors.getDivider(context).withValues(alpha: 0.5),
-                      width: 0.5,
+                  const ResponsiveSizedBox(height: AppSpacing.s),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(
+                      ResponsiveValues.radiusFull(context),
                     ),
-                  ),
-                ),
-                child: ResponsiveColumn(
-                  children: [
-                    ResponsiveRow(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    child: Stack(
                       children: [
-                        ResponsiveText(
-                          'Question ${_currentQuestionIndex + 1} of $totalQuestions',
-                          style: AppTextStyles.bodyMedium(context),
-                        ),
                         Container(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: ResponsiveValues.spacingM(context),
-                            vertical: ResponsiveValues.spacingXS(context),
-                          ),
+                          height: ResponsiveValues.progressBarHeight(context),
                           decoration: BoxDecoration(
-                            color: AppColors.blueFaded,
+                            color: AppColors.getSurface(context)
+                                .withValues(alpha: 0.3),
                             borderRadius: BorderRadius.circular(
                               ResponsiveValues.radiusFull(context),
                             ),
-                            border: Border.all(
-                              color:
-                                  AppColors.telegramBlue.withValues(alpha: 0.3),
-                            ),
                           ),
-                          child: ResponsiveText(
-                            '$answeredQuestions/$totalQuestions answered',
-                            style: AppTextStyles.labelSmall(context).copyWith(
-                              color: AppColors.telegramBlue,
-                              fontWeight: FontWeight.w600,
+                        ),
+                        FractionallySizedBox(
+                          widthFactor: answeredQuestions / totalQuestions,
+                          child: Container(
+                            height: ResponsiveValues.progressBarHeight(context),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: AppColors.blueGradient,
+                              ),
+                              borderRadius: BorderRadius.circular(
+                                ResponsiveValues.radiusFull(context),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: AppColors.telegramBlue
+                                      .withValues(alpha: 0.5),
+                                  blurRadius:
+                                      ResponsiveValues.spacingXS(context),
+                                ),
+                              ],
                             ),
                           ),
                         ),
                       ],
                     ),
-                    const ResponsiveSizedBox(height: AppSpacing.s),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(
-                        ResponsiveValues.radiusFull(context),
-                      ),
-                      child: Stack(
-                        children: [
-                          Container(
-                            height: ResponsiveValues.progressBarHeight(context),
-                            decoration: BoxDecoration(
-                              color: AppColors.getSurface(context)
-                                  .withValues(alpha: 0.3),
-                              borderRadius: BorderRadius.circular(
-                                ResponsiveValues.radiusFull(context),
-                              ),
-                            ),
-                          ),
-                          FractionallySizedBox(
-                            widthFactor: answeredQuestions / totalQuestions,
-                            child: Container(
-                              height:
-                                  ResponsiveValues.progressBarHeight(context),
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  colors: AppColors.blueGradient,
-                                ),
-                                borderRadius: BorderRadius.circular(
-                                  ResponsiveValues.radiusFull(context),
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: AppColors.telegramBlue
-                                        .withValues(alpha: 0.5),
-                                    blurRadius:
-                                        ResponsiveValues.spacingXS(context),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -1719,66 +1281,47 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
               ),
             ),
           ),
-          ClipRRect(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
-              child: Container(
-                padding: ResponsiveValues.cardPadding(context),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      AppColors.getCard(context).withValues(alpha: 0.4),
-                      AppColors.getCard(context).withValues(alpha: 0.2),
+          AppCard.glass(
+            child: Padding(
+              padding: ResponsiveValues.cardPadding(context),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: AppButton.glass(
+                          label: 'Previous',
+                          icon: Icons.arrow_back_ios_rounded,
+                          onPressed: _currentQuestionIndex > 0
+                              ? _previousQuestion
+                              : null,
+                          expanded: true,
+                        ),
+                      ),
+                      const ResponsiveSizedBox(width: AppSpacing.m),
+                      Expanded(
+                        child: AppButton.glass(
+                          label: 'Next',
+                          icon: Icons.arrow_forward_ios_rounded,
+                          onPressed: _currentQuestionIndex < totalQuestions - 1
+                              ? _nextQuestion
+                              : null,
+                          expanded: true,
+                        ),
+                      ),
                     ],
                   ),
-                  border: Border(
-                    top: BorderSide(
-                      color:
-                          AppColors.getDivider(context).withValues(alpha: 0.5),
-                      width: 0.5,
+                  const ResponsiveSizedBox(height: AppSpacing.m),
+                  SizedBox(
+                    width: double.infinity,
+                    child: AppButton.primary(
+                      label: 'Submit Exam',
+                      onPressed: _isSubmitting ? null : _submitExam,
+                      isLoading: _isSubmitting,
+                      expanded: true,
                     ),
                   ),
-                ),
-                child: ResponsiveColumn(
-                  children: [
-                    ResponsiveRow(
-                      children: [
-                        Expanded(
-                          child: _buildNavButton(
-                            label: 'Previous',
-                            icon: Icons.arrow_back_ios_rounded,
-                            onPressed: _currentQuestionIndex > 0
-                                ? _previousQuestion
-                                : null,
-                          ),
-                        ),
-                        const ResponsiveSizedBox(width: AppSpacing.m),
-                        Expanded(
-                          child: _buildNavButton(
-                            label: 'Next',
-                            icon: Icons.arrow_forward_ios_rounded,
-                            onPressed:
-                                _currentQuestionIndex < totalQuestions - 1
-                                    ? _nextQuestion
-                                    : null,
-                            isNext: true,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const ResponsiveSizedBox(height: AppSpacing.m),
-                    SizedBox(
-                      width: double.infinity,
-                      child: _buildGradientButton(
-                        label: 'Submit Exam',
-                        onPressed: _isSubmitting ? null : _submitExam,
-                        gradient: AppColors.blueGradient,
-                      ),
-                    ),
-                  ],
-                ),
+                ],
               ),
             ),
           ),
@@ -1787,88 +1330,9 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildNavButton({
-    required String label,
-    required IconData icon,
-    required VoidCallback? onPressed,
-    bool isNext = false,
-  }) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onPressed,
-          borderRadius:
-              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-          child: Container(
-            padding: EdgeInsets.symmetric(
-              vertical: ResponsiveValues.spacingM(context),
-            ),
-            decoration: BoxDecoration(
-              gradient: onPressed != null
-                  ? LinearGradient(
-                      colors: [
-                        AppColors.getSurface(context).withValues(alpha: 0.2),
-                        AppColors.getSurface(context).withValues(alpha: 0.1),
-                      ],
-                    )
-                  : null,
-              borderRadius:
-                  BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-              border: Border.all(
-                color: onPressed != null
-                    ? AppColors.telegramBlue.withValues(alpha: 0.3)
-                    : AppColors.getTextSecondary(context)
-                        .withValues(alpha: 0.1),
-              ),
-            ),
-            child: ResponsiveRow(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (!isNext) ...[
-                  Icon(
-                    icon,
-                    size: ResponsiveValues.iconSizeXS(context),
-                    color: onPressed != null
-                        ? AppColors.telegramBlue
-                        : AppColors.getTextSecondary(context)
-                            .withValues(alpha: 0.3),
-                  ),
-                  const ResponsiveSizedBox(width: AppSpacing.s),
-                ],
-                ResponsiveText(
-                  label,
-                  style: AppTextStyles.labelMedium(context).copyWith(
-                    color: onPressed != null
-                        ? AppColors.telegramBlue
-                        : AppColors.getTextSecondary(context)
-                            .withValues(alpha: 0.3),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                if (isNext) ...[
-                  const ResponsiveSizedBox(width: AppSpacing.s),
-                  Icon(
-                    icon,
-                    size: ResponsiveValues.iconSizeXS(context),
-                    color: onPressed != null
-                        ? AppColors.telegramBlue
-                        : AppColors.getTextSecondary(context)
-                            .withValues(alpha: 0.3),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildMobileLayout() {
-    final authProvider = Provider.of<AuthProvider>(context);
-    final questionProvider = Provider.of<ExamQuestionProvider>(context);
+    final authProvider = context.read<AuthProvider>();
+    final questionProvider = context.read<ExamQuestionProvider>();
 
     if (_showResults && _submittedResult != null) {
       return _buildResultsScreen(context);
@@ -1878,7 +1342,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
         appBar: AppBar(
-          title: ResponsiveText(
+          title: Text(
             _exam.title,
             style: AppTextStyles.appBarTitle(context),
             maxLines: 1,
@@ -1886,70 +1350,54 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
           ),
           backgroundColor: AppColors.getBackground(context),
           elevation: 0,
-          leading: IconButton(
-            icon: ResponsiveIcon(
-              Icons.arrow_back_rounded,
-              color: AppColors.getTextPrimary(context),
-            ),
+          leading: AppButton.icon(
+            icon: Icons.arrow_back_rounded,
             onPressed: () => GoRouter.of(context).pop(),
           ),
         ),
         body: Center(
           child: Padding(
             padding: EdgeInsets.all(ResponsiveValues.spacingXL(context)),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(
-                  ResponsiveValues.radiusXXLarge(context)),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                child: Container(
-                  padding: ResponsiveValues.dialogPadding(context),
-                  decoration: BoxDecoration(
-                    color: AppColors.getCard(context).withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(
-                        ResponsiveValues.radiusXXLarge(context)),
-                    border: Border.all(
-                      color: AppColors.telegramRed.withValues(alpha: 0.2),
+            child: AppCard.glass(
+              child: Padding(
+                padding: ResponsiveValues.dialogPadding(context),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding:
+                          EdgeInsets.all(ResponsiveValues.spacingL(context)),
+                      decoration: BoxDecoration(
+                        color: AppColors.redFaded,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.block_rounded,
+                          size: 48, color: AppColors.telegramRed),
                     ),
-                  ),
-                  child: ResponsiveColumn(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        padding:
-                            EdgeInsets.all(ResponsiveValues.spacingL(context)),
-                        decoration: BoxDecoration(
-                          color: AppColors.redFaded,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.block_rounded,
-                            size: 48, color: AppColors.telegramRed),
+                    const ResponsiveSizedBox(height: AppSpacing.xl),
+                    Text(
+                      'Maximum Attempts Reached',
+                      style: AppTextStyles.headlineMedium(context).copyWith(
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.5,
                       ),
-                      const ResponsiveSizedBox(height: AppSpacing.xl),
-                      ResponsiveText(
-                        'Maximum Attempts Reached',
-                        style: AppTextStyles.headlineMedium(context).copyWith(
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.5,
-                        ),
-                        textAlign: TextAlign.center,
+                      textAlign: TextAlign.center,
+                    ),
+                    const ResponsiveSizedBox(height: AppSpacing.m),
+                    Text(
+                      'You have used all ${_exam.maxAttempts} attempt(s) for this exam.',
+                      style: AppTextStyles.bodyLarge(context).copyWith(
+                        color: AppColors.getTextSecondary(context),
                       ),
-                      const ResponsiveSizedBox(height: AppSpacing.m),
-                      ResponsiveText(
-                        'You have used all ${_exam.maxAttempts} attempt(s) for this exam.',
-                        style: AppTextStyles.bodyLarge(context).copyWith(
-                          color: AppColors.getTextSecondary(context),
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const ResponsiveSizedBox(height: AppSpacing.xl),
-                      _buildGradientButton(
-                        label: 'Go Back',
-                        onPressed: () => GoRouter.of(context).pop(),
-                        gradient: AppColors.blueGradient,
-                      ),
-                    ],
-                  ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const ResponsiveSizedBox(height: AppSpacing.xl),
+                    AppButton.primary(
+                      label: 'Go Back',
+                      onPressed: () => GoRouter.of(context).pop(),
+                      expanded: true,
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -1962,7 +1410,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
         appBar: AppBar(
-          title: ResponsiveText(
+          title: Text(
             _exam.title,
             style: AppTextStyles.appBarTitle(context),
             maxLines: 1,
@@ -1970,68 +1418,52 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
           ),
           backgroundColor: AppColors.getBackground(context),
           elevation: 0,
-          leading: IconButton(
-            icon: ResponsiveIcon(
-              Icons.arrow_back_rounded,
-              color: AppColors.getTextPrimary(context),
-            ),
+          leading: AppButton.icon(
+            icon: Icons.arrow_back_rounded,
             onPressed: () => GoRouter.of(context).pop(),
           ),
         ),
         body: Center(
           child: Padding(
             padding: EdgeInsets.all(ResponsiveValues.spacingXL(context)),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(
-                  ResponsiveValues.radiusXXLarge(context)),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                child: Container(
-                  padding: ResponsiveValues.dialogPadding(context),
-                  decoration: BoxDecoration(
-                    color: AppColors.getCard(context).withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(
-                        ResponsiveValues.radiusXXLarge(context)),
-                    border: Border.all(
-                      color: AppColors.telegramBlue.withValues(alpha: 0.2),
+            child: AppCard.glass(
+              child: Padding(
+                padding: ResponsiveValues.dialogPadding(context),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding:
+                          EdgeInsets.all(ResponsiveValues.spacingL(context)),
+                      decoration: BoxDecoration(
+                        color: AppColors.blueFaded,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.lock_rounded,
+                          size: 48, color: AppColors.telegramBlue),
                     ),
-                  ),
-                  child: ResponsiveColumn(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        padding:
-                            EdgeInsets.all(ResponsiveValues.spacingL(context)),
-                        decoration: BoxDecoration(
-                          color: AppColors.blueFaded,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.lock_rounded,
-                            size: 48, color: AppColors.telegramBlue),
+                    const ResponsiveSizedBox(height: AppSpacing.xl),
+                    Text(
+                      'Authentication Required',
+                      style: AppTextStyles.headlineMedium(context).copyWith(
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.5,
                       ),
-                      const ResponsiveSizedBox(height: AppSpacing.xl),
-                      ResponsiveText(
-                        'Authentication Required',
-                        style: AppTextStyles.headlineMedium(context).copyWith(
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.5,
-                        ),
+                    ),
+                    const ResponsiveSizedBox(height: AppSpacing.m),
+                    Text(
+                      'Please login to take this exam',
+                      style: AppTextStyles.bodyLarge(context).copyWith(
+                        color: AppColors.getTextSecondary(context),
                       ),
-                      const ResponsiveSizedBox(height: AppSpacing.m),
-                      ResponsiveText(
-                        'Please login to take this exam',
-                        style: AppTextStyles.bodyLarge(context).copyWith(
-                          color: AppColors.getTextSecondary(context),
-                        ),
-                      ),
-                      const ResponsiveSizedBox(height: AppSpacing.xl),
-                      _buildGradientButton(
-                        label: 'Login',
-                        onPressed: () => GoRouter.of(context).go('/auth/login'),
-                        gradient: AppColors.blueGradient,
-                      ),
-                    ],
-                  ),
+                    ),
+                    const ResponsiveSizedBox(height: AppSpacing.xl),
+                    AppButton.primary(
+                      label: 'Login',
+                      onPressed: () => GoRouter.of(context).go('/auth/login'),
+                      expanded: true,
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -2044,7 +1476,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
         appBar: AppBar(
-          title: ResponsiveText(
+          title: Text(
             _exam.title,
             style: AppTextStyles.appBarTitle(context),
             maxLines: 1,
@@ -2052,15 +1484,31 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
           ),
           backgroundColor: AppColors.getBackground(context),
           elevation: 0,
-          leading: IconButton(
-            icon: ResponsiveIcon(
-              Icons.arrow_back_rounded,
-              color: AppColors.getTextPrimary(context),
-            ),
+          leading: AppButton.icon(
+            icon: Icons.arrow_back_rounded,
             onPressed: () => GoRouter.of(context).pop(),
           ),
         ),
-        body: const LoadingIndicator(message: 'Checking access...'),
+        body: Center(
+          child: AppCard.glass(
+            child: Padding(
+              padding: ResponsiveValues.dialogPadding(context),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const AppShimmer(type: ShimmerType.circle),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Loading...',
+                    style: AppTextStyles.bodyMedium(context).copyWith(
+                      color: AppColors.getTextSecondary(context),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       );
     }
 
@@ -2068,7 +1516,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
         appBar: AppBar(
-          title: ResponsiveText(
+          title: Text(
             _exam.title,
             style: AppTextStyles.appBarTitle(context),
             maxLines: 1,
@@ -2076,11 +1524,8 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
           ),
           backgroundColor: AppColors.getBackground(context),
           elevation: 0,
-          leading: IconButton(
-            icon: ResponsiveIcon(
-              Icons.arrow_back_rounded,
-              color: AppColors.getTextPrimary(context),
-            ),
+          leading: AppButton.icon(
+            icon: Icons.arrow_back_rounded,
             onPressed: () => GoRouter.of(context).pop(),
           ),
         ),
@@ -2088,69 +1533,56 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
           child: Padding(
             padding: EdgeInsets.all(
                 ResponsiveValues.screenPadding(context) as double),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(
-                  ResponsiveValues.radiusXXLarge(context)),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                child: Container(
-                  padding: ResponsiveValues.dialogPadding(context),
-                  decoration: BoxDecoration(
-                    color: AppColors.getCard(context).withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(
-                        ResponsiveValues.radiusXXLarge(context)),
-                    border: Border.all(
-                      color: AppColors.telegramBlue.withValues(alpha: 0.2),
+            child: AppCard.glass(
+              child: Padding(
+                padding: ResponsiveValues.dialogPadding(context),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding:
+                          EdgeInsets.all(ResponsiveValues.spacingL(context)),
+                      decoration: BoxDecoration(
+                        color: AppColors.blueFaded,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.lock_rounded,
+                          size: 48, color: AppColors.telegramBlue),
                     ),
-                  ),
-                  child: ResponsiveColumn(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        padding:
-                            EdgeInsets.all(ResponsiveValues.spacingL(context)),
-                        decoration: BoxDecoration(
-                          color: AppColors.blueFaded,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.lock_rounded,
-                            size: 48, color: AppColors.telegramBlue),
+                    const ResponsiveSizedBox(height: AppSpacing.xl),
+                    Text(
+                      'Payment Required',
+                      style: AppTextStyles.headlineMedium(context).copyWith(
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.5,
                       ),
-                      const ResponsiveSizedBox(height: AppSpacing.xl),
-                      ResponsiveText(
-                        'Payment Required',
-                        style: AppTextStyles.headlineMedium(context).copyWith(
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.5,
-                        ),
+                    ),
+                    const ResponsiveSizedBox(height: AppSpacing.m),
+                    Text(
+                      'You need to purchase "${_exam.categoryName}" to access this exam.',
+                      textAlign: TextAlign.center,
+                      style: AppTextStyles.bodyLarge(context).copyWith(
+                        color: AppColors.getTextSecondary(context),
+                        height: 1.6,
                       ),
-                      const ResponsiveSizedBox(height: AppSpacing.m),
-                      ResponsiveText(
-                        'You need to purchase "${_exam.categoryName}" to access this exam.',
-                        textAlign: TextAlign.center,
-                        style: AppTextStyles.bodyLarge(context).copyWith(
-                          color: AppColors.getTextSecondary(context),
-                          height: 1.6,
-                        ),
-                      ),
-                      const ResponsiveSizedBox(height: AppSpacing.xl),
-                      _buildGradientButton(
-                        label: 'Purchase Access',
-                        onPressed: () {
-                          GoRouter.of(context).pop();
-                          GoRouter.of(context).push('/payment', extra: {
-                            'category': _exam.categoryName,
-                            'categoryId': _exam.categoryId,
-                            'paymentType': 'first_time',
-                            'context': 'exam',
-                            'examId': _exam.id,
-                            'examTitle': _exam.title,
-                          });
-                        },
-                        gradient: AppColors.blueGradient,
-                      ),
-                    ],
-                  ),
+                    ),
+                    const ResponsiveSizedBox(height: AppSpacing.xl),
+                    AppButton.primary(
+                      label: 'Purchase Access',
+                      onPressed: () {
+                        GoRouter.of(context).pop();
+                        GoRouter.of(context).push('/payment', extra: {
+                          'category': _exam.categoryName,
+                          'categoryId': _exam.categoryId,
+                          'paymentType': 'first_time',
+                          'context': 'exam',
+                          'examId': _exam.id,
+                          'examTitle': _exam.title,
+                        });
+                      },
+                      expanded: true,
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -2165,7 +1597,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
         appBar: AppBar(
-          title: ResponsiveText(
+          title: Text(
             _exam.title,
             style: AppTextStyles.appBarTitle(context),
             maxLines: 1,
@@ -2173,15 +1605,31 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
           ),
           backgroundColor: AppColors.getBackground(context),
           elevation: 0,
-          leading: IconButton(
-            icon: ResponsiveIcon(
-              Icons.arrow_back_rounded,
-              color: AppColors.getTextPrimary(context),
-            ),
+          leading: AppButton.icon(
+            icon: Icons.arrow_back_rounded,
             onPressed: () => GoRouter.of(context).pop(),
           ),
         ),
-        body: const LoadingIndicator(message: 'Loading exam questions...'),
+        body: Center(
+          child: AppCard.glass(
+            child: Padding(
+              padding: ResponsiveValues.dialogPadding(context),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const AppShimmer(type: ShimmerType.circle),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Loading...',
+                    style: AppTextStyles.bodyMedium(context).copyWith(
+                      color: AppColors.getTextSecondary(context),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       );
     }
 
@@ -2190,7 +1638,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
         appBar: AppBar(
-          title: ResponsiveText(
+          title: Text(
             _exam.title,
             style: AppTextStyles.appBarTitle(context),
             maxLines: 1,
@@ -2198,24 +1646,18 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
           ),
           backgroundColor: AppColors.getBackground(context),
           elevation: 0,
-          leading: IconButton(
-            icon: ResponsiveIcon(
-              Icons.arrow_back_rounded,
-              color: AppColors.getTextPrimary(context),
-            ),
+          leading: AppButton.icon(
+            icon: Icons.arrow_back_rounded,
             onPressed: () => GoRouter.of(context).pop(),
           ),
         ),
         body: Center(
-          child: EmptyState(
-            icon: Icons.quiz_outlined,
-            title: 'No Questions Found',
-            message: _isOffline
+          child: AppEmptyState.noData(
+            dataType: 'Questions',
+            customMessage: _isOffline
                 ? 'No cached questions available. Connect to load questions.'
                 : 'Could not load exam questions. Please try again.',
-            type: EmptyStateType.noData,
-            actionText: 'Retry',
-            onAction: _loadExamQuestions,
+            onRefresh: _loadExamQuestions,
           ),
         ),
       );

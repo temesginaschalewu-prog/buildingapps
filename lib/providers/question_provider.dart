@@ -7,6 +7,7 @@ import '../services/user_session.dart';
 import '../models/question_model.dart';
 import '../utils/constants.dart';
 import '../utils/helpers.dart';
+import '../utils/parsers.dart';
 
 class QuestionProvider with ChangeNotifier {
   final ApiService apiService;
@@ -27,8 +28,7 @@ class QuestionProvider with ChangeNotifier {
   StreamController<Map<String, dynamic>> _answerUpdateController =
       StreamController<Map<String, dynamic>>.broadcast();
 
-  static const Duration cacheDuration =
-      Duration(hours: 24); // Increased to 24 hours
+  static const Duration cacheDuration = Duration(hours: 24);
   static const Duration answerCacheDuration = Duration(days: 7);
 
   QuestionProvider({required this.apiService, required this.deviceService}) {
@@ -36,14 +36,10 @@ class QuestionProvider with ChangeNotifier {
   }
 
   Future<void> _initPreload() async {
-    // Preload in background
     Future.delayed(Duration.zero, () async {
       try {
         final userId = await UserSession().getCurrentUserId();
-        if (userId != null) {
-          // Try to load any cached question data in background
-          // This doesn't block UI
-        }
+        if (userId != null) {}
       } catch (e) {}
     });
   }
@@ -66,6 +62,32 @@ class QuestionProvider with ChangeNotifier {
     return _questionsByChapter[chapterId] ?? [];
   }
 
+  bool? getAnswerResult(int chapterId, int questionId) {
+    return _answerResults[chapterId]?[questionId];
+  }
+
+  String? getSelectedAnswer(int chapterId, int questionId) {
+    return _selectedAnswers[chapterId]?[questionId];
+  }
+
+  int getCorrectAnswersCount(int chapterId) {
+    final results = _answerResults[chapterId];
+    if (results == null) return 0;
+    return results.values.where((isCorrect) => isCorrect == true).length;
+  }
+
+  int getAttemptedQuestionsCount(int chapterId) {
+    final results = _answerResults[chapterId];
+    return results?.length ?? 0;
+  }
+
+  double getAccuracyPercentage(int chapterId) {
+    final attempted = getAttemptedQuestionsCount(chapterId);
+    final correct = getCorrectAnswersCount(chapterId);
+    if (attempted == 0) return 0.0;
+    return (correct / attempted) * 100;
+  }
+
   Future<void> loadPracticeQuestions(int chapterId,
       {bool forceRefresh = false}) async {
     if (_isLoadingForChapter[chapterId] == true && !forceRefresh) {
@@ -83,7 +105,6 @@ class QuestionProvider with ChangeNotifier {
       return;
     }
 
-    // Try cache first
     if (!forceRefresh) {
       try {
         final cachedQuestions = await deviceService.getCacheItem<List<dynamic>>(
@@ -121,7 +142,6 @@ class QuestionProvider with ChangeNotifier {
               'count': questionList.length
             });
 
-            // Background refresh
             unawaited(_refreshInBackground(chapterId));
             return;
           }
@@ -193,7 +213,6 @@ class QuestionProvider with ChangeNotifier {
       _error = e.toString();
       debugLog('QuestionProvider', '❌ loadPracticeQuestions error: $e');
 
-      // Keep existing data on error
       if (!_hasLoadedForChapter.containsKey(chapterId)) {
         _questionsByChapter[chapterId] = [];
         _hasLoadedForChapter[chapterId] = true;
@@ -387,34 +406,6 @@ class QuestionProvider with ChangeNotifier {
     }
   }
 
-  bool? getAnswerResult(int chapterId, int questionId) {
-    return _answerResults[chapterId]?[questionId];
-  }
-
-  String? getSelectedAnswer(int chapterId, int questionId) {
-    return _selectedAnswers[chapterId]?[questionId];
-  }
-
-  int getCorrectAnswersCount(int chapterId) {
-    final results = _answerResults[chapterId];
-    if (results == null) return 0;
-
-    return results.values.where((isCorrect) => isCorrect == true).length;
-  }
-
-  int getAttemptedQuestionsCount(int chapterId) {
-    final results = _answerResults[chapterId];
-    return results?.length ?? 0;
-  }
-
-  double getAccuracyPercentage(int chapterId) {
-    final attempted = getAttemptedQuestionsCount(chapterId);
-    final correct = getCorrectAnswersCount(chapterId);
-
-    if (attempted == 0) return 0.0;
-    return (correct / attempted) * 100;
-  }
-
   Future<void> clearQuestionsForChapter(int chapterId) async {
     _hasLoadedForChapter.remove(chapterId);
     _lastLoadedTime.remove(chapterId);
@@ -443,11 +434,9 @@ class QuestionProvider with ChangeNotifier {
     _notifySafely();
   }
 
-  /// 🔵 FIX: Clear user data ONLY for different user logout
   Future<void> clearUserData() async {
     debugLog('QuestionProvider', 'Clearing question data');
 
-    // Only clear if this is a different user logout
     final session = UserSession();
     final isDifferentUser = !await session.isSameUser();
     final isLoggingOut = await _isLoggingOut();

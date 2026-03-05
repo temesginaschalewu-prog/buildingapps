@@ -8,6 +8,7 @@ import '../services/user_session.dart';
 import '../models/user_model.dart';
 import '../utils/api_response.dart';
 import '../utils/helpers.dart';
+import '../utils/constants.dart';
 
 class AuthProvider with ChangeNotifier {
   final ApiService apiService;
@@ -42,10 +43,11 @@ class AuthProvider with ChangeNotifier {
   final List<VoidCallback> _onLoginCallbacks = [];
   StreamSubscription? _deviceDeactivationSubscription;
 
-  AuthProvider(
-      {required this.apiService,
-      required this.storageService,
-      required this.deviceService}) {
+  AuthProvider({
+    required this.apiService,
+    required this.storageService,
+    required this.deviceService,
+  }) {
     _listenToDeviceDeactivation();
   }
 
@@ -68,6 +70,7 @@ class AuthProvider with ChangeNotifier {
 
   void registerOnLogoutCallback(VoidCallback callback) =>
       _onLogoutCallbacks.add(callback);
+
   void registerOnLoginCallback(VoidCallback callback) =>
       _onLoginCallbacks.add(callback);
 
@@ -86,7 +89,6 @@ class AuthProvider with ChangeNotifier {
     _stopTimers();
     _executeLogoutCallbacks();
 
-    // Don't clear cache on deactivation - preserve for potential return
     await deviceService.clearCurrentUserId();
     await storageService.clearTokens();
 
@@ -220,8 +222,12 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  Future<Map<String, dynamic>> login(String username, String password,
-      String deviceId, String? fcmToken) async {
+  Future<Map<String, dynamic>> login(
+    String username,
+    String password,
+    String deviceId,
+    String? fcmToken,
+  ) async {
     if (_isLoading) {
       return {
         'success': false,
@@ -244,13 +250,11 @@ class AuthProvider with ChangeNotifier {
         final userData = response.data!['user'];
         final user = User.fromJson(userData);
 
-        // 🔵 FIX: Check if this is a different user
         final session = UserSession();
         final isDifferentUser =
             await session.isDifferentUserLogin(user.id.toString());
 
         if (isDifferentUser) {
-          // Different user logging in - clear OLD user's cache only
           debugLog(
               'AuthProvider', '🔄 Different user login - clearing old cache');
           final oldUserId = await session.getOldUserIdToClear();
@@ -258,11 +262,9 @@ class AuthProvider with ChangeNotifier {
             await deviceService.clearOldUserCache(oldUserId);
           }
         } else {
-          // Same user logging in - PRESERVE ALL CACHE
           debugLog('AuthProvider', '✅ Same user login - preserving cache');
         }
 
-        // Set the new user session
         await session.setCurrentUser(user.id.toString());
 
         await storageService.saveUser(user);
@@ -345,8 +347,12 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  Future<Map<String, dynamic>> register(String username, String password,
-      String deviceId, String? fcmToken) async {
+  Future<Map<String, dynamic>> register(
+    String username,
+    String password,
+    String deviceId,
+    String? fcmToken,
+  ) async {
     if (_isLoading) return {'success': false, 'message': 'Already processing'};
 
     _isLoading = true;
@@ -377,7 +383,6 @@ class AuthProvider with ChangeNotifier {
 
         final user = User.fromJson(userData);
 
-        // New user registration - no need to clear cache as there's no previous user
         final session = UserSession();
         await session.setCurrentUser(user.id.toString());
 
@@ -432,16 +437,11 @@ class AuthProvider with ChangeNotifier {
   Future<void> logout({bool manual = true}) async {
     _stopTimers();
 
-    // Prepare for logout
     await UserSession().prepareForLogout();
-
     _executeLogoutCallbacks();
 
-    // Don't clear cache - just clear session
     await deviceService.clearCurrentUserId();
     await storageService.clearTokens();
-
-    // Complete logout
     await UserSession().completeLogout();
 
     _currentUser = null;

@@ -1,3 +1,5 @@
+import '../utils/parsers.dart';
+
 class Streak {
   final int currentStreak;
   final int weekStreak;
@@ -16,28 +18,23 @@ class Streak {
   });
 
   factory Streak.fromJson(Map<String, dynamic> json) {
-    // Parse history correctly from strings
     List<DateTime> parsedHistory = [];
     if (json['history'] != null && json['history'] is List) {
-      parsedHistory = (json['history'] as List).map((item) {
-        if (item is DateTime) return item;
-        if (item is String) {
-          try {
-            return DateTime.parse(item).toLocal();
-          } catch (e) {
-            print('Error parsing date: $item');
-            return DateTime.now();
-          }
-        }
-        return DateTime.now();
-      }).toList();
+      parsedHistory = (json['history'] as List)
+          .map((item) => item is DateTime
+              ? item
+              : Parsers.parseDate(item) ?? DateTime.now())
+          .toList();
     }
 
     return Streak(
-      currentStreak: json['current_streak'] ?? 0,
-      weekStreak: json['week_streak'] ?? json['initialWeekStreak'] ?? 0,
-      hasStreakToday: json['has_streak_today'] ?? false,
-      streakLevel: json['level'] ?? json['streak_level'] ?? '🌱 New',
+      currentStreak: Parsers.parseInt(json['current_streak']),
+      weekStreak:
+          Parsers.parseInt(json['week_streak'] ?? json['initialWeekStreak']),
+      hasStreakToday: Parsers.parseBool(json['has_streak_today']),
+      streakLevel: json['level']?.toString() ??
+          json['streak_level']?.toString() ??
+          '🌱 New',
       longestStreak: json['longest_streak']?.toString() ?? '0',
       history: parsedHistory,
     );
@@ -67,14 +64,5 @@ class Streak {
           date.month == today.month &&
           date.day == today.day,
     );
-  }
-
-  String get calculatedStreakLevel {
-    if (currentStreak >= 30) return '🔥 Legendary';
-    if (currentStreak >= 20) return '⭐ Superstar';
-    if (currentStreak >= 10) return '📚 Dedicated';
-    if (currentStreak >= 5) return '🚀 Consistent';
-    if (currentStreak >= 2) return '🌱 Growing';
-    return '🌱 New';
   }
 }

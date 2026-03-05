@@ -1,3 +1,4 @@
+import '../utils/parsers.dart';
 
 class Payment {
   final int id;
@@ -28,19 +29,19 @@ class Payment {
 
   factory Payment.fromJson(Map<String, dynamic> json) {
     return Payment(
-      id: json['id'],
-      paymentType: json['payment_type'],
-      amount: double.parse(json['amount'].toString()),
-      paymentMethod: json['payment_method'],
-      accountHolderName: json['account_holder_name'],
-      status: json['status'],
-      createdAt: DateTime.parse(json['created_at']),
-      categoryName: json['category_name'],
-      verifiedAt: json['verified_at'] != null
-          ? DateTime.parse(json['verified_at'])
+      id: Parsers.parseInt(json['id']),
+      paymentType: json['payment_type']?.toString() ?? '',
+      amount: Parsers.parseDouble(json['amount']),
+      paymentMethod: json['payment_method']?.toString() ?? '',
+      accountHolderName: json['account_holder_name']?.toString(),
+      status: json['status']?.toString() ?? '',
+      createdAt: Parsers.parseDate(json['created_at']) ?? DateTime.now(),
+      categoryName: json['category_name']?.toString() ?? '',
+      verifiedAt: Parsers.parseDate(json['verified_at']),
+      rejectionReason: json['rejection_reason']?.toString(),
+      categoryId: json['category_id'] != null
+          ? Parsers.parseInt(json['category_id'])
           : null,
-      rejectionReason: json['rejection_reason'],
-      categoryId: json['category_id'],
     );
   }
 

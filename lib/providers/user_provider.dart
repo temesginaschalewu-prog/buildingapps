@@ -9,6 +9,7 @@ import '../models/payment_model.dart';
 import '../models/notification_model.dart' as notification_model;
 import '../utils/constants.dart';
 import '../utils/helpers.dart';
+import '../utils/parsers.dart';
 
 class UserProvider with ChangeNotifier {
   final ApiService apiService;
@@ -72,6 +73,65 @@ class UserProvider with ChangeNotifier {
   Stream<List<notification_model.Notification>> get notificationsUpdates =>
       _notificationsUpdateController.stream;
 
+  bool get hasActiveSubscription {
+    if (_currentUser == null) return false;
+    if (_currentUser!.subscriptions == null ||
+        _currentUser!.subscriptions!.isEmpty) return false;
+
+    final now = DateTime.now();
+    return _currentUser!.subscriptions!.any((sub) {
+      final status = sub['status']?.toString() ?? '';
+      final expiryStr = sub['expiry_date']?.toString();
+      if (expiryStr == null) return false;
+      try {
+        final expiryDate = DateTime.parse(expiryStr);
+        return status == 'active' && expiryDate.isAfter(now);
+      } catch (e) {
+        return false;
+      }
+    });
+  }
+
+  bool hasActiveSubscriptionForCategory(int categoryId) {
+    if (_currentUser == null || _currentUser!.subscriptions == null)
+      return false;
+
+    final now = DateTime.now();
+    return _currentUser!.subscriptions!.any((sub) {
+      final subCategoryId = Parsers.parseInt(sub['category_id']);
+      if (subCategoryId != categoryId) return false;
+
+      final status = sub['status']?.toString() ?? '';
+      final expiryStr = sub['expiry_date']?.toString();
+      if (expiryStr == null) return false;
+
+      try {
+        final expiryDate = DateTime.parse(expiryStr);
+        return status == 'active' && expiryDate.isAfter(now);
+      } catch (e) {
+        return false;
+      }
+    });
+  }
+
+  List<Map<String, dynamic>> get activeSubscriptions {
+    if (_currentUser == null || _currentUser!.subscriptions == null) return [];
+
+    final now = DateTime.now();
+    return _currentUser!.subscriptions!.where((sub) {
+      final status = sub['status']?.toString() ?? '';
+      final expiryStr = sub['expiry_date']?.toString();
+      if (expiryStr == null) return false;
+
+      try {
+        final expiryDate = DateTime.parse(expiryStr);
+        return status == 'active' && expiryDate.isAfter(now);
+      } catch (e) {
+        return false;
+      }
+    }).toList();
+  }
+
   bool _shouldRefresh(String type, {bool forceRefresh = false}) {
     if (forceRefresh) return true;
     final lastRefresh = _lastRefreshTime[type];
@@ -104,6 +164,11 @@ class UserProvider with ChangeNotifier {
     } finally {
       _ongoingRefreshes.remove(type);
     }
+  }
+
+  bool _isCacheStale(DateTime? cacheTime) {
+    if (cacheTime == null) return true;
+    return DateTime.now().difference(cacheTime) > _cacheExpiry;
   }
 
   Future<void> loadUserProfile({bool forceRefresh = false}) async {
@@ -373,11 +438,6 @@ class UserProvider with ChangeNotifier {
     });
   }
 
-  bool _isCacheStale(DateTime? cacheTime) {
-    if (cacheTime == null) return true;
-    return DateTime.now().difference(cacheTime) > _cacheExpiry;
-  }
-
   Future<void> updateProfile(
       {String? email, String? phone, String? profileImage}) async {
     if (_isLoading) return;
@@ -453,11 +513,9 @@ class UserProvider with ChangeNotifier {
     }
   }
 
-  /// 🔵 FIX: Clear user data ONLY for different user logout
   Future<void> clearUserData() async {
     debugLog('UserProvider', 'Clearing user data');
 
-    // Only clear if this is a different user logout
     final session = UserSession();
     final isDifferentUser = !await session.isSameUser();
     final isLoggingOut = await _isLoggingOut();

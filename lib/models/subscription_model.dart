@@ -1,3 +1,4 @@
+import '../utils/parsers.dart';
 
 class Subscription {
   final int id;
@@ -29,65 +30,32 @@ class Subscription {
   });
 
   factory Subscription.fromJson(Map<String, dynamic> json) {
-    DateTime parseDate(String dateStr) {
-      try {
-        return DateTime.parse(dateStr);
-      } catch (e) {
-        return DateTime.now();
-      }
-    }
-
-    int parseId(dynamic value) {
-      if (value == null) return 0;
-      if (value is int) return value;
-      if (value is String) return int.tryParse(value) ?? 0;
-      if (value is double) return value.toInt();
-      return 0;
-    }
-
-    double? parsePrice(dynamic value) {
-      if (value == null) return null;
-      if (value is double) return value;
-      if (value is int) return value.toDouble();
-      if (value is String) return double.tryParse(value);
-      return null;
-    }
-
-    // CRITICAL FIX: Try to get category_id from multiple possible fields
     int getCategoryId(Map<String, dynamic> json) {
-      // Try category_id first
-      if (json['category_id'] != null) {
-        return parseId(json['category_id']);
-      }
+      if (json['category_id'] != null)
+        return Parsers.parseInt(json['category_id']);
 
-      // Try to extract from category_name (e.g., "grade 9" -> 1)
-      // This is a temporary fix - backend should include category_id
       final categoryName = json['category_name']?.toString() ?? '';
       if (categoryName == 'grade 9') return 1;
       if (categoryName == 'category 10') return 6;
       if (categoryName == 'categorytrial') return 7;
-
       return 0;
     }
 
     return Subscription(
-      id: parseId(json['id']),
-      userId: parseId(json['user_id']),
-      categoryId: getCategoryId(json), // Use the fixed method
-      startDate: parseDate(json['start_date'].toString()),
-      expiryDate: parseDate(json['expiry_date'].toString()),
+      id: Parsers.parseInt(json['id']),
+      userId: Parsers.parseInt(json['user_id']),
+      categoryId: getCategoryId(json),
+      startDate: Parsers.parseDate(json['start_date']) ?? DateTime.now(),
+      expiryDate: Parsers.parseDate(json['expiry_date']) ?? DateTime.now(),
       status: json['status']?.toString() ?? 'active',
       billingCycle: json['billing_cycle']?.toString() ?? 'monthly',
-      paymentId:
-          json['payment_id'] != null ? parseId(json['payment_id']) : null,
-      createdAt: json['created_at'] != null
-          ? parseDate(json['created_at'].toString())
+      paymentId: json['payment_id'] != null
+          ? Parsers.parseInt(json['payment_id'])
           : null,
-      updatedAt: json['updated_at'] != null
-          ? parseDate(json['updated_at'].toString())
-          : null,
+      createdAt: Parsers.parseDate(json['created_at']),
+      updatedAt: Parsers.parseDate(json['updated_at']),
       categoryName: json['category_name']?.toString(),
-      price: parsePrice(json['price']),
+      price: json['price'] != null ? Parsers.parseDouble(json['price']) : null,
     );
   }
 
@@ -114,8 +82,7 @@ class Subscription {
 
   int get daysRemaining {
     final now = DateTime.now();
-    if (expiryDate.isBefore(now)) return 0;
-    return expiryDate.difference(now).inDays;
+    return expiryDate.isBefore(now) ? 0 : expiryDate.difference(now).inDays;
   }
 
   bool get isExpiringSoon => daysRemaining <= 7 && daysRemaining > 0;
@@ -129,9 +96,8 @@ class Subscription {
   }
 
   @override
-  String toString() {
-    return 'Subscription(id: $id, categoryId: $categoryId, status: $status, expiry: $expiryDate)';
-  }
+  String toString() =>
+      'Subscription(id: $id, categoryId: $categoryId, status: $status, expiry: $expiryDate)';
 
   @override
   bool operator ==(Object other) {

@@ -14,56 +14,65 @@ class AppColors {
   static const Color telegramPink = Color(0xFFEC4899);
   static const Color telegramTeal = Color(0xFF14B8A6);
   static const Color telegramIndigo = Color(0xFF6366F1);
-  static const Color telegramGray = Color.fromARGB(255, 128, 133, 142);
+  static const Color telegramGray = Color(0xFF6B7280);
+
+  static const Color notificationSuccess = Color(0xFF4CAF50);
+  static const Color notificationWarning = Color(0xFFFF9800);
+  static const Color notificationError = Color(0xFFF44336);
+  static const Color notificationInfo = Color(0xFF3F51B5);
+  static const Color notificationExpiring = Color(0xFFFF5722);
+  static const Color notificationAchievement = Color(0xFF6200EE);
+
+  static const Color streakGold = Color(0xFFFFD700);
+  static const Color streakSilver = Color(0xFFC0C0C0);
+  static const Color streakBronze = Color(0xFFCD7F32);
+  static const Color streakGreen = Color(0xFF34C759);
+  static const Color streakBlue = Color(0xFF2AABEE);
+  static const Color streakOrange = Color(0xFFFF9500);
+
+  static const Color examPassed = Color(0xFF34C759);
+  static const Color examFailed = Color(0xFFFF3B30);
+  static const Color examInProgress = Color(0xFF007AFF);
+  static const Color examDefault = Color(0xFF8E8E93);
+
+  static const Color badgeRed = Color(0xFFFF3B30);
+  static const List<Color> badgeGradient = [
+    Color(0xFFFF3B30),
+    Color(0xFFE6204A)
+  ];
 
   static const Color telegramBlueFaded = Color(0x1A2469F0);
   static const Color telegramBlueLightFaded = Color(0x1A3B82F6);
-  static const Color telegramBlueExtraFaded = Color(0x0D2469F0);
-  static const Color telegramBlueBackground = Color(0x0A2469F0);
-
   static const Color telegramGreenFaded = Color(0x1A10B981);
-  static const Color telegramGreenLightFaded = Color(0x1A34D399);
-  static const Color telegramGreenExtraFaded = Color(0x0D10B981);
-  static const Color telegramGreenBackground = Color(0x0A10B981);
-
-  static const Color telegramYellowFaded = Color(0x1AF59E0B);
-  static const Color telegramYellowLightFaded = Color(0x1AFBBF24);
-  static const Color telegramYellowExtraFaded = Color(0x0DF59E0B);
-  static const Color telegramYellowBackground = Color(0x0AF59E0B);
-
   static const Color telegramRedFaded = Color(0x1AEF4444);
-  static const Color telegramRedLightFaded = Color(0x1AF87171);
-  static const Color telegramRedExtraFaded = Color(0x0DEF4444);
-  static const Color telegramRedBackground = Color(0x0AEF4444);
-
-  static const Color telegramPurpleFaded = Color(0x1A8B5CF6);
-  static const Color telegramPurpleLightFaded = Color(0x1AA78BFA);
-  static const Color telegramPurpleExtraFaded = Color(0x0D8B5CF6);
-  static const Color telegramPurpleBackground = Color(0x0A8B5CF6);
-
+  static const Color telegramYellowFaded = Color(0x1AF59E0B);
   static const Color telegramOrangeFaded = Color(0x1AF97316);
-  static const Color telegramOrangeLightFaded = Color(0x1AFB923C);
-  static const Color telegramOrangeExtraFaded = Color(0x0DF97316);
-  static const Color telegramOrangeBackground = Color(0x0AF97316);
-
+  static const Color telegramPurpleFaded = Color(0x1A8B5CF6);
   static const Color telegramPinkFaded = Color(0x1AEC4899);
-  static const Color telegramPinkLightFaded = Color(0x1AF472B6);
-  static const Color telegramPinkExtraFaded = Color(0x0DEC4899);
-  static const Color telegramPinkBackground = Color(0x0AEC4899);
-
   static const Color telegramTealFaded = Color(0x1A14B8A6);
-  static const Color telegramTealLightFaded = Color(0x1A2DD4BF);
-  static const Color telegramTealExtraFaded = Color(0x0D14B8A6);
-  static const Color telegramTealBackground = Color(0x0A14B8A6);
-
   static const Color telegramIndigoFaded = Color(0x1A6366F1);
-  static const Color telegramIndigoLightFaded = Color(0x1A8183F5);
-  static const Color telegramIndigoExtraFaded = Color(0x0D6366F1);
-  static const Color telegramIndigoBackground = Color(0x0A6366F1);
-
   static const Color telegramGrayFaded = Color(0x1A6B7280);
-  static const Color telegramGrayLightFaded = Color(0x1A9CA3AF);
+
+  static const Color telegramBlueExtraFaded = Color(0x0D2469F0);
+  static const Color telegramGreenExtraFaded = Color(0x0D10B981);
+  static const Color telegramRedExtraFaded = Color(0x0DEF4444);
+  static const Color telegramYellowExtraFaded = Color(0x0DF59E0B);
+  static const Color telegramOrangeExtraFaded = Color(0x0DF97316);
+  static const Color telegramPurpleExtraFaded = Color(0x0D8B5CF6);
+  static const Color telegramPinkExtraFaded = Color(0x0DEC4899);
+  static const Color telegramTealExtraFaded = Color(0x0D14B8A6);
+  static const Color telegramIndigoExtraFaded = Color(0x0D6366F1);
   static const Color telegramGrayExtraFaded = Color(0x0D6B7280);
+
+  static const Color telegramBlueBackground = Color(0x0A2469F0);
+  static const Color telegramGreenBackground = Color(0x0A10B981);
+  static const Color telegramRedBackground = Color(0x0AEF4444);
+  static const Color telegramYellowBackground = Color(0x0AF59E0B);
+  static const Color telegramOrangeBackground = Color(0x0AF97316);
+  static const Color telegramPurpleBackground = Color(0x0A8B5CF6);
+  static const Color telegramPinkBackground = Color(0x0AEC4899);
+  static const Color telegramTealBackground = Color(0x0A14B8A6);
+  static const Color telegramIndigoBackground = Color(0x0A6366F1);
   static const Color telegramGrayBackground = Color(0x0A6B7280);
 
   static const Color lightBackground = Color(0xFFF8FAFF);
@@ -125,13 +134,43 @@ class AppColors {
   ];
 
   static const List<Color> pinkGradient = [
-    Color.fromARGB(255, 226, 39, 83),
-    Color.fromARGB(255, 114, 55, 86),
+    Color(0xFFEC4899),
+    Color(0xFFF472B6),
   ];
 
   static const List<Color> tealGradient = [
     Color(0xFF14B8A6),
     Color(0xFF2DD4BF),
+  ];
+
+  static const List<Color> telegramGradient = [
+    Color(0xFF2AABEE),
+    Color(0xFF5856D6),
+  ];
+
+  static const List<Color> dangerGradient = [
+    Color(0xFFFF3B30),
+    Color(0xFFE6204A),
+  ];
+
+  static const List<Color> dangerSoftGradient = [
+    Color(0xFFFF6B6B),
+    Color(0xFFFF3B30),
+  ];
+
+  static const List<Color> successGradient = [
+    Color(0xFF34C759),
+    Color(0xFF2CAE4A),
+  ];
+
+  static const List<Color> warningGradient = [
+    Color(0xFFFF9F0A),
+    Color(0xFFFF6B0F),
+  ];
+
+  static const List<Color> infoGradient = [
+    Color(0xFF5AC8FA),
+    Color(0xFF007AFF),
   ];
 
   static const List<Color> blueFadedGradient = [
@@ -159,16 +198,23 @@ class AppColors {
     Color(0x0D8B5CF6),
   ];
 
+  static List<Color> glassGradient(BuildContext context) {
+    return [
+      getCard(context).withValues(alpha: 0.4),
+      getCard(context).withValues(alpha: 0.2),
+    ];
+  }
+
   static const Color transparent = Colors.transparent;
   static const Color overlay = Color(0x8A000000);
   static const Color overlayLight = Color(0x1A000000);
   static const Color overlayDark = Color(0xCC000000);
+
   static const Color shimmerBase = Color(0xFFE2E8F0);
   static const Color shimmerHighlight = Color(0xFFF1F5F9);
 
   static const Color bottomNavBar = Color(0xFFFFFFFF);
   static const Color bottomNavBarDark = Color(0xFF1E293B);
-
   static const Color searchBar = Color(0xFFF1F5F9);
   static const Color searchBarDark = Color(0xFF2D3A4F);
 
@@ -202,7 +248,7 @@ class AppColors {
   static Color getTextSecondary(BuildContext context) {
     return Theme.of(context).brightness == Brightness.dark
         ? darkTextSecondary
-        : const Color.fromARGB(255, 91, 96, 102);
+        : lightTextSecondary;
   }
 
   static Color getTextTertiary(BuildContext context) {
@@ -260,6 +306,29 @@ class AppColors {
         return telegramBlueBackground;
       default:
         return getSurface(context);
+    }
+  }
+
+  static List<Color> getStatusGradient(String status) {
+    switch (status.toLowerCase()) {
+      case 'active':
+      case 'verified':
+      case 'subscribed':
+      case 'completed':
+        return successGradient;
+      case 'pending':
+      case 'coming_soon':
+      case 'in_progress':
+        return warningGradient;
+      case 'rejected':
+      case 'locked':
+      case 'expired':
+      case 'cancelled':
+        return dangerGradient;
+      case 'free':
+        return blueGradient;
+      default:
+        return infoGradient;
     }
   }
 

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
@@ -8,17 +7,16 @@ void debugLog(String tag, String message) {
   if (const bool.fromEnvironment('PRODUCTION')) {
     return;
   }
-
   debugPrint(
       '[${DateTime.now().toIso8601String().substring(11, 19)}] [$tag] $message');
 }
 
+@Deprecated('Use SnackbarService instead')
 void showTopSnackBar(BuildContext context, String message,
     {bool isError = false, int durationSeconds = 3}) {
   if (!context.mounted) return;
 
   final overlay = Overlay.of(context);
-
   final overlayEntry = OverlayEntry(
     builder: (context) => Positioned(
       top: MediaQuery.of(context).padding.top + 10,
@@ -77,27 +75,28 @@ void showTopSnackBar(BuildContext context, String message,
   Future.delayed(Duration(seconds: durationSeconds), overlayEntry.remove);
 }
 
+@Deprecated('Use SnackbarService instead')
 void showSnackBar(BuildContext context, String message,
     {bool isError = false, int durationSeconds = 2}) {
   showTopSnackBar(context, message,
       isError: isError, durationSeconds: durationSeconds);
 }
 
+@Deprecated('Use SnackbarService instead')
 void showSimpleSnackBar(BuildContext context, String message,
     {bool isError = false}) {
   showTopSnackBar(context, message, isError: isError);
 }
 
-// Show offline message with appropriate styling
+@Deprecated('Use SnackbarService.showOffline() instead')
 void showOfflineMessage(BuildContext context) {
   showTopSnackBar(
     context,
     'You are offline. Showing cached content.',
-    isError: false,
   );
 }
 
-// Show offline error for actions that require connection
+@Deprecated('Use SnackbarService.showOffline() instead')
 void showOfflineError(BuildContext context, {String? action}) {
   showTopSnackBar(
     context,
@@ -108,7 +107,6 @@ void showOfflineError(BuildContext context, {String? action}) {
   );
 }
 
-// Check internet connectivity
 Future<bool> hasInternetConnection() async {
   try {
     final connectivityResult = await Connectivity().checkConnectivity();
@@ -118,7 +116,6 @@ Future<bool> hasInternetConnection() async {
   }
 }
 
-// Stream connectivity changes
 Stream<bool> connectivityStream() {
   return Connectivity().onConnectivityChanged.map((result) {
     return result != ConnectivityResult.none;
@@ -189,12 +186,12 @@ Future<void> showConfirmDialog(
       content: Text(message),
       actions: [
         TextButton(
-          onPressed: () => GoRouter.of(context).pop(),
+          onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancel'),
         ),
         TextButton(
           onPressed: () {
-            GoRouter.of(context).pop();
+            Navigator.of(context).pop();
             onConfirm();
           },
           child: const Text('Confirm'),
@@ -248,9 +245,7 @@ String generateCacheKey(String base, List<String> parameters) {
   return '${base}_$params';
 }
 
-// Improved error message formatting for offline scenarios
 String formatErrorMessage(dynamic error) {
-  // Check for network-related errors
   if (error is String) {
     if (error.contains('Network') ||
         error.contains('connection') ||
@@ -284,7 +279,6 @@ String formatErrorMessage(dynamic error) {
   return error?.toString() ?? 'An unknown error occurred';
 }
 
-// Check if error is a network error
 bool isNetworkError(dynamic error) {
   final message = formatErrorMessage(error);
   return message.contains('Network error') ||

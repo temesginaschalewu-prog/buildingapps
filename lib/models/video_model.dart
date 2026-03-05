@@ -1,4 +1,5 @@
-import 'package:familyacademyclient/utils/constants.dart';
+import '../utils/constants.dart';
+import '../utils/parsers.dart';
 
 class VideoQuality {
   final String label;
@@ -80,30 +81,16 @@ class Video {
     }
 
     return Video(
-      id: json['id'] is int
-          ? json['id']
-          : int.tryParse(json['id']?.toString() ?? '0') ?? 0,
+      id: Parsers.parseInt(json['id']),
       title: json['title']?.toString() ?? '',
-      chapterId: json['chapter_id'] is int
-          ? json['chapter_id']
-          : int.tryParse(json['chapter_id']?.toString() ?? '0') ?? 0,
+      chapterId: Parsers.parseInt(json['chapter_id']),
       filePath: json['file_path']?.toString() ?? '',
-      fileSize: json['file_size'] is int
-          ? json['file_size']
-          : int.tryParse(json['file_size']?.toString() ?? '0') ?? 0,
-      duration: json['duration'] is int
-          ? json['duration']
-          : int.tryParse(json['duration']?.toString() ?? '0') ?? 0,
+      fileSize: Parsers.parseInt(json['file_size']),
+      duration: Parsers.parseInt(json['duration']),
       thumbnailUrl: json['thumbnail_url']?.toString(),
-      releaseDate: json['release_date'] != null
-          ? DateTime.parse(json['release_date'].toString())
-          : null,
-      viewCount: json['view_count'] is int
-          ? json['view_count']
-          : int.tryParse(json['view_count']?.toString() ?? '0') ?? 0,
-      createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'].toString())
-          : DateTime.now(),
+      releaseDate: Parsers.parseDate(json['release_date']),
+      viewCount: Parsers.parseInt(json['view_count']),
+      createdAt: Parsers.parseDate(json['created_at']) ?? DateTime.now(),
       qualities: qualities,
       hasQualities: hasQualities,
     );
@@ -122,14 +109,10 @@ class Video {
       'has_qualities': hasQualities,
     };
 
-    if (thumbnailUrl != null) {
-      json['thumbnail_url'] = thumbnailUrl;
-    }
-
+    if (thumbnailUrl != null) json['thumbnail_url'] = thumbnailUrl;
     if (releaseDate != null) {
       json['release_date'] = releaseDate!.toIso8601String();
     }
-
     if (qualities != null) {
       json['qualities'] =
           qualities!.map((key, value) => MapEntry(key, value.url));
@@ -138,82 +121,103 @@ class Video {
     return json;
   }
 
-  /// FIXED: Get quality URL with proper extension
-  String? getQualityUrl(String qualityName) {
-    if (qualities?[qualityName]?.url != null) {
-      String url = qualities![qualityName]!.url;
+  /// Comprehensive URL normalizer that fixes all common issues
+  String _normalizeUrl(String url) {
+    if (url.isEmpty) return url;
 
-      // Ensure URL has proper format for Cloudinary
-      if (url.contains('cloudinary.com') &&
-          !url.contains('.mp4') &&
-          !url.contains('.m3u8')) {
-        // Add .mp4 extension if missing
-        if (url.contains('?')) {
-          final parts = url.split('?');
-          url = '${parts[0]}.mp4?${parts[1]}';
-        } else {
-          url = '$url.mp4';
-        }
-      }
+    String normalized = url;
 
-      // Ensure proper encoding
-      try {
-        final uri = Uri.parse(url);
-        return uri.toString();
-      } catch (e) {
-        return url;
-      }
+    // Fix triple slash (https:/// -> https://)
+    normalized = normalized.replaceAllMapped(RegExp(r'(https?:)\/\/+'),
+        (match) => match[1] == 'https:' ? 'https://' : 'http://');
+
+    // Fix double slash after protocol (https:/ -> https://)
+    normalized = normalized.replaceAllMapped(RegExp(r'(https?:)\/+'),
+        (match) => match[1] == 'https:' ? 'https://' : 'http://');
+
+    // Fix double slashes in path (except after protocol)
+    normalized = normalized.replaceAllMapped(
+        RegExp(r'([^:])\/\/(?!/)'), (match) => '${match[1]}/');
+
+    // Remove any remaining double slashes
+    normalized = normalized.replaceAll(RegExp(r'(?<!https?:)\/\/'), '/');
+
+    // Handle local files - they should use file:// protocol
+    if (normalized.startsWith('/') || normalized.startsWith('./')) {
+      return 'file://$normalized';
     }
-    return null;
+
+    // Handle local file paths that might have been mistakenly prefixed with https
+    if (normalized.contains('/Documents/.familyacademy_cache/')) {
+      return 'file://' +
+          normalized.replaceFirst('https://', '').replaceFirst('http://', '');
+    }
+
+    // Handle Cloudinary domain issues
+    if (normalized.contains('dsros0pyh.res.cloudinary.com')) {
+      normalized = normalized.replaceAll(
+          'dsros0pyh.res.cloudinary.com', 'res.cloudinary.com/dsros0pyh');
+    }
+
+    // Ensure URL has proper scheme
+    if (normalized.startsWith('res.cloudinary.com')) {
+      normalized = 'https://$normalized';
+    }
+
+    // Final check - ensure no protocol:/// triple slash remains
+    if (normalized.startsWith('https:///')) {
+      normalized = normalized.replaceFirst('https:///', 'https://');
+    }
+    if (normalized.startsWith('http:///')) {
+      normalized = normalized.replaceFirst('http:///', 'http://');
+    }
+
+    return normalized;
   }
 
-  /// FIXED: Get full video URL with proper extension
+  /// Get URL for specific quality
+  String? getQualityUrl(String qualityName) {
+    if (qualities?[qualityName]?.url == null) return null;
+    return _normalizeUrl(qualities![qualityName]!.url);
+  }
+
+  /// Get full video URL
   String get fullVideoUrl {
     if (filePath.isEmpty) return '';
-
-    // Handle already full URLs
-    if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
-      String url = filePath;
-
-      // Fix Cloudinary URLs missing extension
-      if (url.contains('cloudinary.com') &&
-          !url.contains('.mp4') &&
-          !url.contains('.m3u8')) {
-        if (url.contains('?')) {
-          final parts = url.split('?');
-          url = '${parts[0]}.mp4?${parts[1]}';
-        } else {
-          url = '$url.mp4';
-        }
-      }
-
-      return url;
-    }
-
-    if (filePath.startsWith('res.cloudinary.com')) {
-      String url = 'https://$filePath';
-      if (!url.contains('.mp4') && !url.contains('.m3u8')) {
-        if (url.contains('?')) {
-          final parts = url.split('?');
-          url = '${parts[0]}.mp4?${parts[1]}';
-        } else {
-          url = '$url.mp4';
-        }
-      }
-      return url;
-    }
-
-    final baseUrl = AppConstants.baseUrl.replaceAll('/api/v1', '');
-    final cleanPath =
-        filePath.startsWith('/') ? filePath.substring(1) : filePath;
-
-    if (cleanPath.contains('uploads/')) {
-      return '$baseUrl/$cleanPath';
-    }
-
-    return '$baseUrl/uploads/videos/$cleanPath';
+    return _normalizeUrl(filePath);
   }
 
+  /// Get recommended quality based on connection type
+  VideoQuality getRecommendedQuality([String? connectionType]) {
+    final available = availableQualities;
+
+    if (available.isEmpty) {
+      return VideoQuality(label: '480p', url: fullVideoUrl, height: 480);
+    }
+
+    try {
+      // For mobile, prefer lower qualities
+      if (connectionType == 'mobile') {
+        for (final q in available) {
+          if (q.height <= 480) return q;
+        }
+        return available.first;
+      }
+
+      // For desktop/WiFi, prefer higher qualities
+      for (final q in available.reversed) {
+        if (q.height >= 720) return q;
+      }
+
+      return available.last;
+    } catch (e) {
+      return available.isNotEmpty
+          ? available.first
+          : VideoQuality(label: '480p', url: fullVideoUrl, height: 480);
+    }
+  }
+
+  /// Get all available qualities
   List<VideoQuality> get availableQualities {
     if (qualities != null && qualities!.isNotEmpty) {
       final list = qualities!.values.toList();
@@ -223,70 +227,32 @@ class Video {
     return [VideoQuality(label: '480p', url: fullVideoUrl, height: 480)];
   }
 
-  VideoQuality getRecommendedQuality([String? connectionType]) {
-    final available = availableQualities;
-    if (available.isEmpty) {
-      return VideoQuality(label: '480p', url: fullVideoUrl, height: 480);
-    }
-
-    if (connectionType == 'mobile') {
-      for (final q in available) {
-        if (q.height <= 480) return q;
-      }
-      return available.first;
-    }
-
-    for (final q in available.reversed) {
-      if (q.height >= 720) return q;
-    }
-    return available.last;
-  }
-
+  /// Get best quality
   VideoQuality? get bestQuality {
     if (qualities == null || qualities!.isEmpty) return null;
     return qualities!.values.reduce((a, b) => a.height > b.height ? a : b);
   }
 
+  /// Get full thumbnail URL
   String? get fullThumbnailUrl {
-    if (thumbnailUrl == null || thumbnailUrl!.isEmpty) return null;
-
-    if (thumbnailUrl!.startsWith('http://') ||
-        thumbnailUrl!.startsWith('https://')) {
-      return thumbnailUrl;
-    }
-
-    if (thumbnailUrl!.startsWith('res.cloudinary.com')) {
-      return 'https://$thumbnailUrl';
-    }
-
-    final baseUrl = AppConstants.baseUrl.replaceAll('/api/v1', '');
-    final cleanPath = thumbnailUrl!.startsWith('/')
-        ? thumbnailUrl!.substring(1)
-        : thumbnailUrl!;
-
-    if (cleanPath.contains('uploads/')) {
-      return '$baseUrl/$cleanPath';
-    }
-
-    return '$baseUrl/uploads/thumbnails/$cleanPath';
+    if (thumbnailUrl?.isEmpty ?? true) return null;
+    return _normalizeUrl(thumbnailUrl!);
   }
 
   bool get hasThumbnail => fullThumbnailUrl != null;
 
+  /// Format duration for display
   String get formattedDuration {
     final hours = duration ~/ 3600;
     final minutes = (duration % 3600) ~/ 60;
     final seconds = duration % 60;
 
-    if (hours > 0) {
-      return '${hours}h ${minutes}m ${seconds}s';
-    } else if (minutes > 0) {
-      return '${minutes}m ${seconds}s';
-    } else {
-      return '${seconds}s';
-    }
+    if (hours > 0) return '${hours}h ${minutes}m ${seconds}s';
+    if (minutes > 0) return '${minutes}m ${seconds}s';
+    return '${seconds}s';
   }
 
+  /// Estimate file size for quality
   int estimatedSizeForQuality(String quality) {
     final minutes = duration / 60;
     switch (quality) {

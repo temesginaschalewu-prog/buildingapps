@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -6,9 +5,7 @@ import 'package:familyacademyclient/providers/theme_provider.dart';
 import 'package:familyacademyclient/widgets/common/notification_button.dart';
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/themes/app_text_styles.dart';
-import 'package:familyacademyclient/utils/responsive.dart';
 import 'package:familyacademyclient/utils/responsive_values.dart';
-import 'package:familyacademyclient/utils/app_enums.dart';
 
 class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String title;
@@ -91,7 +88,6 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
                   border: Border(
                     bottom: BorderSide(
                       color: AppColors.telegramBlue.withValues(alpha: 0.15),
-                      width: 1,
                     ),
                   ),
                 ),
@@ -104,7 +100,6 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
                           painter: SparklePainter(
                             color: AppColors.telegramBlue,
                             density: 0.15,
-                            minOpacity: 0.1,
                             maxOpacity: 0.25,
                           ),
                         ),
@@ -112,7 +107,6 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
                     ),
                     // Main content
                     Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         if (leading != null) leading!,
                         Expanded(
@@ -192,7 +186,7 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
             padding: EdgeInsets.only(
               right: ResponsiveValues.appBarButtonSpacing(context),
             ),
-            child: customTrailing!,
+            child: customTrailing,
           ),
         ],
         if (actions != null) ...actions!,

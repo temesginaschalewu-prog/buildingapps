@@ -8,6 +8,7 @@ import '../models/exam_model.dart';
 import '../models/exam_result_model.dart';
 import '../utils/constants.dart';
 import '../utils/helpers.dart';
+import '../utils/parsers.dart';
 
 class ExamProvider with ChangeNotifier {
   final ApiService apiService;
@@ -29,8 +30,7 @@ class ExamProvider with ChangeNotifier {
   StreamController<List<ExamResult>> _resultsUpdateController =
       StreamController<List<ExamResult>>.broadcast();
 
-  static const Duration _cacheDuration =
-      Duration(hours: 24); // Increased to 24 hours
+  static const Duration _cacheDuration = Duration(hours: 24);
   static const Duration _cacheCleanupInterval = Duration(minutes: 30);
 
   ExamProvider({required this.apiService, required this.deviceService}) {
@@ -53,6 +53,27 @@ class ExamProvider with ChangeNotifier {
   }
 
   bool isLoadingCourse(int courseId) => _isLoadingCourse[courseId] ?? false;
+
+  bool canUserTakeExam(Exam exam) {
+    if (exam.maxAttemptsReached) return false;
+    if (exam.isBlockedByPendingPayment) return false;
+    if (exam.requiresPayment && !exam.hasAccess) return false;
+    return exam.canTakeExam;
+  }
+
+  String getExamStatusMessage(Exam exam) {
+    if (exam.maxAttemptsReached) return 'Maximum attempts reached';
+    if (exam.isBlockedByPendingPayment) return 'Payment pending verification';
+    if (exam.requiresPayment && !exam.hasAccess) return 'Purchase required';
+    if (exam.isUpcoming) return 'Starts ${_formatDate(exam.startDate)}';
+    if (exam.isEnded) return 'Exam ended';
+    if (exam.isInProgress) return 'In progress';
+    return exam.message;
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.day}/${date.month}/${date.year}';
+  }
 
   Future<void> updatePendingPayments(Map<int, bool> pendingStatus) async {
     debugLog(
@@ -160,7 +181,6 @@ class ExamProvider with ChangeNotifier {
       debugLog(
           'ExamProvider', '📥 Loading available exams for course: $courseId');
 
-      // Try cache first if not forcing refresh
       if (!forceRefresh) {
         if (courseId == null) {
           final cachedExams = await deviceService
@@ -173,7 +193,6 @@ class ExamProvider with ChangeNotifier {
             debugLog('ExamProvider',
                 '✅ Loaded ${_availableExams.length} exams from cache');
 
-            // Background refresh
             unawaited(_refreshAvailableExamsInBackground());
             return;
           }
@@ -190,14 +209,12 @@ class ExamProvider with ChangeNotifier {
             debugLog('ExamProvider',
                 '✅ Loaded ${cachedExams.length} exams for course $courseId from cache');
 
-            // Background refresh
             unawaited(_refreshCourseExamsInBackground(courseId));
             return;
           }
         }
       }
 
-      // No cache or force refresh, load from API
       final response = await apiService.getAvailableExams(courseId: courseId);
 
       if (response.success && response.data != null) {
@@ -225,7 +242,6 @@ class ExamProvider with ChangeNotifier {
         debugLog(
             'ExamProvider', '❌ No exams data received: ${response.message}');
 
-        // If we have no data and no cache, set empty list
         if (courseId == null) {
           _availableExams = [];
         } else {
@@ -237,7 +253,6 @@ class ExamProvider with ChangeNotifier {
       _error = 'Failed to load exams: ${e.toString()}';
       debugLog('ExamProvider', '❌ loadAvailableExams error: $e');
 
-      // Keep existing data on error
       if (courseId == null && _availableExams.isEmpty) {
         _availableExams = [];
       } else if (courseId != null && !_examsByCourse.containsKey(courseId)) {
@@ -253,7 +268,7 @@ class ExamProvider with ChangeNotifier {
     try {
       debugLog('ExamProvider', '🔄 Background refresh for available exams');
 
-      final response = await apiService.getAvailableExams(courseId: null);
+      final response = await apiService.getAvailableExams();
 
       if (response.success && response.data != null) {
         final exams = response.data!;
@@ -408,7 +423,6 @@ class ExamProvider with ChangeNotifier {
     try {
       debugLog('ExamProvider', '📥 Loading my exam results');
 
-      // Try cache first if not forcing refresh
       if (!forceRefresh) {
         final cachedResults = await deviceService
             .getCacheItem<List<ExamResult>>(AppConstants.myExamResultsCacheKey);
@@ -420,13 +434,11 @@ class ExamProvider with ChangeNotifier {
           debugLog('ExamProvider',
               '✅ Loaded ${_myExamResults.length} exam results from cache');
 
-          // Background refresh
           unawaited(_refreshExamResultsInBackground());
           return;
         }
       }
 
-      // No cache or force refresh, load from API
       final response = await apiService.getMyExamResults();
 
       if (response.success) {
@@ -464,7 +476,6 @@ class ExamProvider with ChangeNotifier {
       _error = 'Failed to load exam results: ${e.toString()}';
       debugLog('ExamProvider', '❌ loadMyExamResults error: $e');
 
-      // Keep existing data on error
       if (_myExamResults.isEmpty) {
         _myExamResults = [];
       }
@@ -510,7 +521,6 @@ class ExamProvider with ChangeNotifier {
       {bool forceRefresh = false}) async {
     if (_isLoadingCourse[courseId] == true && !forceRefresh) return;
 
-    // Try cache first
     if (!forceRefresh) {
       final cachedExams = await deviceService
           .getCacheItem<List<Exam>>(AppConstants.examsByCourseKey(courseId));
@@ -524,7 +534,6 @@ class ExamProvider with ChangeNotifier {
         debugLog('ExamProvider',
             '✅ Loaded ${cachedExams.length} exams for course $courseId from cache');
 
-        // Background refresh
         unawaited(_refreshCourseExamsInBackground(courseId));
         return;
       }
@@ -561,7 +570,6 @@ class ExamProvider with ChangeNotifier {
       _error = 'Failed to load exams for course: ${e.toString()}';
       debugLog('ExamProvider', '❌ loadExamsByCourse error: $e');
 
-      // Keep existing data on error
       if (!_examsByCourse.containsKey(courseId)) {
         _examsByCourse[courseId] = [];
       }
@@ -614,11 +622,9 @@ class ExamProvider with ChangeNotifier {
     }
   }
 
-  /// 🔵 FIX: Clear user data ONLY for different user logout
   Future<void> clearUserData() async {
     debugLog('ExamProvider', 'Clearing exam data');
 
-    // Only clear if this is a different user logout
     final session = UserSession();
     final isDifferentUser = !await session.isSameUser();
     final isLoggingOut = await _isLoggingOut();

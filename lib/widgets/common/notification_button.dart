@@ -1,15 +1,11 @@
 import 'dart:async';
-import 'package:familyacademyclient/themes/app_themes.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:badges/badges.dart' as badges;
 import '../../../providers/notification_provider.dart';
 import '../../../themes/app_colors.dart';
-import '../../../themes/app_text_styles.dart';
-import '../../../utils/responsive.dart';
 import '../../../utils/responsive_values.dart';
-import '../../../utils/app_enums.dart';
 
 class NotificationButton extends StatefulWidget {
   final double? size;

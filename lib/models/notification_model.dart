@@ -1,3 +1,5 @@
+import '../utils/parsers.dart';
+
 class Notification {
   final int logId;
   final int? notificationId;
@@ -26,34 +28,23 @@ class Notification {
   });
 
   factory Notification.fromJson(Map<String, dynamic> json) {
-    print('Parsing notification JSON: $json');
-
     return Notification(
-      logId: int.tryParse(json['log_id']?.toString() ?? '0') ?? 0,
+      logId: Parsers.parseInt(json['log_id']),
       notificationId: json['notification_id'] != null
-          ? int.tryParse(json['notification_id'].toString())
+          ? Parsers.parseInt(json['notification_id'])
           : null,
       title: json['title']?.toString() ?? 'No Title',
       message: json['message']?.toString() ?? '',
       deliveryStatus: json['delivery_status']?.toString() ?? 'pending',
       isRead: json['is_read'] == 1 || json['is_read'] == true,
-      receivedAt: json['received_at'] != null
-          ? DateTime.parse(json['received_at'].toString()).toLocal()
-          : (json['created_at'] != null
-              ? DateTime.parse(json['created_at'].toString()).toLocal()
-              : DateTime.now()),
-      sentAt: json['sent_at'] != null
-          ? DateTime.parse(json['sent_at'].toString()).toLocal()
-          : null,
-      readAt: json['read_at'] != null
-          ? DateTime.parse(json['read_at'].toString()).toLocal()
-          : null,
-      deliveredAt: json['delivered_at'] != null
-          ? DateTime.parse(json['delivered_at'].toString()).toLocal()
-          : null,
-      sentBy: json['sent_by'] != null
-          ? int.tryParse(json['sent_by'].toString())
-          : null,
+      receivedAt:
+          Parsers.parseDate(json['received_at'] ?? json['created_at']) ??
+              DateTime.now(),
+      sentAt: Parsers.parseDate(json['sent_at']),
+      readAt: Parsers.parseDate(json['read_at']),
+      deliveredAt: Parsers.parseDate(json['delivered_at']),
+      sentBy:
+          json['sent_by'] != null ? Parsers.parseInt(json['sent_by']) : null,
     );
   }
 
@@ -83,16 +74,13 @@ class Notification {
 
     if (difference.inDays > 365) {
       return '${(difference.inDays / 365).floor()}y ago';
-    } else if (difference.inDays > 30) {
-      return '${(difference.inDays / 30).floor()}mo ago';
-    } else if (difference.inDays > 0) {
-      return '${difference.inDays}d ago';
-    } else if (difference.inHours > 0) {
-      return '${difference.inHours}h ago';
-    } else if (difference.inMinutes > 0) {
-      return '${difference.inMinutes}m ago';
-    } else {
-      return 'Just now';
     }
+    if (difference.inDays > 30) {
+      return '${(difference.inDays / 30).floor()}mo ago';
+    }
+    if (difference.inDays > 0) return '${difference.inDays}d ago';
+    if (difference.inHours > 0) return '${difference.inHours}h ago';
+    if (difference.inMinutes > 0) return '${difference.inMinutes}m ago';
+    return 'Just now';
   }
 }

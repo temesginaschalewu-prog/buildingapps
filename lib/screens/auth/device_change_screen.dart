@@ -1,29 +1,34 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui';
-import 'package:familyacademyclient/services/api_service.dart';
-import 'package:familyacademyclient/services/user_session.dart';
-import 'package:familyacademyclient/themes/app_colors.dart';
-import 'package:familyacademyclient/themes/app_text_styles.dart';
-import 'package:familyacademyclient/widgets/common/empty_state.dart';
+import 'package:familyacademyclient/themes/app_themes.dart';
+import 'package:familyacademyclient/widgets/common/app_shimmer.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:familyacademyclient/utils/responsive.dart';
-import 'package:familyacademyclient/utils/responsive_values.dart';
-import 'package:familyacademyclient/utils/helpers.dart';
-import 'package:familyacademyclient/widgets/common/responsive_widgets.dart';
+
+import '../../services/api_service.dart';
+import '../../services/user_session.dart';
+import '../../services/connectivity_service.dart';
+import '../../services/snackbar_service.dart';
+import '../../services/device_service.dart';
+import '../../widgets/common/app_button.dart';
+import '../../widgets/common/app_card.dart';
+import '../../widgets/common/app_text_field.dart';
+import '../../widgets/common/app_empty_state.dart';
+import '../../widgets/common/app_dialog.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/device_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../providers/category_provider.dart';
-import '../../services/device_service.dart';
-import '../../themes/app_themes.dart';
-import '../../widgets/auth/password_field.dart';
+import '../../themes/app_colors.dart';
+import '../../themes/app_text_styles.dart';
+import '../../utils/responsive.dart';
+import '../../utils/responsive_values.dart';
+import '../../utils/helpers.dart';
 import '../../utils/api_response.dart';
-import '../../widgets/common/loading_indicator.dart';
 import '../../utils/router.dart';
+import '../../widgets/common/responsive_widgets.dart';
 
 class DeviceChangeScreen extends StatefulWidget {
   const DeviceChangeScreen({super.key});
@@ -81,102 +86,13 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
   }
 
   Future<void> _checkConnectivity() async {
-    final hasConnection = await hasInternetConnection();
-    if (!hasConnection) {
-      setState(() => _isOffline = true);
-      showOfflineMessage(context);
-    }
-  }
-
-  Widget _buildGlassContainer({required Widget child}) {
-    return ClipRRect(
-      borderRadius:
-          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.getCard(context).withValues(alpha: 0.4),
-                AppColors.getCard(context).withValues(alpha: 0.2),
-              ],
-            ),
-            borderRadius:
-                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-            border: Border.all(
-              color: AppColors.telegramBlue.withValues(alpha: 0.2),
-            ),
-          ),
-          child: child,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGlassButton({
-    required String label,
-    required VoidCallback onPressed,
-    required List<Color> gradient,
-    bool isLoading = false,
-    bool isEnabled = true,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: isEnabled ? LinearGradient(colors: gradient) : null,
-        color: isEnabled
-            ? null
-            : AppColors.getTextSecondary(context).withValues(alpha: 0.2),
-        borderRadius:
-            BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-        boxShadow: isEnabled
-            ? [
-                BoxShadow(
-                  color: gradient.first.withValues(alpha: 0.3),
-                  blurRadius: ResponsiveValues.spacingS(context),
-                  offset: Offset(0, ResponsiveValues.spacingXS(context)),
-                ),
-              ]
-            : null,
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: isEnabled ? onPressed : null,
-          borderRadius:
-              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-          child: Container(
-            padding: EdgeInsets.symmetric(
-              vertical: ResponsiveValues.spacingL(context),
-            ),
-            alignment: Alignment.center,
-            child: isLoading
-                ? SizedBox(
-                    width: ResponsiveValues.iconSizeM(context),
-                    height: ResponsiveValues.iconSizeM(context),
-                    child: const CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation(Colors.white)),
-                  )
-                : ResponsiveText(
-                    label,
-                    style: AppTextStyles.buttonLarge(context).copyWith(
-                      color: isEnabled
-                          ? Colors.white
-                          : AppColors.getTextSecondary(context),
-                    ),
-                  ),
-          ),
-        ),
-      ),
-    );
+    final connectivityService = context.read<ConnectivityService>();
+    setState(() => _isOffline = !connectivityService.isOnline);
   }
 
   Future<void> _saveDeviceChangeToCache() async {
     try {
-      final deviceService = Provider.of<DeviceService>(context, listen: false);
+      final deviceService = context.read<DeviceService>();
       final userId = await UserSession().getCurrentUserId();
       if (userId != null) {
         await deviceService.saveCacheItem(
@@ -193,7 +109,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
 
   Future<void> _loadDeviceChangeFromCache() async {
     try {
-      final deviceService = Provider.of<DeviceService>(context, listen: false);
+      final deviceService = context.read<DeviceService>();
       final userId = await UserSession().getCurrentUserId();
       if (userId != null) {
         final cached = await deviceService.getCacheItem<Map<String, dynamic>>(
@@ -231,8 +147,6 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
 
       if (state.extra != null && state.extra is Map<String, dynamic>) {
         routeArgs = state.extra as Map<String, dynamic>;
-        debugLog(
-            'DeviceChangeScreen', '✅ Received args from GoRouter: $routeArgs');
       }
     } catch (e) {}
 
@@ -243,8 +157,6 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
           final args = modalRoute!.settings.arguments;
           if (args is Map<String, dynamic>) {
             routeArgs = args;
-            debugLog('DeviceChangeScreen',
-                '✅ Received args from ModalRoute: $routeArgs');
           }
         }
       } catch (e) {}
@@ -278,7 +190,6 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
         if (_mounted) setState(() => _isInitializing = false);
       });
     } else {
-      debugLog('DeviceChangeScreen', '❌ No arguments provided');
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         await _loadDeviceChangeFromCache();
         if (_hasArgs) {
@@ -288,8 +199,8 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
           });
         } else {
           if (_mounted) {
-            showTopSnackBar(context, 'Invalid device change request',
-                isError: true);
+            SnackbarService()
+                .showError(context, 'Invalid device change request');
             context.go('/auth/login');
           }
         }
@@ -299,19 +210,16 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
 
   Future<void> _initializeDeviceInfo() async {
     try {
-      _deviceService = Provider.of<DeviceService>(context, listen: false);
+      _deviceService = context.read<DeviceService>();
       await _deviceService!.init();
 
       final deviceId = await _deviceService!.getDeviceId();
 
       if (_mounted) setState(() => _newDeviceId = deviceId);
-
-      debugLog('DeviceChangeScreen',
-          'Device initialized. New Device ID: ${deviceId.substring(0, 10)}...');
     } catch (e) {
       debugLog('DeviceChangeScreen', 'Error initializing device: $e');
       if (_mounted) {
-        showTopSnackBar(context, 'Failed to initialize device', isError: true);
+        SnackbarService().showError(context, 'Failed to initialize device');
       }
     }
   }
@@ -326,24 +234,20 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
   Future<void> _approveDeviceChange() async {
     if (!_formKey.currentState!.validate()) return;
     if (!_confirmChange) {
-      showTopSnackBar(context, 'Please confirm the device change',
-          isError: true);
+      SnackbarService().showError(context, 'Please confirm the device change');
       return;
     }
     if (!_canChangeDevice) {
-      showTopSnackBar(context,
-          'You have reached the maximum device changes ($_maxChanges per month)',
-          isError: true);
+      SnackbarService().showError(
+        context,
+        'You have reached the maximum device changes ($_maxChanges per month)',
+      );
       return;
     }
 
-    final hasConnection = await hasInternetConnection();
-    if (!hasConnection) {
-      showTopSnackBar(
-        context,
-        'You are offline. Please check your internet connection.',
-        isError: true,
-      );
+    final connectivityService = context.read<ConnectivityService>();
+    if (!connectivityService.isOnline) {
+      SnackbarService().showOffline(context, action: 'change device');
       return;
     }
 
@@ -361,9 +265,6 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     final password = _passwordController.text;
 
     try {
-      debugLog(
-          'DeviceChangeScreen', 'Approving device change for user: $_username');
-
       final approveResponse = await apiService.approveDeviceChange(
         username: _username,
         password: password,
@@ -374,11 +275,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
         throw ApiError(message: approveResponse.message);
       }
 
-      debugLog('DeviceChangeScreen', '✅ Device change approved by backend');
-
       await Future.delayed(const Duration(seconds: 1));
-
-      debugLog('DeviceChangeScreen', 'Logging in with new device...');
 
       final loginResult = await authProvider.login(
         _username,
@@ -401,7 +298,8 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
           );
         }
 
-        showTopSnackBar(context, 'Device change approved successfully!');
+        SnackbarService()
+            .showSuccess(context, 'Device change approved successfully!');
 
         if (authProvider.currentUser?.schoolId == null) {
           appRouter.setNavigatingToSchoolSelection(true);
@@ -424,12 +322,10 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
         if (_mounted) {
           setState(() => _error =
               loginResult['message'] ?? 'Login after device change failed');
-          showTopSnackBar(context, _error!, isError: true);
+          SnackbarService().showError(context, _error!);
         }
       }
     } catch (e) {
-      debugLog('DeviceChangeScreen', 'Device change failed: $e');
-
       String errorMessage;
       if (e is ApiError) {
         if (e.action == 'max_device_changes_reached') {
@@ -446,7 +342,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
 
       if (_mounted) {
         setState(() => _error = errorMessage);
-        showTopSnackBar(context, errorMessage, isError: true);
+        SnackbarService().showError(context, errorMessage);
       }
     } finally {
       if (_mounted) setState(() => _isLoading = false);
@@ -454,350 +350,147 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
   }
 
   void _cancelDeviceChange() {
-    showDialog(
+    AppDialog.confirm(
       context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: _buildGlassContainer(
-          child: Padding(
-            padding: ResponsiveValues.dialogPadding(context),
-            child: ResponsiveColumn(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        AppColors.telegramYellow.withValues(alpha: 0.2),
-                        AppColors.telegramYellow.withValues(alpha: 0.1),
-                      ],
-                    ),
-                    shape: BoxShape.circle,
-                  ),
-                  child: ResponsiveIcon(
-                    Icons.exit_to_app_rounded,
-                    size: ResponsiveValues.iconSizeL(context),
-                    color: AppColors.telegramYellow,
-                  ),
-                ),
-                const ResponsiveSizedBox(height: AppSpacing.l),
-                ResponsiveText(
-                  'Cancel Device Change',
-                  style: AppTextStyles.titleLarge(context).copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const ResponsiveSizedBox(height: AppSpacing.m),
-                ResponsiveText(
-                  'Are you sure you want to cancel? You will not be able to login on this device.',
-                  style: AppTextStyles.bodyMedium(context).copyWith(
-                    color: AppColors.getTextSecondary(context),
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const ResponsiveSizedBox(height: AppSpacing.xl),
-                ResponsiveRow(
-                  children: [
-                    Expanded(
-                      child: TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        style: TextButton.styleFrom(
-                          foregroundColor: AppColors.getTextSecondary(context),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(
-                              ResponsiveValues.radiusMedium(context),
-                            ),
-                          ),
-                          padding: EdgeInsets.symmetric(
-                            vertical: ResponsiveValues.spacingM(context),
-                          ),
-                        ),
-                        child: const Text('No, Stay'),
-                      ),
-                    ),
-                    const ResponsiveSizedBox(width: AppSpacing.m),
-                    Expanded(
-                      child: _buildGlassButton(
-                        label: 'Yes, Cancel',
-                        onPressed: () {
-                          Navigator.pop(context);
-                          context
-                              .read<AuthProvider>()
-                              .clearDeviceChangeRequirement();
-                          if (_mounted) context.go('/auth/login');
-                        },
-                        gradient: const [Color(0xFFFF3B30), Color(0xFFE6204A)],
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+      title: 'Cancel Device Change',
+      message:
+          'Are you sure you want to cancel? You will not be able to login on this device.',
+      confirmText: 'Yes, Cancel',
+      cancelText: 'No, Stay',
+    ).then((confirmed) {
+      if (confirmed == true && _mounted) {
+        context.read<AuthProvider>().clearDeviceChangeRequirement();
+        context.go('/auth/login');
+      }
+    });
   }
 
-  @override
-  Widget build(BuildContext context) {
-    if (_isOffline) {
-      return Scaffold(
-        backgroundColor: AppColors.getBackground(context),
-        appBar: AppBar(
-          title: ResponsiveText(
-            'Device Change',
-            style: AppTextStyles.appBarTitle(context),
-          ),
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          leading: IconButton(
-            icon: ResponsiveIcon(
-              Icons.arrow_back_rounded,
-              color: AppColors.getTextPrimary(context),
-            ),
-            onPressed: () => context.go('/auth/login'),
-          ),
-        ),
-        body: OfflineState(
-          dataType: 'device change',
-          message: 'You are offline. Please connect to complete device change.',
-          onRetry: () {
-            setState(() => _isOffline = false);
-            _checkConnectivity();
-          },
-        ),
-      );
-    }
-
-    if (_isInitializing) {
-      return Scaffold(
-        backgroundColor: AppColors.getBackground(context),
-        appBar: AppBar(
-          title: ResponsiveText(
-            'Device Change',
-            style: AppTextStyles.appBarTitle(context),
-          ),
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          leading: IconButton(
-            icon: ResponsiveIcon(
-              Icons.arrow_back_rounded,
-              color: AppColors.getTextPrimary(context),
-            ),
-            onPressed: () => context.go('/auth/login'),
-          ),
-        ),
-        body: Center(
-          child: ResponsiveColumn(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _buildGlassContainer(
-                child: Container(
-                  padding: ResponsiveValues.dialogPadding(context),
-                  child: LoadingIndicator(
-                    size: ResponsiveValues.iconSizeXL(context),
-                    color: AppColors.telegramBlue,
-                  ),
-                ),
-              ),
-              const ResponsiveSizedBox(height: AppSpacing.l),
-              ResponsiveText(
-                'Initializing device information...',
-                style: AppTextStyles.bodyMedium(context).copyWith(
-                  color: AppColors.getTextSecondary(context),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    if (!_hasArgs) {
-      return Scaffold(
-        backgroundColor: AppColors.getBackground(context),
-        appBar: AppBar(
-          title: ResponsiveText(
-            'Device Change',
-            style: AppTextStyles.appBarTitle(context),
-          ),
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          leading: IconButton(
-            icon: ResponsiveIcon(
-              Icons.arrow_back_rounded,
-              color: AppColors.getTextPrimary(context),
-            ),
-            onPressed: () => context.go('/auth/login'),
-          ),
-        ),
-        body: Center(
-          child: EmptyState(
-            icon: Icons.error_outline,
-            title: 'Invalid Request',
-            message: 'No device change data provided.',
-            type: EmptyStateType.error,
-            actionText: 'Back to Login',
-            onAction: () => context.go('/auth/login'),
-          ),
-        ),
-      );
-    }
-
-    return ResponsiveLayout(
-      mobile: _buildMobileLayout(),
-      tablet: _buildDesktopLayout(),
-      desktop: _buildDesktopLayout(),
-    ).animate().fadeIn(duration: AppThemes.animationDurationMedium);
-  }
-
-  Widget _buildMobileLayout() {
-    return Scaffold(
-      backgroundColor: AppColors.getBackground(context),
-      appBar: AppBar(
-        title: ResponsiveText(
-          'Device Change',
-          style: AppTextStyles.appBarTitle(context),
-        ),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        surfaceTintColor: Colors.transparent,
-        automaticallyImplyLeading: false,
-        actions: [
-          IconButton(
-            icon: ResponsiveIcon(
-              Icons.info_outline_rounded,
-              size: ResponsiveValues.iconSizeM(context),
+  Widget _buildInfoRow(String label, String value) {
+    return ResponsiveRow(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: ResponsiveValues.spacingXXXL(context) * 3,
+          child: ResponsiveText(
+            '$label:',
+            style: AppTextStyles.labelMedium(context).copyWith(
               color: AppColors.getTextSecondary(context),
             ),
-            onPressed: _showDeviceInfoDialog,
-            tooltip: 'Device Information',
           ),
-        ],
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: ResponsiveValues.screenPadding(context),
-          child: Form(
-            key: _formKey,
-            child: ResponsiveColumn(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildWarningBanner(),
-                const ResponsiveSizedBox(height: AppSpacing.xl),
-                _buildDeviceInfoCard(),
-                const ResponsiveSizedBox(height: AppSpacing.l),
-                _buildDeviceLimitsCard(),
-                const ResponsiveSizedBox(height: AppSpacing.xl),
-                _buildGlassContainer(
-                  child: Padding(
-                    padding: ResponsiveValues.cardPadding(context),
-                    child: PasswordField(
-                      controller: _passwordController,
-                      label: 'Verify Password',
-                      hintText: 'Enter your password to confirm device change',
-                      validator: _validatePassword,
-                    ),
-                  ),
+        ),
+        Expanded(
+          child: AppCard.glass(
+            child: Container(
+              padding: EdgeInsets.all(ResponsiveValues.spacingS(context)),
+              child: ResponsiveText(
+                value.isNotEmpty
+                    ? value.substring(
+                            0, value.length > 30 ? 30 : value.length) +
+                        (value.length > 30 ? '...' : '')
+                    : 'Not available',
+                style: AppTextStyles.bodySmall(context).copyWith(
+                  fontFamily: Platform.isIOS ? 'Courier' : 'monospace',
+                  fontWeight: FontWeight.w600,
                 ),
-                const ResponsiveSizedBox(height: AppSpacing.l),
-                _buildConfirmationCard(),
-                const ResponsiveSizedBox(height: AppSpacing.xxl),
-                _buildActionButtons(),
-                const ResponsiveSizedBox(height: AppSpacing.l),
-                _buildNote(),
-              ],
+              ),
             ),
           ),
         ),
-      ),
+      ],
     );
   }
 
-  Widget _buildDesktopLayout() {
-    return Scaffold(
-      backgroundColor: AppColors.getBackground(context),
-      appBar: AppBar(
-        title: ResponsiveText(
-          'Device Change Required',
-          style: AppTextStyles.appBarTitle(context),
+  Widget _buildLimitRow({
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return ResponsiveRow(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        ResponsiveText(
+          label,
+          style: AppTextStyles.bodyMedium(context),
         ),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        surfaceTintColor: Colors.transparent,
-        automaticallyImplyLeading: false,
-        actions: [
-          IconButton(
-            icon: ResponsiveIcon(
-              Icons.info_outline_rounded,
-              size: ResponsiveValues.iconSizeM(context),
-              color: AppColors.getTextSecondary(context),
+        AppCard.glass(
+          child: Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: ResponsiveValues.spacingM(context),
+              vertical: ResponsiveValues.spacingXS(context),
             ),
-            onPressed: _showDeviceInfoDialog,
-            tooltip: 'Device Information',
+            child: ResponsiveText(
+              value,
+              style: AppTextStyles.labelMedium(context).copyWith(
+                color: color,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        child: AdaptiveContainer(
-          child: Form(
-            key: _formKey,
-            child: ResponsiveColumn(
-              children: [
-                const ResponsiveSizedBox(height: AppSpacing.xxl),
-                _buildWarningBanner(),
-                const ResponsiveSizedBox(height: AppSpacing.xxxl),
-                ResponsiveRow(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(child: _buildDeviceInfoCard()),
-                    const ResponsiveSizedBox(width: AppSpacing.xxl),
-                    Expanded(child: _buildDeviceLimitsCard()),
-                  ],
-                ),
-                const ResponsiveSizedBox(height: AppSpacing.xxxl),
-                _buildGlassContainer(
-                  child: Padding(
-                    padding: ResponsiveValues.dialogPadding(context),
-                    child: ResponsiveColumn(
-                      children: [
-                        ResponsiveText(
-                          'Verification',
-                          style: AppTextStyles.titleLarge(context).copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const ResponsiveSizedBox(height: AppSpacing.xl),
-                        PasswordField(
-                          controller: _passwordController,
-                          label: 'Verify Password',
-                          hintText:
-                              'Enter your password to confirm device change',
-                          validator: _validatePassword,
-                        ),
-                        const ResponsiveSizedBox(height: AppSpacing.xl),
-                        _buildConfirmationCard(),
-                      ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWarningBanner() {
+    return AppCard.glass(
+      child: Padding(
+        padding: EdgeInsets.all(ResponsiveValues.spacingXL(context)),
+        child: ResponsiveRow(
+          children: [
+            AnimatedBuilder(
+              animation: _pulseAnimationController,
+              builder: (context, child) {
+                return Transform.scale(
+                  scale: 1 + _pulseAnimationController.value * 0.1,
+                  child: Container(
+                    padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          AppColors.telegramYellow.withValues(alpha: 0.2),
+                          AppColors.telegramYellow.withValues(alpha: 0.1),
+                        ],
+                      ),
+                      shape: BoxShape.circle,
+                    ),
+                    child: ResponsiveIcon(
+                      Icons.warning_rounded,
+                      size: ResponsiveValues.iconSizeXL(context),
+                      color: AppColors.telegramYellow,
                     ),
                   ),
-                ),
-                const ResponsiveSizedBox(height: AppSpacing.xxxl),
-                _buildActionButtons(),
-                const ResponsiveSizedBox(height: AppSpacing.xl),
-                _buildNote(),
-                const ResponsiveSizedBox(height: AppSpacing.xxxl),
-              ],
+                );
+              },
             ),
-          ),
+            const ResponsiveSizedBox(width: AppSpacing.xl),
+            Expanded(
+              child: ResponsiveColumn(
+                children: [
+                  ResponsiveText(
+                    'New Device Detected',
+                    style: AppTextStyles.headlineSmall(context).copyWith(
+                      color: AppColors.telegramYellow,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const ResponsiveSizedBox(height: AppSpacing.s),
+                  ResponsiveText(
+                    'You are logging in from a new device. Your old device will be blocked after this change.',
+                    style: AppTextStyles.bodyLarge(context).copyWith(
+                      color: AppColors.telegramYellow,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
-    );
+    ).animate().shake(duration: 1.seconds, delay: 500.ms);
   }
 
   Widget _buildDeviceInfoCard() {
-    return _buildGlassContainer(
+    return AppCard.glass(
       child: Padding(
         padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
         child: ResponsiveColumn(
@@ -843,41 +536,6 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     );
   }
 
-  Widget _buildInfoRow(String label, String value) {
-    return ResponsiveRow(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: ResponsiveValues.spacingXXXL(context) * 3,
-          child: ResponsiveText(
-            '$label:',
-            style: AppTextStyles.labelMedium(context).copyWith(
-              color: AppColors.getTextSecondary(context),
-            ),
-          ),
-        ),
-        Expanded(
-          child: _buildGlassContainer(
-            child: Container(
-              padding: EdgeInsets.all(ResponsiveValues.spacingS(context)),
-              child: ResponsiveText(
-                value.isNotEmpty
-                    ? value.substring(
-                            0, value.length > 30 ? 30 : value.length) +
-                        (value.length > 30 ? '...' : '')
-                    : 'Not available',
-                style: AppTextStyles.bodySmall(context).copyWith(
-                  fontFamily: Platform.isIOS ? 'Courier' : 'monospace',
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildDeviceLimitsCard() {
     final remainingColor = _remainingChanges == 0
         ? AppColors.telegramRed
@@ -885,7 +543,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
             ? AppColors.telegramYellow
             : AppColors.telegramGreen;
 
-    return _buildGlassContainer(
+    return AppCard.glass(
       child: Padding(
         padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
         child: ResponsiveColumn(
@@ -974,39 +632,8 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     );
   }
 
-  Widget _buildLimitRow({
-    required String label,
-    required String value,
-    required Color color,
-  }) {
-    return ResponsiveRow(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        ResponsiveText(
-          label,
-          style: AppTextStyles.bodyMedium(context),
-        ),
-        _buildGlassContainer(
-          child: Container(
-            padding: EdgeInsets.symmetric(
-              horizontal: ResponsiveValues.spacingM(context),
-              vertical: ResponsiveValues.spacingXS(context),
-            ),
-            child: ResponsiveText(
-              value,
-              style: AppTextStyles.labelMedium(context).copyWith(
-                color: color,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildConfirmationCard() {
-    return _buildGlassContainer(
+    return AppCard.glass(
       child: Padding(
         padding: ResponsiveValues.cardPadding(context),
         child: ResponsiveRow(
@@ -1057,42 +684,26 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     return ResponsiveRow(
       children: [
         Expanded(
-          child: TextButton(
+          child: AppButton.outline(
+            label: 'Cancel',
             onPressed: _isLoading ? null : _cancelDeviceChange,
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.getTextSecondary(context),
-              padding: EdgeInsets.symmetric(
-                vertical: ResponsiveValues.spacingL(context),
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(
-                  ResponsiveValues.radiusMedium(context),
-                ),
-              ),
-            ),
-            child: ResponsiveText(
-              'Cancel',
-              style: AppTextStyles.buttonMedium(context).copyWith(
-                color: AppColors.getTextSecondary(context),
-              ),
-            ),
+            expanded: true,
           ),
         ),
         const ResponsiveSizedBox(width: AppSpacing.m),
         Expanded(
           child: _canChangeDevice
-              ? _buildGlassButton(
+              ? AppButton.primary(
                   label: _isLoading ? 'Approving...' : 'Approve',
-                  onPressed: _approveDeviceChange,
-                  gradient: const [Color(0xFF2AABEE), Color(0xFF5856D6)],
+                  onPressed: _isLoading || !_confirmChange
+                      ? null
+                      : _approveDeviceChange,
                   isLoading: _isLoading,
-                  isEnabled: !_isLoading && _confirmChange,
+                  expanded: true,
                 )
-              : _buildGlassButton(
+              : const AppButton.danger(
                   label: 'Cannot Change',
-                  onPressed: () {},
-                  gradient: const [Color(0xFFFF3B30), Color(0xFFE6204A)],
-                  isEnabled: false,
+                  expanded: true,
                 ),
         ),
       ],
@@ -1100,7 +711,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
   }
 
   Widget _buildNote() {
-    return _buildGlassContainer(
+    return AppCard.glass(
       child: Padding(
         padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
         child: ResponsiveRow(
@@ -1126,73 +737,167 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
   }
 
   void _showDeviceInfoDialog() {
-    showDialog(
+    AppDialog.info(
       context: context,
-      builder: (context) => Dialog(
+      title: 'Device Information',
+      message: '',
+    ).then((_) {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isOffline) {
+      return Scaffold(
+        backgroundColor: AppColors.getBackground(context),
+        appBar: AppBar(
+          title: ResponsiveText(
+            'Device Change',
+            style: AppTextStyles.appBarTitle(context),
+          ),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+            icon: ResponsiveIcon(
+              Icons.arrow_back_rounded,
+              color: AppColors.getTextPrimary(context),
+            ),
+            onPressed: () => context.go('/auth/login'),
+          ),
+        ),
+        body: AppEmptyState.offline(
+          message: 'You are offline. Please connect to complete device change.',
+          onRetry: () {
+            setState(() => _isOffline = false);
+            _checkConnectivity();
+          },
+        ),
+      );
+    }
+
+    if (_isInitializing) {
+      return Scaffold(
+        backgroundColor: AppColors.getBackground(context),
+        appBar: AppBar(
+          title: ResponsiveText(
+            'Device Change',
+            style: AppTextStyles.appBarTitle(context),
+          ),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+            icon: ResponsiveIcon(
+              Icons.arrow_back_rounded,
+              color: AppColors.getTextPrimary(context),
+            ),
+            onPressed: () => context.go('/auth/login'),
+          ),
+        ),
+        body: Center(
+          child: AppCard.glass(
+            child: Padding(
+              padding: ResponsiveValues.dialogPadding(context),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const AppShimmer(type: ShimmerType.circle),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Initializing device information...',
+                    style: AppTextStyles.bodyMedium(context).copyWith(
+                      color: AppColors.getTextSecondary(context),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (!_hasArgs) {
+      return Scaffold(
+        backgroundColor: AppColors.getBackground(context),
+        appBar: AppBar(
+          title: ResponsiveText(
+            'Device Change',
+            style: AppTextStyles.appBarTitle(context),
+          ),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+            icon: ResponsiveIcon(
+              Icons.arrow_back_rounded,
+              color: AppColors.getTextPrimary(context),
+            ),
+            onPressed: () => context.go('/auth/login'),
+          ),
+        ),
+        body: AppEmptyState.error(
+          title: 'Invalid Request',
+          message: 'No device change data provided.',
+          onRetry: () => context.go('/auth/login'),
+        ),
+      );
+    }
+
+    return ResponsiveLayout(
+      mobile: _buildMobileLayout(),
+      tablet: _buildDesktopLayout(),
+      desktop: _buildDesktopLayout(),
+    ).animate().fadeIn(duration: AppThemes.animationDurationMedium);
+  }
+
+  Widget _buildMobileLayout() {
+    return Scaffold(
+      backgroundColor: AppColors.getBackground(context),
+      appBar: AppBar(
+        title: ResponsiveText(
+          'Device Change',
+          style: AppTextStyles.appBarTitle(context),
+        ),
         backgroundColor: Colors.transparent,
-        child: _buildGlassContainer(
-          child: Padding(
-            padding: ResponsiveValues.dialogPadding(context),
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        automaticallyImplyLeading: false,
+        actions: [
+          AppButton.icon(
+            icon: Icons.info_outline_rounded,
+            onPressed: _showDeviceInfoDialog,
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: ResponsiveValues.screenPadding(context),
+          child: Form(
+            key: _formKey,
             child: ResponsiveColumn(
-              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                ResponsiveRow(
-                  children: [
-                    Container(
-                      padding:
-                          EdgeInsets.all(ResponsiveValues.spacingM(context)),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            AppColors.telegramBlue.withValues(alpha: 0.2),
-                            AppColors.telegramPurple.withValues(alpha: 0.1),
-                          ],
-                        ),
-                        shape: BoxShape.circle,
-                      ),
-                      child: ResponsiveIcon(
-                        Icons.info_rounded,
-                        size: ResponsiveValues.iconSizeL(context),
-                        color: AppColors.telegramBlue,
-                      ),
-                    ),
-                    const ResponsiveSizedBox(width: AppSpacing.l),
-                    ResponsiveText(
-                      'Device Information',
-                      style: AppTextStyles.titleLarge(context).copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-                const ResponsiveSizedBox(height: AppSpacing.l),
-                _buildDialogInfoItem('Username', _username),
-                const ResponsiveSizedBox(height: AppSpacing.m),
-                _buildDialogInfoItem('Current Device', _currentDeviceId),
-                const ResponsiveSizedBox(height: AppSpacing.m),
-                _buildDialogInfoItem('New Device', _newDeviceId ?? _deviceId),
-                const ResponsiveSizedBox(height: AppSpacing.m),
-                _buildDialogInfoItem(
-                    'Device Changes', '$_changeCount/$_maxChanges'),
-                const ResponsiveSizedBox(height: AppSpacing.m),
-                _buildDialogInfoItem('Remaining Changes', '$_remainingChanges'),
-                const ResponsiveSizedBox(height: AppSpacing.m),
-                _buildDialogInfoItem(
-                  'Status',
-                  _canChangeDevice ? 'Can Change' : 'Cannot Change',
-                  valueColor: _canChangeDevice
-                      ? AppColors.telegramGreen
-                      : AppColors.telegramRed,
-                ),
+                _buildWarningBanner(),
                 const ResponsiveSizedBox(height: AppSpacing.xl),
-                SizedBox(
-                  width: double.infinity,
-                  child: _buildGlassButton(
-                    label: 'Close',
-                    onPressed: () => Navigator.pop(context),
-                    gradient: const [Color(0xFF2AABEE), Color(0xFF5856D6)],
+                _buildDeviceInfoCard(),
+                const ResponsiveSizedBox(height: AppSpacing.l),
+                _buildDeviceLimitsCard(),
+                const ResponsiveSizedBox(height: AppSpacing.xl),
+                AppCard.glass(
+                  child: Padding(
+                    padding: ResponsiveValues.cardPadding(context),
+                    child: AppTextField.password(
+                      controller: _passwordController,
+                      label: 'Verify Password',
+                      hint: 'Enter your password to confirm device change',
+                      validator: _validatePassword,
+                    ),
                   ),
                 ),
+                const ResponsiveSizedBox(height: AppSpacing.l),
+                _buildConfirmationCard(),
+                const ResponsiveSizedBox(height: AppSpacing.xxl),
+                _buildActionButtons(),
+                const ResponsiveSizedBox(height: AppSpacing.l),
+                _buildNote(),
               ],
             ),
           ),
@@ -1201,88 +906,77 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     );
   }
 
-  Widget _buildDialogInfoItem(String label, String value, {Color? valueColor}) {
-    return ResponsiveColumn(
-      children: [
-        ResponsiveText(
-          label,
-          style: AppTextStyles.labelMedium(context).copyWith(
-            color: AppColors.getTextSecondary(context),
-          ),
+  Widget _buildDesktopLayout() {
+    return Scaffold(
+      backgroundColor: AppColors.getBackground(context),
+      appBar: AppBar(
+        title: ResponsiveText(
+          'Device Change Required',
+          style: AppTextStyles.appBarTitle(context),
         ),
-        const ResponsiveSizedBox(height: AppSpacing.xs),
-        _buildGlassContainer(
-          child: Container(
-            padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
-            child: ResponsiveText(
-              value.isEmpty ? 'Not available' : value,
-              style: AppTextStyles.bodyMedium(context).copyWith(
-                color: valueColor ?? AppColors.getTextPrimary(context),
-                fontFamily: Platform.isIOS ? 'Courier' : 'monospace',
-                fontWeight: FontWeight.w600,
-              ),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        automaticallyImplyLeading: false,
+        actions: [
+          AppButton.icon(
+            icon: Icons.info_outline_rounded,
+            onPressed: _showDeviceInfoDialog,
+          ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        child: AdaptiveContainer(
+          child: Form(
+            key: _formKey,
+            child: ResponsiveColumn(
+              children: [
+                const ResponsiveSizedBox(height: AppSpacing.xxl),
+                _buildWarningBanner(),
+                const ResponsiveSizedBox(height: AppSpacing.xxxl),
+                ResponsiveRow(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: _buildDeviceInfoCard()),
+                    const ResponsiveSizedBox(width: AppSpacing.xxl),
+                    Expanded(child: _buildDeviceLimitsCard()),
+                  ],
+                ),
+                const ResponsiveSizedBox(height: AppSpacing.xxxl),
+                AppCard.glass(
+                  child: Padding(
+                    padding: ResponsiveValues.dialogPadding(context),
+                    child: ResponsiveColumn(
+                      children: [
+                        ResponsiveText(
+                          'Verification',
+                          style: AppTextStyles.titleLarge(context).copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const ResponsiveSizedBox(height: AppSpacing.xl),
+                        AppTextField.password(
+                          controller: _passwordController,
+                          label: 'Verify Password',
+                          hint: 'Enter your password to confirm device change',
+                          validator: _validatePassword,
+                        ),
+                        const ResponsiveSizedBox(height: AppSpacing.xl),
+                        _buildConfirmationCard(),
+                      ],
+                    ),
+                  ),
+                ),
+                const ResponsiveSizedBox(height: AppSpacing.xxxl),
+                _buildActionButtons(),
+                const ResponsiveSizedBox(height: AppSpacing.xl),
+                _buildNote(),
+                const ResponsiveSizedBox(height: AppSpacing.xxxl),
+              ],
             ),
           ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildWarningBanner() {
-    return _buildGlassContainer(
-      child: Padding(
-        padding: EdgeInsets.all(ResponsiveValues.spacingXL(context)),
-        child: ResponsiveRow(
-          children: [
-            AnimatedBuilder(
-              animation: _pulseAnimationController,
-              builder: (context, child) {
-                return Transform.scale(
-                  scale: 1 + _pulseAnimationController.value * 0.1,
-                  child: Container(
-                    padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          AppColors.telegramYellow.withValues(alpha: 0.2),
-                          AppColors.telegramYellow.withValues(alpha: 0.1),
-                        ],
-                      ),
-                      shape: BoxShape.circle,
-                    ),
-                    child: ResponsiveIcon(
-                      Icons.warning_rounded,
-                      size: ResponsiveValues.iconSizeXL(context),
-                      color: AppColors.telegramYellow,
-                    ),
-                  ),
-                );
-              },
-            ),
-            const ResponsiveSizedBox(width: AppSpacing.xl),
-            Expanded(
-              child: ResponsiveColumn(
-                children: [
-                  ResponsiveText(
-                    'New Device Detected',
-                    style: AppTextStyles.headlineSmall(context).copyWith(
-                      color: AppColors.telegramYellow,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const ResponsiveSizedBox(height: AppSpacing.s),
-                  ResponsiveText(
-                    'You are logging in from a new device. Your old device will be blocked after this change.',
-                    style: AppTextStyles.bodyLarge(context).copyWith(
-                      color: AppColors.telegramYellow,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
         ),
       ),
-    ).animate().shake(duration: 1.seconds, delay: 500.ms);
+    );
   }
 }
