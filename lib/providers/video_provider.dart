@@ -10,17 +10,7 @@ import '../models/video_model.dart';
 import '../utils/constants.dart';
 import '../utils/helpers.dart';
 import 'package:dio/dio.dart';
-
-enum VideoQualityLevel {
-  low(360, '360p'),
-  medium(480, '480p'),
-  high(720, '720p'),
-  highest(1080, '1080p');
-
-  final int height;
-  final String label;
-  const VideoQualityLevel(this.height, this.label);
-}
+import '../utils/app_enums.dart';
 
 class VideoProvider with ChangeNotifier {
   final ApiService apiService;
@@ -91,12 +81,10 @@ class VideoProvider with ChangeNotifier {
     _dio.options.receiveTimeout = const Duration(seconds: 30);
     _dio.options.sendTimeout = const Duration(seconds: 30);
 
-    // Configure SSL handling
     (_dio.httpClientAdapter as dynamic).onHttpClientCreate =
         (HttpClient client) {
       client.badCertificateCallback =
           (X509Certificate cert, String host, int port) {
-        // Accept certificates for Cloudinary domains
         if (host.contains('cloudinary.com') ||
             host.contains('res.cloudinary.com')) {
           return true;
