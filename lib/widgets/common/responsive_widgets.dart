@@ -1,29 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
-
-class ResponsiveBuilder extends StatelessWidget {
-  final Widget Function(
-    BuildContext context,
-    BoxConstraints constraints,
-    ResponsiveInfo info,
-  ) builder;
-
-  const ResponsiveBuilder({super.key, required this.builder});
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return builder(
-          context,
-          constraints,
-          ResponsiveInfo(context),
-        );
-      },
-    );
-  }
-}
+import '../../utils/app_enums.dart';
 
 class ResponsiveInfo {
   final BuildContext context;
@@ -44,7 +22,6 @@ class ResponsiveInfo {
   }
 
   double spacing(AppSpacing level) => level.getValue(context);
-
   double get spacingXXS => spacing(AppSpacing.xxs);
   double get spacingXS => spacing(AppSpacing.xs);
   double get spacingS => spacing(AppSpacing.s);
@@ -90,17 +67,28 @@ class ResponsiveInfo {
   }
 }
 
+class ResponsiveBuilder extends StatelessWidget {
+  final Widget Function(
+          BuildContext context, BoxConstraints constraints, ResponsiveInfo info)
+      builder;
+
+  const ResponsiveBuilder({super.key, required this.builder});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) =>
+          builder(context, constraints, ResponsiveInfo(context)),
+    );
+  }
+}
+
 class ResponsiveSizedBox extends StatelessWidget {
   final Widget? child;
   final AppSpacing? width;
   final AppSpacing? height;
 
-  const ResponsiveSizedBox({
-    super.key,
-    this.child,
-    this.width,
-    this.height,
-  });
+  const ResponsiveSizedBox({super.key, this.child, this.width, this.height});
 
   const ResponsiveSizedBox.shrink({super.key})
       : child = null,
@@ -159,8 +147,7 @@ class ResponsiveContainer extends StatelessWidget {
               ? BoxConstraints(maxWidth: maxWidth!)
               : (useMaxWidth
                   ? BoxConstraints(
-                      maxWidth: info.isDesktop ? 1200 : double.infinity,
-                    )
+                      maxWidth: info.isDesktop ? 1200 : double.infinity)
                   : null),
           child: child,
         );
@@ -193,7 +180,6 @@ class ResponsiveColumn extends StatelessWidget {
       builder: (context, constraints, info) {
         final effectiveSpacing = spacing?.getValue(context) ?? info.spacingL;
 
-        // Check if any child is an Expanded or Flexible widget
         bool hasExpanded = false;
         for (var child in children) {
           if (child is Expanded || child is Flexible) {
@@ -202,7 +188,6 @@ class ResponsiveColumn extends StatelessWidget {
           }
         }
 
-        // If there are Expanded widgets, use Column directly
         if (hasExpanded) {
           return Padding(
             padding: padding ?? EdgeInsets.zero,
@@ -215,7 +200,6 @@ class ResponsiveColumn extends StatelessWidget {
           );
         }
 
-        // Normal column with spacing between children
         return Padding(
           padding: padding ?? EdgeInsets.zero,
           child: Column(
@@ -226,7 +210,7 @@ class ResponsiveColumn extends StatelessWidget {
                 .expand((child) => [
                       child,
                       if (child != children.last)
-                        SizedBox(height: effectiveSpacing),
+                        SizedBox(height: effectiveSpacing)
                     ])
                 .toList(),
           ),
@@ -262,7 +246,6 @@ class ResponsiveRow extends StatelessWidget {
       builder: (context, constraints, info) {
         final effectiveSpacing = spacing?.getValue(context) ?? info.spacingM;
 
-        // Check if any child is an Expanded or Flexible widget
         bool hasExpanded = false;
         for (var child in children) {
           if (child is Expanded || child is Flexible) {
@@ -271,7 +254,6 @@ class ResponsiveRow extends StatelessWidget {
           }
         }
 
-        // If there are Expanded widgets, use Row directly
         if (hasExpanded) {
           return Padding(
             padding: padding ?? EdgeInsets.zero,
@@ -304,19 +286,16 @@ class ResponsiveRow extends StatelessWidget {
           );
         }
 
-        // Calculate total width to decide if we need to wrap
         double totalWidth = 0;
         for (var child in children) {
           if (child is SizedBox && child.width != null) {
             totalWidth += child.width!;
           } else {
-            // If we can't calculate, assume it might overflow
             totalWidth = constraints.maxWidth + 1;
             break;
           }
         }
 
-        // If content might overflow, use Wrap
         if (totalWidth > constraints.maxWidth ||
             (info.isMobile && children.length > 2) ||
             wrap) {
@@ -332,7 +311,6 @@ class ResponsiveRow extends StatelessWidget {
           );
         }
 
-        // Otherwise use Row
         return Padding(
           padding: padding ?? EdgeInsets.zero,
           child: Row(
@@ -407,8 +385,7 @@ class ResponsiveText extends StatelessWidget {
 
         if (effectiveStyle.fontSize != null) {
           effectiveStyle = effectiveStyle.copyWith(
-            fontSize: info.scale(effectiveStyle.fontSize!),
-          );
+              fontSize: info.scale(effectiveStyle.fontSize!));
         }
 
         return Text(
@@ -442,12 +419,7 @@ class ResponsiveIcon extends StatelessWidget {
     return ResponsiveBuilder(
       builder: (context, constraints, info) {
         final effectiveSize = size ?? info.iconSizeM;
-
-        return Icon(
-          icon,
-          size: effectiveSize,
-          color: color,
-        );
+        return Icon(icon, size: effectiveSize, color: color);
       },
     );
   }
