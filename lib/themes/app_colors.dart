@@ -4,7 +4,6 @@ class AppColors {
   static const Color telegramBlue = Color(0xFF2469F0);
   static const Color telegramBlueLight = Color(0xFF3B82F6);
   static const Color telegramBlueDark = Color(0xFF1A4FC2);
-  static const Color telegramBlueSubtle = Color(0xFFEFF6FF);
 
   static const Color telegramGreen = Color(0xFF10B981);
   static const Color telegramRed = Color(0xFFEF4444);
@@ -16,33 +15,7 @@ class AppColors {
   static const Color telegramIndigo = Color(0xFF6366F1);
   static const Color telegramGray = Color(0xFF6B7280);
 
-  static const Color notificationSuccess = Color(0xFF4CAF50);
-  static const Color notificationWarning = Color(0xFFFF9800);
-  static const Color notificationError = Color(0xFFF44336);
-  static const Color notificationInfo = Color(0xFF3F51B5);
-  static const Color notificationExpiring = Color(0xFFFF5722);
-  static const Color notificationAchievement = Color(0xFF6200EE);
-
-  static const Color streakGold = Color(0xFFFFD700);
-  static const Color streakSilver = Color(0xFFC0C0C0);
-  static const Color streakBronze = Color(0xFFCD7F32);
-  static const Color streakGreen = Color(0xFF34C759);
-  static const Color streakBlue = Color(0xFF2AABEE);
-  static const Color streakOrange = Color(0xFFFF9500);
-
-  static const Color examPassed = Color(0xFF34C759);
-  static const Color examFailed = Color(0xFFFF3B30);
-  static const Color examInProgress = Color(0xFF007AFF);
-  static const Color examDefault = Color(0xFF8E8E93);
-
-  static const Color badgeRed = Color(0xFFFF3B30);
-  static const List<Color> badgeGradient = [
-    Color(0xFFFF3B30),
-    Color(0xFFE6204A)
-  ];
-
   static const Color telegramBlueFaded = Color(0x1A2469F0);
-  static const Color telegramBlueLightFaded = Color(0x1A3B82F6);
   static const Color telegramGreenFaded = Color(0x1A10B981);
   static const Color telegramRedFaded = Color(0x1AEF4444);
   static const Color telegramYellowFaded = Color(0x1AF59E0B);
@@ -52,17 +25,6 @@ class AppColors {
   static const Color telegramTealFaded = Color(0x1A14B8A6);
   static const Color telegramIndigoFaded = Color(0x1A6366F1);
   static const Color telegramGrayFaded = Color(0x1A6B7280);
-
-  static const Color telegramBlueExtraFaded = Color(0x0D2469F0);
-  static const Color telegramGreenExtraFaded = Color(0x0D10B981);
-  static const Color telegramRedExtraFaded = Color(0x0DEF4444);
-  static const Color telegramYellowExtraFaded = Color(0x0DF59E0B);
-  static const Color telegramOrangeExtraFaded = Color(0x0DF97316);
-  static const Color telegramPurpleExtraFaded = Color(0x0D8B5CF6);
-  static const Color telegramPinkExtraFaded = Color(0x0DEC4899);
-  static const Color telegramTealExtraFaded = Color(0x0D14B8A6);
-  static const Color telegramIndigoExtraFaded = Color(0x0D6366F1);
-  static const Color telegramGrayExtraFaded = Color(0x0D6B7280);
 
   static const Color telegramBlueBackground = Color(0x0A2469F0);
   static const Color telegramGreenBackground = Color(0x0A10B981);
@@ -75,151 +37,75 @@ class AppColors {
   static const Color telegramIndigoBackground = Color(0x0A6366F1);
   static const Color telegramGrayBackground = Color(0x0A6B7280);
 
+  static const Color success = telegramGreen;
+  static const Color error = telegramRed;
+  static const Color warning = telegramYellow;
+  static const Color info = telegramBlue;
+  static const Color pending = telegramOrange;
+  static const Color active = telegramGreen;
+  static const Color locked = telegramGray;
+  static const Color free = telegramBlue;
+
+  static const List<Color> blueGradient = [telegramBlue, telegramBlueLight];
+  static const List<Color> purpleGradient = [telegramPurple, Color(0xFFA78BFA)];
+  static const List<Color> greenGradient = [telegramGreen, Color(0xFF34D399)];
+  static const List<Color> orangeGradient = [telegramOrange, Color(0xFFFB923C)];
+  static const List<Color> pinkGradient = [telegramPink, Color(0xFFF472B6)];
+  static const List<Color> tealGradient = [telegramTeal, Color(0xFF2DD4BF)];
+  static const List<Color> telegramGradient = [
+    Color(0xFF2AABEE),
+    Color(0xFF5856D6)
+  ];
+  static const List<Color> dangerGradient = [
+    Color(0xFFFF3B30),
+    Color(0xFFE6204A)
+  ];
+  static const List<Color> successGradient = [
+    Color(0xFF34C759),
+    Color(0xFF2CAE4A)
+  ];
+  static const List<Color> warningGradient = [
+    Color(0xFFFF9F0A),
+    Color(0xFFFF6B0F)
+  ];
+  static const List<Color> infoGradient = [
+    Color(0xFF5AC8FA),
+    Color(0xFF007AFF)
+  ];
+
   static const Color lightBackground = Color(0xFFF8FAFF);
   static const Color lightSurface = Color(0xFFFFFFFF);
   static const Color lightCard = Color(0xFFFFFFFF);
   static const Color lightCardAlt = Color(0xFFF1F5F9);
   static const Color lightDivider = Color(0xFFE2E8F0);
-
   static const Color lightTextPrimary = Color(0xFF0B1E33);
   static const Color lightTextSecondary = Color(0xFF475569);
   static const Color lightTextTertiary = Color(0xFF94A3B8);
-
-  static const Color lightAccent1 = Color(0xFFEFF6FF);
-  static const Color lightAccent2 = Color(0xFFF1F5F9);
-  static const Color lightAccent3 = Color(0xFFE2E8F0);
+  static const Color lightBottomNavBar = Color(0xFFFFFFFF);
+  static const Color lightSearchBar = Color(0xFFF1F5F9);
 
   static const Color darkBackground = Color(0xFF0F172A);
   static const Color darkSurface = Color(0xFF1E293B);
   static const Color darkCard = Color(0xFF2D3A4F);
   static const Color darkDivider = Color(0xFF334155);
-
   static const Color darkTextPrimary = Color(0xFFF1F5F9);
   static const Color darkTextSecondary = Color(0xFF94A3B8);
   static const Color darkTextTertiary = Color(0xFF64748B);
-
-  static const Color success = telegramGreen;
-  static const Color error = telegramRed;
-  static const Color warning = telegramYellow;
-  static const Color info = telegramBlue;
-
-  static const Color statusActive = Color(0xFF10B981);
-  static const Color statusPending = Color(0xFFF59E0B);
-  static const Color statusLocked = Color(0xFF6B7280);
-  static const Color statusFree = telegramBlue;
+  static const Color darkBottomNavBar = Color(0xFF1E293B);
+  static const Color darkSearchBar = Color(0xFF2D3A4F);
 
   static const Color chatBubbleUser = telegramBlue;
   static const Color chatBubbleBot = Color(0xFF1E293B);
   static const Color chatBubbleUserLight = Color(0xFFEFF6FF);
   static const Color chatBubbleBotLight = Color(0xFFF1F5F9);
 
-  static const List<Color> blueGradient = [
-    Color(0xFF2469F0),
-    Color(0xFF3B82F6),
-  ];
-
-  static const List<Color> purpleGradient = [
-    Color(0xFF8B5CF6),
-    Color(0xFFA78BFA),
-  ];
-
-  static const List<Color> greenGradient = [
-    Color(0xFF10B981),
-    Color(0xFF34D399),
-  ];
-
-  static const List<Color> orangeGradient = [
-    Color(0xFFF97316),
-    Color(0xFFFB923C),
-  ];
-
-  static const List<Color> pinkGradient = [
-    Color(0xFFEC4899),
-    Color(0xFFF472B6),
-  ];
-
-  static const List<Color> tealGradient = [
-    Color(0xFF14B8A6),
-    Color(0xFF2DD4BF),
-  ];
-
-  static const List<Color> telegramGradient = [
-    Color(0xFF2AABEE),
-    Color(0xFF5856D6),
-  ];
-
-  static const List<Color> dangerGradient = [
-    Color(0xFFFF3B30),
-    Color(0xFFE6204A),
-  ];
-
-  static const List<Color> dangerSoftGradient = [
-    Color(0xFFFF6B6B),
-    Color(0xFFFF3B30),
-  ];
-
-  static const List<Color> successGradient = [
-    Color(0xFF34C759),
-    Color(0xFF2CAE4A),
-  ];
-
-  static const List<Color> warningGradient = [
-    Color(0xFFFF9F0A),
-    Color(0xFFFF6B0F),
-  ];
-
-  static const List<Color> infoGradient = [
-    Color(0xFF5AC8FA),
-    Color(0xFF007AFF),
-  ];
-
-  static const List<Color> blueFadedGradient = [
-    Color(0x1A2469F0),
-    Color(0x0D2469F0),
-  ];
-
-  static const List<Color> greenFadedGradient = [
-    Color(0x1A10B981),
-    Color(0x0D10B981),
-  ];
-
-  static const List<Color> yellowFadedGradient = [
-    Color(0x1AF59E0B),
-    Color(0x0DF59E0B),
-  ];
-
-  static const List<Color> redFadedGradient = [
-    Color(0x1AEF4444),
-    Color(0x0DEF4444),
-  ];
-
-  static const List<Color> purpleFadedGradient = [
-    Color(0x1A8B5CF6),
-    Color(0x0D8B5CF6),
-  ];
-
-  static List<Color> glassGradient(BuildContext context) {
-    return [
-      getCard(context).withValues(alpha: 0.4),
-      getCard(context).withValues(alpha: 0.2),
-    ];
-  }
+  static const Color shimmerBase = Color(0xFFE2E8F0);
+  static const Color shimmerHighlight = Color(0xFFF1F5F9);
 
   static const Color transparent = Colors.transparent;
   static const Color overlay = Color(0x8A000000);
   static const Color overlayLight = Color(0x1A000000);
   static const Color overlayDark = Color(0xCC000000);
-
-  static const Color shimmerBase = Color(0xFFE2E8F0);
-  static const Color shimmerHighlight = Color(0xFFF1F5F9);
-
-  static const Color bottomNavBar = Color(0xFFFFFFFF);
-  static const Color bottomNavBarDark = Color(0xFF1E293B);
-  static const Color searchBar = Color(0xFFF1F5F9);
-  static const Color searchBarDark = Color(0xFF2D3A4F);
-
-  static const Color selection = Color(0x332469F0);
-  static const Color selectionDark = Color(0x333B82F6);
 
   static Color getBackground(BuildContext context) {
     return Theme.of(context).brightness == Brightness.dark
@@ -263,9 +149,39 @@ class AppColors {
         : lightDivider;
   }
 
-  static Color withOpacity(Color color, double opacity) {
-    return color.withValues(alpha: opacity);
+  static Color getBottomNavBar(BuildContext context) {
+    return Theme.of(context).brightness == Brightness.dark
+        ? darkBottomNavBar
+        : lightBottomNavBar;
   }
+
+  static Color getSearchBar(BuildContext context) {
+    return Theme.of(context).brightness == Brightness.dark
+        ? darkSearchBar
+        : lightSearchBar;
+  }
+
+  static Color get blueFaded => telegramBlueFaded;
+  static Color get greenFaded => telegramGreenFaded;
+  static Color get redFaded => telegramRedFaded;
+  static Color get yellowFaded => telegramYellowFaded;
+  static Color get orangeFaded => telegramOrangeFaded;
+  static Color get purpleFaded => telegramPurpleFaded;
+  static Color get pinkFaded => telegramPinkFaded;
+  static Color get tealFaded => telegramTealFaded;
+  static Color get indigoFaded => telegramIndigoFaded;
+  static Color get grayFaded => telegramGrayFaded;
+
+  static Color get blueBackground => telegramBlueBackground;
+  static Color get greenBackground => telegramGreenBackground;
+  static Color get redBackground => telegramRedBackground;
+  static Color get yellowBackground => telegramYellowBackground;
+  static Color get orangeBackground => telegramOrangeBackground;
+  static Color get purpleBackground => telegramPurpleBackground;
+  static Color get pinkBackground => telegramPinkBackground;
+  static Color get tealBackground => telegramTealBackground;
+  static Color get indigoBackground => telegramIndigoBackground;
+  static Color get grayBackground => telegramGrayBackground;
 
   static Color getStatusColor(String status, BuildContext context) {
     switch (status.toLowerCase()) {
@@ -273,40 +189,28 @@ class AppColors {
       case 'verified':
       case 'subscribed':
       case 'completed':
+      case 'passed':
         return success;
       case 'pending':
       case 'coming_soon':
       case 'in_progress':
-        return statusPending;
+        return pending;
       case 'rejected':
       case 'locked':
       case 'expired':
       case 'cancelled':
+      case 'failed':
         return error;
       case 'free':
-        return telegramBlue;
+        return free;
       default:
         return getTextSecondary(context);
     }
   }
 
   static Color getStatusBackground(String status, BuildContext context) {
-    switch (status.toLowerCase()) {
-      case 'active':
-      case 'verified':
-      case 'subscribed':
-        return telegramGreenBackground;
-      case 'pending':
-      case 'coming_soon':
-        return telegramOrangeBackground;
-      case 'rejected':
-      case 'locked':
-        return telegramRedBackground;
-      case 'free':
-        return telegramBlueBackground;
-      default:
-        return getSurface(context);
-    }
+    final color = getStatusColor(status, context);
+    return color.withValues(alpha: 0.1);
   }
 
   static List<Color> getStatusGradient(String status) {
@@ -315,6 +219,7 @@ class AppColors {
       case 'verified':
       case 'subscribed':
       case 'completed':
+      case 'passed':
         return successGradient;
       case 'pending':
       case 'coming_soon':
@@ -324,6 +229,7 @@ class AppColors {
       case 'locked':
       case 'expired':
       case 'cancelled':
+      case 'failed':
         return dangerGradient;
       case 'free':
         return blueGradient;
@@ -332,40 +238,11 @@ class AppColors {
     }
   }
 
-  static Color getFaded(Color color, {double opacity = 0.1}) {
+  static Color withOpacity(Color color, double opacity) {
     return color.withValues(alpha: opacity);
   }
 
-  static Color get blueFaded => telegramBlueFaded;
-  static Color get greenFaded => telegramGreenFaded;
-  static Color get yellowFaded => telegramYellowFaded;
-  static Color get redFaded => telegramRedFaded;
-  static Color get purpleFaded => telegramPurpleFaded;
-  static Color get orangeFaded => telegramOrangeFaded;
-  static Color get pinkFaded => telegramPinkFaded;
-  static Color get tealFaded => telegramTealFaded;
-  static Color get indigoFaded => telegramIndigoFaded;
-  static Color get grayFaded => telegramGrayFaded;
-
-  static Color get blueExtraFaded => telegramBlueExtraFaded;
-  static Color get greenExtraFaded => telegramGreenExtraFaded;
-  static Color get yellowExtraFaded => telegramYellowExtraFaded;
-  static Color get redExtraFaded => telegramRedExtraFaded;
-  static Color get purpleExtraFaded => telegramPurpleExtraFaded;
-  static Color get orangeExtraFaded => telegramOrangeExtraFaded;
-  static Color get pinkExtraFaded => telegramPinkExtraFaded;
-  static Color get tealExtraFaded => telegramTealExtraFaded;
-  static Color get indigoExtraFaded => telegramIndigoExtraFaded;
-  static Color get grayExtraFaded => telegramGrayExtraFaded;
-
-  static Color get blueBackground => telegramBlueBackground;
-  static Color get greenBackground => telegramGreenBackground;
-  static Color get yellowBackground => telegramYellowBackground;
-  static Color get redBackground => telegramRedBackground;
-  static Color get purpleBackground => telegramPurpleBackground;
-  static Color get orangeBackground => telegramOrangeBackground;
-  static Color get pinkBackground => telegramPinkBackground;
-  static Color get tealBackground => telegramTealBackground;
-  static Color get indigoBackground => telegramIndigoBackground;
-  static Color get grayBackground => telegramGrayBackground;
+  static Color getFaded(Color color, {double opacity = 0.1}) {
+    return color.withValues(alpha: opacity);
+  }
 }
