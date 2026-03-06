@@ -20,7 +20,6 @@ import 'package:familyacademyclient/models/school_model.dart';
 import 'package:familyacademyclient/models/setting_model.dart';
 import 'package:familyacademyclient/models/subscription_model.dart';
 import 'package:familyacademyclient/models/user_model.dart';
-import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/utils/constants.dart' show AppConstants;
 import 'package:familyacademyclient/utils/helpers.dart';
 
@@ -293,6 +292,19 @@ class ApiService {
     }
   }
 
+  Future<void> _clearUserDataOnly() async {
+    await _secureStorage.deleteAll();
+    final keys = _prefs.getKeys();
+    for (final key in keys) {
+      if (key.startsWith('user_') ||
+          key == AppConstants.userDataKey ||
+          key == AppConstants.sessionStartKey ||
+          key.startsWith('cache_')) {
+        await _prefs.remove(key);
+      }
+    }
+  }
+
   Future<ApiResponse<Map<String, dynamic>>> register(String username,
       String password, String deviceId, String? fcmToken) async {
     try {
@@ -505,16 +517,46 @@ class ApiService {
     }
   }
 
-  Future<void> _clearUserDataOnly() async {
-    await _secureStorage.deleteAll();
-    final keys = _prefs.getKeys();
-    for (final key in keys) {
-      if (key.startsWith('user_') ||
-          key == AppConstants.userDataKey ||
-          key == AppConstants.sessionStartKey ||
-          key.startsWith('cache_')) {
-        await _prefs.remove(key);
-      }
+  Future<ApiResponse<Map<String, dynamic>>> validateToken() async {
+    try {
+      final response = await _dio.get(AppConstants.validateTokenEndpoint);
+      return ApiResponse.fromJson(
+          response.data, (data) => data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Token validation failed',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<ApiResponse<Map<String, dynamic>>> validateStudentToken() async {
+    try {
+      final response =
+          await _dio.get(AppConstants.validateStudentTokenEndpoint);
+      return ApiResponse.fromJson(
+          response.data, (data) => data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiError(
+        message:
+            e.response?.data['message'] ?? 'Student token validation failed',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<bool> checkConnectivity() async {
+    try {
+      final response = await _dio.get(AppConstants.healthEndpoint,
+          options: Options(
+            sendTimeout: const Duration(seconds: 5),
+            receiveTimeout: const Duration(seconds: 5),
+          ));
+      _hasNetworkConnection = response.statusCode == 200;
+      return _hasNetworkConnection;
+    } catch (e) {
+      _hasNetworkConnection = false;
+      return false;
     }
   }
 
@@ -567,21 +609,6 @@ class ApiService {
         message: e.response?.data['message'] ?? 'Failed to fetch schools',
         statusCode: e.response?.statusCode,
       );
-    }
-  }
-
-  Future<bool> checkConnectivity() async {
-    try {
-      final response = await _dio.get(AppConstants.healthEndpoint,
-          options: Options(
-            sendTimeout: const Duration(seconds: 5),
-            receiveTimeout: const Duration(seconds: 5),
-          ));
-      _hasNetworkConnection = response.statusCode == 200;
-      return _hasNetworkConnection;
-    } catch (e) {
-      _hasNetworkConnection = false;
-      return false;
     }
   }
 
@@ -645,27 +672,29 @@ class ApiService {
     }
   }
 
-  Future<ApiResponse<Map<String, dynamic>>> sendChatbotMessage(
-    String message, {
-    int? conversationId,
-    List<String>? history,
-  }) async {
+  Future<ApiResponse<List<Setting>>> getSettingsByCategory(
+      String category) async {
     try {
-      final response = await _dio.post(
-        AppConstants.chatbotChatEndpoint,
-        data: {
-          'message': message,
-          'conversation_id': conversationId,
-          'history': history,
-        },
-      );
+      final response = await _dio.get('/settings/category/$category');
       return ApiResponse.fromJson(
         response.data,
-        (data) => data as Map<String, dynamic>,
+        (data) {
+          if (data is List) {
+            return List<Setting>.from(data.map((x) => Setting.fromJson(x)));
+          }
+          if (data is Map<String, dynamic> &&
+              data['data'] != null &&
+              data['data'] is List) {
+            return List<Setting>.from(
+                (data['data'] as List).map((x) => Setting.fromJson(x)));
+          }
+          return <Setting>[];
+        },
       );
     } on DioException catch (e) {
       throw ApiError(
-        message: e.response?.data['message'] ?? 'Failed to send message',
+        message:
+            e.response?.data['message'] ?? 'Failed to fetch $category settings',
         statusCode: e.response?.statusCode,
       );
     }
@@ -792,23 +821,6 @@ class ApiService {
       throw ApiError(
         message: e.response?.data['message'] ?? 'Failed to update view count',
         statusCode: e.response?.statusCode,
-      );
-    }
-  }
-
-  Future<ApiResponse<Map<String, dynamic>>> getUnreadCount() async {
-    try {
-      final response = await _dio.get('/notifications/unread-count');
-      return ApiResponse<Map<String, dynamic>>(
-        success: true,
-        message: response.data['message'] ?? 'Unread count retrieved',
-        data: response.data['data'] ?? {'unread_count': 0},
-      );
-    } on DioException catch (e) {
-      return ApiResponse<Map<String, dynamic>>(
-        success: false,
-        message: e.response?.data['message'] ?? 'Failed to get unread count',
-        error: e,
       );
     }
   }
@@ -1086,6 +1098,93 @@ class ApiService {
     }
   }
 
+  Future<ApiResponse<List<Subscription>>> getMySubscriptions() async {
+    try {
+      final response = await _dio.get(AppConstants.mySubscriptionsEndpoint);
+      if (response.data is Map<String, dynamic>) {
+        final data = response.data as Map<String, dynamic>;
+        if (data['success'] == true) {
+          final List<Subscription> subscriptions = data['data'] is List
+              ? (data['data'] as List).map<Subscription>((item) {
+                  try {
+                    return Subscription.fromJson(item);
+                  } catch (e) {
+                    return Subscription(
+                      id: item['id'] ?? 0,
+                      userId: item['user_id'] ?? 0,
+                      categoryId: item['category_id'] ?? 0,
+                      startDate: item['start_date'] != null
+                          ? DateTime.parse(item['start_date'])
+                          : DateTime.now(),
+                      expiryDate: item['expiry_date'] != null
+                          ? DateTime.parse(item['expiry_date'])
+                          : DateTime.now().add(const Duration(days: 30)),
+                      status:
+                          item['current_status'] ?? item['status'] ?? 'active',
+                      billingCycle: item['billing_cycle'] ?? 'monthly',
+                      paymentId: item['payment_id'],
+                      createdAt: item['created_at'] != null
+                          ? DateTime.parse(item['created_at'])
+                          : null,
+                      updatedAt: item['updated_at'] != null
+                          ? DateTime.parse(item['updated_at'])
+                          : null,
+                      categoryName: item['category_name'],
+                      price: item['price'] != null
+                          ? double.parse(item['price'].toString())
+                          : null,
+                    );
+                  }
+                }).toList()
+              : [];
+          return ApiResponse<List<Subscription>>(
+              success: true,
+              message: data['message'] ?? 'Subscriptions retrieved',
+              data: subscriptions);
+        } else {
+          return ApiResponse<List<Subscription>>(
+              success: false,
+              message: data['message'] ?? 'Failed to fetch subscriptions',
+              data: []);
+        }
+      }
+      return ApiResponse<List<Subscription>>(
+          success: false, message: 'Invalid response', data: []);
+    } on DioException catch (e) {
+      return ApiResponse<List<Subscription>>(
+          success: false,
+          message:
+              e.response?.data['message'] ?? 'Failed to fetch subscriptions',
+          data: []);
+    }
+  }
+
+  Future<ApiResponse<Map<String, dynamic>>> checkSubscriptionStatus(
+      int categoryId) async {
+    try {
+      final response = await _dio.get(
+          AppConstants.checkSubscriptionStatusEndpoint,
+          queryParameters: {'category_id': categoryId});
+      if (response.data is Map<String, dynamic>) {
+        final data = response.data as Map<String, dynamic>;
+        return ApiResponse<Map<String, dynamic>>(
+            success: data['success'] ?? false,
+            message: data['message'] ?? 'Status checked',
+            data: data['data'] ?? data);
+      }
+      return ApiResponse<Map<String, dynamic>>(
+          success: false,
+          message: 'Invalid response',
+          data: {'has_subscription': false, 'status': 'unpaid'});
+    } on DioException catch (e) {
+      return ApiResponse<Map<String, dynamic>>(
+          success: false,
+          message:
+              e.response?.data['message'] ?? 'Failed to check subscription',
+          data: {'has_subscription': false, 'status': 'error'});
+    }
+  }
+
   Future<ApiResponse<Map<String, dynamic>>> submitPayment({
     required int categoryId,
     required String paymentType,
@@ -1182,90 +1281,36 @@ class ApiService {
     }
   }
 
-  Future<ApiResponse<List<Subscription>>> getMySubscriptions() async {
+  Future<ApiResponse<Map<String, dynamic>>> getUnreadCount() async {
     try {
-      final response = await _dio.get(AppConstants.mySubscriptionsEndpoint);
-      if (response.data is Map<String, dynamic>) {
-        final data = response.data as Map<String, dynamic>;
-        if (data['success'] == true) {
-          final List<Subscription> subscriptions = data['data'] is List
-              ? (data['data'] as List).map<Subscription>((item) {
-                  try {
-                    return Subscription.fromJson(item);
-                  } catch (e) {
-                    return Subscription(
-                      id: item['id'] ?? 0,
-                      userId: item['user_id'] ?? 0,
-                      categoryId: item['category_id'] ?? 0,
-                      startDate: item['start_date'] != null
-                          ? DateTime.parse(item['start_date'])
-                          : DateTime.now(),
-                      expiryDate: item['expiry_date'] != null
-                          ? DateTime.parse(item['expiry_date'])
-                          : DateTime.now().add(const Duration(days: 30)),
-                      status:
-                          item['current_status'] ?? item['status'] ?? 'active',
-                      billingCycle: item['billing_cycle'] ?? 'monthly',
-                      paymentId: item['payment_id'],
-                      createdAt: item['created_at'] != null
-                          ? DateTime.parse(item['created_at'])
-                          : null,
-                      updatedAt: item['updated_at'] != null
-                          ? DateTime.parse(item['updated_at'])
-                          : null,
-                      categoryName: item['category_name'],
-                      price: item['price'] != null
-                          ? double.parse(item['price'].toString())
-                          : null,
-                    );
-                  }
-                }).toList()
-              : [];
-          return ApiResponse<List<Subscription>>(
-              success: true,
-              message: data['message'] ?? 'Subscriptions retrieved',
-              data: subscriptions);
-        } else {
-          return ApiResponse<List<Subscription>>(
-              success: false,
-              message: data['message'] ?? 'Failed to fetch subscriptions',
-              data: []);
-        }
-      }
-      return ApiResponse<List<Subscription>>(
-          success: false, message: 'Invalid response', data: []);
+      final response = await _dio.get('/notifications/unread-count');
+      return ApiResponse<Map<String, dynamic>>(
+        success: true,
+        message: response.data['message'] ?? 'Unread count retrieved',
+        data: response.data['data'] ?? {'unread_count': 0},
+      );
     } on DioException catch (e) {
-      return ApiResponse<List<Subscription>>(
-          success: false,
-          message:
-              e.response?.data['message'] ?? 'Failed to fetch subscriptions',
-          data: []);
+      return ApiResponse<Map<String, dynamic>>(
+        success: false,
+        message: e.response?.data['message'] ?? 'Failed to get unread count',
+        error: e,
+      );
     }
   }
 
-  Future<ApiResponse<Map<String, dynamic>>> checkSubscriptionStatus(
-      int categoryId) async {
+  Future<ApiResponse<List<Notification>>> getMyNotifications() async {
     try {
-      final response = await _dio.get(
-          AppConstants.checkSubscriptionStatusEndpoint,
-          queryParameters: {'category_id': categoryId});
-      if (response.data is Map<String, dynamic>) {
-        final data = response.data as Map<String, dynamic>;
-        return ApiResponse<Map<String, dynamic>>(
-            success: data['success'] ?? false,
-            message: data['message'] ?? 'Status checked',
-            data: data['data'] ?? data);
-      }
-      return ApiResponse<Map<String, dynamic>>(
-          success: false,
-          message: 'Invalid response',
-          data: {'has_subscription': false, 'status': 'unpaid'});
+      final response = await _dio.get(AppConstants.myNotificationsEndpoint);
+      return ApiResponse.fromJson(
+        response.data,
+        (data) =>
+            List<Notification>.from(data.map((x) => Notification.fromJson(x))),
+      );
     } on DioException catch (e) {
-      return ApiResponse<Map<String, dynamic>>(
-          success: false,
-          message:
-              e.response?.data['message'] ?? 'Failed to check subscription',
-          data: {'has_subscription': false, 'status': 'error'});
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to fetch notifications',
+        statusCode: e.response?.statusCode,
+      );
     }
   }
 
@@ -1419,22 +1464,6 @@ class ApiService {
     }
   }
 
-  Future<ApiResponse<List<Notification>>> getMyNotifications() async {
-    try {
-      final response = await _dio.get(AppConstants.myNotificationsEndpoint);
-      return ApiResponse.fromJson(
-        response.data,
-        (data) =>
-            List<Notification>.from(data.map((x) => Notification.fromJson(x))),
-      );
-    } on DioException catch (e) {
-      throw ApiError(
-        message: e.response?.data['message'] ?? 'Failed to fetch notifications',
-        statusCode: e.response?.statusCode,
-      );
-    }
-  }
-
   Future<ApiResponse<User>> getMyProfile() async {
     try {
       final response = await _dio.get(AppConstants.myProfileEndpoint);
@@ -1476,34 +1505,6 @@ class ApiService {
     } on DioException catch (e) {
       throw ApiError(
         message: e.response?.data['message'] ?? 'Failed to update device',
-        statusCode: e.response?.statusCode,
-      );
-    }
-  }
-
-  Future<ApiResponse<List<Setting>>> getSettingsByCategory(
-      String category) async {
-    try {
-      final response = await _dio.get('/settings/category/$category');
-      return ApiResponse.fromJson(
-        response.data,
-        (data) {
-          if (data is List) {
-            return List<Setting>.from(data.map((x) => Setting.fromJson(x)));
-          }
-          if (data is Map<String, dynamic> &&
-              data['data'] != null &&
-              data['data'] is List) {
-            return List<Setting>.from(
-                (data['data'] as List).map((x) => Setting.fromJson(x)));
-          }
-          return <Setting>[];
-        },
-      );
-    } on DioException catch (e) {
-      throw ApiError(
-        message:
-            e.response?.data['message'] ?? 'Failed to fetch $category settings',
         statusCode: e.response?.statusCode,
       );
     }
@@ -1635,34 +1636,6 @@ class ApiService {
     }
   }
 
-  Future<ApiResponse<Map<String, dynamic>>> validateToken() async {
-    try {
-      final response = await _dio.get(AppConstants.validateTokenEndpoint);
-      return ApiResponse.fromJson(
-          response.data, (data) => data as Map<String, dynamic>);
-    } on DioException catch (e) {
-      throw ApiError(
-        message: e.response?.data['message'] ?? 'Token validation failed',
-        statusCode: e.response?.statusCode,
-      );
-    }
-  }
-
-  Future<ApiResponse<Map<String, dynamic>>> validateStudentToken() async {
-    try {
-      final response =
-          await _dio.get(AppConstants.validateStudentTokenEndpoint);
-      return ApiResponse.fromJson(
-          response.data, (data) => data as Map<String, dynamic>);
-    } on DioException catch (e) {
-      throw ApiError(
-        message:
-            e.response?.data['message'] ?? 'Student token validation failed',
-        statusCode: e.response?.statusCode,
-      );
-    }
-  }
-
   Future<ApiResponse<void>> saveUserProgress({
     required int chapterId,
     int? videoProgress,
@@ -1727,6 +1700,32 @@ class ApiService {
       throw ApiError(
         message:
             e.response?.data['message'] ?? 'Failed to fetch course progress',
+        statusCode: e.response?.statusCode,
+      );
+    }
+  }
+
+  Future<ApiResponse<Map<String, dynamic>>> sendChatbotMessage(
+    String message, {
+    int? conversationId,
+    List<String>? history,
+  }) async {
+    try {
+      final response = await _dio.post(
+        AppConstants.chatbotChatEndpoint,
+        data: {
+          'message': message,
+          'conversation_id': conversationId,
+          'history': history,
+        },
+      );
+      return ApiResponse.fromJson(
+        response.data,
+        (data) => data as Map<String, dynamic>,
+      );
+    } on DioException catch (e) {
+      throw ApiError(
+        message: e.response?.data['message'] ?? 'Failed to send message',
         statusCode: e.response?.statusCode,
       );
     }
