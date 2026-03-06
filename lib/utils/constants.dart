@@ -3,7 +3,6 @@ class AppConstants {
       'https://family-academy-backend-a12l.onrender.com';
   static const String apiVersion = 'v1';
   static String get apiBaseUrl => '$baseUrl/api/$apiVersion';
-
   static const int apiTimeoutSeconds = 30;
   static const int tokenRefreshThresholdMinutes = 5;
 
@@ -138,14 +137,78 @@ class AppConstants {
       '$chatbotEndpoint/conversations';
   static const String chatbotUsageEndpoint = '$chatbotEndpoint/usage';
 
+  static const String tokenKey = 'auth_token';
+  static const String refreshTokenKey = 'refresh_token';
+  static const String userDataKey = 'user_data';
+  static const String deviceIdKey = 'device_id';
+  static const String themeModeKey = 'theme_mode';
+  static const String notificationsEnabledKey = 'notifications_enabled';
+  static const String registrationCompleteKey = 'registration_complete';
+  static const String selectedSchoolIdKey = 'selected_school_id';
+  static const String tvDeviceIdKey = 'tv_device_id';
+  static const String lastUserIdKey = 'last_logged_in_user_id';
+  static const String currentUserIdKey = 'current_user_id';
+  static const String isLoggingOutKey = 'is_logging_out';
+  static const String sessionStartKey = 'session_start';
+  static const String fcmTokenCacheKey = 'fcm_token';
+  static const String persistentDeviceIdKey = 'persistent_device_id';
+  static const String pairingCodeKey = 'pairing_code';
+  static const String pairingExpiresAtKey = 'pairing_expires_at';
+
   static const String cachePrefix = 'cache_';
+  static const String subscriptionsCacheKey = 'subscriptions';
+  static const String paymentsCacheKey = 'payments';
+  static const String notificationsCacheKey = 'notifications';
+  static const String schoolsListKey = 'schools_list';
+  static const String selectedSchoolKey = 'selected_school';
+  static const String allSettingsKey = 'all_settings';
+  static const String allUserProgressKey = 'all_user_progress';
+  static const String overallStatsKey = 'overall_stats';
+  static const String downloadedVideosKey = 'downloaded_videos';
+  static const String downloadQualitiesKey = 'download_qualities';
+  static const String parentLinkStatusKey = 'parent_link_status';
+  static const String parentTokenKey = 'parent_token';
+  static const String serverTimeInfoKey = 'server_time_info';
+  static const String categoriesCacheKey = 'categories';
+  static const String availableExamsCacheKey = 'available_exams';
+  static const String myExamResultsCacheKey = 'my_exam_results';
+
+  static String categorySubscriptionKey(int categoryId) =>
+      'category_sub_$categoryId';
+  static String coursesByCategoryKey(int categoryId) => 'courses_$categoryId';
+  static String chaptersByCourseKey(int courseId) =>
+      'chapters_course_$courseId';
+  static String examsByCourseKey(int courseId) => 'exams_course_$courseId';
+  static String examQuestionsKey(int examId) => 'exam_questions_$examId';
+  static String examAccessKey(int examId) => 'exam_access_$examId';
+  static String progressCourseKey(int courseId) => 'progress_course_$courseId';
+  static String progressChapterKey(int chapterId) =>
+      'progress_chapter_$chapterId';
+  static String userProfileKey(String userId) => 'user_profile_$userId';
+  static String userPaymentsKey(String userId) => 'user_payments_$userId';
+  static String userNotificationsKey(String userId) =>
+      'user_notifications_$userId';
+  static String settingsCategoryKey(String category) =>
+      'settings_category_$category';
+  static String videosByChapterKey(int chapterId) =>
+      'videos_chapter_$chapterId';
+  static String questionsChapterKey(int chapterId) =>
+      'questions_chapter_$chapterId';
+  static String answerResultKey(int questionId) => 'answer_result_$questionId';
+  static String selectedAnswerKey(int questionId) =>
+      'selected_answer_$questionId';
+  static String notesChapterKey(int chapterId) => 'notes_chapter_$chapterId';
+  static String noteViewedKey(int noteId) => 'note_viewed_$noteId';
+  static String categoryAccessKey(int categoryId) =>
+      'category_access_$categoryId';
+  static String streakKey(String userId) => 'streak_$userId';
+
   static const Duration defaultCacheTTL = Duration(days: 7);
   static const Duration defaultCacheTTLHours = Duration(hours: 24);
 
   static const String androidDevicePrefix = 'ANDROID_';
   static const String iosDevicePrefix = 'IOS_';
   static const String fallbackDevicePrefix = 'FA_';
-  static const String tvDeviceIdKey = 'tv_device_id';
 
   static const String notificationChannelId = 'family_academy_channel';
   static const String notificationChannelName = 'Family Academy Notifications';
@@ -153,6 +216,13 @@ class AppConstants {
       'Important notifications from Family Academy';
   static const int notificationLedOnMs = 1000;
   static const int notificationLedOffMs = 500;
+
+  static const int pairingExpiryMinutes = 10;
+  static const int parentTokenExpiryMinutes = 30;
+
+  static const String appName = 'Family Academy';
+  static const String appVersion = '1.4.0+1';
+  static const String appCopyright = '© 2024 Family Academy';
 
   static const List<String> quickQuestions = [
     'Help with math',
@@ -193,95 +263,89 @@ class AppConstants {
           'Go to Profile → Parent Link to generate a unique code. Share this code with your parent through Telegram to complete the linking process.'
     },
   ];
+}
 
-  static const String appVersion = '1.4.0+1';
-  static const String appCopyright = '© 2024 Family Academy';
+class AppStrings {
+  static const String welcomeBack = 'Welcome Back!';
+  static const String signInToContinue =
+      'Sign in to continue your learning journey';
+  static const String username = 'Username';
+  static const String password = 'Password';
+  static const String login = 'Login';
+  static const String register = 'Register';
+  static const String dontHaveAccount = 'Don\'t have an account? ';
+  static const String alreadyHaveAccount = 'Already have an account? ';
+  static const String createAccount = 'Create Account';
+  static const String joinFamilyAcademy = 'Join Family Academy';
 
-  static const String tokenKey = 'auth_token';
-  static const String refreshTokenKey = 'refresh_token';
-  static const String userDataKey = 'user_data';
-  static const String deviceIdKey = 'device_id';
-  static const String themeModeKey = 'theme_mode';
-  static const String notificationsEnabledKey = 'notifications_enabled';
-  static const String registrationCompleteKey = 'registration_complete';
-  static const String selectedSchoolIdKey = 'selected_school_id';
-  static const String tvDeviceIdKey_old = 'tv_device_id';
+  static const String usernameRequired = 'Username is required';
+  static const String usernameMinLength =
+      'Username must be at least 3 characters';
+  static const String usernameInvalid =
+      'Only letters, numbers and underscore allowed';
+  static const String passwordRequired = 'Password is required';
+  static const String passwordMinLength =
+      'Password must be at least 8 characters';
+  static const String confirmPasswordRequired = 'Please confirm your password';
+  static const String passwordsDoNotMatch = 'Passwords do not match';
+  static const String emailInvalid = 'Please enter a valid email';
+  static const String phoneInvalid = 'Please enter a valid phone number';
 
-  static const String lastUserIdKey = 'last_logged_in_user_id';
-  static const String currentUserIdKey = 'current_user_id';
-  static const String isLoggingOutKey = 'is_logging_out';
-  static const String sessionStartKey = 'session_start';
+  static const String loading = 'Loading...';
+  static const String error = 'Error';
+  static const String success = 'Success';
+  static const String warning = 'Warning';
+  static const String info = 'Info';
+  static const String cancel = 'Cancel';
+  static const String confirm = 'Confirm';
+  static const String delete = 'Delete';
+  static const String save = 'Save';
+  static const String edit = 'Edit';
+  static const String done = 'Done';
+  static const String retry = 'Retry';
+  static const String refresh = 'Refresh';
+  static const String search = 'Search';
+  static const String noData = 'No data available';
+  static const String noInternet = 'No internet connection';
+  static const String offline = 'Offline Mode';
+  static const String comingSoon = 'Coming Soon';
 
-  static const String categoriesCacheKey = 'categories';
-  static String categorySubscriptionKey(int categoryId) =>
-      'category_sub_$categoryId';
+  static const String home = 'Home';
+  static const String chat = 'Chat';
+  static const String progress = 'Progress';
+  static const String profile = 'Profile';
+  static const String categories = 'Categories';
+  static const String yourCategories = 'Your Categories';
+  static const String courses = 'Courses';
+  static const String chapters = 'Chapters';
+  static const String videos = 'Videos';
+  static const String notes = 'Notes';
+  static const String practice = 'Practice';
+  static const String exams = 'Exams';
 
-  static String coursesByCategoryKey(int categoryId) => 'courses_$categoryId';
+  static const String myProfile = 'My Profile';
+  static const String email = 'Email';
+  static const String phone = 'Phone Number';
+  static const String school = 'School';
+  static const String notSet = 'Not set';
+  static const String notSelected = 'Not selected';
+  static const String subscriptions = 'Subscriptions';
+  static const String tvPairing = 'TV Pairing';
+  static const String parentControls = 'Parent Controls';
+  static const String feedback = 'Feedback';
+  static const String helpSupport = 'Help & Support';
+  static const String appInfo = 'App Info';
+  static const String logout = 'Logout';
+  static const String notifications = 'Notifications';
+  static const String darkMode = 'Dark Mode';
 
-  static String chaptersByCourseKey(int courseId) =>
-      'chapters_course_$courseId';
-
-  static const String availableExamsCacheKey = 'available_exams';
-  static const String myExamResultsCacheKey = 'my_exam_results';
-  static String examsByCourseKey(int courseId) => 'exams_course_$courseId';
-  static String examQuestionsKey(int examId) => 'exam_questions_$examId';
-  static String examAccessKey(int examId) => 'exam_access_$examId';
-
-  static String progressCourseKey(int courseId) => 'progress_course_$courseId';
-  static String progressChapterKey(int chapterId) =>
-      'progress_chapter_$chapterId';
-  static const String allUserProgressKey = 'all_user_progress';
-  static const String overallStatsKey = 'overall_stats';
-
-  static String userProfileKey(String userId) => 'user_profile_$userId';
-  static String userPaymentsKey(String userId) => 'user_payments_$userId';
-  static String userNotificationsKey(String userId) =>
-      'user_notifications_$userId';
-
-  static const String allSettingsKey = 'all_settings';
-  static String settingsCategoryKey(String category) =>
-      'settings_category_$category';
-
-  static const String schoolsListKey = 'schools_list';
-  static const String selectedSchoolKey = 'selected_school';
-
-  static const String parentLinkStatusKey = 'parent_link_status';
-  static const String parentTokenKey = 'parent_token';
-
-  static String videosByChapterKey(int chapterId) =>
-      'videos_chapter_$chapterId';
-  static const String downloadedVideosKey = 'downloaded_videos';
-  static const String downloadQualitiesKey = 'download_qualities';
-
-  static String questionsChapterKey(int chapterId) =>
-      'questions_chapter_$chapterId';
-  static String answerResultKey(int questionId) => 'answer_result_$questionId';
-  static String selectedAnswerKey(int questionId) =>
-      'selected_answer_$questionId';
-
-  static String notesChapterKey(int chapterId) => 'notes_chapter_$chapterId';
-  static String noteViewedKey(int noteId) => 'note_viewed_$noteId';
-
-  static const String subscriptionsCacheKey = 'subscriptions';
-  static String categoryAccessKey(int categoryId) =>
-      'category_access_$categoryId';
-
-  static const String paymentsCacheKey = 'payments';
-
-  static const String persistentDeviceIdKey = 'persistent_device_id';
-  static const String tvDeviceIdCacheKey = 'tv_device_id';
-  static const String pairingCodeKey = 'pairing_code';
-  static const String pairingExpiresAtKey = 'pairing_expires_at';
-
-  static const String notificationsCacheKey = 'notifications';
-  static const String fcmTokenCacheKey = 'fcm_token';
-
-  static String streakKey(String userId) => 'streak_$userId';
-
-  static const String serverTimeInfoKey = 'server_time_info';
-
-  static const int pairingExpiryMinutes = 10;
-  static const int parentTokenExpiryMinutes = 30;
-
-  static const String appName = 'Family Academy';
+  static const String somethingWentWrong = 'Something went wrong';
+  static const String pleaseTryAgain = 'Please try again';
+  static const String sessionExpired =
+      'Your session has expired. Please login again.';
+  static const String networkError =
+      'Network error. Please check your internet connection.';
+  static const String serverError = 'Server error. Please try again later.';
+  static const String unauthorized = 'Unauthorized. Please login again.';
+  static const String notFound = 'Resource not found.';
 }
