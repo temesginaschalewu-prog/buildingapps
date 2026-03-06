@@ -2,26 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../utils/responsive_values.dart';
-
-enum ShimmerType {
-  categoryCard,
-  courseCard,
-  chapterCard,
-  examCard,
-  videoCard,
-  noteCard,
-  notificationCard,
-  schoolCard,
-  paymentCard,
-  subscriptionCard,
-  contactCard,
-  statusCard,
-  pairingCard,
-  textLine,
-  circle,
-  rectangle,
-  statCircle,
-}
+import '../../utils/app_enums.dart';
 
 class AppShimmer extends StatelessWidget {
   final ShimmerType type;
@@ -50,12 +31,7 @@ class AppShimmer extends StatelessWidget {
         (isDark ? Colors.grey[700]! : Colors.grey[100]!).withValues(alpha: 0.6);
 
     return Animate(
-      effects: [
-        FadeEffect(
-          duration: 400.ms,
-          delay: (index * 50).ms,
-        ),
-      ],
+      effects: [FadeEffect(duration: 400.ms, delay: (index * 50).ms)],
       child: Shimmer.fromColors(
         baseColor: effectiveBaseColor,
         highlightColor: effectiveHighlightColor,
@@ -106,32 +82,26 @@ class AppShimmer extends StatelessWidget {
   Widget _CategoryCardShimmer(BuildContext context) {
     final cardHeight = ResponsiveValues.categoryCardHeight(context);
     final spacing = ResponsiveValues.spacingM(context);
-    final titleSize = ResponsiveValues.categoryCardTitleSize(context);
     final isDesktop = MediaQuery.of(context).size.width >= 1024;
 
     return Container(
       height: cardHeight,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(
-          ResponsiveValues.radiusXLarge(context),
-        ),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
       ),
       child: Stack(
         children: [
-          Positioned.fill(
-            child: Container(color: Colors.white),
-          ),
+          Positioned.fill(child: Container(color: Colors.white)),
           Positioned(
             top: spacing,
             left: spacing,
             child: Container(
               width: isDesktop ? 80 : 100,
-              height: titleSize * 1.5,
+              height: 16,
               decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(4),
-              ),
+                  color: Colors.white, borderRadius: BorderRadius.circular(4)),
             ),
           ),
           Positioned(
@@ -141,9 +111,7 @@ class AppShimmer extends StatelessWidget {
               width: isDesktop ? 60 : 70,
               height: isDesktop ? 18 : 22,
               decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(4),
-              ),
+                  color: Colors.white, borderRadius: BorderRadius.circular(4)),
             ),
           ),
           Positioned(
@@ -153,9 +121,7 @@ class AppShimmer extends StatelessWidget {
               width: isDesktop ? 50 : 60,
               height: 16,
               decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(4),
-              ),
+                  color: Colors.white, borderRadius: BorderRadius.circular(4)),
             ),
           ),
         ],
@@ -178,9 +144,8 @@ class AppShimmer extends StatelessWidget {
             height: iconSize,
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(
-                ResponsiveValues.radiusLarge(context),
-              ),
+              borderRadius:
+                  BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
             ),
           ),
           SizedBox(width: iconSpacing),
@@ -193,18 +158,16 @@ class AppShimmer extends StatelessWidget {
                   width: double.infinity,
                   height: 20,
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(4)),
                 ),
                 const SizedBox(height: 8),
                 Container(
                   width: 150,
                   height: 16,
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(4)),
                 ),
                 const SizedBox(height: 8),
                 Wrap(
@@ -215,17 +178,15 @@ class AppShimmer extends StatelessWidget {
                       width: 100,
                       height: 24,
                       decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12)),
                     ),
                     Container(
                       width: 80,
                       height: 24,
                       decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12)),
                     ),
                   ],
                 ),
@@ -238,9 +199,7 @@ class AppShimmer extends StatelessWidget {
               width: 24,
               height: 24,
               decoration: const BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-              ),
+                  color: Colors.white, shape: BoxShape.circle),
             ),
           ),
         ],
@@ -261,9 +220,8 @@ class AppShimmer extends StatelessWidget {
             height: iconSize,
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(
-                ResponsiveValues.radiusLarge(context),
-              ),
+              borderRadius:
+                  BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
             ),
           ),
           const SizedBox(width: 16),
@@ -275,18 +233,16 @@ class AppShimmer extends StatelessWidget {
                   width: double.infinity,
                   height: 20,
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(4)),
                 ),
                 const SizedBox(height: 8),
                 Container(
                   width: 100,
                   height: 24,
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12)),
                 ),
               ],
             ),
@@ -296,9 +252,7 @@ class AppShimmer extends StatelessWidget {
             width: 24,
             height: 24,
             decoration: const BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-            ),
+                color: Colors.white, shape: BoxShape.circle),
           ),
         ],
       ),
@@ -318,9 +272,8 @@ class AppShimmer extends StatelessWidget {
             height: iconSize,
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(
-                ResponsiveValues.radiusLarge(context),
-              ),
+              borderRadius:
+                  BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
             ),
           ),
           const SizedBox(width: 16),
@@ -332,9 +285,8 @@ class AppShimmer extends StatelessWidget {
                   width: double.infinity,
                   height: 20,
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(4)),
                 ),
                 const SizedBox(height: 8),
                 Row(
@@ -343,18 +295,16 @@ class AppShimmer extends StatelessWidget {
                       width: 80,
                       height: 24,
                       decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12)),
                     ),
                     const SizedBox(width: 8),
                     Container(
                       width: 70,
                       height: 24,
                       decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12)),
                     ),
                   ],
                 ),
@@ -366,9 +316,7 @@ class AppShimmer extends StatelessWidget {
             width: 24,
             height: 24,
             decoration: const BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-            ),
+                color: Colors.white, shape: BoxShape.circle),
           ),
         ],
       ),
@@ -379,9 +327,8 @@ class AppShimmer extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(
-          ResponsiveValues.radiusXLarge(context),
-        ),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -390,9 +337,7 @@ class AppShimmer extends StatelessWidget {
             height: 180,
             decoration: const BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.vertical(
-                top: Radius.circular(24),
-              ),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
             ),
           ),
           Padding(
@@ -404,9 +349,8 @@ class AppShimmer extends StatelessWidget {
                   width: double.infinity,
                   height: 20,
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(4)),
                 ),
                 const SizedBox(height: 8),
                 Row(
@@ -415,18 +359,16 @@ class AppShimmer extends StatelessWidget {
                       width: 60,
                       height: 16,
                       decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(4)),
                     ),
                     const SizedBox(width: 8),
                     Container(
                       width: 80,
                       height: 16,
                       decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(4)),
                     ),
                   ],
                 ),
@@ -451,9 +393,8 @@ class AppShimmer extends StatelessWidget {
             height: iconSize,
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(
-                ResponsiveValues.radiusLarge(context),
-              ),
+              borderRadius:
+                  BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
             ),
           ),
           const SizedBox(width: 16),
@@ -465,9 +406,8 @@ class AppShimmer extends StatelessWidget {
                   width: double.infinity,
                   height: 20,
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(4)),
                 ),
                 const SizedBox(height: 8),
                 Row(
@@ -476,18 +416,16 @@ class AppShimmer extends StatelessWidget {
                       width: 60,
                       height: 16,
                       decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(4)),
                     ),
                     const SizedBox(width: 8),
                     Container(
                       width: 50,
                       height: 16,
                       decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(4)),
                     ),
                   ],
                 ),
@@ -499,9 +437,7 @@ class AppShimmer extends StatelessWidget {
             width: 32,
             height: 32,
             decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-            ),
+                color: Colors.white, borderRadius: BorderRadius.circular(8)),
           ),
         ],
       ),
@@ -518,9 +454,7 @@ class AppShimmer extends StatelessWidget {
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-            ),
+                color: Colors.white, borderRadius: BorderRadius.circular(12)),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -531,18 +465,16 @@ class AppShimmer extends StatelessWidget {
                   width: double.infinity,
                   height: 18,
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(4)),
                 ),
                 const SizedBox(height: 8),
                 Container(
                   width: 200,
                   height: 14,
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(4)),
                 ),
                 const SizedBox(height: 8),
                 Row(
@@ -551,18 +483,16 @@ class AppShimmer extends StatelessWidget {
                       width: 60,
                       height: 12,
                       decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(4)),
                     ),
                     const Spacer(),
                     Container(
                       width: 40,
                       height: 20,
                       decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10)),
                     ),
                   ],
                 ),
@@ -585,9 +515,7 @@ class AppShimmer extends StatelessWidget {
             width: iconSize,
             height: iconSize,
             decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-            ),
+                color: Colors.white, borderRadius: BorderRadius.circular(12)),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -598,18 +526,16 @@ class AppShimmer extends StatelessWidget {
                   width: double.infinity,
                   height: 20,
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(4)),
                 ),
                 const SizedBox(height: 8),
                 Container(
                   width: 120,
                   height: 14,
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(4)),
                 ),
               ],
             ),
@@ -619,269 +545,7 @@ class AppShimmer extends StatelessWidget {
             width: 24,
             height: 24,
             decoration: const BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _PaymentCardShimmer(BuildContext context) {
-    return Container(
-      padding: ResponsiveValues.cardPadding(context),
-      child: Column(
-        children: List.generate(
-          5,
-          (index) => Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Row(
-              children: [
-                Container(
-                  width: 24,
-                  height: 24,
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Container(
-                    height: 16,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _SubscriptionCardShimmer(BuildContext context) {
-    final iconSize = ResponsiveValues.iconSizeXL(context) * 1.5;
-
-    return Container(
-      padding: ResponsiveValues.cardPadding(context),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: iconSize,
-                height: iconSize,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: double.infinity,
-                      height: 20,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Container(
-                      width: 120,
-                      height: 14,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                width: 60,
-                height: 24,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Container(
-            width: double.infinity,
-            height: 100,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _ContactCardShimmer(BuildContext context) {
-    final iconSize = ResponsiveValues.iconSizeXL(context) * 1.5;
-
-    return Container(
-      padding: ResponsiveValues.cardPadding(context),
-      child: Row(
-        children: [
-          Container(
-            width: iconSize,
-            height: iconSize,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 100,
-                  height: 14,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Container(
-                  width: double.infinity,
-                  height: 16,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Container(
-                  width: 80,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            width: 20,
-            height: 20,
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _StatusCardShimmer(BuildContext context) {
-    final iconSize = ResponsiveValues.avatarSizeLarge(context);
-
-    return Container(
-      padding: ResponsiveValues.dialogPadding(context),
-      child: Column(
-        children: [
-          Container(
-            width: iconSize,
-            height: iconSize,
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Container(
-            width: 150,
-            height: 24,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(4),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Container(
-            width: 200,
-            height: 16,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(4),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Container(
-            width: 120,
-            height: 36,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _PairingCardShimmer(BuildContext context) {
-    final iconSize = ResponsiveValues.avatarSizeLarge(context);
-
-    return Container(
-      padding: ResponsiveValues.dialogPadding(context),
-      child: Column(
-        children: [
-          Container(
-            width: iconSize,
-            height: iconSize,
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Container(
-            width: 120,
-            height: 24,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(4),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Container(
-            width: 150,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Container(
-            width: double.infinity,
-            height: 48,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-            ),
+                color: Colors.white, shape: BoxShape.circle),
           ),
         ],
       ),
@@ -893,9 +557,7 @@ class AppShimmer extends StatelessWidget {
       width: customWidth ?? double.infinity,
       height: customHeight ?? 16,
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(4),
-      ),
+          color: Colors.white, borderRadius: BorderRadius.circular(4)),
     );
   }
 
@@ -903,10 +565,8 @@ class AppShimmer extends StatelessWidget {
     return Container(
       width: customWidth ?? ResponsiveValues.avatarSizeLarge(context),
       height: customHeight ?? ResponsiveValues.avatarSizeLarge(context),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        shape: BoxShape.circle,
-      ),
+      decoration:
+          const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
     );
   }
 
@@ -916,9 +576,8 @@ class AppShimmer extends StatelessWidget {
       height: customHeight ?? 100,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(
-          ResponsiveValues.radiusMedium(context),
-        ),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
       ),
     );
   }
@@ -929,11 +588,18 @@ class AppShimmer extends StatelessWidget {
       height: ResponsiveValues.statCircleSize(context),
       padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
       child: Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-        ),
-      ),
+          decoration:
+              const BoxDecoration(color: Colors.white, shape: BoxShape.circle)),
     );
   }
+
+  Widget _PaymentCardShimmer(BuildContext context) =>
+      _RectangleShimmer(context);
+  Widget _SubscriptionCardShimmer(BuildContext context) =>
+      _RectangleShimmer(context);
+  Widget _ContactCardShimmer(BuildContext context) =>
+      _RectangleShimmer(context);
+  Widget _StatusCardShimmer(BuildContext context) => _RectangleShimmer(context);
+  Widget _PairingCardShimmer(BuildContext context) =>
+      _RectangleShimmer(context);
 }
