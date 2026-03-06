@@ -1,21 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/responsive_values.dart';
+import '../../utils/app_enums.dart';
 import 'app_card.dart';
 import 'app_button.dart';
-
-enum EmptyStateType {
-  general,
-  error,
-  noInternet,
-  noResults,
-  noData,
-  success,
-  offline,
-}
 
 class AppEmptyState extends StatelessWidget {
   final IconData? icon;
@@ -125,9 +115,7 @@ class AppEmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final content = Container(
-      constraints: BoxConstraints(
-        maxWidth: maxWidth ?? 400,
-      ),
+      constraints: BoxConstraints(maxWidth: maxWidth ?? 400),
       padding: padding,
       child: AppCard.glass(
         child: Padding(
@@ -137,9 +125,7 @@ class AppEmptyState extends StatelessWidget {
               return SingleChildScrollView(
                 physics: const BouncingScrollPhysics(),
                 child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: constraints.maxWidth,
-                  ),
+                  constraints: BoxConstraints(maxWidth: constraints.maxWidth),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     mainAxisSize: MainAxisSize.min,
@@ -183,33 +169,26 @@ class AppEmptyState extends StatelessWidget {
         gradient: LinearGradient(
           colors: [
             _getIconColor(context).withValues(alpha: 0.2),
-            _getIconColor(context).withValues(alpha: 0.05),
+            _getIconColor(context).withValues(alpha: 0.05)
           ],
         ),
         shape: BoxShape.circle,
         border: Border.all(
-          color: _getIconColor(context).withValues(alpha: 0.3),
-          width: 2,
-        ),
+            color: _getIconColor(context).withValues(alpha: 0.3), width: 2),
       ),
-      child: Icon(
-        icon ?? _getIconForType(),
-        size: iconSize * 0.5,
-        color: _getIconColor(context),
-      ),
+      child: Icon(icon ?? _getIconForType(),
+          size: iconSize * 0.5, color: _getIconColor(context)),
     );
   }
 
   Widget _buildTitle(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: ResponsiveValues.spacingL(context),
-      ),
+      padding:
+          EdgeInsets.symmetric(horizontal: ResponsiveValues.spacingL(context)),
       child: Text(
         title,
-        style: AppTextStyles.titleLarge(context).copyWith(
-          fontWeight: FontWeight.w600,
-        ),
+        style: AppTextStyles.titleLarge(context)
+            .copyWith(fontWeight: FontWeight.w600),
         textAlign: centerContent ? TextAlign.center : TextAlign.start,
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
@@ -219,9 +198,8 @@ class AppEmptyState extends StatelessWidget {
 
   Widget _buildMessage(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: ResponsiveValues.spacingL(context),
-      ),
+      padding:
+          EdgeInsets.symmetric(horizontal: ResponsiveValues.spacingL(context)),
       child: Text(
         message,
         style: AppTextStyles.bodyMedium(context).copyWith(
@@ -235,13 +213,8 @@ class AppEmptyState extends StatelessWidget {
     );
   }
 
-  Widget _buildActionButton(BuildContext context) {
-    return AppButton.primary(
-      label: actionText,
-      icon: _getActionIcon(),
-      onPressed: onAction,
-    );
-  }
+  Widget _buildActionButton(BuildContext context) => AppButton.primary(
+      label: actionText, icon: _getActionIcon(), onPressed: onAction);
 
   IconData _getIconForType() {
     switch (type) {
@@ -283,11 +256,10 @@ class AppEmptyState extends StatelessWidget {
       case EmptyStateType.error:
       case EmptyStateType.noInternet:
       case EmptyStateType.offline:
+      case EmptyStateType.noData:
         return Icons.refresh_rounded;
       case EmptyStateType.noResults:
         return Icons.search_off_rounded;
-      case EmptyStateType.noData:
-        return Icons.refresh_rounded;
       case EmptyStateType.success:
         return Icons.arrow_forward_rounded;
       default:
