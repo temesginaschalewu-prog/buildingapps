@@ -91,6 +91,7 @@ class PaymentProvider with ChangeNotifier {
       }
     }
 
+    debugLog('PaymentProvider', 'Fetching payments from API');
     final response = await apiService.getMyPayments();
     _payments = response.data ?? [];
 
