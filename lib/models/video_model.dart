@@ -121,50 +121,40 @@ class Video {
     return json;
   }
 
-  /// Comprehensive URL normalizer that fixes all common issues
   String _normalizeUrl(String url) {
     if (url.isEmpty) return url;
 
     String normalized = url;
 
-    // Fix triple slash (https:/// -> https://)
     normalized = normalized.replaceAllMapped(RegExp(r'(https?:)\/\/+'),
         (match) => match[1] == 'https:' ? 'https://' : 'http://');
 
-    // Fix double slash after protocol (https:/ -> https://)
     normalized = normalized.replaceAllMapped(RegExp(r'(https?:)\/+'),
         (match) => match[1] == 'https:' ? 'https://' : 'http://');
 
-    // Fix double slashes in path (except after protocol)
     normalized = normalized.replaceAllMapped(
         RegExp(r'([^:])\/\/(?!/)'), (match) => '${match[1]}/');
 
-    // Remove any remaining double slashes
     normalized = normalized.replaceAll(RegExp(r'(?<!https?:)\/\/'), '/');
 
-    // Handle local files - they should use file:// protocol
     if (normalized.startsWith('/') || normalized.startsWith('./')) {
       return 'file://$normalized';
     }
 
-    // Handle local file paths that might have been mistakenly prefixed with https
     if (normalized.contains('/Documents/.familyacademy_cache/')) {
       return 'file://' +
           normalized.replaceFirst('https://', '').replaceFirst('http://', '');
     }
 
-    // Handle Cloudinary domain issues
     if (normalized.contains('dsros0pyh.res.cloudinary.com')) {
       normalized = normalized.replaceAll(
           'dsros0pyh.res.cloudinary.com', 'res.cloudinary.com/dsros0pyh');
     }
 
-    // Ensure URL has proper scheme
     if (normalized.startsWith('res.cloudinary.com')) {
       normalized = 'https://$normalized';
     }
 
-    // Final check - ensure no protocol:/// triple slash remains
     if (normalized.startsWith('https:///')) {
       normalized = normalized.replaceFirst('https:///', 'https://');
     }
@@ -175,19 +165,16 @@ class Video {
     return normalized;
   }
 
-  /// Get URL for specific quality
   String? getQualityUrl(String qualityName) {
     if (qualities?[qualityName]?.url == null) return null;
     return _normalizeUrl(qualities![qualityName]!.url);
   }
 
-  /// Get full video URL
   String get fullVideoUrl {
     if (filePath.isEmpty) return '';
     return _normalizeUrl(filePath);
   }
 
-  /// Get recommended quality based on connection type
   VideoQuality getRecommendedQuality([String? connectionType]) {
     final available = availableQualities;
 
@@ -196,7 +183,6 @@ class Video {
     }
 
     try {
-      // For mobile, prefer lower qualities
       if (connectionType == 'mobile') {
         for (final q in available) {
           if (q.height <= 480) return q;
@@ -204,7 +190,6 @@ class Video {
         return available.first;
       }
 
-      // For desktop/WiFi, prefer higher qualities
       for (final q in available.reversed) {
         if (q.height >= 720) return q;
       }
@@ -217,7 +202,6 @@ class Video {
     }
   }
 
-  /// Get all available qualities
   List<VideoQuality> get availableQualities {
     if (qualities != null && qualities!.isNotEmpty) {
       final list = qualities!.values.toList();
@@ -227,13 +211,11 @@ class Video {
     return [VideoQuality(label: '480p', url: fullVideoUrl, height: 480)];
   }
 
-  /// Get best quality
   VideoQuality? get bestQuality {
     if (qualities == null || qualities!.isEmpty) return null;
     return qualities!.values.reduce((a, b) => a.height > b.height ? a : b);
   }
 
-  /// Get full thumbnail URL
   String? get fullThumbnailUrl {
     if (thumbnailUrl?.isEmpty ?? true) return null;
     return _normalizeUrl(thumbnailUrl!);
@@ -241,7 +223,6 @@ class Video {
 
   bool get hasThumbnail => fullThumbnailUrl != null;
 
-  /// Format duration for display
   String get formattedDuration {
     final hours = duration ~/ 3600;
     final minutes = (duration % 3600) ~/ 60;
@@ -252,7 +233,6 @@ class Video {
     return '${seconds}s';
   }
 
-  /// Estimate file size for quality
   int estimatedSizeForQuality(String quality) {
     final minutes = duration / 60;
     switch (quality) {
