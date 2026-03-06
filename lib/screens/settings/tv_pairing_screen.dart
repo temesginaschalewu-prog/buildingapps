@@ -1,11 +1,8 @@
-// lib/screens/settings/tv_pairing_screen.dart
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-
 import '../../providers/device_provider.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
@@ -14,12 +11,14 @@ import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_text_field.dart';
 import '../../widgets/common/app_shimmer.dart';
 import '../../widgets/common/app_dialog.dart';
+import '../../widgets/common/app_bar.dart';
 import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
 import '../../utils/helpers.dart';
+import '../../utils/app_enums.dart';
 import '../../widgets/common/responsive_widgets.dart';
 
 class TvPairingScreen extends StatefulWidget {
@@ -42,6 +41,8 @@ class _TvPairingScreenState extends State<TvPairingScreen>
   late AnimationController _pulseAnimationController;
   late AnimationController _scanAnimationController;
 
+  bool _hasCachedData = false;
+
   @override
   void initState() {
     super.initState();
@@ -60,9 +61,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
     final connectivityService = context.read<ConnectivityService>();
     _connectivitySubscription =
         connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (mounted) {
-        setState(() => _isOffline = !isOnline);
-      }
+      if (mounted) setState(() => _isOffline = !isOnline);
     });
   }
 
@@ -77,6 +76,10 @@ class _TvPairingScreenState extends State<TvPairingScreen>
 
   Future<void> _checkDeviceStatus() async {
     if (_isLoading) return;
+
+    final deviceProvider = context.read<DeviceProvider>();
+    _hasCachedData = deviceProvider.isInitialized;
+
     setState(() => _isLoading = true);
 
     try {
@@ -169,22 +172,19 @@ class _TvPairingScreenState extends State<TvPairingScreen>
   }
 
   Widget _buildSkeletonLoader() {
-    return Scaffold(
-      backgroundColor: AppColors.getBackground(context),
-      body: Center(
-        child: AppCard.glass(
-          child: Padding(
-            padding: ResponsiveValues.dialogPadding(context),
-            child: const Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AppShimmer(type: ShimmerType.circle),
-                ResponsiveSizedBox(height: AppSpacing.xl),
-                AppShimmer(type: ShimmerType.textLine, customWidth: 200),
-                ResponsiveSizedBox(height: AppSpacing.l),
-                AppShimmer(type: ShimmerType.textLine, customWidth: 250),
-              ],
-            ),
+    return Center(
+      child: AppCard.glass(
+        child: Padding(
+          padding: ResponsiveValues.dialogPadding(context),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const AppShimmer(type: ShimmerType.circle),
+              SizedBox(height: ResponsiveValues.spacingXL(context)),
+              const AppShimmer(type: ShimmerType.textLine, customWidth: 200),
+              SizedBox(height: ResponsiveValues.spacingL(context)),
+              const AppShimmer(type: ShimmerType.textLine, customWidth: 250),
+            ],
           ),
         ),
       ),
@@ -197,20 +197,20 @@ class _TvPairingScreenState extends State<TvPairingScreen>
       children: [
         Text(
           'Connect Your TV',
-          style: AppTextStyles.displaySmall(context).copyWith(
-            fontWeight: FontWeight.w700,
-          ),
+          style: AppTextStyles.displaySmall(context)
+              .copyWith(fontWeight: FontWeight.w700),
         ),
-        const ResponsiveSizedBox(height: AppSpacing.s),
+        SizedBox(height: ResponsiveValues.spacingS(context)),
         Text(
           'Stream Family Academy content directly to your Android TV',
-          style: AppTextStyles.bodyLarge(context).copyWith(
-            color: AppColors.getTextSecondary(context),
-          ),
+          style: AppTextStyles.bodyLarge(context)
+              .copyWith(color: AppColors.getTextSecondary(context)),
         ),
       ],
-    ).animate().fadeIn(duration: AppThemes.animationDurationMedium).slideY(
-        begin: 0.1, end: 0, duration: AppThemes.animationDurationMedium);
+    )
+        .animate()
+        .fadeIn(duration: AppThemes.animationMedium)
+        .slideY(begin: 0.1, end: 0, duration: AppThemes.animationMedium);
   }
 
   Widget _buildPairedDeviceCard(BuildContext context, String deviceId) {
@@ -232,15 +232,14 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                         height: ResponsiveValues.avatarSizeLarge(context) * 1.5,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          gradient: RadialGradient(colors: [
-                            AppColors.telegramBlue.withValues(alpha: 0.3),
-                            AppColors.telegramBlue.withValues(alpha: 0.1),
-                            Colors.transparent,
-                          ], stops: const [
-                            0.2,
-                            0.5,
-                            1.0
-                          ]),
+                          gradient: RadialGradient(
+                            colors: [
+                              AppColors.telegramBlue.withValues(alpha: 0.3),
+                              AppColors.telegramBlue.withValues(alpha: 0.1),
+                              Colors.transparent
+                            ],
+                            stops: const [0.2, 0.5, 1.0],
+                          ),
                         ),
                       ),
                     );
@@ -258,14 +257,12 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                         gradient: LinearGradient(
                           colors: [
                             AppColors.telegramBlue.withValues(alpha: 0.2),
-                            AppColors.telegramPurple.withValues(alpha: 0.1),
+                            AppColors.telegramPurple.withValues(alpha: 0.1)
                           ],
                         ),
                         shape: BoxShape.circle,
-                        border: Border.all(
-                          color: AppColors.telegramBlue,
-                          width: 3,
-                        ),
+                        border:
+                            Border.all(color: AppColors.telegramBlue, width: 3),
                       ),
                       child: const Icon(Icons.tv_rounded,
                           size: 40, color: AppColors.telegramBlue),
@@ -274,15 +271,13 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                 ),
               ],
             ),
-            const ResponsiveSizedBox(height: AppSpacing.xl),
+            SizedBox(height: ResponsiveValues.spacingXL(context)),
             Text(
               'TV Device Paired',
               style: AppTextStyles.titleLarge(context).copyWith(
-                color: AppColors.telegramBlue,
-                fontWeight: FontWeight.w600,
-              ),
+                  color: AppColors.telegramBlue, fontWeight: FontWeight.w600),
             ),
-            const ResponsiveSizedBox(height: AppSpacing.m),
+            SizedBox(height: ResponsiveValues.spacingM(context)),
             AppCard.glass(
               child: Padding(
                 padding: EdgeInsets.symmetric(
@@ -295,18 +290,17 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                     Icon(Icons.devices_rounded,
                         size: ResponsiveValues.iconSizeXS(context),
                         color: AppColors.getTextSecondary(context)),
-                    const ResponsiveSizedBox(width: AppSpacing.s),
+                    SizedBox(width: ResponsiveValues.spacingS(context)),
                     Text(
                       _formatDeviceId(deviceId),
-                      style: AppTextStyles.bodyMedium(context).copyWith(
-                        fontFamily: 'monospace',
-                      ),
+                      style: AppTextStyles.bodyMedium(context)
+                          .copyWith(fontFamily: 'monospace'),
                     ),
                   ],
                 ),
               ),
             ),
-            const ResponsiveSizedBox(height: AppSpacing.xl),
+            SizedBox(height: ResponsiveValues.spacingXL(context)),
             SizedBox(
               width: double.infinity,
               child: AppButton.danger(
@@ -319,10 +313,10 @@ class _TvPairingScreenState extends State<TvPairingScreen>
           ],
         ),
       ),
-    ).animate().fadeIn(duration: AppThemes.animationDurationMedium).scale(
+    ).animate().fadeIn(duration: AppThemes.animationMedium).scale(
         begin: const Offset(0.95, 0.95),
         end: const Offset(1, 1),
-        duration: AppThemes.animationDurationMedium);
+        duration: AppThemes.animationMedium);
   }
 
   Widget _buildPairingForm(BuildContext context) {
@@ -341,7 +335,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                     gradient: LinearGradient(
                       colors: [
                         AppColors.telegramBlue.withValues(alpha: 0.2),
-                        AppColors.telegramPurple.withValues(alpha: 0.1),
+                        AppColors.telegramPurple.withValues(alpha: 0.1)
                       ],
                     ),
                     shape: BoxShape.circle,
@@ -349,16 +343,15 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                   child: const Icon(Icons.tv_rounded,
                       color: AppColors.telegramBlue, size: 20),
                 ),
-                const ResponsiveSizedBox(width: AppSpacing.m),
+                SizedBox(width: ResponsiveValues.spacingM(context)),
                 Text(
                   'Enter Pairing Code',
-                  style: AppTextStyles.titleMedium(context).copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: AppTextStyles.titleMedium(context)
+                      .copyWith(fontWeight: FontWeight.w600),
                 ),
               ],
             ),
-            const ResponsiveSizedBox(height: AppSpacing.xl),
+            SizedBox(height: ResponsiveValues.spacingXL(context)),
             AppTextField(
               controller: _codeController,
               label: '6-digit Code',
@@ -368,7 +361,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
               keyboardType: TextInputType.number,
               onChanged: (_) => setState(() {}),
             ),
-            const ResponsiveSizedBox(height: AppSpacing.xl),
+            SizedBox(height: ResponsiveValues.spacingXL(context)),
             SizedBox(
               width: double.infinity,
               child: AppButton.primary(
@@ -382,8 +375,10 @@ class _TvPairingScreenState extends State<TvPairingScreen>
           ],
         ),
       ),
-    ).animate().fadeIn(duration: AppThemes.animationDurationMedium).slideY(
-        begin: 0.1, end: 0, duration: AppThemes.animationDurationMedium);
+    )
+        .animate()
+        .fadeIn(duration: AppThemes.animationMedium)
+        .slideY(begin: 0.1, end: 0, duration: AppThemes.animationMedium);
   }
 
   Widget _buildInstructionsCard(BuildContext context) {
@@ -402,7 +397,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                     gradient: LinearGradient(
                       colors: [
                         AppColors.telegramBlue.withValues(alpha: 0.2),
-                        AppColors.telegramPurple.withValues(alpha: 0.1),
+                        AppColors.telegramPurple.withValues(alpha: 0.1)
                       ],
                     ),
                     shape: BoxShape.circle,
@@ -410,16 +405,15 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                   child: const Icon(Icons.info_rounded,
                       color: AppColors.telegramBlue, size: 18),
                 ),
-                const ResponsiveSizedBox(width: AppSpacing.m),
+                SizedBox(width: ResponsiveValues.spacingM(context)),
                 Text(
                   'How to Pair',
-                  style: AppTextStyles.titleSmall(context).copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: AppTextStyles.titleSmall(context)
+                      .copyWith(fontWeight: FontWeight.w600),
                 ),
               ],
             ),
-            const ResponsiveSizedBox(height: AppSpacing.l),
+            SizedBox(height: ResponsiveValues.spacingL(context)),
             _buildInstructionStep(
                 context, 1, 'Open Family Academy on your Android TV device.'),
             _buildInstructionStep(
@@ -428,7 +422,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                 'Note down the 6-digit pairing code displayed on your TV.'),
             _buildInstructionStep(
                 context, 4, 'Enter the code above and tap "Pair Device".'),
-            const ResponsiveSizedBox(height: AppSpacing.l),
+            SizedBox(height: ResponsiveValues.spacingL(context)),
             AppCard.glass(
               child: Padding(
                 padding: ResponsiveValues.cardPadding(context),
@@ -436,13 +430,12 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                   children: [
                     const Icon(Icons.lightbulb_rounded,
                         color: AppColors.telegramYellow, size: 20),
-                    const ResponsiveSizedBox(width: AppSpacing.m),
+                    SizedBox(width: ResponsiveValues.spacingM(context)),
                     Expanded(
                       child: Text(
                         'You can only pair one TV device at a time. Unpairing will disconnect the current device.',
-                        style: AppTextStyles.bodySmall(context).copyWith(
-                          color: AppColors.getTextPrimary(context),
-                        ),
+                        style: AppTextStyles.bodySmall(context)
+                            .copyWith(color: AppColors.getTextPrimary(context)),
                       ),
                     ),
                   ],
@@ -454,16 +447,13 @@ class _TvPairingScreenState extends State<TvPairingScreen>
       ),
     )
         .animate()
-        .fadeIn(duration: AppThemes.animationDurationMedium, delay: 100.ms)
-        .slideY(
-            begin: 0.1, end: 0, duration: AppThemes.animationDurationMedium);
+        .fadeIn(duration: AppThemes.animationMedium, delay: 100.ms)
+        .slideY(begin: 0.1, end: 0, duration: AppThemes.animationMedium);
   }
 
   Widget _buildInstructionStep(BuildContext context, int number, String text) {
     return Padding(
-      padding: EdgeInsets.only(
-        bottom: ResponsiveValues.spacingM(context),
-      ),
+      padding: EdgeInsets.only(bottom: ResponsiveValues.spacingM(context)),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -471,9 +461,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
             width: ResponsiveValues.iconSizeL(context),
             height: ResponsiveValues.iconSizeL(context),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: AppColors.blueGradient,
-              ),
+              gradient: const LinearGradient(colors: AppColors.blueGradient),
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
@@ -486,19 +474,14 @@ class _TvPairingScreenState extends State<TvPairingScreen>
             child: Center(
               child: Text(
                 number.toString(),
-                style: AppTextStyles.labelMedium(context).copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: AppTextStyles.labelMedium(context)
+                    .copyWith(color: Colors.white, fontWeight: FontWeight.w600),
               ),
             ),
           ),
-          const ResponsiveSizedBox(width: AppSpacing.m),
+          SizedBox(width: ResponsiveValues.spacingM(context)),
           Expanded(
-            child: Text(
-              text,
-              style: AppTextStyles.bodyMedium(context),
-            ),
+            child: Text(text, style: AppTextStyles.bodyMedium(context)),
           ),
         ],
       ),
@@ -510,23 +493,37 @@ class _TvPairingScreenState extends State<TvPairingScreen>
     return '${deviceId.substring(0, 8)}...';
   }
 
-  Widget _buildMobileLayout() {
+  @override
+  Widget build(BuildContext context) {
     final deviceProvider = context.watch<DeviceProvider>();
 
-    // Safe access with null check
     final bool hasTvDevice = deviceProvider.tvDeviceId != null &&
         deviceProvider.tvDeviceId!.isNotEmpty;
     final String? tvDeviceId = deviceProvider.tvDeviceId;
 
-    if (_isLoading) {
+    if (_isLoading && !_hasCachedData) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
-        body: _buildSkeletonLoader(),
+        appBar: CustomAppBar(
+          title: 'TV Pairing',
+          subtitle: 'Loading...',
+          leading: AppButton.icon(
+              icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
+        ),
+        body: Center(child: _buildSkeletonLoader()),
       );
     }
 
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
+      appBar: CustomAppBar(
+        title: 'TV Pairing',
+        subtitle: _isRefreshing
+            ? 'Refreshing...'
+            : (_isOffline ? 'Offline mode' : 'Connect your TV'),
+        leading: AppButton.icon(
+            icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
+      ),
       body: RefreshIndicator(
         onRefresh: _manualRefresh,
         color: AppColors.telegramBlue,
@@ -534,137 +531,61 @@ class _TvPairingScreenState extends State<TvPairingScreen>
         child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.only(
-                  left: ResponsiveValues.spacingL(context),
-                  right: ResponsiveValues.spacingL(context),
-                  top: MediaQuery.of(context).padding.top +
-                      ResponsiveValues.spacingM(context),
-                  bottom: ResponsiveValues.spacingS(context),
-                ),
-                child: Row(
-                  children: [
-                    AppButton.icon(
-                      icon: Icons.arrow_back_rounded,
-                      onPressed: () => context.pop(),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'TV Pairing',
-                            style:
-                                AppTextStyles.headlineSmall(context).copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            _isRefreshing
-                                ? 'Refreshing...'
-                                : (_isOffline
-                                    ? 'Offline mode'
-                                    : 'Connect your TV'),
-                            style: AppTextStyles.bodySmall(context).copyWith(
-                              color: AppColors.getTextSecondary(context),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
             SliverPadding(
               padding: ResponsiveValues.screenPadding(context),
               sliver: SliverToBoxAdapter(
-                child: Center(
-                  child: Container(
-                    constraints: BoxConstraints(
-                      maxWidth: ScreenSize.responsiveDouble(
-                        context: context,
-                        mobile: double.infinity,
-                        tablet: 600,
-                        desktop: 800,
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (_isOffline)
-                          Container(
-                            margin: EdgeInsets.only(
-                                bottom: ResponsiveValues.spacingL(context)),
-                            padding: ResponsiveValues.cardPadding(context),
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  AppColors.telegramYellow
-                                      .withValues(alpha: 0.2),
-                                  AppColors.telegramYellow
-                                      .withValues(alpha: 0.1),
-                                ],
-                              ),
-                              borderRadius: BorderRadius.circular(
-                                ResponsiveValues.radiusMedium(context),
-                              ),
-                              border: Border.all(
-                                color: AppColors.telegramYellow
-                                    .withValues(alpha: 0.3),
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.wifi_off_rounded,
-                                    color: AppColors.telegramYellow, size: 20),
-                                const ResponsiveSizedBox(width: AppSpacing.m),
-                                Expanded(
-                                  child: Text(
-                                    'Offline mode - showing cached data',
-                                    style: AppTextStyles.bodySmall(context)
-                                        .copyWith(
-                                      color: AppColors.telegramYellow,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_isOffline)
+                      Container(
+                        margin: EdgeInsets.only(
+                            bottom: ResponsiveValues.spacingL(context)),
+                        padding: ResponsiveValues.cardPadding(context),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              AppColors.telegramYellow.withValues(alpha: 0.2),
+                              AppColors.telegramYellow.withValues(alpha: 0.1)
+                            ],
                           ),
-                        _buildHeader(),
-                        const ResponsiveSizedBox(height: AppSpacing.l),
-                        if (hasTvDevice && tvDeviceId != null)
-                          _buildPairedDeviceCard(context, tvDeviceId)
-                        else
-                          _buildPairingForm(context),
-                        const ResponsiveSizedBox(height: AppSpacing.xl),
-                        _buildInstructionsCard(context),
-                        const ResponsiveSizedBox(height: AppSpacing.xxl),
-                      ],
-                    ),
-                  ),
+                          borderRadius: BorderRadius.circular(
+                              ResponsiveValues.radiusMedium(context)),
+                          border: Border.all(
+                              color: AppColors.telegramYellow
+                                  .withValues(alpha: 0.3)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.wifi_off_rounded,
+                                color: AppColors.telegramYellow, size: 20),
+                            SizedBox(width: ResponsiveValues.spacingM(context)),
+                            Expanded(
+                              child: Text(
+                                'Offline mode - showing cached data',
+                                style: AppTextStyles.bodySmall(context)
+                                    .copyWith(color: AppColors.telegramYellow),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    _buildHeader(),
+                    SizedBox(height: ResponsiveValues.spacingL(context)),
+                    if (hasTvDevice && tvDeviceId != null)
+                      _buildPairedDeviceCard(context, tvDeviceId)
+                    else
+                      _buildPairingForm(context),
+                    SizedBox(height: ResponsiveValues.spacingXL(context)),
+                    _buildInstructionsCard(context),
+                    SizedBox(height: ResponsiveValues.spacingXXL(context)),
+                  ],
                 ),
               ),
             ),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildDesktopLayout() {
-    return _buildMobileLayout();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ResponsiveLayout(
-      mobile: _buildMobileLayout(),
-      tablet: _buildDesktopLayout(),
-      desktop: _buildDesktopLayout(),
-    );
+    ).animate().fadeIn(duration: AppThemes.animationMedium);
   }
 }
