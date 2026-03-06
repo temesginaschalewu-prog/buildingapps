@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import '../themes/app_colors.dart';
+import '../services/snackbar_service.dart';
 
 void debugLog(String tag, String message) {
   if (const bool.fromEnvironment('PRODUCTION')) {
@@ -30,8 +32,7 @@ void showTopSnackBar(BuildContext context, String message,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color:
-                  isError ? const Color(0xFFDC3545) : const Color(0xFF28A745),
+              color: isError ? AppColors.error : AppColors.success,
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
@@ -88,7 +89,7 @@ void showSimpleSnackBar(BuildContext context, String message,
   showTopSnackBar(context, message, isError: isError);
 }
 
-@Deprecated('Use SnackbarService.showOffline() instead')
+@Deprecated('Use SnackbarService instead')
 void showOfflineMessage(BuildContext context) {
   showTopSnackBar(
     context,
@@ -96,7 +97,7 @@ void showOfflineMessage(BuildContext context) {
   );
 }
 
-@Deprecated('Use SnackbarService.showOffline() instead')
+@Deprecated('Use SnackbarService instead')
 void showOfflineError(BuildContext context, {String? action}) {
   showTopSnackBar(
     context,
