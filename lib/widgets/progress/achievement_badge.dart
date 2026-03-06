@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../themes/app_themes.dart';
 import '../../utils/responsive_values.dart';
+import '../../utils/app_enums.dart';
 import '../common/app_card.dart';
 import '../common/responsive_widgets.dart';
 
@@ -40,7 +40,7 @@ class AchievementBadge extends StatelessWidget {
     return AppCard.glass(
       child: Padding(
         padding: padding,
-        child: ResponsiveColumn(
+        child: Column(
           children: [
             Stack(
               alignment: Alignment.center,
@@ -73,7 +73,7 @@ class AchievementBadge extends StatelessWidget {
                           ),
                         ),
                       Center(
-                        child: ResponsiveIcon(
+                        child: Icon(
                           icon,
                           size: iconSize,
                           color:
@@ -104,7 +104,7 @@ class AchievementBadge extends StatelessWidget {
                           ),
                         ],
                       ),
-                      child: ResponsiveIcon(
+                      child: Icon(
                         Icons.lock_outline_rounded,
                         size: ResponsiveValues.iconSizeXS(context),
                         color: AppColors.getTextSecondary(context),
@@ -113,8 +113,8 @@ class AchievementBadge extends StatelessWidget {
                   ),
               ],
             ),
-            const ResponsiveSizedBox(height: AppSpacing.m),
-            ResponsiveText(
+            SizedBox(height: ResponsiveValues.spacingM(context)),
+            Text(
               title,
               style: AppTextStyles.titleSmall(context).copyWith(
                 color: unlocked ? color : AppColors.getTextPrimary(context),
@@ -125,8 +125,8 @@ class AchievementBadge extends StatelessWidget {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
-            const ResponsiveSizedBox(height: AppSpacing.xs),
-            ResponsiveText(
+            SizedBox(height: ResponsiveValues.spacingXS(context)),
+            Text(
               description,
               style: AppTextStyles.bodySmall(context).copyWith(
                 color: AppColors.getTextSecondary(context),
@@ -138,10 +138,9 @@ class AchievementBadge extends StatelessWidget {
             ),
             if (unlocked && earnedDate != null)
               Padding(
-                padding: EdgeInsets.only(
-                  top: ResponsiveValues.spacingS(context),
-                ),
-                child: ResponsiveText(
+                padding:
+                    EdgeInsets.only(top: ResponsiveValues.spacingS(context)),
+                child: Text(
                   _formatDate(earnedDate!),
                   style: AppTextStyles.labelSmall(context).copyWith(
                     color: color,
@@ -152,9 +151,8 @@ class AchievementBadge extends StatelessWidget {
               ),
             if (!unlocked && progress > 0)
               Padding(
-                padding: EdgeInsets.only(
-                  top: ResponsiveValues.spacingS(context),
-                ),
+                padding:
+                    EdgeInsets.only(top: ResponsiveValues.spacingS(context)),
                 child: Container(
                   padding: EdgeInsets.symmetric(
                     horizontal: ResponsiveValues.spacingS(context),
@@ -163,11 +161,10 @@ class AchievementBadge extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: color.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(
-                      ResponsiveValues.radiusFull(context),
-                    ),
+                        ResponsiveValues.radiusFull(context)),
                     border: Border.all(color: color),
                   ),
-                  child: ResponsiveText(
+                  child: Text(
                     '${(progress * 100).toInt()}%',
                     style: AppTextStyles.labelSmall(context).copyWith(
                       color: color,
@@ -181,7 +178,7 @@ class AchievementBadge extends StatelessWidget {
         ),
       ),
     ).animate().scale(
-        duration: AppThemes.animationDurationMedium,
+        duration: AppThemes.animationMedium,
         begin: const Offset(0.95, 0.95),
         end: const Offset(1, 1));
   }
