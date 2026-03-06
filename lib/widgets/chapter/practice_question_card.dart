@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-
 import '../../models/question_model.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/responsive_values.dart';
-import '../../widgets/common/app_card.dart';
-import '../../widgets/common/app_button.dart';
+import '../common/app_card.dart';
+import '../common/app_button.dart';
 
 class PracticeQuestionCard extends StatefulWidget {
   final Question question;
@@ -58,18 +57,13 @@ class _PracticeQuestionCardState extends State<PracticeQuestionCard> {
       ),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            color.withValues(alpha: 0.2),
-            color.withValues(alpha: 0.05),
-          ],
+          colors: [color.withValues(alpha: 0.2), color.withValues(alpha: 0.05)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius:
             BorderRadius.circular(ResponsiveValues.radiusXXLarge(context)),
-        border: Border.all(
-          color: color.withValues(alpha: 0.3),
-        ),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -82,9 +76,8 @@ class _PracticeQuestionCardState extends State<PracticeQuestionCard> {
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                  color: color.withValues(alpha: 0.5),
-                  blurRadius: ResponsiveValues.spacingXS(context),
-                ),
+                    color: color.withValues(alpha: 0.5),
+                    blurRadius: ResponsiveValues.spacingXS(context))
               ],
             ),
           ),
@@ -142,12 +135,11 @@ class _PracticeQuestionCardState extends State<PracticeQuestionCard> {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
-            Icon(
-              icon,
-              size: ResponsiveValues.iconSizeXXS(context),
-              color:
-                  isCorrect ? AppColors.telegramGreen : AppColors.telegramRed,
-            ),
+            Icon(icon,
+                size: ResponsiveValues.iconSizeXXS(context),
+                color: isCorrect
+                    ? AppColors.telegramGreen
+                    : AppColors.telegramRed),
             SizedBox(width: ResponsiveValues.spacingXS(context)),
           ],
           Text(
@@ -232,10 +224,8 @@ class _PracticeQuestionCardState extends State<PracticeQuestionCard> {
                 color: optionColor,
                 borderRadius: BorderRadius.circular(
                     ResponsiveValues.radiusMedium(context)),
-                border: Border.all(
-                  color: borderColor,
-                  width: isSelected ? 2 : 1,
-                ),
+                border:
+                    Border.all(color: borderColor, width: isSelected ? 2 : 1),
               ),
               child: Row(
                 children: [
@@ -245,9 +235,7 @@ class _PracticeQuestionCardState extends State<PracticeQuestionCard> {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       gradient: isSelected && !showExplanation
-                          ? const LinearGradient(
-                              colors: AppColors.blueGradient,
-                            )
+                          ? const LinearGradient(colors: AppColors.blueGradient)
                           : null,
                       color: isSelected && !showExplanation
                           ? null
@@ -343,11 +331,11 @@ class _PracticeQuestionCardState extends State<PracticeQuestionCard> {
             colors: isCorrect
                 ? [
                     AppColors.telegramGreen.withValues(alpha: 0.1),
-                    AppColors.telegramGreen.withValues(alpha: 0.05),
+                    AppColors.telegramGreen.withValues(alpha: 0.05)
                   ]
                 : [
                     AppColors.telegramRed.withValues(alpha: 0.1),
-                    AppColors.telegramRed.withValues(alpha: 0.05),
+                    AppColors.telegramRed.withValues(alpha: 0.05)
                   ],
           ),
           borderRadius:
@@ -392,9 +380,8 @@ class _PracticeQuestionCardState extends State<PracticeQuestionCard> {
                   if (!isCorrect)
                     Text(
                       'The correct answer is option ${widget.question.correctOption.toUpperCase()}',
-                      style: AppTextStyles.caption(context).copyWith(
-                        color: AppColors.getTextSecondary(context),
-                      ),
+                      style: AppTextStyles.caption(context)
+                          .copyWith(color: AppColors.getTextSecondary(context)),
                     ),
                 ],
               ),
@@ -454,9 +441,7 @@ class _PracticeQuestionCardState extends State<PracticeQuestionCard> {
                   Text(
                     'Explanation',
                     style: AppTextStyles.titleSmall(context).copyWith(
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.3,
-                    ),
+                        fontWeight: FontWeight.w700, letterSpacing: -0.3),
                   ),
                 ],
               ),
@@ -477,16 +462,12 @@ class _PracticeQuestionCardState extends State<PracticeQuestionCard> {
                     borderRadius: BorderRadius.circular(
                         ResponsiveValues.radiusMedium(context)),
                     border: Border.all(
-                      color: AppColors.telegramGreen.withValues(alpha: 0.2),
-                    ),
+                        color: AppColors.telegramGreen.withValues(alpha: 0.2)),
                   ),
                   child: Row(
                     children: [
-                      const Icon(
-                        Icons.check_circle_rounded,
-                        color: AppColors.telegramGreen,
-                        size: 20,
-                      ),
+                      const Icon(Icons.check_circle_rounded,
+                          color: AppColors.telegramGreen, size: 20),
                       SizedBox(width: ResponsiveValues.spacingM(context)),
                       Expanded(
                         child: Text(
@@ -512,7 +493,6 @@ class _PracticeQuestionCardState extends State<PracticeQuestionCard> {
   Widget build(BuildContext context) {
     final questionId = widget.question.id;
     final isAnswered = widget.questionAnswered[questionId] == true;
-    final isCorrect = widget.isQuestionCorrect[questionId] == true;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
