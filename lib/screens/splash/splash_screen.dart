@@ -1,11 +1,8 @@
-// lib/screens/splash/splash_screen.dart
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-
 import '../../providers/auth_provider.dart';
 import '../../services/user_session.dart';
 import '../../services/connectivity_service.dart';
@@ -15,6 +12,7 @@ import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
+import '../../utils/app_enums.dart';
 import '../../widgets/common/responsive_widgets.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -56,26 +54,20 @@ class _SplashScreenState extends State<SplashScreen>
     super.initState();
 
     _logoController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    );
+        vsync: this, duration: const Duration(milliseconds: 1500));
     _logoScaleAnimation = Tween<double>(begin: 0.6, end: 1.0).animate(
       CurvedAnimation(
-        parent: _logoController,
-        curve: const Interval(0.0, 0.8, curve: Curves.elasticOut),
-      ),
+          parent: _logoController,
+          curve: const Interval(0.0, 0.8, curve: Curves.elasticOut)),
     );
     _logoOpacityAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
-        parent: _logoController,
-        curve: const Interval(0.0, 0.6, curve: Curves.easeInOut),
-      ),
+          parent: _logoController,
+          curve: const Interval(0.0, 0.6, curve: Curves.easeInOut)),
     );
 
     _textController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1000),
-    );
+        vsync: this, duration: const Duration(milliseconds: 1000));
     _textOpacityAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _textController, curve: Curves.easeInOut),
     );
@@ -85,9 +77,7 @@ class _SplashScreenState extends State<SplashScreen>
     );
 
     _checkmarkController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    );
+        vsync: this, duration: const Duration(milliseconds: 800));
     _checkmarkScaleAnimation = Tween<double>(begin: 0.0, end: 1.2).animate(
       CurvedAnimation(parent: _checkmarkController, curve: Curves.elasticOut),
     );
@@ -109,9 +99,7 @@ class _SplashScreenState extends State<SplashScreen>
 
   Future<void> _checkConnectivity() async {
     final connectivityService = context.read<ConnectivityService>();
-    setState(() {
-      _isOffline = !connectivityService.isOnline;
-    });
+    setState(() => _isOffline = !connectivityService.isOnline);
   }
 
   void _checkRouterReady() {
@@ -170,7 +158,6 @@ class _SplashScreenState extends State<SplashScreen>
 
     try {
       final authProvider = context.read<AuthProvider>();
-
       await UserSession().init();
 
       if (authProvider.isAuthenticated && authProvider.isInitialized) {
@@ -191,17 +178,13 @@ class _SplashScreenState extends State<SplashScreen>
         return;
       }
 
-      if (mounted) {
+      if (mounted)
         setState(() => _currentStatus = 'Initializing authentication...');
-      }
 
       await authProvider.initialize();
 
-      if (mounted) {
-        setState(() {
-          _currentStatus = 'Authentication initialized';
-        });
-      }
+      if (mounted)
+        setState(() => _currentStatus = 'Authentication initialized');
 
       if (!mounted) return;
 
@@ -276,7 +259,7 @@ class _SplashScreenState extends State<SplashScreen>
                 gradient: LinearGradient(
                   colors: [
                     AppColors.telegramRed.withValues(alpha: 0.2),
-                    AppColors.telegramRed.withValues(alpha: 0.1),
+                    AppColors.telegramRed.withValues(alpha: 0.1)
                   ],
                 ),
                 shape: BoxShape.circle,
@@ -285,13 +268,11 @@ class _SplashScreenState extends State<SplashScreen>
                   size: 40, color: AppColors.telegramRed),
             ),
           ).animate().shake(duration: 600.ms),
-          const ResponsiveSizedBox(height: AppSpacing.l),
+          SizedBox(height: ResponsiveValues.spacingL(context)),
           Text(
             _errorMessage ?? 'Initialization Error',
             style: AppTextStyles.bodyMedium(context).copyWith(
-              color: AppColors.telegramRed,
-              fontWeight: FontWeight.w500,
-            ),
+                color: AppColors.telegramRed, fontWeight: FontWeight.w500),
             textAlign: TextAlign.center,
           ),
         ],
@@ -309,7 +290,7 @@ class _SplashScreenState extends State<SplashScreen>
                 gradient: LinearGradient(
                   colors: [
                     AppColors.telegramYellow.withValues(alpha: 0.2),
-                    AppColors.telegramYellow.withValues(alpha: 0.1),
+                    AppColors.telegramYellow.withValues(alpha: 0.1)
                   ],
                 ),
                 shape: BoxShape.circle,
@@ -318,13 +299,11 @@ class _SplashScreenState extends State<SplashScreen>
                   size: 40, color: AppColors.telegramYellow),
             ),
           ).animate().shake(duration: 600.ms),
-          const ResponsiveSizedBox(height: AppSpacing.l),
+          SizedBox(height: ResponsiveValues.spacingL(context)),
           Text(
             'Offline Mode',
             style: AppTextStyles.bodyMedium(context).copyWith(
-              color: AppColors.telegramYellow,
-              fontWeight: FontWeight.w500,
-            ),
+                color: AppColors.telegramYellow, fontWeight: FontWeight.w500),
             textAlign: TextAlign.center,
           ),
         ],
@@ -347,15 +326,14 @@ class _SplashScreenState extends State<SplashScreen>
                     gradient: LinearGradient(
                       colors: [
                         AppColors.telegramGreen.withValues(alpha: 0.2),
-                        AppColors.telegramGreen.withValues(alpha: 0.1),
+                        AppColors.telegramGreen.withValues(alpha: 0.1)
                       ],
                     ),
                     shape: BoxShape.circle,
                   ),
                   child: const Center(
-                    child: Icon(Icons.check_rounded,
-                        size: 40, color: AppColors.telegramGreen),
-                  ),
+                      child: Icon(Icons.check_rounded,
+                          size: 40, color: AppColors.telegramGreen)),
                 ),
               ),
             ),
@@ -372,7 +350,7 @@ class _SplashScreenState extends State<SplashScreen>
           gradient: LinearGradient(
             colors: [
               AppColors.telegramBlue.withValues(alpha: 0.2),
-              AppColors.telegramPurple.withValues(alpha: 0.1),
+              AppColors.telegramPurple.withValues(alpha: 0.1)
             ],
           ),
           shape: BoxShape.circle,
@@ -391,7 +369,8 @@ class _SplashScreenState extends State<SplashScreen>
     );
   }
 
-  Widget _buildMobileSplash() {
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       body: SafeArea(
@@ -413,13 +392,9 @@ class _SplashScreenState extends State<SplashScreen>
                           padding: ResponsiveValues.dialogPadding(context),
                           decoration: BoxDecoration(
                             gradient: const LinearGradient(
-                              colors: AppColors.blueGradient,
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
+                                colors: AppColors.blueGradient),
                             borderRadius: BorderRadius.circular(
-                              ResponsiveValues.radiusXLarge(context),
-                            ),
+                                ResponsiveValues.radiusXLarge(context)),
                             boxShadow: [
                               BoxShadow(
                                 color: AppColors.telegramBlue
@@ -441,7 +416,7 @@ class _SplashScreenState extends State<SplashScreen>
                   );
                 },
               ),
-              const ResponsiveSizedBox(height: AppSpacing.splash),
+              SizedBox(height: ResponsiveValues.spacingSplash(context)),
               SlideTransition(
                 position: _textSlideAnimation,
                 child: FadeTransition(
@@ -450,11 +425,10 @@ class _SplashScreenState extends State<SplashScreen>
                     children: [
                       Text(
                         'Family Academy',
-                        style: AppTextStyles.displaySmall(context).copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
+                        style: AppTextStyles.displaySmall(context)
+                            .copyWith(fontWeight: FontWeight.w700),
                       ),
-                      const ResponsiveSizedBox(height: AppSpacing.l),
+                      SizedBox(height: ResponsiveValues.spacingL(context)),
                       Text(
                         _isOffline ? 'Offline Mode' : 'Empowering Education',
                         style: AppTextStyles.bodyLarge(context).copyWith(
@@ -467,9 +441,9 @@ class _SplashScreenState extends State<SplashScreen>
                   ),
                 ),
               ),
-              const ResponsiveSizedBox(height: AppSpacing.splash),
+              SizedBox(height: ResponsiveValues.spacingSplash(context)),
               _buildStatusIndicator(),
-              const ResponsiveSizedBox(height: AppSpacing.l),
+              SizedBox(height: ResponsiveValues.spacingL(context)),
               FadeTransition(
                 opacity: _textOpacityAnimation,
                 child: Column(
@@ -486,33 +460,31 @@ class _SplashScreenState extends State<SplashScreen>
                                 ? [
                                     AppColors.telegramRed
                                         .withValues(alpha: 0.2),
-                                    AppColors.telegramRed
-                                        .withValues(alpha: 0.1),
+                                    AppColors.telegramRed.withValues(alpha: 0.1)
                                   ]
                                 : (_isOffline
                                     ? [
                                         AppColors.telegramYellow
                                             .withValues(alpha: 0.2),
                                         AppColors.telegramYellow
-                                            .withValues(alpha: 0.1),
+                                            .withValues(alpha: 0.1)
                                       ]
                                     : (_authCompleted
                                         ? [
                                             AppColors.telegramGreen
                                                 .withValues(alpha: 0.2),
                                             AppColors.telegramGreen
-                                                .withValues(alpha: 0.1),
+                                                .withValues(alpha: 0.1)
                                           ]
                                         : [
                                             AppColors.telegramBlue
                                                 .withValues(alpha: 0.2),
                                             AppColors.telegramPurple
-                                                .withValues(alpha: 0.1),
+                                                .withValues(alpha: 0.1)
                                           ])),
                           ),
                           borderRadius: BorderRadius.circular(
-                            ResponsiveValues.radiusFull(context),
-                          ),
+                              ResponsiveValues.radiusFull(context)),
                         ),
                         child: Text(
                           _currentStatus,
@@ -529,27 +501,24 @@ class _SplashScreenState extends State<SplashScreen>
                         ),
                       ),
                     ),
-                    const ResponsiveSizedBox(height: AppSpacing.s),
+                    SizedBox(height: ResponsiveValues.spacingS(context)),
                     if (_isInitializing && !_hasError && !_isOffline)
                       Text(
                         'Please wait...',
                         style: AppTextStyles.caption(context).copyWith(
-                          color: AppColors.getTextSecondary(context),
-                        ),
+                            color: AppColors.getTextSecondary(context)),
                       ),
                     if (!_routerReady && !_hasError && !_isOffline)
                       Text(
                         'Preparing navigation...',
                         style: AppTextStyles.caption(context).copyWith(
-                          color: AppColors.getTextSecondary(context),
-                        ),
+                            color: AppColors.getTextSecondary(context)),
                       ),
                     if (_isOffline && !_hasError)
                       Text(
                         'Using cached data',
-                        style: AppTextStyles.caption(context).copyWith(
-                          color: AppColors.telegramYellow,
-                        ),
+                        style: AppTextStyles.caption(context)
+                            .copyWith(color: AppColors.telegramYellow),
                       ),
                   ],
                 ),
@@ -558,19 +527,7 @@ class _SplashScreenState extends State<SplashScreen>
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildDesktopSplash() {
-    return Scaffold(
-      backgroundColor: AppColors.getBackground(context),
-      body: Center(
-        child: ResponsiveContainer(
-          maxWidth: 600,
-          child: _buildMobileSplash(),
-        ),
-      ),
-    );
+    ).animate().fadeIn(duration: AppThemes.animationMedium);
   }
 
   @override
@@ -582,14 +539,5 @@ class _SplashScreenState extends State<SplashScreen>
     _textController.dispose();
     _checkmarkController.dispose();
     super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ResponsiveLayout(
-      mobile: _buildMobileSplash(),
-      tablet: _buildDesktopSplash(),
-      desktop: _buildDesktopSplash(),
-    ).animate().fadeIn(duration: AppThemes.animationDurationMedium);
   }
 }
