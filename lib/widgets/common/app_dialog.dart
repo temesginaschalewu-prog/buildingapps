@@ -2,17 +2,9 @@ import 'package:flutter/material.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/responsive_values.dart';
+import '../../utils/app_enums.dart';
 import 'app_card.dart';
 import 'app_button.dart';
-
-enum DialogVariant {
-  info,
-  success,
-  warning,
-  error,
-  confirm,
-  input,
-}
 
 class AppDialog {
   static Future<T?> show<T>({
@@ -48,23 +40,20 @@ class AppDialog {
                     gradient: LinearGradient(
                       colors: [
                         colors.first.withValues(alpha: 0.2),
-                        colors.first.withValues(alpha: 0.1),
+                        colors.first.withValues(alpha: 0.1)
                       ],
                     ),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(
-                    icon,
-                    size: ResponsiveValues.iconSizeXL(context),
-                    color: colors.first,
-                  ),
+                  child: Icon(icon,
+                      size: ResponsiveValues.iconSizeXL(context),
+                      color: colors.first),
                 ),
                 SizedBox(height: ResponsiveValues.spacingL(context)),
                 Text(
                   title,
-                  style: AppTextStyles.titleLarge(context).copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: AppTextStyles.titleLarge(context)
+                      .copyWith(fontWeight: FontWeight.w700),
                   textAlign: TextAlign.center,
                 ),
                 SizedBox(height: ResponsiveValues.spacingM(context)),
@@ -73,9 +62,8 @@ class AppDialog {
                 else
                   Text(
                     message,
-                    style: AppTextStyles.bodyMedium(context).copyWith(
-                      color: AppColors.getTextSecondary(context),
-                    ),
+                    style: AppTextStyles.bodyMedium(context)
+                        .copyWith(color: AppColors.getTextSecondary(context)),
                     textAlign: TextAlign.center,
                   ),
                 SizedBox(height: ResponsiveValues.spacingXL(context)),
@@ -208,36 +196,27 @@ class AppDialog {
                 Container(
                   padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
                   decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        AppColors.telegramRed,
-                        AppColors.telegramPink,
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
+                    gradient: LinearGradient(colors: [
+                      AppColors.telegramRed,
+                      AppColors.telegramPink
+                    ]),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(
-                    Icons.delete_outline_rounded,
-                    size: 32,
-                    color: Colors.white,
-                  ),
+                  child: const Icon(Icons.delete_outline_rounded,
+                      size: 32, color: Colors.white),
                 ),
                 SizedBox(height: ResponsiveValues.spacingL(context)),
                 Text(
                   title,
-                  style: AppTextStyles.titleLarge(context).copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: AppTextStyles.titleLarge(context)
+                      .copyWith(fontWeight: FontWeight.w700),
                   textAlign: TextAlign.center,
                 ),
                 SizedBox(height: ResponsiveValues.spacingM(context)),
                 Text(
                   message,
-                  style: AppTextStyles.bodyMedium(context).copyWith(
-                    color: AppColors.getTextSecondary(context),
-                  ),
+                  style: AppTextStyles.bodyMedium(context)
+                      .copyWith(color: AppColors.getTextSecondary(context)),
                   textAlign: TextAlign.center,
                 ),
                 SizedBox(height: ResponsiveValues.spacingXL(context)),
@@ -293,9 +272,8 @@ class AppDialog {
               children: [
                 Text(
                   title,
-                  style: AppTextStyles.titleLarge(context).copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: AppTextStyles.titleLarge(context)
+                      .copyWith(fontWeight: FontWeight.w700),
                 ),
                 SizedBox(height: ResponsiveValues.spacingL(context)),
                 Form(
@@ -309,8 +287,7 @@ class AppDialog {
                       hintText: hintText,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(
-                          ResponsiveValues.radiusMedium(context),
-                        ),
+                            ResponsiveValues.radiusMedium(context)),
                       ),
                     ),
                     autofocus: true,
@@ -370,8 +347,7 @@ class AppDialog {
                   width: 40,
                   height: 4,
                   margin: EdgeInsets.symmetric(
-                    vertical: ResponsiveValues.spacingM(context),
-                  ),
+                      vertical: ResponsiveValues.spacingM(context)),
                   decoration: BoxDecoration(
                     color: AppColors.getTextSecondary(context)
                         .withValues(alpha: 0.3),
@@ -389,7 +365,7 @@ class AppDialog {
           );
         },
       ),
-    ).then((value) => value);
+    );
   }
 
   static void showLoading(BuildContext context, {String? message}) {
@@ -409,9 +385,8 @@ class AppDialog {
                   height: 48,
                   child: CircularProgressIndicator(
                     strokeWidth: 3,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      AppColors.telegramBlue,
-                    ),
+                    valueColor:
+                        AlwaysStoppedAnimation<Color>(AppColors.telegramBlue),
                   ),
                 ),
                 if (message != null) ...[
@@ -455,24 +430,18 @@ class AppDialog {
                       padding:
                           EdgeInsets.all(ResponsiveValues.spacingM(context)),
                       decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: AppColors.blueGradient,
-                        ),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.link_rounded,
-                        color: Colors.white,
-                        size: 24,
-                      ),
+                          gradient:
+                              LinearGradient(colors: AppColors.blueGradient),
+                          shape: BoxShape.circle),
+                      child: const Icon(Icons.link_rounded,
+                          color: Colors.white, size: 24),
                     ),
                     SizedBox(width: ResponsiveValues.spacingL(context)),
                     Expanded(
                       child: Text(
                         'Link Token',
-                        style: AppTextStyles.titleMedium(context).copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
+                        style: AppTextStyles.titleMedium(context)
+                            .copyWith(fontWeight: FontWeight.w600),
                       ),
                     ),
                   ],
@@ -483,8 +452,7 @@ class AppDialog {
                   decoration: BoxDecoration(
                     color: AppColors.getSurface(context).withValues(alpha: 0.3),
                     borderRadius: BorderRadius.circular(
-                      ResponsiveValues.radiusMedium(context),
-                    ),
+                        ResponsiveValues.radiusMedium(context)),
                   ),
                   child: SelectableText(
                     token,
@@ -507,17 +475,14 @@ class AppDialog {
                   decoration: BoxDecoration(
                     color: AppColors.telegramYellow.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(
-                      ResponsiveValues.radiusFull(context),
-                    ),
+                        ResponsiveValues.radiusFull(context)),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        Icons.timer_rounded,
-                        size: ResponsiveValues.iconSizeXS(context),
-                        color: AppColors.telegramYellow,
-                      ),
+                      Icon(Icons.timer_rounded,
+                          size: ResponsiveValues.iconSizeXS(context),
+                          color: AppColors.telegramYellow),
                       SizedBox(width: ResponsiveValues.spacingXS(context)),
                       Text(
                         'Expires in: $expiresIn',
@@ -567,9 +532,7 @@ class AppDialog {
       case DialogVariant.warning:
         return [AppColors.telegramYellow, AppColors.telegramOrange];
       case DialogVariant.info:
-        return AppColors.blueGradient;
       case DialogVariant.confirm:
-        return AppColors.blueGradient;
       case DialogVariant.input:
         return AppColors.blueGradient;
     }
