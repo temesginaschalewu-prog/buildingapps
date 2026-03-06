@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'package:familyacademyclient/themes/app_colors.dart';
+import 'package:familyacademyclient/utils/constants.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
@@ -9,6 +9,7 @@ import '../models/category_model.dart';
 import '../utils/helpers.dart';
 import '../utils/parsers.dart';
 import '../utils/ui_helpers.dart';
+import '../themes/app_colors.dart';
 
 class CategoryProvider with ChangeNotifier {
   final ApiService apiService;
@@ -24,6 +25,8 @@ class CategoryProvider with ChangeNotifier {
   bool _isLoading = false;
   bool _hasLoaded = false;
   String? _error;
+
+  final Map<int, bool> _isLoadingCategory = {};
 
   Timer? _backgroundRefreshTimer;
   static const Duration _backgroundRefreshInterval = Duration(minutes: 5);
@@ -41,8 +44,6 @@ class CategoryProvider with ChangeNotifier {
     _initBackgroundRefresh();
   }
 
-  // ===== GETTERS =====
-
   List<Category> get categories => List.unmodifiable(_categories);
   List<Category> get activeCategories => List.unmodifiable(_activeCategories);
   List<Category> get comingSoonCategories =>
@@ -52,12 +53,13 @@ class CategoryProvider with ChangeNotifier {
   String? get error => _error;
   bool get isSyncingSubscription => _isSyncingSubscription;
 
+  bool isLoadingCategory(int categoryId) =>
+      _isLoadingCategory[categoryId] ?? false;
+
   Stream<List<Category>> get categoriesUpdates =>
       _categoriesUpdateController.stream;
   Stream<Map<int, bool>> get subscriptionStatusUpdates =>
       _subscriptionStatusController.stream;
-
-  // ===== SUBSCRIPTION STATUS =====
 
   bool getCategorySubscriptionStatus(int categoryId) {
     return _categorySubscriptionStatus[categoryId] ?? false;
@@ -72,8 +74,6 @@ class CategoryProvider with ChangeNotifier {
     if (lastCheck == null) return true;
     return DateTime.now().difference(lastCheck).inMinutes > 15;
   }
-
-  // ===== UI HELPERS (NOW USING UI_HELPERS) =====
 
   Color getCategoryAccessColor(
     int categoryId, {
@@ -122,8 +122,6 @@ class CategoryProvider with ChangeNotifier {
       hasPendingPayment: hasPendingPayment,
     );
   }
-
-  // ===== BACKGROUND REFRESH =====
 
   void _initBackgroundRefresh() {
     _backgroundRefreshTimer = Timer.periodic(_backgroundRefreshInterval, (_) {
@@ -194,8 +192,6 @@ class CategoryProvider with ChangeNotifier {
     _activeCategories = _categories.where((c) => c.isActive).toList();
     _comingSoonCategories = _categories.where((c) => c.isComingSoon).toList();
   }
-
-  // ===== DATA LOADING =====
 
   Future<void> loadCategories({bool forceRefresh = false}) async {
     if (_isLoading && !forceRefresh) return;
@@ -322,11 +318,56 @@ class CategoryProvider with ChangeNotifier {
     }
   }
 
-  Future<void> _refreshCategorySubscription(int categoryId) async {
-    // This will be handled by SubscriptionProvider
+  Future<void> _refreshCategorySubscription(int categoryId) async {}
+
+  Future<Category?> getCategoryByIdAsync(int id) async {
+    debugLog(
+        'CategoryProvider', '🔍 getCategoryByIdAsync called for category $id');
+
+    _isLoadingCategory[id] = true;
+    debugLog(
+        'CategoryProvider', '📥 Setting loading state TRUE for category $id');
+    _notifySafely();
+
+    try {
+      final existing = getCategoryById(id);
+      if (existing != null) {
+        debugLog('CategoryProvider', '✅ Found category $id in cache');
+        _isLoadingCategory[id] = false;
+        debugLog('CategoryProvider',
+            '📥 Setting loading state FALSE for category $id');
+        _notifySafely();
+        return existing;
+      }
+
+      debugLog(
+          'CategoryProvider', '🔄 Category $id not in cache, loading from API');
+
+      if (!_hasLoaded) {
+        await loadCategories(forceRefresh: true);
+      } else {
+        await loadCategories(forceRefresh: true);
+      }
+
+      final category = getCategoryById(id);
+      debugLog('CategoryProvider',
+          '✅ After loading, category $id found: ${category != null}');
+      return category;
+    } finally {
+      _isLoadingCategory[id] = false;
+      debugLog('CategoryProvider',
+          '📥 Setting loading state FALSE for category $id');
+      _notifySafely();
+    }
   }
 
-  // ===== SUBSCRIPTION SYNC =====
+  Category? getCategoryById(int id) {
+    try {
+      return _categories.firstWhere((c) => c.id == id);
+    } catch (e) {
+      return null;
+    }
+  }
 
   Future<void> syncSubscriptionStatus(Map<int, bool> subscriptionStatus) async {
     if (_isSyncingSubscription) return;
@@ -406,14 +447,6 @@ class CategoryProvider with ChangeNotifier {
         'Updated category $categoryId subscription status: $hasSubscription');
   }
 
-  Category? getCategoryById(int id) {
-    try {
-      return _categories.firstWhere((c) => c.id == id);
-    } catch (e) {
-      return null;
-    }
-  }
-
   Future<bool> waitForSubscriptionCheck(int categoryId,
       {Duration timeout = const Duration(seconds: 10)}) async {
     if (_categoryStatusLoaded[categoryId] == true) {
@@ -454,8 +487,6 @@ class CategoryProvider with ChangeNotifier {
     _notifySafely();
   }
 
-  // ===== CLEANUP =====
-
   Future<void> clearUserData() async {
     debugLog('CategoryProvider', ' Clearing category data');
 
@@ -479,6 +510,7 @@ class CategoryProvider with ChangeNotifier {
     _hasLoaded = false;
     _isSyncingSubscription = false;
     _waitForCheckCompleters.clear();
+    _isLoadingCategory.clear();
 
     _categoriesUpdateController.add([]);
     _subscriptionStatusController.add({});
@@ -487,7 +519,7 @@ class CategoryProvider with ChangeNotifier {
 
   Future<bool> _isLoggingOut() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool('is_logging_out') ?? false;
+    return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
   }
 
   @override
