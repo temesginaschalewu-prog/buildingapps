@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:flutter/material.dart';
 import '../utils/helpers.dart';
 
@@ -100,7 +101,7 @@ class ConnectivityService {
                 ? 'Cannot $action while offline. Please check your connection.'
                 : 'You are offline. Please check your internet connection.',
           ),
-          backgroundColor: Colors.orange,
+          backgroundColor: AppColors.warning,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
