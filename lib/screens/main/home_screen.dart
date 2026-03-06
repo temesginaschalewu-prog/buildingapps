@@ -4,7 +4,6 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:pull_to_refresh/pull_to_refresh.dart' hide RefreshIndicator;
-
 import '../../providers/category_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../providers/notification_provider.dart';
@@ -20,6 +19,7 @@ import '../../utils/responsive_values.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../themes/app_themes.dart';
+import '../../utils/app_enums.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -104,9 +104,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void _setupStreamListeners() {
     _subscriptionUpdatesSubscription =
         _subscriptionProvider.subscriptionUpdates.listen((updates) {
-      if (mounted) {
-        setState(() => _categorySubscriptionCache.addAll(updates));
-      }
+      if (mounted) setState(() => _categorySubscriptionCache.addAll(updates));
     });
 
     _refreshTimer = Timer.periodic(const Duration(minutes: 10), (_) {
@@ -313,17 +311,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ),
         SliverPadding(
           padding: EdgeInsets.symmetric(
-            horizontal: ResponsiveValues.spacingS(context),
-          ),
+              horizontal: ResponsiveValues.spacingS(context)),
           sliver: SliverGrid(
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: columns,
               crossAxisSpacing: ResponsiveValues.gridSpacing(context),
               mainAxisSpacing: ResponsiveValues.gridRunSpacing(context),
               childAspectRatio: ScreenSize.cardAspectRatio(
-                context: context,
-                columns: columns,
-              ),
+                  context: context, columns: columns),
             ),
             delegate: SliverChildBuilderDelegate(
               (context, index) =>
@@ -343,9 +338,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (_isFirstLoad) return _buildSkeletonGrid();
 
     if (activeCategories.isEmpty && comingSoonCategories.isEmpty) {
-      return AppEmptyState.noData(
-        dataType: 'Categories',
-        onRefresh: _manualRefresh,
+      return CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverToBoxAdapter(
+            child: CustomAppBar(
+              title: _greeting,
+              subtitle: _refreshSubtitle.isNotEmpty
+                  ? _refreshSubtitle
+                  : _ethiopianTime,
+            ),
+          ),
+          SliverFillRemaining(
+            child: Center(
+              child: AppEmptyState.noData(
+                dataType: 'Categories',
+                onRefresh: _manualRefresh,
+              ),
+            ),
+          ),
+        ],
       );
     }
 
@@ -381,11 +393,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       ),
                       child: Row(
                         children: [
-                          Icon(
-                            Icons.star_rounded,
-                            size: ResponsiveValues.iconSizeS(context),
-                            color: AppColors.telegramBlue,
-                          ),
+                          Icon(Icons.star_rounded,
+                              size: ResponsiveValues.iconSizeS(context),
+                              color: AppColors.telegramBlue),
                           const SizedBox(width: 4),
                           Text(
                             'Your Categories',
@@ -419,17 +429,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
           SliverPadding(
             padding: EdgeInsets.symmetric(
-              horizontal: ResponsiveValues.spacingS(context),
-            ),
+                horizontal: ResponsiveValues.spacingS(context)),
             sliver: SliverGrid(
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: columns,
                 crossAxisSpacing: ResponsiveValues.gridSpacing(context),
                 mainAxisSpacing: ResponsiveValues.gridRunSpacing(context),
                 childAspectRatio: ScreenSize.cardAspectRatio(
-                  context: context,
-                  columns: columns,
-                ),
+                    context: context, columns: columns),
               ),
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
@@ -440,8 +447,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   return CategoryCard(
                     category: category,
                     hasSubscription: hasSubscription,
-                    hasCachedData: _hasCachedCategories,
-                    isRefreshInProgress: _isRefreshing,
                     onTap: () {
                       if (category.isActive && mounted) {
                         GoRouter.of(context).push('/category/${category.id}');
@@ -471,11 +476,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
-                            Icons.timer_rounded,
-                            size: ResponsiveValues.iconSizeS(context),
-                            color: AppColors.telegramOrange,
-                          ),
+                          Icon(Icons.timer_rounded,
+                              size: ResponsiveValues.iconSizeS(context),
+                              color: AppColors.telegramOrange),
                           const SizedBox(width: 4),
                           Text(
                             'Coming Soon',
@@ -491,9 +494,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   const SizedBox(height: 8),
                   Text(
                     'Exciting new content is on the way!',
-                    style: AppTextStyles.bodyMedium(context).copyWith(
-                      color: AppColors.getTextSecondary(context),
-                    ),
+                    style: AppTextStyles.bodyMedium(context)
+                        .copyWith(color: AppColors.getTextSecondary(context)),
                   ),
                 ],
               ),
@@ -501,17 +503,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
           SliverPadding(
             padding: EdgeInsets.symmetric(
-              horizontal: ResponsiveValues.spacingS(context),
-            ),
+                horizontal: ResponsiveValues.spacingS(context)),
             sliver: SliverGrid(
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: columns,
                 crossAxisSpacing: ResponsiveValues.gridSpacing(context),
                 mainAxisSpacing: ResponsiveValues.gridRunSpacing(context),
                 childAspectRatio: ScreenSize.cardAspectRatio(
-                  context: context,
-                  columns: columns,
-                ),
+                    context: context, columns: columns),
               ),
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
@@ -552,7 +551,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  Widget _buildMobileLayout() {
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       body: RefreshIndicator(
@@ -561,23 +561,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         backgroundColor: AppColors.getSurface(context),
         child: _buildContent(),
       ),
-    );
-  }
-
-  Widget _buildTabletLayout() {
-    return _buildMobileLayout();
-  }
-
-  Widget _buildDesktopLayout() {
-    return _buildMobileLayout();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ResponsiveLayout(
-      mobile: _buildMobileLayout(),
-      tablet: _buildTabletLayout(),
-      desktop: _buildDesktopLayout(),
-    ).animate().fadeIn(duration: AppThemes.animationDurationMedium);
+    ).animate().fadeIn(duration: AppThemes.animationMedium);
   }
 }
