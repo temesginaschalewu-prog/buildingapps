@@ -1,7 +1,4 @@
-// lib/screens/settings/support_screen.dart
-
 import 'dart:async';
-import 'package:familyacademyclient/widgets/common/app_dialog.dart';
 import 'package:familyacademyclient/widgets/common/app_empty_state.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,7 +8,6 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:badges/badges.dart' as badges;
 import 'package:pull_to_refresh/pull_to_refresh.dart' hide RefreshIndicator;
 import 'package:url_launcher/url_launcher.dart';
-
 import '../../providers/settings_provider.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
@@ -19,11 +15,14 @@ import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_shimmer.dart';
 import '../../widgets/common/app_bar.dart';
+import '../../widgets/common/app_dialog.dart';
 import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
+import '../../utils/app_enums.dart';
+import '../../widgets/common/responsive_widgets.dart';
 
 class SupportScreen extends StatefulWidget {
   const SupportScreen({super.key});
@@ -68,9 +67,7 @@ class _SupportScreenState extends State<SupportScreen>
     final connectivityService = context.read<ConnectivityService>();
     _connectivitySubscription =
         connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (mounted) {
-        setState(() => _isOffline = !isOnline);
-      }
+      if (mounted) setState(() => _isOffline = !isOnline);
     });
   }
 
@@ -156,89 +153,6 @@ class _SupportScreenState extends State<SupportScreen>
         });
       }
     }
-  }
-
-  Widget _buildSkeletonLoader() {
-    return Scaffold(
-      backgroundColor: AppColors.getBackground(context),
-      body: CustomScrollView(
-        physics: const NeverScrollableScrollPhysics(),
-        slivers: [
-          SliverToBoxAdapter(
-            child: CustomAppBar(
-              title: 'Support',
-              subtitle: 'Loading...',
-              leading: AppButton.icon(
-                icon: Icons.arrow_back_rounded,
-                onPressed: () => GoRouter.of(context).pop(),
-              ),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: ResponsiveValues.spacingL(context),
-                vertical: ResponsiveValues.spacingL(context),
-              ),
-              child: AppCard.glass(
-                child: Container(
-                  height: 120,
-                  padding: ResponsiveValues.cardPadding(context),
-                  child: const Row(
-                    children: [
-                      AppShimmer(
-                          type: ShimmerType.circle,
-                          customWidth: 44,
-                          customHeight: 44),
-                      SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            AppShimmer(
-                                type: ShimmerType.textLine, customWidth: 150),
-                            SizedBox(height: 8),
-                            AppShimmer(
-                                type: ShimmerType.textLine, customWidth: 250),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: ResponsiveValues.spacingL(context),
-              ),
-              child: const AppShimmer(
-                  type: ShimmerType.rectangle, customHeight: 48),
-            ),
-          ),
-          SliverPadding(
-            padding: EdgeInsets.symmetric(
-              horizontal: ResponsiveValues.spacingL(context),
-              vertical: ResponsiveValues.spacingL(context),
-            ),
-            sliver: SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) => Padding(
-                  padding: EdgeInsets.only(
-                      bottom: ResponsiveValues.spacingL(context)),
-                  child:
-                      AppShimmer(type: ShimmerType.contactCard, index: index),
-                ),
-                childCount: 3,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   Future<void> _handleContactTap(
@@ -334,9 +248,7 @@ class _SupportScreenState extends State<SupportScreen>
     final color = iconColor ?? _getIconColorForType(type, context);
 
     return Container(
-      margin: EdgeInsets.only(
-        bottom: ResponsiveValues.spacingL(context),
-      ),
+      margin: EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
       child: AppCard.contact(
         accentColor: color,
         child: Material(
@@ -359,20 +271,17 @@ class _SupportScreenState extends State<SupportScreen>
                       gradient: LinearGradient(
                         colors: [
                           color.withValues(alpha: 0.2),
-                          color.withValues(alpha: 0.05),
+                          color.withValues(alpha: 0.05)
                         ],
                       ),
                       borderRadius: BorderRadius.circular(
-                        ResponsiveValues.radiusMedium(context),
-                      ),
+                          ResponsiveValues.radiusMedium(context)),
                       border: Border.all(color: color, width: 1.5),
                     ),
                     child: Center(
-                      child: Icon(
-                        icon,
-                        size: ResponsiveValues.iconSizeL(context),
-                        color: color,
-                      ),
+                      child: Icon(icon,
+                          size: ResponsiveValues.iconSizeL(context),
+                          color: color),
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -391,9 +300,8 @@ class _SupportScreenState extends State<SupportScreen>
                         const SizedBox(height: 4),
                         Text(
                           value,
-                          style: AppTextStyles.bodyMedium(context).copyWith(
-                            fontWeight: FontWeight.w500,
-                          ),
+                          style: AppTextStyles.bodyMedium(context)
+                              .copyWith(fontWeight: FontWeight.w500),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -407,9 +315,8 @@ class _SupportScreenState extends State<SupportScreen>
                                     : type == ContactType.other
                                         ? 'Tap to copy'
                                         : 'Tap to contact',
-                                style: AppTextStyles.caption(context).copyWith(
-                                  color: color,
-                                ),
+                                style: AppTextStyles.caption(context)
+                                    .copyWith(color: color),
                               ),
                               const SizedBox(width: 4),
                               Icon(
@@ -439,12 +346,11 @@ class _SupportScreenState extends State<SupportScreen>
       ),
     )
         .animate()
-        .fadeIn(
-            duration: AppThemes.animationDurationMedium, delay: (index * 50).ms)
+        .fadeIn(duration: AppThemes.animationMedium, delay: (index * 50).ms)
         .slideX(
             begin: 0.1,
             end: 0,
-            duration: AppThemes.animationDurationMedium,
+            duration: AppThemes.animationMedium,
             delay: (index * 50).ms);
   }
 
@@ -473,28 +379,24 @@ class _SupportScreenState extends State<SupportScreen>
                     gradient: LinearGradient(
                       colors: [
                         color.withValues(alpha: 0.2),
-                        color.withValues(alpha: 0.05),
+                        color.withValues(alpha: 0.05)
                       ],
                     ),
                     borderRadius: BorderRadius.circular(
-                      ResponsiveValues.radiusMedium(context),
-                    ),
+                        ResponsiveValues.radiusMedium(context)),
                     border: Border.all(color: color, width: 1.5),
                   ),
                   child: Center(
-                    child: Icon(
-                      icon,
-                      size: ResponsiveValues.iconSizeS(context),
-                      color: color,
-                    ),
+                    child: Icon(icon,
+                        size: ResponsiveValues.iconSizeS(context),
+                        color: color),
                   ),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   title,
-                  style: AppTextStyles.titleSmall(context).copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: AppTextStyles.titleSmall(context)
+                      .copyWith(fontWeight: FontWeight.w600),
                   textAlign: TextAlign.center,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -502,9 +404,8 @@ class _SupportScreenState extends State<SupportScreen>
                 const SizedBox(height: 2),
                 Text(
                   subtitle,
-                  style: AppTextStyles.caption(context).copyWith(
-                    color: AppColors.getTextSecondary(context),
-                  ),
+                  style: AppTextStyles.caption(context)
+                      .copyWith(color: AppColors.getTextSecondary(context)),
                   textAlign: TextAlign.center,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -516,21 +417,18 @@ class _SupportScreenState extends State<SupportScreen>
       ),
     )
         .animate()
-        .fadeIn(
-            duration: AppThemes.animationDurationMedium, delay: (index * 50).ms)
+        .fadeIn(duration: AppThemes.animationMedium, delay: (index * 50).ms)
         .scale(
             begin: const Offset(0.95, 0.95),
             end: const Offset(1, 1),
-            duration: AppThemes.animationDurationMedium,
+            duration: AppThemes.animationMedium,
             delay: (index * 50).ms);
   }
 
   Widget _buildFAQItem(BuildContext context, String question, String answer,
       {int index = 0}) {
     return Container(
-      margin: EdgeInsets.only(
-        bottom: ResponsiveValues.spacingL(context),
-      ),
+      margin: EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
       child: AppCard.glass(
         child: Theme(
           data: Theme.of(context).copyWith(
@@ -553,7 +451,7 @@ class _SupportScreenState extends State<SupportScreen>
                 gradient: LinearGradient(
                   colors: [
                     AppColors.telegramBlue.withValues(alpha: 0.2),
-                    AppColors.telegramPurple.withValues(alpha: 0.1),
+                    AppColors.telegramPurple.withValues(alpha: 0.1)
                   ],
                 ),
                 shape: BoxShape.circle,
@@ -563,9 +461,8 @@ class _SupportScreenState extends State<SupportScreen>
             ),
             title: Text(
               question,
-              style: AppTextStyles.titleSmall(context).copyWith(
-                fontWeight: FontWeight.w500,
-              ),
+              style: AppTextStyles.titleSmall(context)
+                  .copyWith(fontWeight: FontWeight.w500),
             ),
             children: [
               Padding(
@@ -573,9 +470,7 @@ class _SupportScreenState extends State<SupportScreen>
                 child: Text(
                   answer,
                   style: AppTextStyles.bodyMedium(context).copyWith(
-                    color: AppColors.getTextSecondary(context),
-                    height: 1.6,
-                  ),
+                      color: AppColors.getTextSecondary(context), height: 1.6),
                 ),
               ),
               const SizedBox(height: 16),
@@ -585,12 +480,11 @@ class _SupportScreenState extends State<SupportScreen>
       ),
     )
         .animate()
-        .fadeIn(
-            duration: AppThemes.animationDurationMedium, delay: (index * 50).ms)
+        .fadeIn(duration: AppThemes.animationMedium, delay: (index * 50).ms)
         .slideY(
             begin: 0.1,
             end: 0,
-            duration: AppThemes.animationDurationMedium,
+            duration: AppThemes.animationMedium,
             delay: (index * 50).ms);
   }
 
@@ -602,9 +496,8 @@ class _SupportScreenState extends State<SupportScreen>
       ),
       child: Text(
         title,
-        style: AppTextStyles.titleLarge(context).copyWith(
-          fontWeight: FontWeight.w700,
-        ),
+        style: AppTextStyles.titleLarge(context)
+            .copyWith(fontWeight: FontWeight.w700),
       ),
     );
   }
@@ -662,15 +555,13 @@ class _SupportScreenState extends State<SupportScreen>
                         Text(
                           'No contact information available',
                           style: AppTextStyles.bodyLarge(context).copyWith(
-                            color: AppColors.getTextSecondary(context),
-                          ),
+                              color: AppColors.getTextSecondary(context)),
                         ),
                         const SizedBox(height: 12),
                         Text(
                           'Contact methods will appear here when configured by admin',
                           style: AppTextStyles.bodySmall(context).copyWith(
-                            color: AppColors.getTextSecondary(context),
-                          ),
+                              color: AppColors.getTextSecondary(context)),
                           textAlign: TextAlign.center,
                         ),
                       ],
@@ -757,16 +648,14 @@ class _SupportScreenState extends State<SupportScreen>
                       const SizedBox(height: 16),
                       Text(
                         'Contact Us Directly',
-                        style: AppTextStyles.titleMedium(context).copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
+                        style: AppTextStyles.titleMedium(context)
+                            .copyWith(fontWeight: FontWeight.w600),
                       ),
                       const SizedBox(height: 8),
                       Text(
                         'If your question isn\'t answered here, please reach out to our support team using the contact information provided.',
                         style: AppTextStyles.bodyMedium(context).copyWith(
-                          color: AppColors.getTextSecondary(context),
-                        ),
+                            color: AppColors.getTextSecondary(context)),
                         textAlign: TextAlign.center,
                       ),
                     ],
@@ -868,22 +757,20 @@ class _SupportScreenState extends State<SupportScreen>
             const SizedBox(height: 16),
             Text(
               'Quick Response',
-              style: AppTextStyles.titleMedium(context).copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+              style: AppTextStyles.titleMedium(context)
+                  .copyWith(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 8),
             Text(
               'We typically respond within 24 hours during business days',
-              style: AppTextStyles.bodyMedium(context).copyWith(
-                color: AppColors.getTextSecondary(context),
-              ),
+              style: AppTextStyles.bodyMedium(context)
+                  .copyWith(color: AppColors.getTextSecondary(context)),
               textAlign: TextAlign.center,
             ),
           ],
         ),
       ),
-    ).animate().fadeIn(duration: AppThemes.animationDurationMedium);
+    ).animate().fadeIn(duration: AppThemes.animationMedium);
   }
 
   Widget _buildSupportHoursCard(BuildContext context) {
@@ -903,24 +790,22 @@ class _SupportScreenState extends State<SupportScreen>
                 const SizedBox(width: 8),
                 Text(
                   'Support Hours',
-                  style: AppTextStyles.titleSmall(context).copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: AppTextStyles.titleSmall(context)
+                      .copyWith(fontWeight: FontWeight.w600),
                 ),
               ],
             ),
             const SizedBox(height: 16),
             Text(
               hours,
-              style: AppTextStyles.bodyMedium(context).copyWith(
-                color: AppColors.getTextSecondary(context),
-              ),
+              style: AppTextStyles.bodyMedium(context)
+                  .copyWith(color: AppColors.getTextSecondary(context)),
               textAlign: TextAlign.center,
             ),
           ],
         ),
       ),
-    ).animate().fadeIn(duration: AppThemes.animationDurationMedium);
+    ).animate().fadeIn(duration: AppThemes.animationMedium);
   }
 
   Widget _buildHeroSection(BuildContext context) {
@@ -928,11 +813,7 @@ class _SupportScreenState extends State<SupportScreen>
       child: Container(
         padding: ResponsiveValues.dialogPadding(context),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: AppColors.telegramGradient,
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
+          gradient: const LinearGradient(colors: AppColors.telegramGradient),
           borderRadius:
               BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
         ),
@@ -942,13 +823,11 @@ class _SupportScreenState extends State<SupportScreen>
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                shape: BoxShape.circle,
-              ),
+                  color: Colors.white.withValues(alpha: 0.2),
+                  shape: BoxShape.circle),
               child: const Center(
-                child: Icon(Icons.support_agent_rounded,
-                    color: Colors.white, size: 24),
-              ),
+                  child: Icon(Icons.support_agent_rounded,
+                      color: Colors.white, size: 24)),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -958,22 +837,100 @@ class _SupportScreenState extends State<SupportScreen>
                   Text(
                     'We\'re Here to Help',
                     style: AppTextStyles.titleLarge(context).copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                    ),
+                        color: Colors.white, fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     'Get help with your account, payments, subscriptions, or any other questions.',
-                    style: AppTextStyles.bodyMedium(context).copyWith(
-                      color: Colors.white.withValues(alpha: 0.9),
-                    ),
+                    style: AppTextStyles.bodyMedium(context)
+                        .copyWith(color: Colors.white.withValues(alpha: 0.9)),
                   ),
                 ],
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildSkeletonLoader() {
+    return Scaffold(
+      backgroundColor: AppColors.getBackground(context),
+      body: CustomScrollView(
+        physics: const NeverScrollableScrollPhysics(),
+        slivers: [
+          SliverToBoxAdapter(
+            child: CustomAppBar(
+              title: 'Support',
+              subtitle: 'Loading...',
+              leading: AppButton.icon(
+                  icon: Icons.arrow_back_rounded,
+                  onPressed: () => GoRouter.of(context).pop()),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: ResponsiveValues.spacingL(context),
+                vertical: ResponsiveValues.spacingL(context),
+              ),
+              child: AppCard.glass(
+                child: Container(
+                  height: 120,
+                  padding: ResponsiveValues.cardPadding(context),
+                  child: const Row(
+                    children: [
+                      AppShimmer(
+                          type: ShimmerType.circle,
+                          customWidth: 44,
+                          customHeight: 44),
+                      SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            AppShimmer(
+                                type: ShimmerType.textLine, customWidth: 150),
+                            SizedBox(height: 8),
+                            AppShimmer(
+                                type: ShimmerType.textLine, customWidth: 250),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                  horizontal: ResponsiveValues.spacingL(context)),
+              child: const AppShimmer(
+                  type: ShimmerType.rectangle, customHeight: 48),
+            ),
+          ),
+          SliverPadding(
+            padding: EdgeInsets.symmetric(
+              horizontal: ResponsiveValues.spacingL(context),
+              vertical: ResponsiveValues.spacingL(context),
+            ),
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) => Padding(
+                  padding: EdgeInsets.only(
+                      bottom: ResponsiveValues.spacingL(context)),
+                  child:
+                      AppShimmer(type: ShimmerType.contactCard, index: index),
+                ),
+                childCount: 3,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -987,9 +944,8 @@ class _SupportScreenState extends State<SupportScreen>
             ? 'Refreshing...'
             : (_isOffline ? 'Offline mode' : 'Get help'),
         leading: AppButton.icon(
-          icon: Icons.arrow_back_rounded,
-          onPressed: () => GoRouter.of(context).pop(),
-        ),
+            icon: Icons.arrow_back_rounded,
+            onPressed: () => GoRouter.of(context).pop()),
       ),
       body: Column(
         children: [
@@ -1043,9 +999,8 @@ class _SupportScreenState extends State<SupportScreen>
             ? 'Refreshing...'
             : (_isOffline ? 'Offline mode' : 'Get help'),
         leading: AppButton.icon(
-          icon: Icons.arrow_back_rounded,
-          onPressed: () => GoRouter.of(context).pop(),
-        ),
+            icon: Icons.arrow_back_rounded,
+            onPressed: () => GoRouter.of(context).pop()),
       ),
       body: RefreshIndicator(
         onRefresh: () => _manualRefresh(_tabController.index),
@@ -1096,9 +1051,8 @@ class _SupportScreenState extends State<SupportScreen>
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading && !_isRefreshing && !_hasError) {
+    if (_isLoading && !_isRefreshing && !_hasError)
       return _buildSkeletonLoader();
-    }
 
     if (_hasError) {
       return Scaffold(
@@ -1107,9 +1061,8 @@ class _SupportScreenState extends State<SupportScreen>
           title: 'Support',
           subtitle: 'Error loading',
           leading: AppButton.icon(
-            icon: Icons.arrow_back_rounded,
-            onPressed: () => GoRouter.of(context).pop(),
-          ),
+              icon: Icons.arrow_back_rounded,
+              onPressed: () => GoRouter.of(context).pop()),
         ),
         body: Center(
           child: AppEmptyState.error(
