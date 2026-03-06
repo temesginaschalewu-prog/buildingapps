@@ -3,7 +3,6 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
 import '../../providers/auth_provider.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
@@ -17,6 +16,7 @@ import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/helpers.dart';
+import '../../utils/constants.dart';
 import '../../widgets/common/responsive_widgets.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -77,13 +77,13 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   String? _validateUsername(String? value) {
-    if (value == null || value.isEmpty) return 'Username is required';
-    if (value.length < 3) return 'Username must be at least 3 characters';
+    if (value == null || value.isEmpty) return AppStrings.usernameRequired;
+    if (value.length < 3) return AppStrings.usernameMinLength;
     return null;
   }
 
   String? _validatePassword(String? value) {
-    if (value == null || value.isEmpty) return 'Password is required';
+    if (value == null || value.isEmpty) return AppStrings.passwordRequired;
     return null;
   }
 
@@ -147,11 +147,7 @@ class _LoginScreenState extends State<LoginScreen> {
       height: ResponsiveValues.avatarSizeLarge(context),
       margin: EdgeInsets.only(bottom: ResponsiveValues.spacingXXL(context)),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: AppColors.telegramGradient,
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        gradient: const LinearGradient(colors: AppColors.telegramGradient),
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
@@ -162,7 +158,7 @@ class _LoginScreenState extends State<LoginScreen> {
         ],
       ),
       child: Center(
-        child: ResponsiveIcon(
+        child: Icon(
           Icons.school_rounded,
           size: ResponsiveValues.iconSizeXL(context),
           color: Colors.white,
@@ -172,18 +168,17 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _buildWelcomeText() {
-    return ResponsiveColumn(
+    return Column(
       children: [
-        ResponsiveText(
-          'Welcome Back!',
-          style: AppTextStyles.headlineMedium(context).copyWith(
-            fontWeight: FontWeight.bold,
-          ),
+        Text(
+          AppStrings.welcomeBack,
+          style: AppTextStyles.headlineMedium(context)
+              .copyWith(fontWeight: FontWeight.bold),
           textAlign: TextAlign.center,
         ),
-        const ResponsiveSizedBox(height: AppSpacing.s),
-        ResponsiveText(
-          'Sign in to continue your learning journey',
+        SizedBox(height: ResponsiveValues.spacingS(context)),
+        Text(
+          AppStrings.signInToContinue,
           style: AppTextStyles.bodyLarge(context).copyWith(
             color: AppColors.getTextSecondary(context),
           ),
@@ -194,20 +189,20 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _buildFormFields() {
-    return ResponsiveColumn(
+    return Column(
       children: [
         AppTextField(
           controller: _usernameController,
-          label: 'Username',
+          label: AppStrings.username,
           hint: 'Enter your username',
           prefixIcon: Icons.person_outline_rounded,
           enabled: !_isLoading,
           validator: _validateUsername,
         ),
-        const ResponsiveSizedBox(height: AppSpacing.l),
+        SizedBox(height: ResponsiveValues.spacingL(context)),
         AppTextField.password(
           controller: _passwordController,
-          label: 'Password',
+          label: AppStrings.password,
           hint: 'Enter your password',
           enabled: !_isLoading,
           validator: _validatePassword,
@@ -218,7 +213,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Widget _buildLoginButton() {
     return AppButton.primary(
-      label: 'Login',
+      label: AppStrings.login,
       onPressed: _isLoading ? null : _handleLogin,
       isLoading: _isLoading,
       expanded: true,
@@ -226,20 +221,20 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _buildRegisterLink() {
-    return ResponsiveRow(
+    return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        ResponsiveText(
-          "Don't have an account? ",
+        Text(
+          AppStrings.dontHaveAccount,
           style: AppTextStyles.bodyMedium(context).copyWith(
             color: AppColors.getTextSecondary(context),
           ),
         ),
-        const ResponsiveSizedBox(width: AppSpacing.xs),
+        SizedBox(width: ResponsiveValues.spacingXS(context)),
         GestureDetector(
           onTap: _isLoading ? null : () => context.push('/auth/register'),
-          child: ResponsiveText(
-            'Register',
+          child: Text(
+            AppStrings.register,
             style: AppTextStyles.bodyMedium(context).copyWith(
               color: AppColors.telegramBlue,
               fontWeight: FontWeight.w600,
@@ -264,17 +259,17 @@ class _LoginScreenState extends State<LoginScreen> {
 
     return Form(
       key: _formKey,
-      child: ResponsiveColumn(
+      child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildLogo(),
           _buildWelcomeText(),
-          const ResponsiveSizedBox(height: AppSpacing.xxl),
+          SizedBox(height: ResponsiveValues.spacingXXL(context)),
           _buildFormFields(),
-          const ResponsiveSizedBox(height: AppSpacing.xl),
+          SizedBox(height: ResponsiveValues.spacingXL(context)),
           _buildLoginButton(),
-          const ResponsiveSizedBox(height: AppSpacing.l),
+          SizedBox(height: ResponsiveValues.spacingL(context)),
           _buildRegisterLink(),
         ],
       ),
@@ -287,8 +282,8 @@ class _LoginScreenState extends State<LoginScreen> {
         child: SingleChildScrollView(
           padding: ResponsiveValues.screenPadding(context),
           child: AppCard.glass(
-            child: ResponsiveContainer(
-              maxWidth: 400,
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 400),
               child: _buildContent(),
             ),
           ),
@@ -304,8 +299,8 @@ class _LoginScreenState extends State<LoginScreen> {
           child: SingleChildScrollView(
             padding: ResponsiveValues.screenPadding(context),
             child: AppCard.glass(
-              child: ResponsiveContainer(
-                maxWidth: 500,
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 500),
                 child: _buildContent(),
               ),
             ),
@@ -315,23 +310,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildDesktopLayout() {
-    return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: ResponsiveValues.screenPadding(context),
-            child: AppCard.glass(
-              child: ResponsiveContainer(
-                maxWidth: 500,
-                child: _buildContent(),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget _buildDesktopLayout() => _buildTabletLayout();
 
   @override
   Widget build(BuildContext context) {
@@ -339,6 +318,6 @@ class _LoginScreenState extends State<LoginScreen> {
       mobile: _buildMobileLayout(),
       tablet: _buildTabletLayout(),
       desktop: _buildDesktopLayout(),
-    ).animate().fadeIn(duration: AppThemes.animationDurationMedium);
+    ).animate().fadeIn(duration: AppThemes.animationMedium);
   }
 }
