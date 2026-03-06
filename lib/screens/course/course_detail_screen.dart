@@ -4,24 +4,20 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:pull_to_refresh/pull_to_refresh.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-
 import '../../models/course_model.dart';
 import '../../models/payment_model.dart';
 import '../../models/category_model.dart';
 import '../../models/chapter_model.dart';
 import '../../models/exam_model.dart';
-
 import '../../providers/category_provider.dart';
 import '../../providers/chapter_provider.dart';
 import '../../providers/exam_provider.dart';
 import '../../providers/course_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../providers/payment_provider.dart';
-
 import '../../services/device_service.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
-
 import '../../widgets/chapter/chapter_card.dart';
 import '../../widgets/exam/exam_card.dart';
 import '../../widgets/common/app_card.dart';
@@ -29,7 +25,6 @@ import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_shimmer.dart';
 import '../../widgets/common/app_empty_state.dart';
 import '../../widgets/common/app_dialog.dart';
-
 import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
@@ -37,6 +32,7 @@ import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
 import '../../utils/helpers.dart';
 import '../../utils/ui_helpers.dart';
+import '../../utils/app_enums.dart';
 import '../../widgets/common/responsive_widgets.dart';
 
 class CourseDetailScreen extends StatefulWidget {
@@ -119,13 +115,10 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
 
   Future<void> _initializeScreen() async {
     await _checkConnectivity();
-
     await _loadFromCache();
 
     if (_course != null && _hasCachedData) {
-      setState(() {
-        _isFirstLoad = false;
-      });
+      setState(() => _isFirstLoad = false);
       if (!_isOffline) {
         _refreshInBackground();
       }
@@ -137,9 +130,11 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
   Future<void> _loadFromCache() async {
     try {
       final deviceService = context.read<DeviceService>();
-      final cachedCourse = await deviceService
-          .getCacheItem<Map<String, dynamic>>('course_${widget.courseId}',
-              isUserSpecific: true);
+      final cachedCourse =
+          await deviceService.getCacheItem<Map<String, dynamic>>(
+        'course_${widget.courseId}',
+        isUserSpecific: true,
+      );
 
       if (cachedCourse != null) {
         _course = Course.fromJson(cachedCourse['course']);
@@ -197,9 +192,10 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
       CourseProvider courseProvider, CategoryProvider categoryProvider) async {
     for (final category in categoryProvider.categories) {
       final courses = courseProvider.getCoursesByCategory(category.id);
-      final foundCourse = courses.firstWhere((c) => c.id == widget.courseId,
-          orElse: () =>
-              Course(id: 0, name: '', categoryId: 0, chapterCount: 0));
+      final foundCourse = courses.firstWhere(
+        (c) => c.id == widget.courseId,
+        orElse: () => Course(id: 0, name: '', categoryId: 0, chapterCount: 0),
+      );
       if (foundCourse.id > 0) {
         _category ??= category;
         return foundCourse;
@@ -235,9 +231,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
 
       await _saveToCache();
     } finally {
-      if (mounted) {
-        _isRefreshing = false;
-      }
+      if (mounted) _isRefreshing = false;
     }
   }
 
@@ -329,20 +323,23 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
       await paymentProvider.loadPayments(
           forceRefresh: forceRefresh && !_isOffline);
       final pendingPayments = paymentProvider.getPendingPayments();
-      _hasPendingPayment = pendingPayments.any((payment) =>
-          payment.categoryName.toLowerCase() == _category!.name.toLowerCase());
+      _hasPendingPayment = pendingPayments.any(
+        (payment) =>
+            payment.categoryName.toLowerCase() == _category!.name.toLowerCase(),
+      );
 
       final rejectedPayments = paymentProvider.getRejectedPayments();
       final recentRejected = rejectedPayments.firstWhere(
         (p) => p.categoryName.toLowerCase() == _category!.name.toLowerCase(),
         orElse: () => Payment(
-            id: 0,
-            paymentType: '',
-            amount: 0,
-            paymentMethod: '',
-            status: '',
-            createdAt: DateTime.now(),
-            categoryName: ''),
+          id: 0,
+          paymentType: '',
+          amount: 0,
+          paymentMethod: '',
+          status: '',
+          createdAt: DateTime.now(),
+          categoryName: '',
+        ),
       );
       _rejectionReason =
           recentRejected.id != 0 ? recentRejected.rejectionReason : null;
@@ -370,17 +367,18 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     try {
       final deviceService = context.read<DeviceService>();
       await deviceService.saveCacheItem(
-          'course_${widget.courseId}',
-          {
-            'course': _course!.toJson(),
-            'category': _category?.toJson(),
-            'has_access': _hasAccess,
-            'has_pending_payment': _hasPendingPayment,
-            'rejection_reason': _rejectionReason,
-            'timestamp': DateTime.now().toIso8601String(),
-          },
-          ttl: const Duration(hours: 1),
-          isUserSpecific: true);
+        'course_${widget.courseId}',
+        {
+          'course': _course!.toJson(),
+          'category': _category?.toJson(),
+          'has_access': _hasAccess,
+          'has_pending_payment': _hasPendingPayment,
+          'rejection_reason': _rejectionReason,
+          'timestamp': DateTime.now().toIso8601String(),
+        },
+        ttl: const Duration(hours: 1),
+        isUserSpecific: true,
+      );
     } catch (e) {
       debugLog('CourseDetailScreen', 'Error saving to cache: $e');
     }
@@ -392,7 +390,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         'chapter': chapter,
         'course': _course,
         'category': _category,
-        'hasAccess': _hasAccess
+        'hasAccess': _hasAccess,
       });
     } else if (_hasPendingPayment) {
       _showPendingPaymentDialog();
@@ -430,7 +428,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
       if (confirmed == true) {
         context.push('/payment', extra: {
           'category': _category,
-          'paymentType': _hasAccess ? 'repayment' : 'first_time'
+          'paymentType': _hasAccess ? 'repayment' : 'first_time',
         });
       }
     });
@@ -484,7 +482,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     if (_hasPendingPayment) {
       return _buildStatusBanner(
         icon: Icons.schedule_rounded,
-        color: AppColors.statusPending,
+        color: AppColors.pending,
         title: 'Payment Pending',
         message: 'Please wait for admin verification (1-3 working days)',
       );
@@ -534,14 +532,10 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
                 decoration: BoxDecoration(
                   color: color.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(
-                    ResponsiveValues.radiusMedium(context),
-                  ),
+                      ResponsiveValues.radiusMedium(context)),
                 ),
-                child: Icon(
-                  icon,
-                  size: ResponsiveValues.iconSizeL(context),
-                  color: color,
-                ),
+                child: Icon(icon,
+                    size: ResponsiveValues.iconSizeL(context), color: color),
               ),
               SizedBox(width: ResponsiveValues.spacingL(context)),
               Expanded(
@@ -550,27 +544,21 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
                   children: [
                     Text(
                       title,
-                      style: AppTextStyles.titleSmall(context).copyWith(
-                        color: color,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      style: AppTextStyles.titleSmall(context)
+                          .copyWith(color: color, fontWeight: FontWeight.w600),
                     ),
                     SizedBox(height: ResponsiveValues.spacingXS(context)),
                     Text(
                       message,
-                      style: AppTextStyles.bodySmall(context).copyWith(
-                        color: AppColors.getTextSecondary(context),
-                      ),
+                      style: AppTextStyles.bodySmall(context)
+                          .copyWith(color: AppColors.getTextSecondary(context)),
                     ),
                   ],
                 ),
               ),
               if (actionText != null && onAction != null) ...[
                 SizedBox(width: ResponsiveValues.spacingM(context)),
-                AppButton.glass(
-                  label: actionText,
-                  onPressed: onAction,
-                ),
+                AppButton.glass(label: actionText, onPressed: onAction),
               ],
             ],
           ),
@@ -586,9 +574,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         backgroundColor: AppColors.getBackground(context),
         elevation: 0,
         leading: AppButton.icon(
-          icon: Icons.arrow_back_rounded,
-          onPressed: () => context.pop(),
-        ),
+            icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
         title: AppShimmer(type: ShimmerType.textLine, customWidth: 200),
         bottom: PreferredSize(
           preferredSize:
@@ -597,17 +583,13 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
             decoration: BoxDecoration(
               border: Border(
                 bottom: BorderSide(
-                  color: AppColors.getDivider(context).withValues(alpha: 0.5),
-                  width: 0.5,
-                ),
+                    color: AppColors.getDivider(context).withValues(alpha: 0.5),
+                    width: 0.5),
               ),
             ),
             child: TabBar(
               controller: _tabController,
-              tabs: const [
-                Tab(text: 'Chapters'),
-                Tab(text: 'Exams'),
-              ],
+              tabs: const [Tab(text: 'Chapters'), Tab(text: 'Exams')],
               indicatorColor: AppColors.telegramBlue,
               indicatorWeight: 3,
               labelColor: AppColors.telegramBlue,
@@ -654,9 +636,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
       itemBuilder: (context, index) {
         if (isLoading && chapters.isEmpty) {
           return Padding(
-            padding: EdgeInsets.only(
-              bottom: ResponsiveValues.spacingL(context),
-            ),
+            padding:
+                EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
             child: AppShimmer(type: ShimmerType.chapterCard, index: index),
           );
         }
@@ -664,9 +645,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         if (index < chapters.length) {
           final chapter = chapters[index];
           return Padding(
-            padding: EdgeInsets.only(
-              bottom: ResponsiveValues.spacingL(context),
-            ),
+            padding:
+                EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
             child: ChapterCard(
               chapter: chapter,
               courseId: _course!.id,
@@ -709,9 +689,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
       itemBuilder: (context, index) {
         if (isLoading && exams.isEmpty) {
           return Padding(
-            padding: EdgeInsets.only(
-              bottom: ResponsiveValues.spacingL(context),
-            ),
+            padding:
+                EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
             child: AppShimmer(type: ShimmerType.examCard, index: index),
           );
         }
@@ -719,9 +698,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         if (index < exams.length) {
           final exam = exams[index];
           return Padding(
-            padding: EdgeInsets.only(
-              bottom: ResponsiveValues.spacingL(context),
-            ),
+            padding:
+                EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
             child: ExamCard(
               exam: exam,
               onTap: () => _handleExamTap(exam),
@@ -751,7 +729,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     );
   }
 
-  Widget _buildMobileLayout() {
+  @override
+  Widget build(BuildContext context) {
     if (_isFirstLoad && !_hasCachedData) return _buildSkeletonLoader();
 
     if (_course == null) {
@@ -761,9 +740,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
           backgroundColor: AppColors.getBackground(context),
           elevation: 0,
           leading: AppButton.icon(
-            icon: Icons.arrow_back_rounded,
-            onPressed: () => context.pop(),
-          ),
+              icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
         ),
         body: Center(
           child: AppEmptyState.error(
@@ -787,18 +764,15 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
       appBar: AppBar(
         title: Text(
           _course!.name,
-          style: AppTextStyles.titleMedium(context).copyWith(
-            letterSpacing: -0.3,
-          ),
+          style:
+              AppTextStyles.titleMedium(context).copyWith(letterSpacing: -0.3),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
         backgroundColor: AppColors.getBackground(context),
         elevation: 0,
         leading: AppButton.icon(
-          icon: Icons.arrow_back_rounded,
-          onPressed: () => context.pop(),
-        ),
+            icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
         actions: [
           if (_isRefreshing)
             Padding(
@@ -820,9 +794,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
             decoration: BoxDecoration(
               border: Border(
                 bottom: BorderSide(
-                  color: AppColors.getDivider(context).withValues(alpha: 0.5),
-                  width: 0.5,
-                ),
+                    color: AppColors.getDivider(context).withValues(alpha: 0.5),
+                    width: 0.5),
               ),
             ),
             child: TabBar(
@@ -848,7 +821,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
             end: Alignment.bottomCenter,
             colors: [
               AppColors.getBackground(context).withValues(alpha: 0.95),
-              AppColors.getBackground(context),
+              AppColors.getBackground(context)
             ],
           ),
         ),
@@ -875,7 +848,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
                   controller: _tabController,
                   children: [
                     _buildChaptersList(chapters),
-                    _buildExamsList(exams),
+                    _buildExamsList(exams)
                   ],
                 ),
               ),
@@ -883,24 +856,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
           ),
         ),
       ),
-    ).animate().fadeIn(duration: AppThemes.animationDurationMedium);
-  }
-
-  Widget _buildTabletLayout() {
-    return _buildMobileLayout();
-  }
-
-  Widget _buildDesktopLayout() {
-    return _buildMobileLayout();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ResponsiveLayout(
-      mobile: _buildMobileLayout(),
-      tablet: _buildTabletLayout(),
-      desktop: _buildDesktopLayout(),
-    );
+    ).animate().fadeIn(duration: AppThemes.animationMedium);
   }
 
   @override
