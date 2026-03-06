@@ -8,20 +8,16 @@ import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-
 import '../../models/user_model.dart';
-
 import '../../providers/subscription_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../providers/school_provider.dart';
-
 import '../../services/api_service.dart';
 import '../../services/device_service.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
-
 import '../../widgets/common/app_bar.dart';
 import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_card.dart';
@@ -29,10 +25,11 @@ import '../../widgets/common/app_text_field.dart';
 import '../../widgets/common/app_shimmer.dart';
 import '../../widgets/common/app_empty_state.dart';
 import '../../widgets/common/app_dialog.dart';
-
 import '../../utils/helpers.dart';
 import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
+import '../../utils/constants.dart';
+import '../../utils/app_enums.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../widgets/common/responsive_widgets.dart';
@@ -144,8 +141,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         if (cachedUser.schoolId != null) {
           final cachedSchool =
               await deviceService.getCacheItem<Map<String, dynamic>>(
-                  'school_${cachedUser.schoolId}',
-                  isUserSpecific: true);
+            'school_${cachedUser.schoolId}',
+            isUserSpecific: true,
+          );
           if (cachedSchool != null) _schoolName = cachedSchool['name'];
         }
       } else {
@@ -368,9 +366,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       setState(() => _notificationsEnabled = value);
       SnackbarService().showSuccess(
-        context,
-        value ? 'Notifications enabled' : 'Notifications disabled',
-      );
+          context, value ? 'Notifications enabled' : 'Notifications disabled');
     } catch (e) {
       debugLog('ProfileScreen', 'Error toggling notifications: $e');
       SnackbarService()
@@ -405,10 +401,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     try {
       final image = await _picker.pickImage(
-          source: ImageSource.gallery,
-          imageQuality: 80,
-          maxWidth: 1200,
-          maxHeight: 1200);
+        source: ImageSource.gallery,
+        imageQuality: 80,
+        maxWidth: 1200,
+        maxHeight: 1200,
+      );
 
       if (image != null) {
         final imageFile = File(image.path);
@@ -464,9 +461,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         await userProvider.updateProfile(profileImage: imageUrl);
 
         SnackbarService().showSuccess(context, 'Profile image updated');
-        setState(() {
-          _profileImageFile = null;
-        });
+        setState(() => _profileImageFile = null);
       } else {
         SnackbarService().showError(context, 'Failed to upload image');
         setState(() => _profileImageFile = null);
@@ -495,8 +490,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       final userProvider = context.read<UserProvider>();
       await userProvider.updateProfile(
-          email: email.isNotEmpty ? email : null,
-          phone: phone.isNotEmpty ? phone : null);
+        email: email.isNotEmpty ? email : null,
+        phone: phone.isNotEmpty ? phone : null,
+      );
 
       SnackbarService().showSuccess(context, 'Profile updated successfully');
       setState(() {
@@ -545,9 +541,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             width: ResponsiveValues.appBarIconSize(context),
             height: ResponsiveValues.appBarIconSize(context),
             child: const CircularProgressIndicator(
-              strokeWidth: 2,
-              color: AppColors.telegramBlue,
-            ),
+                strokeWidth: 2, color: AppColors.telegramBlue),
           ),
         ),
       );
@@ -575,18 +569,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: AppColors.telegramBlue.withValues(alpha: 0.3),
-                    width: 2,
-                  ),
+                      color: AppColors.telegramBlue.withValues(alpha: 0.3),
+                      width: 2),
                 ),
                 child: ClipOval(
                   child: _profileImageFile != null
-                      ? Image.file(
-                          _profileImageFile!,
+                      ? Image.file(_profileImageFile!,
                           fit: BoxFit.cover,
                           width: avatarSize,
-                          height: avatarSize,
-                        )
+                          height: avatarSize)
                       : (user.profileImage?.isNotEmpty == true
                           ? CachedNetworkImage(
                               imageUrl: user.profileImage!,
@@ -597,9 +588,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 color: AppColors.getSurface(context),
                                 child: const Center(
                                   child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: AppColors.telegramBlue,
-                                  ),
+                                      strokeWidth: 2,
+                                      color: AppColors.telegramBlue),
                                 ),
                               ),
                               errorWidget: (context, url, error) =>
@@ -620,21 +610,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     width: ResponsiveValues.iconSizeXL(context) * 1.2,
                     height: ResponsiveValues.iconSizeXL(context) * 1.2,
                     decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: AppColors.telegramGradient,
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
+                      gradient:
+                          LinearGradient(colors: AppColors.telegramGradient),
                       shape: BoxShape.circle,
                       border: Border.fromBorderSide(
-                        BorderSide(color: Colors.white, width: 3),
-                      ),
+                          BorderSide(color: Colors.white, width: 3)),
                     ),
-                    child: const Icon(
-                      Icons.edit_rounded,
-                      size: 18,
-                      color: Colors.white,
-                    ),
+                    child: const Icon(Icons.edit_rounded,
+                        size: 18, color: Colors.white),
                   ),
                 ),
               ),
@@ -642,16 +625,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Positioned.fill(
                 child: Container(
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.5),
-                    shape: BoxShape.circle,
-                  ),
+                      color: Colors.black.withValues(alpha: 0.5),
+                      shape: BoxShape.circle),
                   child: const Center(
                     child: SizedBox(
                       width: 24,
                       height: 24,
                       child: CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      ),
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(Colors.white)),
                     ),
                   ),
                 ),
@@ -661,18 +643,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
         SizedBox(height: ResponsiveValues.spacingL(context)),
         Text(
           user.username,
-          style: AppTextStyles.headlineSmall(context).copyWith(
-            fontWeight: FontWeight.w700,
-          ),
+          style: AppTextStyles.headlineSmall(context)
+              .copyWith(fontWeight: FontWeight.w700),
           textAlign: TextAlign.center,
         ),
         if (_schoolName != null) ...[
           SizedBox(height: ResponsiveValues.spacingXS(context)),
           Text(
             _schoolName!,
-            style: AppTextStyles.bodySmall(context).copyWith(
-              color: AppColors.getTextSecondary(context),
-            ),
+            style: AppTextStyles.bodySmall(context)
+                .copyWith(color: AppColors.getTextSecondary(context)),
             textAlign: TextAlign.center,
           ),
         ],
@@ -690,7 +670,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           child: Text(
             user.accountStatus.toUpperCase(),
             style: AppTextStyles.statusBadge(context).copyWith(
-              fontSize: ResponsiveValues.statusBadgeFontSize(context),
+              fontSize: ResponsiveValues.fontStatusBadge(context),
               fontWeight: FontWeight.w600,
               color: AppColors.getStatusColor(user.accountStatus, context),
             ),
@@ -709,14 +689,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 borderRadius:
                     BorderRadius.circular(ResponsiveValues.radiusFull(context)),
                 border: Border.all(
-                  color: AppColors.telegramYellow.withValues(alpha: 0.3),
-                ),
+                    color: AppColors.telegramYellow.withValues(alpha: 0.3)),
               ),
-              child: const Icon(
-                Icons.wifi_off_rounded,
-                size: 12,
-                color: AppColors.telegramYellow,
-              ),
+              child: const Icon(Icons.wifi_off_rounded,
+                  size: 12, color: AppColors.telegramYellow),
             ),
           ),
       ],
@@ -726,20 +702,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildInitialsAvatar(String username, double size) {
     return Container(
       decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: AppColors.purpleGradient,
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        gradient: LinearGradient(colors: AppColors.purpleGradient),
       ),
       child: Center(
         child: Text(
           username.substring(0, 2).toUpperCase(),
           style: TextStyle(
-            fontSize: size * 0.3,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
+              fontSize: size * 0.3,
+              fontWeight: FontWeight.bold,
+              color: Colors.white),
         ),
       ),
     );
@@ -793,12 +764,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       gradient: LinearGradient(
                         colors: [
                           AppColors.telegramYellow.withValues(alpha: 0.2),
-                          AppColors.telegramYellow.withValues(alpha: 0.1),
+                          AppColors.telegramYellow.withValues(alpha: 0.1)
                         ],
                       ),
                       borderRadius: BorderRadius.circular(
-                        ResponsiveValues.radiusMedium(context),
-                      ),
+                          ResponsiveValues.radiusMedium(context)),
                     ),
                     child: Row(
                       children: [
@@ -808,9 +778,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         Expanded(
                           child: Text(
                             'You are offline. Connect to update profile.',
-                            style: AppTextStyles.bodySmall(context).copyWith(
-                              color: AppColors.telegramYellow,
-                            ),
+                            style: AppTextStyles.bodySmall(context)
+                                .copyWith(color: AppColors.telegramYellow),
                           ),
                         ),
                       ],
@@ -852,22 +821,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             _buildInfoItem(
-              Icons.email_outlined,
-              'Email',
-              user.email ?? 'Not set',
-            ),
+                Icons.email_outlined, 'Email', user.email ?? 'Not set'),
             const Divider(height: 1),
             _buildInfoItem(
-              Icons.phone_outlined,
-              'Phone',
-              user.phone ?? 'Not set',
-            ),
+                Icons.phone_outlined, 'Phone', user.phone ?? 'Not set'),
             const Divider(height: 1),
             _buildInfoItem(
-              Icons.school_outlined,
-              'School',
-              _schoolName ?? 'Not selected',
-            ),
+                Icons.school_outlined, 'School', _schoolName ?? 'Not selected'),
           ],
         ),
       ),
@@ -876,9 +836,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildInfoItem(IconData icon, String label, String value) {
     return Padding(
-      padding: EdgeInsets.symmetric(
-        vertical: ResponsiveValues.spacingXS(context),
-      ),
+      padding:
+          EdgeInsets.symmetric(vertical: ResponsiveValues.spacingXS(context)),
       child: SizedBox(
         height: 56,
         child: Row(
@@ -890,11 +849,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 color: AppColors.telegramBlue.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
-              child: Icon(
-                icon,
-                size: 20,
-                color: AppColors.telegramBlue,
-              ),
+              child: Icon(icon, size: 20, color: AppColors.telegramBlue),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -911,9 +866,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   Text(
                     value,
-                    style: AppTextStyles.bodyMedium(context).copyWith(
-                      fontWeight: FontWeight.w500,
-                    ),
+                    style: AppTextStyles.bodyMedium(context)
+                        .copyWith(fontWeight: FontWeight.w500),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -961,19 +915,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(
-                    icon,
-                    size: 20,
-                    color: iconColor ?? AppColors.telegramBlue,
-                  ),
+                  child: Icon(icon,
+                      size: 20, color: iconColor ?? AppColors.telegramBlue),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     title,
-                    style: AppTextStyles.bodyMedium(context).copyWith(
-                      fontWeight: FontWeight.w500,
-                    ),
+                    style: AppTextStyles.bodyMedium(context)
+                        .copyWith(fontWeight: FontWeight.w500),
                   ),
                 ),
                 Icon(
@@ -1062,24 +1012,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 gradient: LinearGradient(
                   colors: [
                     AppColors.telegramBlue.withValues(alpha: 0.2),
-                    AppColors.telegramPurple.withValues(alpha: 0.1),
+                    AppColors.telegramPurple.withValues(alpha: 0.1)
                   ],
                 ),
                 shape: BoxShape.circle,
               ),
-              child: Icon(
-                icon,
-                size: 20,
-                color: AppColors.telegramBlue,
-              ),
+              child: Icon(icon, size: 20, color: AppColors.telegramBlue),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
                 title,
-                style: AppTextStyles.bodyMedium(context).copyWith(
-                  fontWeight: FontWeight.w500,
-                ),
+                style: AppTextStyles.bodyMedium(context)
+                    .copyWith(fontWeight: FontWeight.w500),
               ),
             ),
             Switch.adaptive(
@@ -1165,10 +1110,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         physics: const BouncingScrollPhysics(),
         slivers: [
           const SliverToBoxAdapter(
-            child: CustomAppBar(
-              title: 'Profile',
-              subtitle: 'Loading profile...',
-            ),
+            child:
+                CustomAppBar(title: 'Profile', subtitle: 'Loading profile...'),
           ),
           SliverList(
             delegate: SliverChildListDelegate([
@@ -1191,8 +1134,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       3,
                       (index) => Padding(
                         padding: EdgeInsets.symmetric(
-                          vertical: ResponsiveValues.spacingM(context),
-                        ),
+                            vertical: ResponsiveValues.spacingM(context)),
                         child: const Row(
                           children: [
                             AppShimmer(
@@ -1245,28 +1187,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
         SliverList(
           delegate: SliverChildListDelegate([
             Container(
-              alignment: Alignment.center,
-              child: _buildProfileHeader(user),
-            ),
-            const ResponsiveSizedBox(height: AppSpacing.xxl),
+                alignment: Alignment.center, child: _buildProfileHeader(user)),
+            SizedBox(height: ResponsiveValues.spacingXXL(context)),
             if (_isEditing)
               _buildEditProfileForm()
             else
               _buildInfoSection(user),
-            const ResponsiveSizedBox(height: AppSpacing.xxl),
+            SizedBox(height: ResponsiveValues.spacingXXL(context)),
             _buildMenuSection(),
-            const ResponsiveSizedBox(height: AppSpacing.xxl),
+            SizedBox(height: ResponsiveValues.spacingXXL(context)),
             _buildSettingsSection(),
-            const ResponsiveSizedBox(height: AppSpacing.xxl),
+            SizedBox(height: ResponsiveValues.spacingXXL(context)),
             _buildLogoutButton(),
-            const ResponsiveSizedBox(height: AppSpacing.xxxl),
+            SizedBox(height: ResponsiveValues.spacingXXXL(context)),
           ]),
         ),
       ],
     );
   }
 
-  Widget _buildMobileLayout() {
+  @override
+  Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
     final userProvider = context.watch<UserProvider>();
 
@@ -1278,6 +1219,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } else if (userProvider.currentUser != null) {
       user = userProvider.currentUser;
     }
+
+    if (_isFirstLoad && !_hasCachedData) return _buildSkeletonLoader();
 
     if (user == null) {
       return Scaffold(
@@ -1303,25 +1246,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         backgroundColor: AppColors.getSurface(context),
         child: _buildContent(user),
       ),
-    );
-  }
-
-  Widget _buildTabletLayout() {
-    return _buildMobileLayout();
-  }
-
-  Widget _buildDesktopLayout() {
-    return _buildMobileLayout();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_isFirstLoad && !_hasCachedData) return _buildSkeletonLoader();
-
-    return ResponsiveLayout(
-      mobile: _buildMobileLayout(),
-      tablet: _buildTabletLayout(),
-      desktop: _buildDesktopLayout(),
     );
   }
 }
