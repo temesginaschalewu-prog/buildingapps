@@ -1,3 +1,6 @@
+// lib/providers/settings_provider.dart
+// Settings provider - manages app settings and configurations
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -8,7 +11,7 @@ import '../models/setting_model.dart';
 import '../utils/constants.dart';
 import '../utils/helpers.dart';
 import '../utils/parsers.dart';
-import '../utils/ui_helpers.dart';
+import '../utils/app_enums.dart';
 
 class SettingsProvider with ChangeNotifier {
   final ApiService apiService;
@@ -27,6 +30,7 @@ class SettingsProvider with ChangeNotifier {
 
   SettingsProvider({required this.apiService, required this.deviceService});
 
+  // ===== GETTERS =====
   List<Setting> get allSettings => List.unmodifiable(_allSettings);
   Map<String, List<Setting>> get settingsByCategory =>
       Map.unmodifiable(_settingsByCategory);
@@ -50,6 +54,7 @@ class SettingsProvider with ChangeNotifier {
     return _settingsMap[key]?.displayName;
   }
 
+  // ===== CONTACT INFO =====
   List<ContactInfo> getContactInfoList() {
     final contacts = <ContactInfo>[];
     final contactSettings = _settingsByCategory['contact'] ?? [];
@@ -185,6 +190,7 @@ class SettingsProvider with ChangeNotifier {
         value.contains('wa.me');
   }
 
+  // ===== PAYMENT METHODS =====
   List<PaymentMethod> getPaymentMethods() {
     final methods = <PaymentMethod>[];
 
@@ -301,6 +307,7 @@ class SettingsProvider with ChangeNotifier {
     return Icons.payment;
   }
 
+  // ===== TELEGRAM BOT URL =====
   String? getTelegramBotUrl() {
     final contactSettings = _settingsByCategory['contact'] ?? [];
 
@@ -320,6 +327,7 @@ class SettingsProvider with ChangeNotifier {
     return 'https://t.me/FamilyAcademy_notify_Bot';
   }
 
+  // ===== SUPPORT CONTACT METHODS =====
   String getSupportPhone() {
     final contactSettings = getContactInfoList();
     for (final contact in contactSettings) {
@@ -368,6 +376,7 @@ class SettingsProvider with ChangeNotifier {
     return '';
   }
 
+  // ===== PAYMENT INSTRUCTIONS =====
   String getPaymentInstructions() {
     return getSettingValue('payment_instructions') ??
         'Please follow these steps to complete your payment:\n'
@@ -408,6 +417,7 @@ class SettingsProvider with ChangeNotifier {
     return getSettingValue('admin_email') ?? 'admin@familyacademy.com';
   }
 
+  // ===== LOADING UTILITIES =====
   bool _shouldLoadCategory(String category, {bool forceRefresh = false}) {
     if (forceRefresh) return true;
     final lastLoad = _lastCategoryLoadTime[category];
@@ -416,6 +426,7 @@ class SettingsProvider with ChangeNotifier {
     return minutesSinceLastLoad >= 5;
   }
 
+  // ===== GET ALL SETTINGS =====
   Future<void> getAllSettings() async {
     if (_isLoading) return;
 
@@ -477,6 +488,7 @@ class SettingsProvider with ChangeNotifier {
     }
   }
 
+  // ===== LOAD CONTACT SETTINGS =====
   Future<void> loadContactSettings({bool? forceRefresh}) async {
     final shouldForce = forceRefresh ?? false;
 
@@ -489,6 +501,7 @@ class SettingsProvider with ChangeNotifier {
     if (_allSettings.isEmpty || shouldForce) await getAllSettings();
   }
 
+  // ===== LOAD SETTINGS BY CATEGORY =====
   Future<void> loadSettingsByCategory(String category) async {
     if (_isLoading) return;
     if (!_shouldLoadCategory(category)) return;
@@ -542,6 +555,7 @@ class SettingsProvider with ChangeNotifier {
     }
   }
 
+  // ===== LOAD SPECIFIC SETTINGS =====
   Future<void> loadPaymentSettings() async {
     await loadSettingsByCategory('payment');
   }
@@ -550,6 +564,7 @@ class SettingsProvider with ChangeNotifier {
     await loadSettingsByCategory('system');
   }
 
+  // ===== REBUILD MAPS =====
   void _rebuildMaps() {
     _settingsMap.clear();
     _settingsByCategory.clear();
@@ -563,6 +578,7 @@ class SettingsProvider with ChangeNotifier {
     }
   }
 
+  // ===== USER DATA CLEAR =====
   Future<void> clearUserData() async {
     debugLog('SettingsProvider', 'Clearing settings data');
 
@@ -615,6 +631,7 @@ class SettingsProvider with ChangeNotifier {
   }
 }
 
+// ===== PAYMENT METHOD CLASS =====
 class PaymentMethod {
   final String method;
   final String name;
@@ -646,6 +663,7 @@ class PaymentMethod {
   int get hashCode => method.hashCode ^ name.hashCode ^ accountInfo.hashCode;
 }
 
+// ===== CONTACT INFO CLASS =====
 class ContactInfo {
   final ContactType type;
   final String title;
@@ -670,16 +688,4 @@ class ContactInfo {
   bool get isWebsite => type == ContactType.website;
   bool get isSocial => type == ContactType.social;
   bool get isOther => type == ContactType.other;
-}
-
-enum ContactType {
-  phone,
-  email,
-  whatsapp,
-  telegram,
-  address,
-  hours,
-  website,
-  social,
-  other,
 }
