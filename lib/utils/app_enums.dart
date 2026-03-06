@@ -1,87 +1,53 @@
-import 'package:familyacademyclient/utils/responsive.dart';
-import 'package:familyacademyclient/utils/responsive_values.dart';
 import 'package:flutter/material.dart';
+import 'responsive.dart';
+import 'responsive_values.dart';
 
 enum AppSpacing {
-  /// 0px - No spacing
   none(0),
 
-  /// 2px - Extra extra small
   xxs(2),
 
-  /// 4px - Extra small
   xs(4),
 
-  /// 6px - Small
   s(6),
 
-  /// 8px - Medium
   m(8),
 
-  /// 12px - Large
   l(12),
 
-  /// 16px - Extra large
   xl(16),
 
-  /// 20px - Extra extra large
   xxl(20),
 
-  /// 24px - Extra extra extra large
   xxxl(24),
 
-  /// 32px - Huge
   xxxxl(32),
 
-  /// 20px - Section spacing
   section(20),
 
-  /// 12px - Card padding
   card(12),
 
-  /// 120px - Avatar size (will be overridden in getValue)
   avatar(120),
 
-  /// 24px - Status badge height
   statusBadge(24),
 
-  /// 56px - Info item height
   infoItem(56),
 
-  /// 56px - Menu item height
   menuItem(56),
 
-  /// 40px - Splash screen spacing
   splash(40),
 
-  /// 56px - Splash screen large spacing
   splashLarge(56);
 
   final double value;
   const AppSpacing(this.value);
 
   double getValue(BuildContext context) {
-    // Special cases that use ResponsiveValues
-    if (this == AppSpacing.avatar) {
+    if (this == AppSpacing.avatar)
       return ResponsiveValues.avatarSizeLarge(context);
-    }
-    if (this == AppSpacing.statusBadge) {
-      return ResponsiveValues.statusBadgeHeight(context);
-    }
-    if (this == AppSpacing.infoItem) {
-      return ResponsiveValues.infoSectionItemHeight(context);
-    }
-    if (this == AppSpacing.menuItem) {
-      return ResponsiveValues.menuCardMinHeight(context);
-    }
 
-    // Scale for larger screens
-    if (ScreenSize.isDesktop(context)) {
-      return value * 1.1;
-    }
-    if (ScreenSize.isTablet(context)) {
-      return value * 1.05;
-    }
+    if (ScreenSize.isDesktop(context)) return value * 1.1;
+    if (ScreenSize.isTablet(context)) return value * 1.05;
     return value;
   }
 }
@@ -102,5 +68,112 @@ enum CardType {
   chapter,
   exam,
   payment,
-  notification;
+  notification,
+}
+
+enum ButtonVariant {
+  primary,
+  secondary,
+  success,
+  danger,
+  outline,
+  text,
+  icon,
+}
+
+enum ButtonSize {
+  small,
+  medium,
+  large,
+}
+
+enum TextFieldVariant {
+  glass,
+  filled,
+  outline,
+}
+
+enum CardVariant {
+  glass,
+  solid,
+  outline,
+  elevated,
+  flat,
+}
+
+enum CardSize {
+  small,
+  medium,
+  large,
+  compact,
+}
+
+enum DialogVariant {
+  info,
+  success,
+  warning,
+  error,
+  confirm,
+  input,
+}
+
+enum EmptyStateType {
+  general,
+  error,
+  noInternet,
+  noResults,
+  noData,
+  success,
+  offline,
+}
+
+enum ShimmerType {
+  categoryCard,
+  courseCard,
+  chapterCard,
+  examCard,
+  videoCard,
+  noteCard,
+  notificationCard,
+  schoolCard,
+  paymentCard,
+  subscriptionCard,
+  contactCard,
+  statusCard,
+  pairingCard,
+  textLine,
+  circle,
+  rectangle,
+  statCircle,
+}
+
+enum VideoQualityLevel {
+  low(360, '360p'),
+  medium(480, '480p'),
+  high(720, '720p'),
+  highest(1080, '1080p');
+
+  final int height;
+  final String label;
+  const VideoQualityLevel(this.height, this.label);
+}
+
+enum ContactType {
+  phone,
+  email,
+  whatsapp,
+  telegram,
+  address,
+  hours,
+  website,
+  social,
+  other,
+}
+
+enum SnackbarType {
+  success,
+  error,
+  warning,
+  info,
+  offline,
 }
