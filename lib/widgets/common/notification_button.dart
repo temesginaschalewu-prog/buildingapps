@@ -29,9 +29,7 @@ class _NotificationButtonState extends State<NotificationButton> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _refreshUnreadCount();
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshUnreadCount());
   }
 
   Future<void> _refreshUnreadCount() async {
@@ -53,27 +51,23 @@ class _NotificationButtonState extends State<NotificationButton> {
           height: buttonSize,
           decoration: BoxDecoration(
             color: AppColors.getSurface(context).withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(
-              ResponsiveValues.radiusFull(context) / 2,
-            ),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusFull(context) / 2),
           ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(
-              ResponsiveValues.radiusFull(context) / 2,
-            ),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusFull(context) / 2),
             child: Material(
               color: Colors.transparent,
               child: InkWell(
                 onTap: widget.onTap ??
                     () async {
                       await provider.loadNotifications();
-                      if (context.mounted) {
+                      if (context.mounted)
                         GoRouter.of(context).push('/notifications');
-                      }
                     },
                 borderRadius: BorderRadius.circular(
-                  ResponsiveValues.radiusFull(context) / 2,
-                ),
+                    ResponsiveValues.radiusFull(context) / 2),
                 splashColor: AppColors.telegramBlue.withValues(alpha: 0.2),
                 highlightColor: Colors.transparent,
                 child: Center(
@@ -95,8 +89,7 @@ class _NotificationButtonState extends State<NotificationButton> {
                           badgeStyle: badges.BadgeStyle(
                             badgeColor: AppColors.telegramRed,
                             padding: EdgeInsets.all(
-                              ResponsiveValues.spacingXXS(context),
-                            ),
+                                ResponsiveValues.spacingXXS(context)),
                           ),
                           child: Icon(
                             Icons.notifications_outlined,
