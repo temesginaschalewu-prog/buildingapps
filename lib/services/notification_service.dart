@@ -388,22 +388,22 @@ class NotificationService {
       Color notificationColor;
       switch (type) {
         case 'success':
-          notificationColor = AppColors.notificationSuccess;
+          notificationColor = AppColors.success;
           break;
         case 'warning':
-          notificationColor = AppColors.notificationWarning;
+          notificationColor = AppColors.warning;
           break;
         case 'error':
-          notificationColor = AppColors.notificationError;
+          notificationColor = AppColors.error;
           break;
         case 'academic':
-          notificationColor = AppColors.notificationInfo;
+          notificationColor = AppColors.info;
           break;
         case 'payment':
-          notificationColor = AppColors.notificationExpiring;
+          notificationColor = AppColors.pending;
           break;
         default:
-          notificationColor = AppColors.notificationAchievement;
+          notificationColor = AppColors.info;
       }
 
       final androidDetails = AndroidNotificationDetails(
