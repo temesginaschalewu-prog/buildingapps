@@ -1,14 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:familyacademyclient/themes/app_colors.dart';
-
-enum SnackbarType {
-  success,
-  error,
-  warning,
-  info,
-  offline,
-}
+import '../themes/app_colors.dart';
+import '../utils/app_enums.dart';
 
 class SnackbarService {
   static final SnackbarService _instance = SnackbarService._internal();
