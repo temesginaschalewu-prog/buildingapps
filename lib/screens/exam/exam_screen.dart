@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-
 import '../../models/exam_question_model.dart';
 import '../../models/exam_model.dart';
 import '../../models/exam_result_model.dart';
@@ -25,7 +24,7 @@ import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
 import '../../utils/helpers.dart';
 import '../../utils/api_response.dart';
-import '../../utils/ui_helpers.dart';
+import '../../utils/app_enums.dart';
 import '../../widgets/common/responsive_widgets.dart';
 
 class ExamScreen extends StatefulWidget {
@@ -92,9 +91,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     final connectivityService = context.read<ConnectivityService>();
     _connectivitySubscription =
         connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (mounted) {
-        setState(() => _isOffline = !isOnline);
-      }
+      if (mounted) setState(() => _isOffline = !isOnline);
     });
   }
 
@@ -313,9 +310,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       message: 'The exam time has expired. Please submit your answers.',
       confirmText: 'Submit',
     ).then((confirmed) {
-      if (confirmed == true) {
-        _submitExam();
-      }
+      if (confirmed == true) _submitExam();
     });
   }
 
@@ -419,7 +414,6 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     if (_isSubmitting || _hasReachedMaxAttempts) return;
 
     AppDialog.showLoading(context, message: 'Submitting Exam...');
-
     await _doSubmitExam();
     AppDialog.hideLoading(context);
   }
@@ -450,9 +444,8 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
             (data['data'] is Map ? data['data']['exam_result_id'] : 0);
       }
 
-      if (examResultId == 0) {
+      if (examResultId == 0)
         throw ApiError(message: 'Failed to start exam session');
-      }
 
       final submitResponse =
           await provider.apiService.submitExam(examResultId, answerList);
@@ -491,8 +484,9 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
 
         if (_currentUserId != null) {
           await provider.deviceService.removeCacheItem(
-              'exam_progress_${_exam.id}_$_currentUserId',
-              isUserSpecific: true);
+            'exam_progress_${_exam.id}_$_currentUserId',
+            isUserSpecific: true,
+          );
         }
 
         final examProvider = context.read<ExamProvider>();
@@ -511,15 +505,13 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       if (e.isUnauthorized) {
         _handleUnauthorizedError();
       } else {
-        if (mounted) {
+        if (mounted)
           SnackbarService().showError(context, e.userFriendlyMessage);
-        }
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted)
         SnackbarService()
             .showError(context, 'Failed to submit exam. Please try again.');
-      }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -572,42 +564,34 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: AppBar(
-        title: ResponsiveText(
-          'Exam Results',
-          style: AppTextStyles.appBarTitle(context),
-        ),
+        title: Text('Exam Results', style: AppTextStyles.appBarTitle(context)),
         backgroundColor: AppColors.getBackground(context),
         elevation: 0,
         leading: AppButton.icon(
-          icon: Icons.arrow_back_rounded,
-          onPressed: () => GoRouter.of(context).pop(),
-        ),
+            icon: Icons.arrow_back_rounded,
+            onPressed: () => GoRouter.of(context).pop()),
       ),
       body: SingleChildScrollView(
         padding: ResponsiveValues.screenPadding(context),
-        child: ResponsiveColumn(
+        child: Column(
           children: [
             AppCard.glass(
               child: Padding(
                 padding: ResponsiveValues.dialogPadding(context),
-                child: ResponsiveColumn(
+                child: Column(
                   children: [
-                    ResponsiveText(
-                      'Your Score',
-                      style: AppTextStyles.titleMedium(context).copyWith(
-                        color: Colors.white,
-                      ),
-                    ),
-                    ResponsiveSizedBox(height: AppSpacing.m),
-                    ResponsiveText(
+                    Text('Your Score',
+                        style: AppTextStyles.titleMedium(context)
+                            .copyWith(color: Colors.white)),
+                    SizedBox(height: ResponsiveValues.spacingM(context)),
+                    Text(
                       '${_submittedResult?.score.toStringAsFixed(1) ?? '0'}%',
                       style: AppTextStyles.displayLarge(context).copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -1,
-                      ),
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -1),
                     ),
-                    ResponsiveSizedBox(height: AppSpacing.s),
+                    SizedBox(height: ResponsiveValues.spacingS(context)),
                     Container(
                       padding: EdgeInsets.symmetric(
                         horizontal: ResponsiveValues.spacingL(context),
@@ -618,53 +602,45 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                             ? AppColors.telegramGreen
                             : AppColors.telegramRed,
                         borderRadius: BorderRadius.circular(
-                          ResponsiveValues.radiusFull(context),
-                        ),
+                            ResponsiveValues.radiusFull(context)),
                       ),
-                      child: ResponsiveText(
+                      child: Text(
                         (_submittedResult?.passed ?? false)
                             ? 'PASSED'
                             : 'FAILED',
                         style: AppTextStyles.labelLarge(context).copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                        ),
+                            color: Colors.white, fontWeight: FontWeight.w700),
                       ),
                     ),
-                    ResponsiveSizedBox(height: AppSpacing.l),
-                    ResponsiveRow(
+                    SizedBox(height: ResponsiveValues.spacingL(context)),
+                    Row(
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
                         _buildScoreStat(
-                          'Correct',
-                          '${_submittedResult?.correctAnswers ?? 0}',
-                          AppColors.telegramGreen,
-                        ),
+                            'Correct',
+                            '${_submittedResult?.correctAnswers ?? 0}',
+                            AppColors.telegramGreen),
                         _buildScoreStat(
-                          'Total',
-                          '${_submittedResult?.totalQuestions ?? 0}',
-                          Colors.white,
-                        ),
+                            'Total',
+                            '${_submittedResult?.totalQuestions ?? 0}',
+                            Colors.white),
                         _buildScoreStat(
-                          'Time',
-                          _formatTime(_submittedResult?.timeTaken ?? 0),
-                          Colors.white70,
-                        ),
+                            'Time',
+                            _formatTime(_submittedResult?.timeTaken ?? 0),
+                            Colors.white70),
                       ],
                     ),
                   ],
                 ),
               ),
             ),
-            ResponsiveSizedBox(height: AppSpacing.xl),
-            ResponsiveText(
+            SizedBox(height: ResponsiveValues.spacingXL(context)),
+            Text(
               'Answer Review',
-              style: AppTextStyles.titleLarge(context).copyWith(
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.5,
-              ),
+              style: AppTextStyles.titleLarge(context)
+                  .copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.5),
             ),
-            ResponsiveSizedBox(height: AppSpacing.l),
+            SizedBox(height: ResponsiveValues.spacingL(context)),
             ...List.generate(questions.length, (index) {
               final question = questions[index];
               final answerDetail = _answerDetails[question.id];
@@ -679,16 +655,17 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                   'No explanation provided';
 
               return Container(
-                margin: const EdgeInsets.only(bottom: AppThemes.spacingL),
+                margin:
+                    EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
                 child: AppCard.exam(
                   statusColor: isCorrect
                       ? AppColors.telegramGreen
                       : AppColors.telegramRed,
                   child: Padding(
                     padding: ResponsiveValues.cardPadding(context),
-                    child: ResponsiveColumn(
+                    child: Column(
                       children: [
-                        ResponsiveRow(
+                        Row(
                           children: [
                             Container(
                               padding: EdgeInsets.all(
@@ -699,10 +676,9 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                                     : AppColors.redFaded,
                                 shape: BoxShape.circle,
                                 border: Border.all(
-                                  color: isCorrect
-                                      ? AppColors.telegramGreen
-                                      : AppColors.telegramRed,
-                                ),
+                                    color: isCorrect
+                                        ? AppColors.telegramGreen
+                                        : AppColors.telegramRed),
                               ),
                               child: Icon(
                                 isCorrect ? Icons.check_circle : Icons.cancel,
@@ -712,14 +688,12 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                                 size: ResponsiveValues.iconSizeS(context),
                               ),
                             ),
-                            ResponsiveSizedBox(width: AppSpacing.m),
+                            SizedBox(width: ResponsiveValues.spacingM(context)),
                             Expanded(
-                              child: ResponsiveText(
+                              child: Text(
                                 'Question ${index + 1}',
-                                style:
-                                    AppTextStyles.titleSmall(context).copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
+                                style: AppTextStyles.titleSmall(context)
+                                    .copyWith(fontWeight: FontWeight.w600),
                               ),
                             ),
                             Container(
@@ -730,54 +704,43 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                               decoration: BoxDecoration(
                                 color: AppColors.blueFaded,
                                 borderRadius: BorderRadius.circular(
-                                  ResponsiveValues.radiusFull(context),
-                                ),
+                                    ResponsiveValues.radiusFull(context)),
                                 border: Border.all(
-                                  color: AppColors.telegramBlue
-                                      .withValues(alpha: 0.3),
-                                ),
+                                    color: AppColors.telegramBlue
+                                        .withValues(alpha: 0.3)),
                               ),
-                              child: ResponsiveText(
+                              child: Text(
                                 '${question.marks} mark${question.marks > 1 ? 's' : ''}',
                                 style: AppTextStyles.caption(context).copyWith(
-                                  color: AppColors.telegramBlue,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                                    color: AppColors.telegramBlue,
+                                    fontWeight: FontWeight.w600),
                               ),
                             ),
                           ],
                         ),
-                        ResponsiveSizedBox(height: AppSpacing.m),
-                        ResponsiveText(
+                        SizedBox(height: ResponsiveValues.spacingM(context)),
+                        Text(
                           question.questionText,
                           style: AppTextStyles.bodyLarge(context).copyWith(
-                            fontWeight: FontWeight.w500,
-                            height: 1.5,
-                          ),
+                              fontWeight: FontWeight.w500, height: 1.5),
                         ),
-                        ResponsiveSizedBox(height: AppSpacing.l),
-                        _buildAnswerRow(
-                          'Your answer:',
-                          _getOptionLetter(question, userAnswer),
-                          isCorrect,
-                        ),
+                        SizedBox(height: ResponsiveValues.spacingL(context)),
+                        _buildAnswerRow('Your answer:',
+                            _getOptionLetter(question, userAnswer), isCorrect),
                         if (!isCorrect) ...[
-                          ResponsiveSizedBox(height: AppSpacing.m),
-                          _buildAnswerRow(
-                            'Correct answer:',
-                            _getOptionLetter(question, correctAnswer),
-                            true,
-                            showIcon: false,
-                          ),
+                          SizedBox(height: ResponsiveValues.spacingM(context)),
+                          _buildAnswerRow('Correct answer:',
+                              _getOptionLetter(question, correctAnswer), true,
+                              showIcon: false),
                         ],
                         if (explanation.isNotEmpty) ...[
-                          ResponsiveSizedBox(height: AppSpacing.l),
+                          SizedBox(height: ResponsiveValues.spacingL(context)),
                           AppCard.glass(
                             child: Padding(
                               padding: ResponsiveValues.cardPadding(context),
-                              child: ResponsiveColumn(
+                              child: Column(
                                 children: [
-                                  ResponsiveText(
+                                  Text(
                                     'Explanation:',
                                     style: AppTextStyles.labelMedium(context)
                                         .copyWith(
@@ -786,14 +749,15 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                                           : AppColors.telegramBlue,
                                     ),
                                   ),
-                                  ResponsiveSizedBox(height: AppSpacing.xs),
-                                  ResponsiveText(
+                                  SizedBox(
+                                      height:
+                                          ResponsiveValues.spacingXS(context)),
+                                  Text(
                                     explanation,
                                     style: AppTextStyles.bodyMedium(context)
                                         .copyWith(
-                                      color:
-                                          AppColors.getTextSecondary(context),
-                                    ),
+                                            color: AppColors.getTextSecondary(
+                                                context)),
                                   ),
                                 ],
                               ),
@@ -806,7 +770,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                 ),
               );
             }),
-            ResponsiveSizedBox(height: AppSpacing.xxl),
+            SizedBox(height: ResponsiveValues.spacingXXL(context)),
             AppButton.primary(
               label: 'Done',
               onPressed: () => GoRouter.of(context).pop(),
@@ -819,20 +783,16 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildScoreStat(String label, String value, Color color) {
-    return ResponsiveColumn(
+    return Column(
       children: [
-        ResponsiveText(
+        Text(
           value,
-          style: AppTextStyles.titleLarge(context).copyWith(
-            color: color,
-            fontWeight: FontWeight.w700,
-          ),
+          style: AppTextStyles.titleLarge(context)
+              .copyWith(color: color, fontWeight: FontWeight.w700),
         ),
-        ResponsiveText(
+        Text(
           label,
-          style: AppTextStyles.caption(context).copyWith(
-            color: Colors.white70,
-          ),
+          style: AppTextStyles.caption(context).copyWith(color: Colors.white70),
         ),
       ],
     );
@@ -840,7 +800,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
 
   Widget _buildAnswerRow(String label, String answer, bool isCorrect,
       {bool showIcon = true}) {
-    return ResponsiveRow(
+    return Row(
       children: [
         if (showIcon)
           Container(
@@ -852,26 +812,23 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                   isCorrect ? AppColors.telegramGreen : AppColors.telegramRed,
             ),
           ),
-        if (showIcon) ResponsiveSizedBox(width: AppSpacing.s),
+        if (showIcon) SizedBox(width: ResponsiveValues.spacingS(context)),
         Expanded(
           child: RichText(
             text: TextSpan(
               style: AppTextStyles.bodyMedium(context),
               children: [
                 TextSpan(
-                  text: label,
-                  style: TextStyle(
-                    color: AppColors.getTextSecondary(context),
-                  ),
-                ),
+                    text: label,
+                    style:
+                        TextStyle(color: AppColors.getTextSecondary(context))),
                 TextSpan(
                   text: ' $answer',
                   style: TextStyle(
-                    color: isCorrect
-                        ? AppColors.telegramGreen
-                        : AppColors.telegramRed,
-                    fontWeight: FontWeight.w600,
-                  ),
+                      color: isCorrect
+                          ? AppColors.telegramGreen
+                          : AppColors.telegramRed,
+                      fontWeight: FontWeight.w600),
                 ),
               ],
             ),
@@ -912,46 +869,38 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: AppBar(
-        title: ResponsiveText(
-          _exam.title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: AppTextStyles.appBarTitle(context),
-        ),
+        title: Text(_exam.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTextStyles.appBarTitle(context)),
         backgroundColor: AppColors.getBackground(context),
         elevation: 0,
         leading: AppButton.icon(
-          icon: Icons.arrow_back_rounded,
-          onPressed: () => GoRouter.of(context).pop(),
-        ),
+            icon: Icons.arrow_back_rounded,
+            onPressed: () => GoRouter.of(context).pop()),
       ),
       body: SingleChildScrollView(
         padding: ResponsiveValues.screenPadding(context),
-        child: ResponsiveColumn(
+        child: Column(
           children: [
             AppCard.glass(
               child: Padding(
                 padding: ResponsiveValues.cardPadding(context),
-                child: ResponsiveRow(
+                child: Row(
                   children: [
                     Container(
                       padding:
                           EdgeInsets.all(ResponsiveValues.spacingM(context)),
                       decoration: BoxDecoration(
-                        color: AppColors.blueFaded,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.info_rounded,
-                        color: AppColors.telegramBlue,
-                        size: 24,
-                      ),
+                          color: AppColors.blueFaded, shape: BoxShape.circle),
+                      child: const Icon(Icons.info_rounded,
+                          color: AppColors.telegramBlue, size: 24),
                     ),
-                    ResponsiveSizedBox(width: AppSpacing.l),
+                    SizedBox(width: ResponsiveValues.spacingL(context)),
                     Expanded(
-                      child: ResponsiveColumn(
+                      child: Column(
                         children: [
-                          ResponsiveText(
+                          Text(
                             'Instructions',
                             style: AppTextStyles.titleSmall(context).copyWith(
                               color: AppColors.telegramBlue,
@@ -959,12 +908,11 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                               letterSpacing: -0.3,
                             ),
                           ),
-                          ResponsiveSizedBox(height: AppSpacing.xs),
-                          ResponsiveText(
+                          SizedBox(height: ResponsiveValues.spacingXS(context)),
+                          Text(
                             'Please read carefully before starting',
                             style: AppTextStyles.bodySmall(context).copyWith(
-                              color: AppColors.getTextSecondary(context),
-                            ),
+                                color: AppColors.getTextSecondary(context)),
                           ),
                         ],
                       ),
@@ -973,61 +921,50 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                 ),
               ),
             ),
-            ResponsiveSizedBox(height: AppSpacing.xl),
-            ResponsiveText(
+            SizedBox(height: ResponsiveValues.spacingXL(context)),
+            Text(
               'Exam Details',
-              style: AppTextStyles.titleLarge(context).copyWith(
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.5,
-              ),
+              style: AppTextStyles.titleLarge(context)
+                  .copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.5),
             ),
-            ResponsiveSizedBox(height: AppSpacing.l),
+            SizedBox(height: ResponsiveValues.spacingL(context)),
             _buildDetailItem(
-              icon: Icons.description_rounded,
-              label: 'Title:',
-              value: _exam.title,
-            ),
+                icon: Icons.description_rounded,
+                label: 'Title:',
+                value: _exam.title),
             _buildDetailItem(
-              icon: Icons.category_rounded,
-              label: 'Type:',
-              value: _exam.examType.toUpperCase(),
-            ),
+                icon: Icons.category_rounded,
+                label: 'Type:',
+                value: _exam.examType.toUpperCase()),
             _buildDetailItem(
-              icon: Icons.book_rounded,
-              label: 'Course:',
-              value: _exam.courseName,
-            ),
+                icon: Icons.book_rounded,
+                label: 'Course:',
+                value: _exam.courseName),
             _buildDetailItem(
-              icon: Icons.timer_rounded,
-              label: 'Time Limit:',
-              value: _getTimeLimitDescription(),
-            ),
+                icon: Icons.timer_rounded,
+                label: 'Time Limit:',
+                value: _getTimeLimitDescription()),
             _buildDetailItem(
-              icon: Icons.auto_awesome_rounded,
-              label: 'Auto Submit:',
-              value: _getAutoSubmitDescription(),
-            ),
+                icon: Icons.auto_awesome_rounded,
+                label: 'Auto Submit:',
+                value: _getAutoSubmitDescription()),
             _buildDetailItem(
-              icon: Icons.visibility_rounded,
-              label: 'Results:',
-              value: _getResultsDisplayDescription(),
-            ),
+                icon: Icons.visibility_rounded,
+                label: 'Results:',
+                value: _getResultsDisplayDescription()),
             _buildDetailItem(
-              icon: Icons.score_rounded,
-              label: 'Passing Score:',
-              value: '${_exam.passingScore}%',
-            ),
+                icon: Icons.score_rounded,
+                label: 'Passing Score:',
+                value: '${_exam.passingScore}%'),
             _buildDetailItem(
-              icon: Icons.repeat_rounded,
-              label: 'Max Attempts:',
-              value: '${_exam.maxAttempts}',
-            ),
+                icon: Icons.repeat_rounded,
+                label: 'Max Attempts:',
+                value: '${_exam.maxAttempts}'),
             _buildDetailItem(
-              icon: Icons.history_rounded,
-              label: 'Your Attempts:',
-              value: '${_exam.attemptsTaken}/${_exam.maxAttempts}',
-            ),
-            ResponsiveSizedBox(height: AppSpacing.xxl),
+                icon: Icons.history_rounded,
+                label: 'Your Attempts:',
+                value: '${_exam.attemptsTaken}/${_exam.maxAttempts}'),
+            SizedBox(height: ResponsiveValues.spacingXXL(context)),
             if (!_hasReachedMaxAttempts)
               SizedBox(
                 width: double.infinity,
@@ -1040,7 +977,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                   expanded: true,
                 ),
               ),
-            ResponsiveSizedBox(height: AppSpacing.l),
+            SizedBox(height: ResponsiveValues.spacingL(context)),
             SizedBox(
               width: double.infinity,
               child: AppButton.outline(
@@ -1055,53 +992,36 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildDetailItem({
-    required IconData icon,
-    required String label,
-    required String value,
-  }) {
+  Widget _buildDetailItem(
+      {required IconData icon, required String label, required String value}) {
     return Padding(
-      padding: EdgeInsets.only(
-        bottom: ResponsiveValues.spacingM(context),
-      ),
-      child: ResponsiveRow(
+      padding: EdgeInsets.only(bottom: ResponsiveValues.spacingM(context)),
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             width: ResponsiveValues.iconSizeL(context),
             height: ResponsiveValues.iconSizeL(context),
             decoration: BoxDecoration(
-              color: AppColors.blueFaded,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              icon,
-              size: ResponsiveValues.iconSizeXS(context),
-              color: AppColors.telegramBlue,
-            ),
+                color: AppColors.blueFaded, shape: BoxShape.circle),
+            child: Icon(icon,
+                size: ResponsiveValues.iconSizeXS(context),
+                color: AppColors.telegramBlue),
           ),
-          ResponsiveSizedBox(width: AppSpacing.m),
+          SizedBox(width: ResponsiveValues.spacingM(context)),
           Expanded(
-            child: ResponsiveRow(
+            child: Row(
               children: [
                 Expanded(
-                  flex: 2,
-                  child: ResponsiveText(
-                    label,
-                    style: AppTextStyles.bodyMedium(context).copyWith(
-                      color: AppColors.getTextSecondary(context),
-                    ),
-                  ),
-                ),
+                    flex: 2,
+                    child: Text(label,
+                        style: AppTextStyles.bodyMedium(context).copyWith(
+                            color: AppColors.getTextSecondary(context)))),
                 Expanded(
-                  flex: 3,
-                  child: ResponsiveText(
-                    value,
-                    style: AppTextStyles.bodyMedium(context).copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
+                    flex: 3,
+                    child: Text(value,
+                        style: AppTextStyles.bodyMedium(context)
+                            .copyWith(fontWeight: FontWeight.w600))),
               ],
             ),
           ),
@@ -1122,12 +1042,10 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: AppBar(
-        title: ResponsiveText(
-          _exam.title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: AppTextStyles.appBarTitle(context),
-        ),
+        title: Text(_exam.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTextStyles.appBarTitle(context)),
         backgroundColor: AppColors.getBackground(context),
         elevation: 0,
         leading: AppButton.icon(
@@ -1151,52 +1069,45 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
         ),
         actions: [
           Container(
-            margin: const EdgeInsets.only(right: AppThemes.spacingM),
+            margin: EdgeInsets.only(right: ResponsiveValues.spacingM(context)),
             padding: EdgeInsets.symmetric(
               horizontal: ResponsiveValues.spacingM(context),
               vertical: ResponsiveValues.spacingXS(context),
             ),
             decoration: BoxDecoration(
               color: timeColor.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(
-                ResponsiveValues.radiusFull(context),
-              ),
-              border: Border.all(
-                color: timeColor.withValues(alpha: 0.3),
-              ),
+              borderRadius:
+                  BorderRadius.circular(ResponsiveValues.radiusFull(context)),
+              border: Border.all(color: timeColor.withValues(alpha: 0.3)),
             ),
-            child: ResponsiveRow(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  Icons.timer_rounded,
-                  size: ResponsiveValues.iconSizeXS(context),
-                  color: timeColor,
-                ),
-                ResponsiveSizedBox(width: AppSpacing.xs),
-                ResponsiveText(
+                Icon(Icons.timer_rounded,
+                    size: ResponsiveValues.iconSizeXS(context),
+                    color: timeColor),
+                SizedBox(width: ResponsiveValues.spacingXS(context)),
+                Text(
                   _getTimeString(),
-                  style: AppTextStyles.labelMedium(context).copyWith(
-                    color: timeColor,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: AppTextStyles.labelMedium(context)
+                      .copyWith(color: timeColor, fontWeight: FontWeight.w600),
                 ),
               ],
             ),
           ),
         ],
       ),
-      body: ResponsiveColumn(
+      body: Column(
         children: [
           AppCard.glass(
             child: Padding(
               padding: ResponsiveValues.cardPadding(context),
-              child: ResponsiveColumn(
+              child: Column(
                 children: [
-                  ResponsiveRow(
+                  Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      ResponsiveText(
+                      Text(
                         'Question ${_currentQuestionIndex + 1} of $totalQuestions',
                         style: AppTextStyles.bodyMedium(context),
                       ),
@@ -1208,28 +1119,24 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                         decoration: BoxDecoration(
                           color: AppColors.blueFaded,
                           borderRadius: BorderRadius.circular(
-                            ResponsiveValues.radiusFull(context),
-                          ),
+                              ResponsiveValues.radiusFull(context)),
                           border: Border.all(
-                            color:
-                                AppColors.telegramBlue.withValues(alpha: 0.3),
-                          ),
+                              color: AppColors.telegramBlue
+                                  .withValues(alpha: 0.3)),
                         ),
                         child: Text(
                           '$answeredQuestions/$totalQuestions answered',
                           style: AppTextStyles.labelSmall(context).copyWith(
-                            color: AppColors.telegramBlue,
-                            fontWeight: FontWeight.w600,
-                          ),
+                              color: AppColors.telegramBlue,
+                              fontWeight: FontWeight.w600),
                         ),
                       ),
                     ],
                   ),
-                  const ResponsiveSizedBox(height: AppSpacing.s),
+                  SizedBox(height: ResponsiveValues.spacingS(context)),
                   ClipRRect(
                     borderRadius: BorderRadius.circular(
-                      ResponsiveValues.radiusFull(context),
-                    ),
+                        ResponsiveValues.radiusFull(context)),
                     child: Stack(
                       children: [
                         Container(
@@ -1238,8 +1145,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                             color: AppColors.getSurface(context)
                                 .withValues(alpha: 0.3),
                             borderRadius: BorderRadius.circular(
-                              ResponsiveValues.radiusFull(context),
-                            ),
+                                ResponsiveValues.radiusFull(context)),
                           ),
                         ),
                         FractionallySizedBox(
@@ -1248,18 +1154,15 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                             height: ResponsiveValues.progressBarHeight(context),
                             decoration: BoxDecoration(
                               gradient: const LinearGradient(
-                                colors: AppColors.blueGradient,
-                              ),
+                                  colors: AppColors.blueGradient),
                               borderRadius: BorderRadius.circular(
-                                ResponsiveValues.radiusFull(context),
-                              ),
+                                  ResponsiveValues.radiusFull(context)),
                               boxShadow: [
                                 BoxShadow(
-                                  color: AppColors.telegramBlue
-                                      .withValues(alpha: 0.5),
-                                  blurRadius:
-                                      ResponsiveValues.spacingXS(context),
-                                ),
+                                    color: AppColors.telegramBlue
+                                        .withValues(alpha: 0.5),
+                                    blurRadius:
+                                        ResponsiveValues.spacingXS(context))
                               ],
                             ),
                           ),
@@ -1298,7 +1201,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                           expanded: true,
                         ),
                       ),
-                      const ResponsiveSizedBox(width: AppSpacing.m),
+                      SizedBox(width: ResponsiveValues.spacingM(context)),
                       Expanded(
                         child: AppButton.glass(
                           label: 'Next',
@@ -1311,7 +1214,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                       ),
                     ],
                   ),
-                  const ResponsiveSizedBox(height: AppSpacing.m),
+                  SizedBox(height: ResponsiveValues.spacingM(context)),
                   SizedBox(
                     width: double.infinity,
                     child: AppButton.primary(
@@ -1330,7 +1233,8 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildMobileLayout() {
+  @override
+  Widget build(BuildContext context) {
     final authProvider = context.read<AuthProvider>();
     final questionProvider = context.read<ExamQuestionProvider>();
 
@@ -1342,18 +1246,15 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
         appBar: AppBar(
-          title: Text(
-            _exam.title,
-            style: AppTextStyles.appBarTitle(context),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+          title: Text(_exam.title,
+              style: AppTextStyles.appBarTitle(context),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis),
           backgroundColor: AppColors.getBackground(context),
           elevation: 0,
           leading: AppButton.icon(
-            icon: Icons.arrow_back_rounded,
-            onPressed: () => GoRouter.of(context).pop(),
-          ),
+              icon: Icons.arrow_back_rounded,
+              onPressed: () => GoRouter.of(context).pop()),
         ),
         body: Center(
           child: Padding(
@@ -1368,30 +1269,25 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                       padding:
                           EdgeInsets.all(ResponsiveValues.spacingL(context)),
                       decoration: BoxDecoration(
-                        color: AppColors.redFaded,
-                        shape: BoxShape.circle,
-                      ),
+                          color: AppColors.redFaded, shape: BoxShape.circle),
                       child: const Icon(Icons.block_rounded,
                           size: 48, color: AppColors.telegramRed),
                     ),
-                    const ResponsiveSizedBox(height: AppSpacing.xl),
+                    SizedBox(height: ResponsiveValues.spacingXL(context)),
                     Text(
                       'Maximum Attempts Reached',
                       style: AppTextStyles.headlineMedium(context).copyWith(
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.5,
-                      ),
+                          fontWeight: FontWeight.w700, letterSpacing: -0.5),
                       textAlign: TextAlign.center,
                     ),
-                    const ResponsiveSizedBox(height: AppSpacing.m),
+                    SizedBox(height: ResponsiveValues.spacingM(context)),
                     Text(
                       'You have used all ${_exam.maxAttempts} attempt(s) for this exam.',
-                      style: AppTextStyles.bodyLarge(context).copyWith(
-                        color: AppColors.getTextSecondary(context),
-                      ),
+                      style: AppTextStyles.bodyLarge(context)
+                          .copyWith(color: AppColors.getTextSecondary(context)),
                       textAlign: TextAlign.center,
                     ),
-                    const ResponsiveSizedBox(height: AppSpacing.xl),
+                    SizedBox(height: ResponsiveValues.spacingXL(context)),
                     AppButton.primary(
                       label: 'Go Back',
                       onPressed: () => GoRouter.of(context).pop(),
@@ -1410,18 +1306,15 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
         appBar: AppBar(
-          title: Text(
-            _exam.title,
-            style: AppTextStyles.appBarTitle(context),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+          title: Text(_exam.title,
+              style: AppTextStyles.appBarTitle(context),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis),
           backgroundColor: AppColors.getBackground(context),
           elevation: 0,
           leading: AppButton.icon(
-            icon: Icons.arrow_back_rounded,
-            onPressed: () => GoRouter.of(context).pop(),
-          ),
+              icon: Icons.arrow_back_rounded,
+              onPressed: () => GoRouter.of(context).pop()),
         ),
         body: Center(
           child: Padding(
@@ -1436,28 +1329,23 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                       padding:
                           EdgeInsets.all(ResponsiveValues.spacingL(context)),
                       decoration: BoxDecoration(
-                        color: AppColors.blueFaded,
-                        shape: BoxShape.circle,
-                      ),
+                          color: AppColors.blueFaded, shape: BoxShape.circle),
                       child: const Icon(Icons.lock_rounded,
                           size: 48, color: AppColors.telegramBlue),
                     ),
-                    const ResponsiveSizedBox(height: AppSpacing.xl),
+                    SizedBox(height: ResponsiveValues.spacingXL(context)),
                     Text(
                       'Authentication Required',
                       style: AppTextStyles.headlineMedium(context).copyWith(
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.5,
-                      ),
+                          fontWeight: FontWeight.w700, letterSpacing: -0.5),
                     ),
-                    const ResponsiveSizedBox(height: AppSpacing.m),
+                    SizedBox(height: ResponsiveValues.spacingM(context)),
                     Text(
                       'Please login to take this exam',
-                      style: AppTextStyles.bodyLarge(context).copyWith(
-                        color: AppColors.getTextSecondary(context),
-                      ),
+                      style: AppTextStyles.bodyLarge(context)
+                          .copyWith(color: AppColors.getTextSecondary(context)),
                     ),
-                    const ResponsiveSizedBox(height: AppSpacing.xl),
+                    SizedBox(height: ResponsiveValues.spacingXL(context)),
                     AppButton.primary(
                       label: 'Login',
                       onPressed: () => GoRouter.of(context).go('/auth/login'),
@@ -1476,18 +1364,15 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
         appBar: AppBar(
-          title: Text(
-            _exam.title,
-            style: AppTextStyles.appBarTitle(context),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+          title: Text(_exam.title,
+              style: AppTextStyles.appBarTitle(context),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis),
           backgroundColor: AppColors.getBackground(context),
           elevation: 0,
           leading: AppButton.icon(
-            icon: Icons.arrow_back_rounded,
-            onPressed: () => GoRouter.of(context).pop(),
-          ),
+              icon: Icons.arrow_back_rounded,
+              onPressed: () => GoRouter.of(context).pop()),
         ),
         body: Center(
           child: AppCard.glass(
@@ -1500,9 +1385,8 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                   const SizedBox(height: 16),
                   Text(
                     'Loading...',
-                    style: AppTextStyles.bodyMedium(context).copyWith(
-                      color: AppColors.getTextSecondary(context),
-                    ),
+                    style: AppTextStyles.bodyMedium(context)
+                        .copyWith(color: AppColors.getTextSecondary(context)),
                   ),
                 ],
               ),
@@ -1516,18 +1400,15 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
         appBar: AppBar(
-          title: Text(
-            _exam.title,
-            style: AppTextStyles.appBarTitle(context),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+          title: Text(_exam.title,
+              style: AppTextStyles.appBarTitle(context),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis),
           backgroundColor: AppColors.getBackground(context),
           elevation: 0,
           leading: AppButton.icon(
-            icon: Icons.arrow_back_rounded,
-            onPressed: () => GoRouter.of(context).pop(),
-          ),
+              icon: Icons.arrow_back_rounded,
+              onPressed: () => GoRouter.of(context).pop()),
         ),
         body: Center(
           child: Padding(
@@ -1543,30 +1424,25 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                       padding:
                           EdgeInsets.all(ResponsiveValues.spacingL(context)),
                       decoration: BoxDecoration(
-                        color: AppColors.blueFaded,
-                        shape: BoxShape.circle,
-                      ),
+                          color: AppColors.blueFaded, shape: BoxShape.circle),
                       child: const Icon(Icons.lock_rounded,
                           size: 48, color: AppColors.telegramBlue),
                     ),
-                    const ResponsiveSizedBox(height: AppSpacing.xl),
+                    SizedBox(height: ResponsiveValues.spacingXL(context)),
                     Text(
                       'Payment Required',
                       style: AppTextStyles.headlineMedium(context).copyWith(
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.5,
-                      ),
+                          fontWeight: FontWeight.w700, letterSpacing: -0.5),
                     ),
-                    const ResponsiveSizedBox(height: AppSpacing.m),
+                    SizedBox(height: ResponsiveValues.spacingM(context)),
                     Text(
                       'You need to purchase "${_exam.categoryName}" to access this exam.',
                       textAlign: TextAlign.center,
                       style: AppTextStyles.bodyLarge(context).copyWith(
-                        color: AppColors.getTextSecondary(context),
-                        height: 1.6,
-                      ),
+                          color: AppColors.getTextSecondary(context),
+                          height: 1.6),
                     ),
-                    const ResponsiveSizedBox(height: AppSpacing.xl),
+                    SizedBox(height: ResponsiveValues.spacingXL(context)),
                     AppButton.primary(
                       label: 'Purchase Access',
                       onPressed: () {
@@ -1597,18 +1473,15 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
         appBar: AppBar(
-          title: Text(
-            _exam.title,
-            style: AppTextStyles.appBarTitle(context),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+          title: Text(_exam.title,
+              style: AppTextStyles.appBarTitle(context),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis),
           backgroundColor: AppColors.getBackground(context),
           elevation: 0,
           leading: AppButton.icon(
-            icon: Icons.arrow_back_rounded,
-            onPressed: () => GoRouter.of(context).pop(),
-          ),
+              icon: Icons.arrow_back_rounded,
+              onPressed: () => GoRouter.of(context).pop()),
         ),
         body: Center(
           child: AppCard.glass(
@@ -1621,9 +1494,8 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                   const SizedBox(height: 16),
                   Text(
                     'Loading...',
-                    style: AppTextStyles.bodyMedium(context).copyWith(
-                      color: AppColors.getTextSecondary(context),
-                    ),
+                    style: AppTextStyles.bodyMedium(context)
+                        .copyWith(color: AppColors.getTextSecondary(context)),
                   ),
                 ],
               ),
@@ -1638,18 +1510,15 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
         appBar: AppBar(
-          title: Text(
-            _exam.title,
-            style: AppTextStyles.appBarTitle(context),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+          title: Text(_exam.title,
+              style: AppTextStyles.appBarTitle(context),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis),
           backgroundColor: AppColors.getBackground(context),
           elevation: 0,
           leading: AppButton.icon(
-            icon: Icons.arrow_back_rounded,
-            onPressed: () => GoRouter.of(context).pop(),
-          ),
+              icon: Icons.arrow_back_rounded,
+              onPressed: () => GoRouter.of(context).pop()),
         ),
         body: Center(
           child: AppEmptyState.noData(
@@ -1665,22 +1534,5 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
 
     if (_currentQuestionIndex >= questions.length) _currentQuestionIndex = 0;
     return _buildExamInterface(context, questions);
-  }
-
-  Widget _buildTabletLayout() {
-    return _buildMobileLayout();
-  }
-
-  Widget _buildDesktopLayout() {
-    return _buildMobileLayout();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ResponsiveLayout(
-      mobile: _buildMobileLayout(),
-      tablet: _buildTabletLayout(),
-      desktop: _buildDesktopLayout(),
-    );
   }
 }
