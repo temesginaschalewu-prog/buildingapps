@@ -1,9 +1,5 @@
 import 'dart:async';
 import 'dart:ui';
-import 'package:familyacademyclient/widgets/common/app_bar.dart';
-import 'package:familyacademyclient/widgets/common/app_card.dart';
-import 'package:familyacademyclient/widgets/common/app_empty_state.dart';
-import 'package:familyacademyclient/widgets/common/app_shimmer.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -18,6 +14,11 @@ import '../../themes/app_themes.dart';
 import '../../utils/helpers.dart';
 import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
+import '../../utils/app_enums.dart';
+import '../../widgets/common/app_bar.dart';
+import '../../widgets/common/app_card.dart';
+import '../../widgets/common/app_empty_state.dart';
+import '../../widgets/common/app_shimmer.dart';
 import '../../widgets/common/responsive_widgets.dart';
 
 class ChatbotScreen extends StatefulWidget {
@@ -50,17 +51,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   void initState() {
     super.initState();
 
-    _slideController = AnimationController(
-      vsync: this,
-      duration: AppThemes.animationDurationMedium,
+    _slideController =
+        AnimationController(vsync: this, duration: AppThemes.animationMedium);
+    _slideAnimation =
+        Tween<Offset>(begin: const Offset(-1, 0), end: Offset.zero).animate(
+      CurvedAnimation(parent: _slideController, curve: Curves.easeOut),
     );
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(-1, 0),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _slideController,
-      curve: Curves.easeOut,
-    ));
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _setGreeting();
@@ -84,37 +80,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     }
   }
 
-  Widget _buildGlassContainer(
-      {required Widget child, double? width, double? height}) {
-    return ClipRRect(
-      borderRadius:
-          BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: Container(
-          width: width,
-          height: height,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.getCard(context).withValues(alpha: 0.4),
-                AppColors.getCard(context).withValues(alpha: 0.2),
-              ],
-            ),
-            borderRadius:
-                BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-            border: Border.all(
-              color: AppColors.telegramBlue.withValues(alpha: 0.2),
-            ),
-          ),
-          child: child,
-        ),
-      ),
-    );
-  }
-
   void _setGreeting() {
     final hour = DateTime.now().hour;
     if (hour < 12) {
@@ -129,14 +94,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   void _setupScreenSize() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (ScreenSize.isTablet(context) || ScreenSize.isDesktop(context)) {
-        setState(() {
-          _showConversationList = true;
-        });
+        setState(() => _showConversationList = true);
         _slideController.forward();
       } else {
-        setState(() {
-          _showConversationList = false;
-        });
+        setState(() => _showConversationList = false);
       }
     });
   }
@@ -170,10 +131,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       setState(() => _isOffline = true);
       _refreshController.refreshFailed();
       showTopSnackBar(
-        context,
-        'You are offline. Please check your internet connection.',
-        isError: true,
-      );
+          context, 'You are offline. Please check your internet connection.',
+          isError: true);
       return;
     }
 
@@ -185,7 +144,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     try {
       final chatbotProvider =
           Provider.of<ChatbotProvider>(context, listen: false);
-
       await chatbotProvider.loadConversations(forceRefresh: true);
 
       if (widget.conversationId != null) {
@@ -298,10 +256,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       context: context,
       builder: (context) => Dialog(
         backgroundColor: Colors.transparent,
-        child: _buildGlassContainer(
+        child: AppCard.glass(
           child: Padding(
             padding: ResponsiveValues.dialogPadding(context),
-            child: ResponsiveColumn(
+            child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
@@ -312,45 +270,36 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                     gradient: LinearGradient(
                       colors: [
                         AppColors.telegramYellow.withValues(alpha: 0.2),
-                        AppColors.telegramYellow.withValues(alpha: 0.1),
+                        AppColors.telegramYellow.withValues(alpha: 0.1)
                       ],
                     ),
                     shape: BoxShape.circle,
                   ),
-                  child: ResponsiveIcon(
-                    Icons.lock_outline_rounded,
-                    size: ResponsiveValues.iconSizeXL(context),
-                    color: AppColors.telegramYellow,
-                  ),
+                  child: Icon(Icons.lock_outline_rounded,
+                      size: ResponsiveValues.iconSizeXL(context),
+                      color: AppColors.telegramYellow),
                 ),
-                const ResponsiveSizedBox(height: AppSpacing.l),
-                ResponsiveText(
+                SizedBox(height: ResponsiveValues.spacingL(context)),
+                Text(
                   'Daily Limit Reached',
-                  style: AppTextStyles.titleLarge(context).copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: AppTextStyles.titleLarge(context)
+                      .copyWith(fontWeight: FontWeight.w600),
                 ),
-                const ResponsiveSizedBox(height: AppSpacing.m),
-                ResponsiveText(
+                SizedBox(height: ResponsiveValues.spacingM(context)),
+                Text(
                   'You\'ve used all your daily messages (${Provider.of<ChatbotProvider>(context).dailyLimit}). The limit resets at midnight.\n\nYou can still review previous conversations.',
-                  style: AppTextStyles.bodyMedium(context).copyWith(
-                    color: AppColors.getTextSecondary(context),
-                  ),
+                  style: AppTextStyles.bodyMedium(context)
+                      .copyWith(color: AppColors.getTextSecondary(context)),
                   textAlign: TextAlign.center,
                 ),
-                const ResponsiveSizedBox(height: AppSpacing.xl),
+                SizedBox(height: ResponsiveValues.spacingXL(context)),
                 Row(
                   children: [
                     Expanded(
                       child: Container(
                         decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: AppColors.blueGradient,
-                          ),
-                          borderRadius: BorderRadius.circular(
-                            ResponsiveValues.radiusMedium(context),
-                          ),
-                        ),
+                            gradient: const LinearGradient(
+                                colors: AppColors.blueGradient)),
                         child: ElevatedButton(
                           onPressed: () => Navigator.pop(context),
                           style: ElevatedButton.styleFrom(
@@ -358,12 +307,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                             foregroundColor: Colors.white,
                             shadowColor: Colors.transparent,
                             padding: EdgeInsets.symmetric(
-                              vertical: ResponsiveValues.spacingM(context),
-                            ),
+                                vertical: ResponsiveValues.spacingM(context)),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(
-                                ResponsiveValues.radiusMedium(context),
-                              ),
+                                  ResponsiveValues.radiusMedium(context)),
                             ),
                           ),
                           child: const Text('OK'),
@@ -385,10 +332,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       context: context,
       builder: (context) => Dialog(
         backgroundColor: Colors.transparent,
-        child: _buildGlassContainer(
+        child: AppCard.glass(
           child: Padding(
             padding: ResponsiveValues.dialogPadding(context),
-            child: ResponsiveColumn(
+            child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
@@ -399,33 +346,29 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                     gradient: LinearGradient(
                       colors: [
                         AppColors.telegramBlue.withValues(alpha: 0.2),
-                        AppColors.telegramPurple.withValues(alpha: 0.1),
+                        AppColors.telegramPurple.withValues(alpha: 0.1)
                       ],
                     ),
                     shape: BoxShape.circle,
                   ),
-                  child: ResponsiveIcon(
-                    Icons.chat_rounded,
-                    size: ResponsiveValues.iconSizeXL(context),
-                    color: AppColors.telegramBlue,
-                  ),
+                  child: Icon(Icons.chat_rounded,
+                      size: ResponsiveValues.iconSizeXL(context),
+                      color: AppColors.telegramBlue),
                 ),
-                const ResponsiveSizedBox(height: AppSpacing.l),
-                ResponsiveText(
+                SizedBox(height: ResponsiveValues.spacingL(context)),
+                Text(
                   'Start New Chat',
-                  style: AppTextStyles.titleLarge(context).copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: AppTextStyles.titleLarge(context)
+                      .copyWith(fontWeight: FontWeight.w600),
                 ),
-                const ResponsiveSizedBox(height: AppSpacing.m),
-                ResponsiveText(
+                SizedBox(height: ResponsiveValues.spacingM(context)),
+                Text(
                   'This will clear the current conversation and start fresh.',
-                  style: AppTextStyles.bodyMedium(context).copyWith(
-                    color: AppColors.getTextSecondary(context),
-                  ),
+                  style: AppTextStyles.bodyMedium(context)
+                      .copyWith(color: AppColors.getTextSecondary(context)),
                   textAlign: TextAlign.center,
                 ),
-                const ResponsiveSizedBox(height: AppSpacing.xl),
+                SizedBox(height: ResponsiveValues.spacingXL(context)),
                 Row(
                   children: [
                     Expanded(
@@ -434,28 +377,21 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                         style: TextButton.styleFrom(
                           foregroundColor: AppColors.getTextSecondary(context),
                           padding: EdgeInsets.symmetric(
-                            vertical: ResponsiveValues.spacingM(context),
-                          ),
+                              vertical: ResponsiveValues.spacingM(context)),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(
-                              ResponsiveValues.radiusMedium(context),
-                            ),
+                                ResponsiveValues.radiusMedium(context)),
                           ),
                         ),
                         child: const Text('Cancel'),
                       ),
                     ),
-                    const ResponsiveSizedBox(width: AppSpacing.m),
+                    SizedBox(width: ResponsiveValues.spacingM(context)),
                     Expanded(
                       child: Container(
                         decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: AppColors.blueGradient,
-                          ),
-                          borderRadius: BorderRadius.circular(
-                            ResponsiveValues.radiusMedium(context),
-                          ),
-                        ),
+                            gradient: const LinearGradient(
+                                colors: AppColors.blueGradient)),
                         child: ElevatedButton(
                           onPressed: () {
                             Navigator.pop(context);
@@ -468,12 +404,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                             foregroundColor: Colors.white,
                             shadowColor: Colors.transparent,
                             padding: EdgeInsets.symmetric(
-                              vertical: ResponsiveValues.spacingM(context),
-                            ),
+                                vertical: ResponsiveValues.spacingM(context)),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(
-                                ResponsiveValues.radiusMedium(context),
-                              ),
+                                  ResponsiveValues.radiusMedium(context)),
                             ),
                           ),
                           child: const Text('Start New'),
@@ -531,34 +465,26 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         children: [
           if (!isUser)
             Padding(
-              padding: EdgeInsets.only(
-                right: ResponsiveValues.spacingS(context),
-              ),
+              padding:
+                  EdgeInsets.only(right: ResponsiveValues.spacingS(context)),
               child: Container(
                 width: ResponsiveValues.iconSizeL(context),
                 height: ResponsiveValues.iconSizeL(context),
                 decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: AppColors.blueGradient,
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
+                  gradient: LinearGradient(colors: AppColors.blueGradient),
                   shape: BoxShape.circle,
                 ),
                 child: Center(
-                  child: ResponsiveIcon(
-                    Icons.smart_toy,
-                    size: ResponsiveValues.iconSizeXS(context),
-                    color: Colors.white,
-                  ),
+                  child: Icon(Icons.smart_toy,
+                      size: ResponsiveValues.iconSizeXS(context),
+                      color: Colors.white),
                 ),
               ),
             ),
           Flexible(
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                maxWidth: ResponsiveValues.chatBubbleMaxWidth(context),
-              ),
+                  maxWidth: ResponsiveValues.chatBubbleMaxWidth(context)),
               child: Container(
                 padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
                 decoration: BoxDecoration(
@@ -575,20 +501,19 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                     ),
                   ],
                 ),
-                child: ResponsiveColumn(
+                child: Column(
                   children: [
-                    ResponsiveText(
+                    Text(
                       message.content.replaceAll('*', ''),
                       style: isUser
-                          ? AppTextStyles.bodyMedium(context).copyWith(
-                              color: Colors.white,
-                            )
+                          ? AppTextStyles.bodyMedium(context)
+                              .copyWith(color: Colors.white)
                           : AppTextStyles.bodyMedium(context),
                     ),
-                    const ResponsiveSizedBox(height: AppSpacing.xs),
+                    SizedBox(height: ResponsiveValues.spacingXS(context)),
                     Align(
                       alignment: Alignment.bottomRight,
-                      child: ResponsiveText(
+                      child: Text(
                         timeStr,
                         style: AppTextStyles.labelSmall(context).copyWith(
                           color: isUser
@@ -604,26 +529,19 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           ),
           if (isUser)
             Padding(
-              padding: EdgeInsets.only(
-                left: ResponsiveValues.spacingS(context),
-              ),
+              padding:
+                  EdgeInsets.only(left: ResponsiveValues.spacingS(context)),
               child: Container(
                 width: ResponsiveValues.iconSizeL(context),
                 height: ResponsiveValues.iconSizeL(context),
                 decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: AppColors.purpleGradient,
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
+                  gradient: LinearGradient(colors: AppColors.purpleGradient),
                   shape: BoxShape.circle,
                 ),
                 child: Center(
-                  child: ResponsiveIcon(
-                    Icons.person,
-                    size: ResponsiveValues.iconSizeXS(context),
-                    color: Colors.white,
-                  ),
+                  child: Icon(Icons.person,
+                      size: ResponsiveValues.iconSizeXS(context),
+                      color: Colors.white),
                 ),
               ),
             ),
@@ -650,7 +568,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
         return Column(
           children: [
-            _buildGlassContainer(
+            AppCard.glass(
               child: Container(
                 padding: EdgeInsets.only(
                   top: MediaQuery.of(context).padding.top +
@@ -662,18 +580,15 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                 child: Row(
                   children: [
                     Expanded(
-                      child: ResponsiveText(
+                      child: Text(
                         'Conversations',
-                        style: AppTextStyles.titleSmall(context).copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
+                        style: AppTextStyles.titleSmall(context)
+                            .copyWith(fontWeight: FontWeight.w600),
                       ),
                     ),
                     IconButton(
-                      icon: const ResponsiveIcon(
-                        Icons.add_comment_outlined,
-                        color: AppColors.telegramBlue,
-                      ),
+                      icon: const Icon(Icons.add_comment_outlined,
+                          color: AppColors.telegramBlue),
                       onPressed: _isOffline ? null : _showNewChatDialog,
                       tooltip: 'New Chat',
                       padding: EdgeInsets.zero,
@@ -682,10 +597,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                     if (ScreenSize.isDesktop(context) ||
                         ScreenSize.isTablet(context))
                       IconButton(
-                        icon: ResponsiveIcon(
-                          Icons.close,
-                          color: AppColors.getTextSecondary(context),
-                        ),
+                        icon: Icon(Icons.close,
+                            color: AppColors.getTextSecondary(context)),
                         onPressed: _toggleSidebar,
                         tooltip: 'Close',
                         padding: EdgeInsets.zero,
@@ -715,7 +628,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                             vertical: ResponsiveValues.conversationCardMargin(
                                 context),
                           ),
-                          child: _buildGlassContainer(
+                          child: AppCard.glass(
                             child: Material(
                               color: Colors.transparent,
                               child: InkWell(
@@ -731,9 +644,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                                   }
                                 },
                                 borderRadius: BorderRadius.circular(
-                                  ResponsiveValues.conversationCardRadius(
-                                      context),
-                                ),
+                                    ResponsiveValues.conversationCardRadius(
+                                        context)),
                                 child: Padding(
                                   padding: EdgeInsets.all(
                                       ResponsiveValues.conversationCardPadding(
@@ -749,8 +661,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                                           gradient: isSelected
                                               ? const LinearGradient(
                                                   colors:
-                                                      AppColors.blueGradient,
-                                                )
+                                                      AppColors.blueGradient)
                                               : LinearGradient(
                                                   colors: [
                                                     AppColors.getSurface(
@@ -762,9 +673,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                                                   ],
                                                 ),
                                           borderRadius: BorderRadius.circular(
-                                            ResponsiveValues.radiusSmall(
-                                                context),
-                                          ),
+                                              ResponsiveValues.radiusSmall(
+                                                  context)),
                                         ),
                                         child: Icon(
                                           Icons.chat_outlined,
@@ -776,8 +686,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                                                   context),
                                         ),
                                       ),
-                                      const ResponsiveSizedBox(
-                                          width: AppSpacing.s),
+                                      SizedBox(
+                                          width: ResponsiveValues.spacingS(
+                                              context)),
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment:
@@ -851,23 +762,19 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                                         padding: EdgeInsets.zero,
                                         shape: RoundedRectangleBorder(
                                           borderRadius: BorderRadius.circular(
-                                            ResponsiveValues.radiusMedium(
-                                                context),
-                                          ),
+                                              ResponsiveValues.radiusMedium(
+                                                  context)),
                                         ),
                                         itemBuilder: (context) => [
                                           const PopupMenuItem(
-                                            value: 'rename',
-                                            child: Text('Rename'),
-                                          ),
+                                              value: 'rename',
+                                              child: Text('Rename')),
                                           const PopupMenuItem(
                                             value: 'delete',
-                                            child: Text(
-                                              'Delete',
-                                              style: TextStyle(
-                                                color: AppColors.telegramRed,
-                                              ),
-                                            ),
+                                            child: Text('Delete',
+                                                style: TextStyle(
+                                                    color:
+                                                        AppColors.telegramRed)),
                                           ),
                                         ],
                                         onSelected: (value) async {
@@ -901,20 +808,19 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       context: context,
       builder: (context) => Dialog(
         backgroundColor: Colors.transparent,
-        child: _buildGlassContainer(
+        child: AppCard.glass(
           child: Padding(
             padding: ResponsiveValues.dialogPadding(context),
-            child: ResponsiveColumn(
+            child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                ResponsiveText(
+                Text(
                   'Rename Conversation',
-                  style: AppTextStyles.titleLarge(context).copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: AppTextStyles.titleLarge(context)
+                      .copyWith(fontWeight: FontWeight.w600),
                 ),
-                const ResponsiveSizedBox(height: AppSpacing.l),
-                _buildGlassContainer(
+                SizedBox(height: ResponsiveValues.spacingL(context)),
+                AppCard.glass(
                   child: TextField(
                     controller: controller,
                     decoration: InputDecoration(
@@ -930,7 +836,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                     autofocus: true,
                   ),
                 ),
-                const ResponsiveSizedBox(height: AppSpacing.xl),
+                SizedBox(height: ResponsiveValues.spacingXL(context)),
                 Row(
                   children: [
                     Expanded(
@@ -939,36 +845,28 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                         style: TextButton.styleFrom(
                           foregroundColor: AppColors.getTextSecondary(context),
                           padding: EdgeInsets.symmetric(
-                            vertical: ResponsiveValues.spacingM(context),
-                          ),
+                              vertical: ResponsiveValues.spacingM(context)),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(
-                              ResponsiveValues.radiusMedium(context),
-                            ),
+                                ResponsiveValues.radiusMedium(context)),
                           ),
                         ),
                         child: const Text('Cancel'),
                       ),
                     ),
-                    const ResponsiveSizedBox(width: AppSpacing.m),
+                    SizedBox(width: ResponsiveValues.spacingM(context)),
                     Expanded(
                       child: Container(
                         decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: AppColors.blueGradient,
-                          ),
-                          borderRadius: BorderRadius.circular(
-                            ResponsiveValues.radiusMedium(context),
-                          ),
-                        ),
+                            gradient: const LinearGradient(
+                                colors: AppColors.blueGradient)),
                         child: ElevatedButton(
                           onPressed: () async {
                             if (controller.text.trim().isNotEmpty) {
                               final success =
-                                  await Provider.of<ChatbotProvider>(
-                                context,
-                                listen: false,
-                              ).renameConversation(
+                                  await Provider.of<ChatbotProvider>(context,
+                                          listen: false)
+                                      .renameConversation(
                                 conv.id,
                                 controller.text.trim(),
                               );
@@ -984,12 +882,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                             foregroundColor: Colors.white,
                             shadowColor: Colors.transparent,
                             padding: EdgeInsets.symmetric(
-                              vertical: ResponsiveValues.spacingM(context),
-                            ),
+                                vertical: ResponsiveValues.spacingM(context)),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(
-                                ResponsiveValues.radiusMedium(context),
-                              ),
+                                  ResponsiveValues.radiusMedium(context)),
                             ),
                           ),
                           child: const Text('Save'),
@@ -1011,10 +907,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       context: context,
       builder: (context) => Dialog(
         backgroundColor: Colors.transparent,
-        child: _buildGlassContainer(
+        child: AppCard.glass(
           child: Padding(
             padding: ResponsiveValues.dialogPadding(context),
-            child: ResponsiveColumn(
+            child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
@@ -1025,33 +921,29 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                     gradient: LinearGradient(
                       colors: [
                         AppColors.telegramRed.withValues(alpha: 0.2),
-                        AppColors.telegramRed.withValues(alpha: 0.1),
+                        AppColors.telegramRed.withValues(alpha: 0.1)
                       ],
                     ),
                     shape: BoxShape.circle,
                   ),
-                  child: ResponsiveIcon(
-                    Icons.delete_outline_rounded,
-                    size: ResponsiveValues.iconSizeXL(context),
-                    color: AppColors.telegramRed,
-                  ),
+                  child: Icon(Icons.delete_outline_rounded,
+                      size: ResponsiveValues.iconSizeXL(context),
+                      color: AppColors.telegramRed),
                 ),
-                const ResponsiveSizedBox(height: AppSpacing.l),
-                ResponsiveText(
+                SizedBox(height: ResponsiveValues.spacingL(context)),
+                Text(
                   'Delete Conversation',
-                  style: AppTextStyles.titleLarge(context).copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: AppTextStyles.titleLarge(context)
+                      .copyWith(fontWeight: FontWeight.w600),
                 ),
-                const ResponsiveSizedBox(height: AppSpacing.m),
-                ResponsiveText(
+                SizedBox(height: ResponsiveValues.spacingM(context)),
+                Text(
                   'Are you sure you want to delete "${conv.title}"?',
-                  style: AppTextStyles.bodyMedium(context).copyWith(
-                    color: AppColors.getTextSecondary(context),
-                  ),
+                  style: AppTextStyles.bodyMedium(context)
+                      .copyWith(color: AppColors.getTextSecondary(context)),
                   textAlign: TextAlign.center,
                 ),
-                const ResponsiveSizedBox(height: AppSpacing.xl),
+                SizedBox(height: ResponsiveValues.spacingXL(context)),
                 Row(
                   children: [
                     Expanded(
@@ -1060,34 +952,27 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                         style: TextButton.styleFrom(
                           foregroundColor: AppColors.getTextSecondary(context),
                           padding: EdgeInsets.symmetric(
-                            vertical: ResponsiveValues.spacingM(context),
-                          ),
+                              vertical: ResponsiveValues.spacingM(context)),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(
-                              ResponsiveValues.radiusMedium(context),
-                            ),
+                                ResponsiveValues.radiusMedium(context)),
                           ),
                         ),
                         child: const Text('Cancel'),
                       ),
                     ),
-                    const ResponsiveSizedBox(width: AppSpacing.m),
+                    SizedBox(width: ResponsiveValues.spacingM(context)),
                     Expanded(
                       child: Container(
                         decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: AppColors.pinkGradient,
-                          ),
-                          borderRadius: BorderRadius.circular(
-                            ResponsiveValues.radiusMedium(context),
-                          ),
-                        ),
+                            gradient: const LinearGradient(
+                                colors: AppColors.pinkGradient)),
                         child: ElevatedButton(
                           onPressed: () async {
                             final success = await Provider.of<ChatbotProvider>(
-                              context,
-                              listen: false,
-                            ).deleteConversation(conv.id);
+                                    context,
+                                    listen: false)
+                                .deleteConversation(conv.id);
                             if (success && mounted) {
                               showTopSnackBar(context, 'Conversation deleted');
                               if (conv.id ==
@@ -1105,12 +990,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                             foregroundColor: Colors.white,
                             shadowColor: Colors.transparent,
                             padding: EdgeInsets.symmetric(
-                              vertical: ResponsiveValues.spacingM(context),
-                            ),
+                                vertical: ResponsiveValues.spacingM(context)),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(
-                                ResponsiveValues.radiusMedium(context),
-                              ),
+                                  ResponsiveValues.radiusMedium(context)),
                             ),
                           ),
                           child: const Text('Delete'),
@@ -1128,11 +1011,11 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   Widget _buildQuickQuestions() {
-    final quickQuestions = [
+    const quickQuestions = [
       'Help with math',
       'Tell me about Ethiopia',
       'Study tips',
-      'Teach me Amharic',
+      'Teach me Amharic'
     ];
 
     return Container(
@@ -1140,14 +1023,13 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         horizontal: ResponsiveValues.spacingM(context),
         vertical: ResponsiveValues.spacingS(context),
       ),
-      child: ResponsiveColumn(
+      child: Column(
         children: [
           Padding(
             padding: EdgeInsets.only(
-              left: ResponsiveValues.spacingS(context),
-              bottom: ResponsiveValues.spacingS(context),
-            ),
-            child: ResponsiveText(
+                left: ResponsiveValues.spacingS(context),
+                bottom: ResponsiveValues.spacingS(context)),
+            child: Text(
               'Quick Questions:',
               style: AppTextStyles.labelMedium(context).copyWith(
                 color: AppColors.getTextSecondary(context),
@@ -1157,12 +1039,11 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           ),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
-            child: ResponsiveRow(
+            child: Row(
               children: quickQuestions.map((question) {
                 return Padding(
                   padding: EdgeInsets.only(
-                    right: ResponsiveValues.spacingS(context),
-                  ),
+                      right: ResponsiveValues.spacingS(context)),
                   child: GestureDetector(
                     onTap: _isOffline
                         ? null
@@ -1170,13 +1051,13 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                             _messageController.text = question;
                             _sendMessage();
                           },
-                    child: _buildGlassContainer(
+                    child: AppCard.glass(
                       child: Container(
                         padding: EdgeInsets.symmetric(
                           horizontal: ResponsiveValues.spacingM(context),
                           vertical: ResponsiveValues.spacingXS(context),
                         ),
-                        child: ResponsiveText(
+                        child: Text(
                           question,
                           style: AppTextStyles.labelSmall(context).copyWith(
                             color: _isOffline
@@ -1196,14 +1077,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           if (_isOffline)
             Padding(
               padding: EdgeInsets.only(
-                top: ResponsiveValues.spacingS(context),
-                left: ResponsiveValues.spacingS(context),
-              ),
-              child: ResponsiveText(
+                  top: ResponsiveValues.spacingS(context),
+                  left: ResponsiveValues.spacingS(context)),
+              child: Text(
                 'Connect to internet to send messages',
-                style: AppTextStyles.caption(context).copyWith(
-                  color: AppColors.telegramYellow,
-                ),
+                style: AppTextStyles.caption(context)
+                    .copyWith(color: AppColors.telegramYellow),
               ),
             ),
         ],
@@ -1212,16 +1091,16 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   Widget _buildMessageCounter(ChatbotProvider provider) {
-    return _buildGlassContainer(
+    return AppCard.glass(
       child: Container(
         padding: EdgeInsets.symmetric(
           horizontal: ResponsiveValues.spacingM(context),
           vertical: ResponsiveValues.spacingXS(context),
         ),
-        child: ResponsiveRow(
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ResponsiveIcon(
+            Icon(
               Icons.message,
               size: ResponsiveValues.iconSizeS(context),
               color: _isOffline
@@ -1230,8 +1109,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                       ? AppColors.telegramGreen
                       : AppColors.telegramRed),
             ),
-            const ResponsiveSizedBox(width: AppSpacing.xs),
-            ResponsiveText(
+            SizedBox(width: ResponsiveValues.spacingXS(context)),
+            Text(
               _isOffline
                   ? 'Offline'
                   : '${provider.remainingMessages}/${provider.dailyLimit}',
@@ -1254,18 +1133,18 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     final hasMessagesLeft = provider.hasMessagesLeft;
     final isEnabled = hasMessagesLeft && !_isSending && !_isOffline;
 
-    return _buildGlassContainer(
+    return AppCard.glass(
       child: Container(
         padding: ResponsiveValues.cardPadding(context),
-        child: ResponsiveColumn(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (!_isOffline) _buildQuickQuestions(),
-            const ResponsiveSizedBox(height: AppSpacing.m),
+            SizedBox(height: ResponsiveValues.spacingM(context)),
             Row(
               children: [
                 Expanded(
-                  child: _buildGlassContainer(
+                  child: AppCard.glass(
                     child: TextField(
                       controller: _messageController,
                       focusNode: _focusNode,
@@ -1300,7 +1179,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                     ),
                   ),
                 ),
-                const ResponsiveSizedBox(width: AppSpacing.s),
+                SizedBox(width: ResponsiveValues.spacingS(context)),
                 if (_isSending)
                   SizedBox(
                     width: ResponsiveValues.iconSizeXL(context),
@@ -1316,12 +1195,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                 else
                   GestureDetector(
                     onTap: isEnabled ? _sendMessage : null,
-                    child: _buildGlassContainer(
+                    child: AppCard.glass(
                       child: SizedBox(
                         width: ResponsiveValues.iconSizeXL(context),
                         height: ResponsiveValues.iconSizeXL(context),
                         child: Center(
-                          child: ResponsiveIcon(
+                          child: Icon(
                             Icons.send,
                             size: ResponsiveValues.iconSizeS(context),
                             color: isEnabled
@@ -1370,8 +1249,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         if (provider.messages.isEmpty) {
           return Padding(
             padding: EdgeInsets.symmetric(
-              horizontal: ResponsiveValues.spacingXL(context),
-            ),
+                horizontal: ResponsiveValues.spacingXL(context)),
             child: AppEmptyState(
               icon: Icons.smart_toy,
               title: 'AI Learning Assistant',
@@ -1386,15 +1264,15 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           controller: _scrollController,
           padding: ResponsiveValues.cardPadding(context),
           itemCount: provider.messages.length,
-          itemBuilder: (context, index) {
-            return _buildMessageBubble(provider.messages[index]);
-          },
+          itemBuilder: (context, index) =>
+              _buildMessageBubble(provider.messages[index]),
         );
       },
     );
   }
 
-  Widget _buildMobileLayout() {
+  @override
+  Widget build(BuildContext context) {
     Provider.of<AuthProvider>(context);
     final chatbotProvider = Provider.of<ChatbotProvider>(context);
 
@@ -1403,10 +1281,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         chatbotProvider.conversations.isEmpty) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
-        appBar: const CustomAppBar(
-          title: 'AI Tutor',
-          subtitle: 'Offline Mode',
-        ),
+        appBar: const CustomAppBar(title: 'AI Tutor', subtitle: 'Offline Mode'),
         body: Center(
           child: AppEmptyState.offline(
             dataType: 'chat',
@@ -1428,16 +1303,14 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           ? Drawer(
               width: ResponsiveValues.mobileDrawerWidth(context),
               backgroundColor: Colors.transparent,
-              child: _buildGlassContainer(
-                child: _buildConversationList(),
-              ),
+              child: AppCard.glass(child: _buildConversationList()),
             )
           : null,
       body: RefreshIndicator(
         onRefresh: _manualRefresh,
         color: AppColors.telegramBlue,
         backgroundColor: AppColors.getSurface(context),
-        child: ResponsiveColumn(
+        child: Column(
           children: [
             CustomAppBar(
               title: chatbotProvider.currentConversation?.title ?? 'AI Tutor',
@@ -1446,10 +1319,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                   : (_isOffline ? 'Offline Mode' : _greeting),
               leading: ScreenSize.isMobile(context)
                   ? IconButton(
-                      icon: ResponsiveIcon(
-                        Icons.menu,
-                        color: AppColors.getTextPrimary(context),
-                      ),
+                      icon: Icon(Icons.menu,
+                          color: AppColors.getTextPrimary(context)),
                       onPressed: _showConversationsDrawer,
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
@@ -1458,29 +1329,24 @@ class _ChatbotScreenState extends State<ChatbotScreen>
               customTrailing: _buildMessageCounter(chatbotProvider),
             ),
             Expanded(
-              child: ResponsiveRow(
+              child: Row(
                 children: [
                   if ((ScreenSize.isDesktop(context) ||
                           ScreenSize.isTablet(context)) &&
                       _showConversationList)
                     AnimatedContainer(
-                      duration: AppThemes.animationDurationMedium,
+                      duration: AppThemes.animationMedium,
                       width: ScreenSize.isTablet(context)
                           ? ResponsiveValues.tabletSidebarWidth(context)
                           : ResponsiveValues.desktopSidebarWidth(context),
                       margin: EdgeInsets.only(
-                        right: ResponsiveValues.spacingS(context),
-                      ),
+                          right: ResponsiveValues.spacingS(context)),
                       child: SlideTransition(
                         position: _slideAnimation,
-                        child: _buildGlassContainer(
-                          child: _buildConversationList(),
-                        ),
+                        child: AppCard.glass(child: _buildConversationList()),
                       ),
                     ),
-                  Expanded(
-                    child: _buildChatArea(),
-                  ),
+                  Expanded(child: _buildChatArea()),
                 ],
               ),
             ),
@@ -1488,23 +1354,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildTabletLayout() {
-    return _buildMobileLayout();
-  }
-
-  Widget _buildDesktopLayout() {
-    return _buildMobileLayout();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ResponsiveLayout(
-      mobile: _buildMobileLayout(),
-      tablet: _buildTabletLayout(),
-      desktop: _buildDesktopLayout(),
     );
   }
 }
