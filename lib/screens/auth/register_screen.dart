@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-
 import '../../providers/auth_provider.dart';
 import '../../services/device_service.dart';
 import '../../services/notification_service.dart';
@@ -17,6 +16,7 @@ import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
 import '../../utils/helpers.dart';
 import '../../utils/router.dart';
+import '../../utils/constants.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../widgets/common/responsive_widgets.dart';
@@ -52,15 +52,10 @@ class _RegisterScreenState extends State<RegisterScreen>
   void initState() {
     super.initState();
 
-    _logoAnimationController = AnimationController(
-      vsync: this,
-      duration: 600.ms,
-    )..forward();
-
+    _logoAnimationController =
+        AnimationController(vsync: this, duration: 600.ms)..forward();
     _logoScaleAnimation = CurvedAnimation(
-      parent: _logoAnimationController,
-      curve: Curves.elasticOut,
-    );
+        parent: _logoAnimationController, curve: Curves.elasticOut);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_mounted) _checkConnectivity();
@@ -113,33 +108,33 @@ class _RegisterScreenState extends State<RegisterScreen>
       if (_mounted) {
         setState(() => _isInitializing = false);
         if (Platform.isAndroid || Platform.isIOS) {
-          SnackbarService().showError(
-            context,
-            'Service initialization failed. Please restart the app.',
-          );
+          SnackbarService().showError(context,
+              'Service initialization failed. Please restart the app.');
         }
       }
     }
   }
 
   String? _validateUsername(String? value) {
-    if (value == null || value.isEmpty) return 'Username is required';
-    if (value.length < 3) return 'Username must be at least 3 characters';
+    if (value == null || value.isEmpty) return AppStrings.usernameRequired;
+    if (value.length < 3) return AppStrings.usernameMinLength;
     if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(value)) {
-      return 'Only letters, numbers and underscore allowed';
+      return AppStrings.usernameInvalid;
     }
     return null;
   }
 
   String? _validatePassword(String? value) {
-    if (value == null || value.isEmpty) return 'Password is required';
-    if (value.length < 8) return 'Password must be at least 8 characters';
+    if (value == null || value.isEmpty) return AppStrings.passwordRequired;
+    if (value.length < 8) return AppStrings.passwordMinLength;
     return null;
   }
 
   String? _validateConfirmPassword(String? value) {
-    if (value == null || value.isEmpty) return 'Please confirm your password';
-    if (value != _passwordController.text) return 'Passwords do not match';
+    if (value == null || value.isEmpty)
+      return AppStrings.confirmPasswordRequired;
+    if (value != _passwordController.text)
+      return AppStrings.passwordsDoNotMatch;
     return null;
   }
 
@@ -154,10 +149,8 @@ class _RegisterScreenState extends State<RegisterScreen>
     }
 
     if (_deviceId == null || _deviceId!.isEmpty) {
-      SnackbarService().showError(
-        context,
-        'Device not ready. Please restart the app.',
-      );
+      SnackbarService()
+          .showError(context, 'Device not ready. Please restart the app.');
       return;
     }
 
@@ -176,11 +169,7 @@ class _RegisterScreenState extends State<RegisterScreen>
 
     try {
       final result = await authProvider.register(
-        username,
-        password,
-        _deviceId!,
-        _fcmToken,
-      );
+          username, password, _deviceId!, _fcmToken);
 
       if (result['success'] == true && _mounted) {
         SnackbarService().showSuccess(context, 'Registration successful!');
@@ -198,10 +187,8 @@ class _RegisterScreenState extends State<RegisterScreen>
           }
         }
       } else if (_mounted) {
-        SnackbarService().showError(
-          context,
-          result['message'] ?? 'Registration failed',
-        );
+        SnackbarService()
+            .showError(context, result['message'] ?? 'Registration failed');
       }
     } catch (e) {
       if (_mounted) {
@@ -213,26 +200,22 @@ class _RegisterScreenState extends State<RegisterScreen>
   }
 
   Widget _buildHeader() {
-    return ResponsiveColumn(
+    return Column(
       children: [
-        ResponsiveSizedBox(
-          height:
-              ScreenSize.isDesktop(context) ? AppSpacing.xxxl : AppSpacing.xl,
-        ),
+        SizedBox(
+            height: ScreenSize.isDesktop(context)
+                ? ResponsiveValues.spacingXXXL(context)
+                : ResponsiveValues.spacingXL(context)),
         ScaleTransition(
           scale: _logoScaleAnimation,
           child: Container(
             width: ResponsiveValues.avatarSizeLarge(context),
             height: ResponsiveValues.avatarSizeLarge(context),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: AppColors.telegramGradient,
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(
-                ResponsiveValues.radiusLarge(context),
-              ),
+              gradient:
+                  const LinearGradient(colors: AppColors.telegramGradient),
+              borderRadius:
+                  BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
               boxShadow: [
                 BoxShadow(
                   color: AppColors.telegramBlue.withValues(alpha: 0.3),
@@ -242,7 +225,7 @@ class _RegisterScreenState extends State<RegisterScreen>
               ],
             ),
             child: Center(
-              child: ResponsiveIcon(
+              child: Icon(
                 Icons.school_rounded,
                 size: ResponsiveValues.iconSizeXL(context),
                 color: Colors.white,
@@ -250,19 +233,17 @@ class _RegisterScreenState extends State<RegisterScreen>
             ),
           ),
         ),
-        const ResponsiveSizedBox(height: AppSpacing.xl),
-        ResponsiveText(
-          'Create Account',
-          style: AppTextStyles.displaySmall(context).copyWith(
-            fontWeight: FontWeight.w800,
-          ),
+        SizedBox(height: ResponsiveValues.spacingXL(context)),
+        Text(
+          AppStrings.createAccount,
+          style: AppTextStyles.displaySmall(context)
+              .copyWith(fontWeight: FontWeight.w800),
         ),
-        const ResponsiveSizedBox(height: AppSpacing.s),
-        ResponsiveText(
-          'Join Family Academy',
-          style: AppTextStyles.bodyLarge(context).copyWith(
-            color: AppColors.getTextSecondary(context),
-          ),
+        SizedBox(height: ResponsiveValues.spacingS(context)),
+        Text(
+          AppStrings.joinFamilyAcademy,
+          style: AppTextStyles.bodyLarge(context)
+              .copyWith(color: AppColors.getTextSecondary(context)),
         ),
       ],
     );
@@ -271,33 +252,29 @@ class _RegisterScreenState extends State<RegisterScreen>
   Widget _buildUsernameField() {
     return AppTextField(
       controller: _usernameController,
-      label: 'Username',
+      label: AppStrings.username,
       hint: 'Choose a username',
       prefixIcon: Icons.person_outline_rounded,
       enabled: !_isLoading,
       validator: _validateUsername,
       onChanged: (_) => setState(() {}),
-    ).animate().fadeIn(duration: 300.ms, delay: 100.ms).slideX(
-          begin: -0.1,
-          end: 0,
-          duration: 300.ms,
-          delay: 100.ms,
-        );
+    )
+        .animate()
+        .fadeIn(duration: 300.ms, delay: 100.ms)
+        .slideX(begin: -0.1, end: 0, duration: 300.ms, delay: 100.ms);
   }
 
   Widget _buildPasswordField() {
     return AppTextField.password(
       controller: _passwordController,
-      label: 'Password',
+      label: AppStrings.password,
       hint: 'Create a password',
       enabled: !_isLoading,
       validator: _validatePassword,
-    ).animate().fadeIn(duration: 300.ms, delay: 200.ms).slideX(
-          begin: -0.1,
-          end: 0,
-          duration: 300.ms,
-          delay: 200.ms,
-        );
+    )
+        .animate()
+        .fadeIn(duration: 300.ms, delay: 200.ms)
+        .slideX(begin: -0.1, end: 0, duration: 300.ms, delay: 200.ms);
   }
 
   Widget _buildConfirmPasswordField() {
@@ -307,12 +284,10 @@ class _RegisterScreenState extends State<RegisterScreen>
       hint: 'Re-enter your password',
       enabled: !_isLoading,
       validator: _validateConfirmPassword,
-    ).animate().fadeIn(duration: 300.ms, delay: 300.ms).slideX(
-          begin: -0.1,
-          end: 0,
-          duration: 300.ms,
-          delay: 300.ms,
-        );
+    )
+        .animate()
+        .fadeIn(duration: 300.ms, delay: 300.ms)
+        .slideX(begin: -0.1, end: 0, duration: 300.ms, delay: 300.ms);
   }
 
   Widget _buildFormContent() {
@@ -328,44 +303,43 @@ class _RegisterScreenState extends State<RegisterScreen>
 
     return Form(
       key: _formKey,
-      child: ResponsiveColumn(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildHeader(),
-          const ResponsiveSizedBox(height: AppSpacing.xxxl),
+          SizedBox(height: ResponsiveValues.spacingXXXL(context)),
           _buildUsernameField(),
-          const ResponsiveSizedBox(height: AppSpacing.l),
+          SizedBox(height: ResponsiveValues.spacingL(context)),
           _buildPasswordField(),
-          const ResponsiveSizedBox(height: AppSpacing.l),
+          SizedBox(height: ResponsiveValues.spacingL(context)),
           _buildConfirmPasswordField(),
-          const ResponsiveSizedBox(height: AppSpacing.xxl),
+          SizedBox(height: ResponsiveValues.spacingXXL(context)),
           AppButton.primary(
             label: _deviceId == null
                 ? 'Initializing...'
-                : (_isLoading ? 'Creating Account...' : 'Create Account'),
+                : (_isLoading
+                    ? 'Creating Account...'
+                    : AppStrings.createAccount),
             onPressed: _deviceId == null || _isLoading ? null : _register,
             isLoading: _isLoading,
             expanded: true,
-          ).animate().scale(
-                duration: 300.ms,
-                curve: Curves.easeOut,
-                delay: 400.ms,
-              ),
-          const ResponsiveSizedBox(height: AppSpacing.xl),
-          ResponsiveRow(
+          )
+              .animate()
+              .scale(duration: 300.ms, curve: Curves.easeOut, delay: 400.ms),
+          SizedBox(height: ResponsiveValues.spacingXL(context)),
+          Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              ResponsiveText(
-                'Already have an account?',
-                style: AppTextStyles.bodyMedium(context).copyWith(
-                  color: AppColors.getTextSecondary(context),
-                ),
+              Text(
+                AppStrings.alreadyHaveAccount,
+                style: AppTextStyles.bodyMedium(context)
+                    .copyWith(color: AppColors.getTextSecondary(context)),
               ),
-              const ResponsiveSizedBox(width: AppSpacing.xs),
+              SizedBox(width: ResponsiveValues.spacingXS(context)),
               GestureDetector(
                 onTap: _isLoading ? null : () => context.go('/auth/login'),
-                child: ResponsiveText(
-                  'Sign in',
+                child: Text(
+                  AppStrings.login,
                   style: AppTextStyles.bodyMedium(context).copyWith(
                     color: AppColors.telegramBlue,
                     fontWeight: FontWeight.w600,
@@ -375,9 +349,8 @@ class _RegisterScreenState extends State<RegisterScreen>
             ],
           ).animate().fadeIn(duration: 300.ms, delay: 500.ms),
           SizedBox(
-            height: MediaQuery.of(context).viewInsets.bottom +
-                ResponsiveValues.spacingXL(context),
-          ),
+              height: MediaQuery.of(context).viewInsets.bottom +
+                  ResponsiveValues.spacingXL(context)),
         ],
       ),
     );
@@ -389,9 +362,7 @@ class _RegisterScreenState extends State<RegisterScreen>
       body: SafeArea(
         child: SingleChildScrollView(
           padding: ResponsiveValues.screenPadding(context),
-          child: AppCard.glass(
-            child: _buildFormContent(),
-          ),
+          child: AppCard.glass(child: _buildFormContent()),
         ),
       ),
     );
@@ -405,8 +376,8 @@ class _RegisterScreenState extends State<RegisterScreen>
           child: SingleChildScrollView(
             padding: ResponsiveValues.screenPadding(context),
             child: AppCard.glass(
-              child: ResponsiveContainer(
-                maxWidth: 500,
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 500),
                 child: _buildFormContent(),
               ),
             ),
@@ -421,24 +392,20 @@ class _RegisterScreenState extends State<RegisterScreen>
       backgroundColor: AppColors.getBackground(context),
       body: SafeArea(
         child: Center(
-          child: ResponsiveContainer(
-            maxWidth: 1000,
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 1000),
             child: Row(
               children: [
                 Expanded(
                   child: Container(
                     padding: ResponsiveValues.dialogPadding(context),
                     decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: AppColors.telegramGradient,
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.horizontal(
-                        left: Radius.circular(24),
-                      ),
+                      gradient:
+                          LinearGradient(colors: AppColors.telegramGradient),
+                      borderRadius:
+                          BorderRadius.horizontal(left: Radius.circular(24)),
                     ),
-                    child: ResponsiveColumn(
+                    child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Container(
@@ -449,31 +416,28 @@ class _RegisterScreenState extends State<RegisterScreen>
                           decoration: BoxDecoration(
                             color: Colors.white.withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(
-                              ResponsiveValues.radiusLarge(context),
-                            ),
+                                ResponsiveValues.radiusLarge(context)),
                           ),
                           child: Center(
-                            child: ResponsiveIcon(
+                            child: Icon(
                               Icons.school_rounded,
                               size: ResponsiveValues.iconSizeXXL(context),
                               color: Colors.white,
                             ),
                           ),
                         ),
-                        const ResponsiveSizedBox(height: AppSpacing.xxxl),
-                        ResponsiveText(
+                        SizedBox(height: ResponsiveValues.spacingXXXL(context)),
+                        Text(
                           'Welcome to\nFamily Academy',
-                          style: AppTextStyles.displayLarge(context).copyWith(
-                            color: Colors.white,
-                          ),
+                          style: AppTextStyles.displayLarge(context)
+                              .copyWith(color: Colors.white),
                           textAlign: TextAlign.center,
                         ),
-                        const ResponsiveSizedBox(height: AppSpacing.l),
-                        ResponsiveText(
+                        SizedBox(height: ResponsiveValues.spacingL(context)),
+                        Text(
                           'Join thousands of students learning with our comprehensive educational platform',
                           style: AppTextStyles.bodyLarge(context).copyWith(
-                            color: Colors.white.withValues(alpha: 0.9),
-                          ),
+                              color: Colors.white.withValues(alpha: 0.9)),
                           textAlign: TextAlign.center,
                         ),
                       ],
@@ -485,14 +449,11 @@ class _RegisterScreenState extends State<RegisterScreen>
                     decoration: BoxDecoration(
                       color: AppColors.getCard(context),
                       borderRadius: const BorderRadius.horizontal(
-                        right: Radius.circular(24),
-                      ),
+                          right: Radius.circular(24)),
                     ),
                     child: SingleChildScrollView(
                       padding: ResponsiveValues.dialogPadding(context),
-                      child: AppCard.glass(
-                        child: _buildFormContent(),
-                      ),
+                      child: AppCard.glass(child: _buildFormContent()),
                     ),
                   ),
                 ),
