@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import '../utils/helpers.dart';
+import 'helpers.dart';
 
 class ScreenProtectionService {
   static bool _protectionEnabled = true;
@@ -28,10 +28,8 @@ class ScreenProtectionService {
   static Future<void> enableSecureMode() async {
     try {
       if (Platform.isAndroid) {
-        // Set FLAG_SECURE to prevent screenshots and screen recording
         await _channel.invokeMethod('protectScreen');
 
-        // Set immersive mode for better protection
         await SystemChrome.setEnabledSystemUIMode(
           SystemUiMode.edgeToEdge,
           overlays: [SystemUiOverlay.top],
@@ -48,7 +46,6 @@ class ScreenProtectionService {
           ),
         );
       } else if (Platform.isIOS) {
-        // iOS specific protection
         await _channel.invokeMethod('protectScreen');
 
         await SystemChrome.setEnabledSystemUIMode(
@@ -91,7 +88,6 @@ class ScreenProtectionService {
           await _setSafeSystemUiFlags();
         }
 
-        // Additional protection against split screen
         await _channel.invokeMethod('disableSplitScreen');
       }
     } catch (e) {
