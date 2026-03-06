@@ -1,18 +1,20 @@
 import 'dart:async';
 import 'dart:ui';
 import 'package:familyacademyclient/models/user_model.dart';
-import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:familyacademyclient/utils/responsive.dart';
-import 'package:familyacademyclient/utils/responsive_values.dart';
-import 'package:familyacademyclient/widgets/common/responsive_widgets.dart';
+import '../../utils/responsive.dart';
+import '../../utils/responsive_values.dart';
+import '../../utils/app_enums.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../providers/category_provider.dart';
 import '../../providers/notification_provider.dart';
+import '../../themes/app_colors.dart';
+import '../../themes/app_text_styles.dart';
+import '../../widgets/common/responsive_widgets.dart';
 
 class MainNavigation extends StatefulWidget {
   final Widget child;
@@ -40,9 +42,7 @@ class _MainNavigationState extends State<MainNavigation>
     super.initState();
 
     _tabAnimationController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
+        vsync: this, duration: const Duration(milliseconds: 300));
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeUserDataInBackground();
@@ -141,37 +141,6 @@ class _MainNavigationState extends State<MainNavigation>
     }
   }
 
-  Widget _buildGlassContainer(
-      {required Widget child, double? width, double? height}) {
-    return ClipRRect(
-      borderRadius:
-          BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: Container(
-          width: width,
-          height: height,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.getCard(context).withValues(alpha: 0.4),
-                AppColors.getCard(context).withValues(alpha: 0.2),
-              ],
-            ),
-            borderRadius:
-                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-            border: Border.all(
-              color: AppColors.telegramBlue.withValues(alpha: 0.2),
-            ),
-          ),
-          child: child,
-        ),
-      ),
-    );
-  }
-
   Widget _buildMobileNavigation() {
     final notificationProvider = Provider.of<NotificationProvider>(context);
     final unreadCount = notificationProvider.unreadCount;
@@ -185,50 +154,71 @@ class _MainNavigationState extends State<MainNavigation>
             if (mounted) setState(() => _showLabels = false);
           });
         },
-        child: _buildGlassContainer(
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeInOut,
-            height: _showLabels
-                ? ResponsiveValues.bottomNavBarHeight(context) * 1.2
-                : ResponsiveValues.bottomNavBarHeight(context),
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.of(context).viewInsets.bottom > 0
-                  ? MediaQuery.of(context).viewInsets.bottom
-                  : 0,
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildMobileNavItem(
-                  index: 0,
-                  icon: Icons.home_outlined,
-                  activeIcon: Icons.home_rounded,
-                  label: 'Home',
-                  unreadCount: 0,
+        child: ClipRRect(
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    AppColors.getCard(context).withValues(alpha: 0.4),
+                    AppColors.getCard(context).withValues(alpha: 0.2),
+                  ],
                 ),
-                _buildMobileNavItem(
-                  index: 1,
-                  icon: Icons.chat_bubble_outline_rounded,
-                  activeIcon: Icons.chat_bubble_rounded,
-                  label: 'Chat',
-                  unreadCount: 0,
+                borderRadius: BorderRadius.circular(
+                    ResponsiveValues.radiusXLarge(context)),
+                border: Border.all(
+                    color: AppColors.telegramBlue.withValues(alpha: 0.2)),
+              ),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+                height: _showLabels
+                    ? ResponsiveValues.bottomNavBarHeight(context) * 1.2
+                    : ResponsiveValues.bottomNavBarHeight(context),
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).viewInsets.bottom > 0
+                      ? MediaQuery.of(context).viewInsets.bottom
+                      : 0,
                 ),
-                _buildMobileNavItem(
-                  index: 2,
-                  icon: Icons.auto_graph_outlined,
-                  activeIcon: Icons.auto_graph_rounded,
-                  label: 'Progress',
-                  unreadCount: 0,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _buildMobileNavItem(
+                      index: 0,
+                      icon: Icons.home_outlined,
+                      activeIcon: Icons.home_rounded,
+                      label: 'Home',
+                      unreadCount: 0,
+                    ),
+                    _buildMobileNavItem(
+                      index: 1,
+                      icon: Icons.chat_bubble_outline_rounded,
+                      activeIcon: Icons.chat_bubble_rounded,
+                      label: 'Chat',
+                      unreadCount: 0,
+                    ),
+                    _buildMobileNavItem(
+                      index: 2,
+                      icon: Icons.auto_graph_outlined,
+                      activeIcon: Icons.auto_graph_rounded,
+                      label: 'Progress',
+                      unreadCount: 0,
+                    ),
+                    _buildMobileNavItem(
+                      index: 3,
+                      icon: Icons.person_outline_rounded,
+                      activeIcon: Icons.person_rounded,
+                      label: 'Profile',
+                      unreadCount: unreadCount,
+                    ),
+                  ],
                 ),
-                _buildMobileNavItem(
-                  index: 3,
-                  icon: Icons.person_outline_rounded,
-                  activeIcon: Icons.person_rounded,
-                  label: 'Profile',
-                  unreadCount: unreadCount,
-                ),
-              ],
+              ),
             ),
           ),
         ),
@@ -265,14 +255,14 @@ class _MainNavigationState extends State<MainNavigation>
                           ? LinearGradient(
                               colors: [
                                 AppColors.telegramBlue.withValues(alpha: 0.2),
-                                AppColors.telegramPurple.withValues(alpha: 0.1),
+                                AppColors.telegramPurple.withValues(alpha: 0.1)
                               ],
                             )
                           : null,
                       shape: BoxShape.circle,
                     ),
                     child: Center(
-                      child: ResponsiveIcon(
+                      child: Icon(
                         isSelected ? activeIcon : icon,
                         size: isSelected
                             ? ResponsiveValues.iconSizeM(context)
@@ -294,11 +284,9 @@ class _MainNavigationState extends State<MainNavigation>
                         ),
                         decoration: BoxDecoration(
                           gradient: const LinearGradient(
-                            colors: [Color(0xFFFF3B30), Color(0xFFE6204A)],
-                          ),
+                              colors: [Color(0xFFFF3B30), Color(0xFFE6204A)]),
                           borderRadius: BorderRadius.circular(
-                            ResponsiveValues.radiusSmall(context),
-                          ),
+                              ResponsiveValues.radiusSmall(context)),
                         ),
                         constraints: BoxConstraints(
                           minWidth: ResponsiveValues.spacingL(context),
@@ -322,7 +310,7 @@ class _MainNavigationState extends State<MainNavigation>
                     ),
                 ],
               ),
-              const ResponsiveSizedBox(height: AppSpacing.xs),
+              SizedBox(height: ResponsiveValues.spacingXS(context)),
               AnimatedOpacity(
                 duration: const Duration(milliseconds: 200),
                 opacity: _showLabels ? 1.0 : 0.0,
@@ -355,80 +343,90 @@ class _MainNavigationState extends State<MainNavigation>
     return Scaffold(
       body: Row(
         children: [
-          _buildGlassContainer(
-            width: ResponsiveValues.spacingXXXXL(context) * 2,
-            child: Container(
-              padding: EdgeInsets.symmetric(
-                vertical: ResponsiveValues.spacingL(context),
-              ),
-              child: Column(
-                children: [
-                  const ResponsiveSizedBox(height: AppSpacing.xxl),
-                  Container(
-                    width: ResponsiveValues.iconSizeXL(context) * 1.5,
-                    height: ResponsiveValues.iconSizeXL(context) * 1.5,
-                    margin: EdgeInsets.only(
-                      bottom: ResponsiveValues.spacingXXL(context),
-                    ),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: AppColors.blueGradient,
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(
-                        ResponsiveValues.radiusMedium(context),
-                      ),
-                    ),
-                    child: Center(
-                      child: ResponsiveIcon(
-                        Icons.school_rounded,
-                        size: ResponsiveValues.iconSizeL(context),
-                        color: Colors.white,
-                      ),
-                    ),
+          ClipRRect(
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+              child: Container(
+                width: ResponsiveValues.spacingXXXXL(context) * 2,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      AppColors.getCard(context).withValues(alpha: 0.4),
+                      AppColors.getCard(context).withValues(alpha: 0.2),
+                    ],
                   ),
-                  _buildTabletNavItem(
-                    index: 0,
-                    icon: Icons.home_outlined,
-                    activeIcon: Icons.home_rounded,
-                    label: 'Home',
-                  ),
-                  const ResponsiveSizedBox(height: AppSpacing.m),
-                  _buildTabletNavItem(
-                    index: 1,
-                    icon: Icons.chat_bubble_outline_rounded,
-                    activeIcon: Icons.chat_bubble_rounded,
-                    label: 'Chat',
-                  ),
-                  const ResponsiveSizedBox(height: AppSpacing.m),
-                  _buildTabletNavItem(
-                    index: 2,
-                    icon: Icons.auto_graph_outlined,
-                    activeIcon: Icons.auto_graph_rounded,
-                    label: 'Progress',
-                  ),
-                  const ResponsiveSizedBox(height: AppSpacing.m),
-                  _buildTabletNavItem(
-                    index: 3,
-                    icon: Icons.person_outline_rounded,
-                    activeIcon: Icons.person_rounded,
-                    label: 'Profile',
-                    unreadCount: unreadCount,
-                  ),
-                  const Spacer(),
-                  if (user != null)
-                    Padding(
-                      padding: EdgeInsets.all(
-                        ResponsiveValues.spacingL(context),
+                  border: Border.all(
+                      color: AppColors.telegramBlue.withValues(alpha: 0.2)),
+                ),
+                child: Container(
+                  padding: EdgeInsets.symmetric(
+                      vertical: ResponsiveValues.spacingL(context)),
+                  child: Column(
+                    children: [
+                      SizedBox(height: ResponsiveValues.spacingXXL(context)),
+                      Container(
+                        width: ResponsiveValues.iconSizeXL(context) * 1.5,
+                        height: ResponsiveValues.iconSizeXL(context) * 1.5,
+                        margin: EdgeInsets.only(
+                            bottom: ResponsiveValues.spacingXXL(context)),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                              colors: AppColors.blueGradient),
+                          borderRadius: BorderRadius.circular(
+                              ResponsiveValues.radiusMedium(context)),
+                        ),
+                        child: Center(
+                          child: Icon(Icons.school_rounded,
+                              size: ResponsiveValues.iconSizeL(context),
+                              color: Colors.white),
+                        ),
                       ),
-                      child: Tooltip(
-                        message: user.username,
-                        child: _buildSidebarAvatar(user),
+                      _buildTabletNavItem(
+                        index: 0,
+                        icon: Icons.home_outlined,
+                        activeIcon: Icons.home_rounded,
+                        label: 'Home',
                       ),
-                    ),
-                  const ResponsiveSizedBox(height: AppSpacing.l),
-                ],
+                      SizedBox(height: ResponsiveValues.spacingM(context)),
+                      _buildTabletNavItem(
+                        index: 1,
+                        icon: Icons.chat_bubble_outline_rounded,
+                        activeIcon: Icons.chat_bubble_rounded,
+                        label: 'Chat',
+                      ),
+                      SizedBox(height: ResponsiveValues.spacingM(context)),
+                      _buildTabletNavItem(
+                        index: 2,
+                        icon: Icons.auto_graph_outlined,
+                        activeIcon: Icons.auto_graph_rounded,
+                        label: 'Progress',
+                      ),
+                      SizedBox(height: ResponsiveValues.spacingM(context)),
+                      _buildTabletNavItem(
+                        index: 3,
+                        icon: Icons.person_outline_rounded,
+                        activeIcon: Icons.person_rounded,
+                        label: 'Profile',
+                        unreadCount: unreadCount,
+                      ),
+                      const Spacer(),
+                      if (user != null)
+                        Padding(
+                          padding: EdgeInsets.all(
+                              ResponsiveValues.spacingL(context)),
+                          child: Tooltip(
+                            message: user.username,
+                            child: _buildSidebarAvatar(user),
+                          ),
+                        ),
+                      SizedBox(height: ResponsiveValues.spacingL(context)),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
@@ -453,8 +451,7 @@ class _MainNavigationState extends State<MainNavigation>
         onTap: () => _onNavigationItemTapped(index),
         child: Container(
           margin: EdgeInsets.symmetric(
-            horizontal: ResponsiveValues.spacingS(context),
-          ),
+              horizontal: ResponsiveValues.spacingS(context)),
           child: Column(
             children: [
               Stack(
@@ -468,18 +465,17 @@ class _MainNavigationState extends State<MainNavigation>
                           ? LinearGradient(
                               colors: [
                                 AppColors.telegramBlue.withValues(alpha: 0.2),
-                                AppColors.telegramPurple.withValues(alpha: 0.1),
+                                AppColors.telegramPurple.withValues(alpha: 0.1)
                               ],
                             )
                           : null,
                       borderRadius: BorderRadius.circular(
-                        ResponsiveValues.radiusMedium(context),
-                      ),
+                          ResponsiveValues.radiusMedium(context)),
                     ),
                     child: Center(
                       child: Stack(
                         children: [
-                          ResponsiveIcon(
+                          Icon(
                             isSelected ? activeIcon : icon,
                             size: isSelected
                                 ? ResponsiveValues.iconSizeL(context)
@@ -496,9 +492,8 @@ class _MainNavigationState extends State<MainNavigation>
                                 width: ResponsiveValues.spacingS(context),
                                 height: ResponsiveValues.spacingS(context),
                                 decoration: const BoxDecoration(
-                                  color: Color(0xFFFF3B30),
-                                  shape: BoxShape.circle,
-                                ),
+                                    color: Color(0xFFFF3B30),
+                                    shape: BoxShape.circle),
                               ),
                             ),
                         ],
@@ -507,7 +502,7 @@ class _MainNavigationState extends State<MainNavigation>
                   ),
                 ],
               ),
-              const ResponsiveSizedBox(height: AppSpacing.xs),
+              SizedBox(height: ResponsiveValues.spacingXS(context)),
               Text(
                 label,
                 style: TextStyle(
@@ -536,16 +531,10 @@ class _MainNavigationState extends State<MainNavigation>
         shape: BoxShape.circle,
         image: hasImage
             ? DecorationImage(
-                image: NetworkImage(user.profileImage!),
-                fit: BoxFit.cover,
-              )
+                image: NetworkImage(user.profileImage!), fit: BoxFit.cover)
             : null,
         gradient: !hasImage
-            ? const LinearGradient(
-                colors: AppColors.purpleGradient,
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              )
+            ? const LinearGradient(colors: AppColors.purpleGradient)
             : null,
       ),
       child: !hasImage
@@ -572,165 +561,181 @@ class _MainNavigationState extends State<MainNavigation>
     return Scaffold(
       body: Row(
         children: [
-          _buildGlassContainer(
-            width: ResponsiveValues.desktopSidebarWidth(context),
-            child: Container(
-              padding: EdgeInsets.symmetric(
-                vertical: ResponsiveValues.spacingL(context),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: EdgeInsets.only(
-                      left: ResponsiveValues.spacingXL(context),
-                      top: ResponsiveValues.spacingXXL(context),
-                      bottom: ResponsiveValues.spacingXXL(context),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: ResponsiveValues.iconSizeXL(context) * 1.5,
-                          height: ResponsiveValues.iconSizeXL(context) * 1.5,
-                          margin: EdgeInsets.only(
-                            right: ResponsiveValues.spacingM(context),
-                          ),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: AppColors.blueGradient,
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            borderRadius: BorderRadius.circular(
-                              ResponsiveValues.radiusSmall(context),
-                            ),
-                          ),
-                          child: Center(
-                            child: ResponsiveIcon(
-                              Icons.school_rounded,
-                              size: ResponsiveValues.iconSizeS(context),
-                              color: Colors.white,
-                            ),
-                          ),
+          ClipRRect(
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+              child: Container(
+                width: ResponsiveValues.desktopSidebarWidth(context),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      AppColors.getCard(context).withValues(alpha: 0.4),
+                      AppColors.getCard(context).withValues(alpha: 0.2),
+                    ],
+                  ),
+                  border: Border.all(
+                      color: AppColors.telegramBlue.withValues(alpha: 0.2)),
+                ),
+                child: Container(
+                  padding: EdgeInsets.symmetric(
+                      vertical: ResponsiveValues.spacingL(context)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: EdgeInsets.only(
+                          left: ResponsiveValues.spacingXL(context),
+                          top: ResponsiveValues.spacingXXL(context),
+                          bottom: ResponsiveValues.spacingXXL(context),
                         ),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        child: Row(
                           children: [
-                            Text(
-                              'Family Academy',
-                              style: TextStyle(
-                                fontSize:
-                                    ResponsiveValues.fontTitleLarge(context),
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.getTextPrimary(context),
+                            Container(
+                              width: ResponsiveValues.iconSizeXL(context) * 1.5,
+                              height:
+                                  ResponsiveValues.iconSizeXL(context) * 1.5,
+                              margin: EdgeInsets.only(
+                                  right: ResponsiveValues.spacingM(context)),
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                    colors: AppColors.blueGradient),
+                                borderRadius: BorderRadius.circular(
+                                    ResponsiveValues.radiusSmall(context)),
+                              ),
+                              child: Center(
+                                child: Icon(Icons.school_rounded,
+                                    size: ResponsiveValues.iconSizeS(context),
+                                    color: Colors.white),
                               ),
                             ),
-                            Text(
-                              'Learning Platform',
-                              style: TextStyle(
-                                fontSize:
-                                    ResponsiveValues.fontBodySmall(context),
-                                color: AppColors.getTextSecondary(context),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      child: Column(
-                        children: [
-                          _buildDesktopNavItem(
-                            index: 0,
-                            icon: Icons.home_outlined,
-                            activeIcon: Icons.home_rounded,
-                            label: 'Home',
-                            description: 'Discover courses and content',
-                          ),
-                          _buildDesktopNavItem(
-                            index: 1,
-                            icon: Icons.chat_bubble_outline_rounded,
-                            activeIcon: Icons.chat_bubble_rounded,
-                            label: 'Chat Assistant',
-                            description: 'AI-powered learning help',
-                          ),
-                          _buildDesktopNavItem(
-                            index: 2,
-                            icon: Icons.auto_graph_outlined,
-                            activeIcon: Icons.auto_graph_rounded,
-                            label: 'Progress',
-                            description: 'Track your learning journey',
-                          ),
-                          _buildDesktopNavItem(
-                            index: 3,
-                            icon: Icons.person_outline_rounded,
-                            activeIcon: Icons.person_rounded,
-                            label: 'Profile',
-                            description: 'Account and settings',
-                            unreadCount: unreadCount,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  if (user != null)
-                    Container(
-                      margin: EdgeInsets.all(
-                        ResponsiveValues.spacingL(context),
-                      ),
-                      padding: ResponsiveValues.cardPadding(context),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            AppColors.getCard(context).withValues(alpha: 0.4),
-                            AppColors.getCard(context).withValues(alpha: 0.2),
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(
-                          ResponsiveValues.radiusMedium(context),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          _buildSidebarAvatar(user),
-                          const ResponsiveSizedBox(width: AppSpacing.m),
-                          Expanded(
-                            child: Column(
+                            Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  user.username,
+                                  'Family Academy',
                                   style: TextStyle(
-                                    fontSize: ResponsiveValues.fontTitleMedium(
+                                    fontSize: ResponsiveValues.fontTitleLarge(
                                         context),
-                                    fontWeight: FontWeight.w600,
+                                    fontWeight: FontWeight.w700,
                                     color: AppColors.getTextPrimary(context),
                                   ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                if (user.email != null &&
-                                    user.email!.isNotEmpty)
-                                  Text(
-                                    user.email!,
-                                    style: TextStyle(
-                                      fontSize: ResponsiveValues.fontBodySmall(
-                                          context),
-                                      color:
-                                          AppColors.getTextSecondary(context),
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
+                                Text(
+                                  'Learning Platform',
+                                  style: TextStyle(
+                                    fontSize:
+                                        ResponsiveValues.fontBodySmall(context),
+                                    color: AppColors.getTextSecondary(context),
                                   ),
+                                ),
                               ],
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                ],
+                      Expanded(
+                        child: SingleChildScrollView(
+                          child: Column(
+                            children: [
+                              _buildDesktopNavItem(
+                                index: 0,
+                                icon: Icons.home_outlined,
+                                activeIcon: Icons.home_rounded,
+                                label: 'Home',
+                                description: 'Discover courses and content',
+                              ),
+                              _buildDesktopNavItem(
+                                index: 1,
+                                icon: Icons.chat_bubble_outline_rounded,
+                                activeIcon: Icons.chat_bubble_rounded,
+                                label: 'Chat Assistant',
+                                description: 'AI-powered learning help',
+                              ),
+                              _buildDesktopNavItem(
+                                index: 2,
+                                icon: Icons.auto_graph_outlined,
+                                activeIcon: Icons.auto_graph_rounded,
+                                label: 'Progress',
+                                description: 'Track your learning journey',
+                              ),
+                              _buildDesktopNavItem(
+                                index: 3,
+                                icon: Icons.person_outline_rounded,
+                                activeIcon: Icons.person_rounded,
+                                label: 'Profile',
+                                description: 'Account and settings',
+                                unreadCount: unreadCount,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (user != null)
+                        Container(
+                          margin: EdgeInsets.all(
+                              ResponsiveValues.spacingL(context)),
+                          padding: ResponsiveValues.cardPadding(context),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                AppColors.getCard(context)
+                                    .withValues(alpha: 0.4),
+                                AppColors.getCard(context)
+                                    .withValues(alpha: 0.2),
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(
+                                ResponsiveValues.radiusMedium(context)),
+                          ),
+                          child: Row(
+                            children: [
+                              _buildSidebarAvatar(user),
+                              SizedBox(
+                                  width: ResponsiveValues.spacingM(context)),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      user.username,
+                                      style: TextStyle(
+                                        fontSize:
+                                            ResponsiveValues.fontTitleMedium(
+                                                context),
+                                        fontWeight: FontWeight.w600,
+                                        color:
+                                            AppColors.getTextPrimary(context),
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    if (user.email != null &&
+                                        user.email!.isNotEmpty)
+                                      Text(
+                                        user.email!,
+                                        style: TextStyle(
+                                          fontSize:
+                                              ResponsiveValues.fontBodySmall(
+                                                  context),
+                                          color: AppColors.getTextSecondary(
+                                              context),
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
@@ -762,7 +767,7 @@ class _MainNavigationState extends State<MainNavigation>
               ? LinearGradient(
                   colors: [
                     AppColors.telegramBlue.withValues(alpha: 0.2),
-                    AppColors.telegramPurple.withValues(alpha: 0.1),
+                    AppColors.telegramPurple.withValues(alpha: 0.1)
                   ],
                 )
               : null,
@@ -784,13 +789,13 @@ class _MainNavigationState extends State<MainNavigation>
                         ? LinearGradient(
                             colors: [
                               AppColors.telegramBlue.withValues(alpha: 0.2),
-                              AppColors.telegramPurple.withValues(alpha: 0.1),
+                              AppColors.telegramPurple.withValues(alpha: 0.1)
                             ],
                           )
                         : LinearGradient(
                             colors: [
                               AppColors.getCard(context).withValues(alpha: 0.3),
-                              AppColors.getCard(context).withValues(alpha: 0.1),
+                              AppColors.getCard(context).withValues(alpha: 0.1)
                             ],
                           ),
                     borderRadius: BorderRadius.circular(12),
@@ -814,9 +819,8 @@ class _MainNavigationState extends State<MainNavigation>
                               height: 10,
                               child: DecoratedBox(
                                 decoration: BoxDecoration(
-                                  color: Color(0xFFFF3B30),
-                                  shape: BoxShape.circle,
-                                ),
+                                    color: Color(0xFFFF3B30),
+                                    shape: BoxShape.circle),
                               ),
                             ),
                           ),
@@ -899,18 +903,6 @@ class _MainNavigationState extends State<MainNavigation>
     super.dispose();
   }
 
-  Widget _buildMobileLayout() {
-    return _buildMobileNavigation();
-  }
-
-  Widget _buildTabletLayout() {
-    return _buildTabletNavigation();
-  }
-
-  Widget _buildDesktopLayout() {
-    return _buildDesktopNavigation();
-  }
-
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
@@ -923,10 +915,12 @@ class _MainNavigationState extends State<MainNavigation>
           .addPostFrameCallback((_) => authProvider.checkSession());
     }
 
-    return ResponsiveLayout(
-      mobile: _buildMobileLayout(),
-      tablet: _buildTabletLayout(),
-      desktop: _buildDesktopLayout(),
-    );
+    if (ScreenSize.isMobile(context)) {
+      return _buildMobileNavigation();
+    } else if (ScreenSize.isTablet(context)) {
+      return _buildTabletNavigation();
+    } else {
+      return _buildDesktopNavigation();
+    }
   }
 }
