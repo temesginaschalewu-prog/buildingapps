@@ -1,13 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:familyacademyclient/themes/app_colors.dart';
-import 'package:familyacademyclient/themes/app_text_styles.dart';
-import 'package:familyacademyclient/utils/responsive_values.dart';
-
-enum TextFieldVariant {
-  glass,
-  filled,
-  outline,
-}
+import '../../themes/app_colors.dart';
+import '../../themes/app_text_styles.dart';
+import '../../utils/responsive_values.dart';
+import '../../utils/app_enums.dart';
 
 class AppTextField extends StatefulWidget {
   final TextEditingController controller;
@@ -149,7 +144,6 @@ class _AppTextFieldState extends State<AppTextField> {
   @override
   void didUpdateWidget(AppTextField oldWidget) {
     super.didUpdateWidget(oldWidget);
-
     if (oldWidget.obscureText != widget.obscureText) {
       _obscureText = widget.obscureText;
     }
@@ -163,9 +157,7 @@ class _AppTextFieldState extends State<AppTextField> {
   }
 
   void _handleFocusChange() {
-    if (mounted) {
-      setState(() => _hasFocus = _focusNode.hasFocus);
-    }
+    if (mounted) setState(() => _hasFocus = _focusNode.hasFocus);
   }
 
   @override
@@ -267,9 +259,7 @@ class _AppTextFieldState extends State<AppTextField> {
   }
 
   Widget? _buildSuffixIcon(BuildContext context) {
-    if (widget.suffixIcon != null) {
-      return widget.suffixIcon;
-    }
+    if (widget.suffixIcon != null) return widget.suffixIcon;
 
     if (widget.obscureText) {
       return Padding(
@@ -282,9 +272,7 @@ class _AppTextFieldState extends State<AppTextField> {
                 ? AppColors.telegramBlue
                 : AppColors.getTextSecondary(context),
           ),
-          onPressed: () {
-            setState(() => _obscureText = !_obscureText);
-          },
+          onPressed: () => setState(() => _obscureText = !_obscureText),
         ),
       );
     }
@@ -311,9 +299,8 @@ class _AppTextFieldState extends State<AppTextField> {
 
   BoxDecoration _getDecoration(BuildContext context) {
     final baseDecoration = BoxDecoration(
-      borderRadius: BorderRadius.circular(
-        ResponsiveValues.radiusMedium(context),
-      ),
+      borderRadius:
+          BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
     );
 
     switch (widget.variant) {
