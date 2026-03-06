@@ -237,15 +237,13 @@ class ResponsiveLayout extends StatelessWidget {
           return selectedWidget
               .animate()
               .fadeIn(
-                duration:
-                    animationDuration ?? AppThemes.animationDurationMedium,
+                duration: animationDuration ?? AppThemes.animationMedium,
                 curve: animationCurve ?? Curves.easeOut,
               )
               .scale(
                 begin: const Offset(0.97, 0.97),
                 end: const Offset(1, 1),
-                duration:
-                    animationDuration ?? AppThemes.animationDurationMedium,
+                duration: animationDuration ?? AppThemes.animationMedium,
                 curve: animationCurve ?? Curves.easeOut,
               );
         }
@@ -288,12 +286,12 @@ class AdaptiveContainer extends StatelessWidget {
       return content
           .animate()
           .fadeIn(
-            duration: AppThemes.animationDurationMedium,
+            duration: AppThemes.animationMedium,
           )
           .slideY(
             begin: 0.05,
             end: 0,
-            duration: AppThemes.animationDurationMedium,
+            duration: AppThemes.animationMedium,
           );
     }
     return content;
