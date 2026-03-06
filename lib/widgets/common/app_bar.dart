@@ -1,11 +1,11 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:familyacademyclient/providers/theme_provider.dart';
-import 'package:familyacademyclient/widgets/common/notification_button.dart';
-import 'package:familyacademyclient/themes/app_colors.dart';
-import 'package:familyacademyclient/themes/app_text_styles.dart';
-import 'package:familyacademyclient/utils/responsive_values.dart';
+import '../../../providers/theme_provider.dart';
+import '../../../themes/app_colors.dart';
+import '../../../themes/app_text_styles.dart';
+import '../../../utils/responsive_values.dart';
+import 'notification_button.dart';
 
 class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String title;
@@ -28,24 +28,17 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   });
 
   @override
-  Size get preferredSize {
-    // Using a builder to get context would be complicated, so we use a reasonable default
-    return const Size.fromHeight(kToolbarHeight + 32);
-  }
+  Size get preferredSize => const Size.fromHeight(kToolbarHeight + 32);
 
   @override
   Widget build(BuildContext context) {
     return Consumer<ThemeProvider>(
       builder: (context, themeProvider, child) {
         final isDark = Theme.of(context).brightness == Brightness.dark;
-
-        // Use AppColors for all colors
         final backgroundColor = isDark
             ? AppColors.darkSurface.withValues(alpha: 0.95)
             : AppColors.lightSurface.withValues(alpha: 0.95);
-
         final gradientStart = isDark ? AppColors.darkCard : AppColors.lightCard;
-
         final gradientEnd =
             isDark ? AppColors.darkBackground : AppColors.lightBackground;
 
@@ -80,20 +73,15 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [
-                      gradientStart,
-                      gradientEnd,
-                    ],
+                    colors: [gradientStart, gradientEnd],
                   ),
                   border: Border(
                     bottom: BorderSide(
-                      color: AppColors.telegramBlue.withValues(alpha: 0.15),
-                    ),
+                        color: AppColors.telegramBlue.withValues(alpha: 0.15)),
                   ),
                 ),
                 child: Stack(
                   children: [
-                    // Sparkle/fleck overlay
                     Positioned.fill(
                       child: IgnorePointer(
                         child: CustomPaint(
@@ -105,7 +93,6 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
                         ),
                       ),
                     ),
-                    // Main content
                     Row(
                       children: [
                         if (leading != null) leading!,
@@ -118,9 +105,7 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
                               Text(
                                 title,
                                 style: AppTextStyles.headlineSmall(context)
-                                    .copyWith(
-                                  fontWeight: FontWeight.w700,
-                                ),
+                                    .copyWith(fontWeight: FontWeight.w700),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -146,7 +131,6 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
                 ),
               ),
             ),
-            // Small bottom padding to separate from content
             SizedBox(height: ResponsiveValues.spacingXS(context)),
           ],
         );
@@ -161,8 +145,7 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
         if (showThemeToggle) ...[
           Padding(
             padding: EdgeInsets.only(
-              right: ResponsiveValues.appBarButtonSpacing(context),
-            ),
+                right: ResponsiveValues.appBarButtonSpacing(context)),
             child: _buildIconButton(
               context: context,
               onTap: themeProvider.toggleTheme,
@@ -176,16 +159,14 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
         if (showNotification) ...[
           Padding(
             padding: EdgeInsets.only(
-              right: ResponsiveValues.appBarButtonSpacing(context),
-            ),
+                right: ResponsiveValues.appBarButtonSpacing(context)),
             child: const NotificationButton(),
           ),
         ],
         if (customTrailing != null) ...[
           Padding(
             padding: EdgeInsets.only(
-              right: ResponsiveValues.appBarButtonSpacing(context),
-            ),
+                right: ResponsiveValues.appBarButtonSpacing(context)),
             child: customTrailing,
           ),
         ],
@@ -213,18 +194,15 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
           color: Colors.transparent,
           child: InkWell(
             onTap: onTap,
-            borderRadius: BorderRadius.circular(
-              ResponsiveValues.radiusFull(context) / 2,
-            ),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusFull(context) / 2),
             splashColor: AppColors.telegramBlue.withValues(alpha: 0.3),
             highlightColor: Colors.transparent,
             child: Center(
               child: customChild ??
-                  Icon(
-                    icon,
-                    size: ResponsiveValues.appBarIconSize(context),
-                    color: color,
-                  ),
+                  Icon(icon,
+                      size: ResponsiveValues.appBarIconSize(context),
+                      color: color),
             ),
           ),
         ),
