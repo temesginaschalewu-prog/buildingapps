@@ -73,55 +73,38 @@ class CourseProvider with ChangeNotifier {
 
   Future<void> loadCoursesByCategory(int categoryId,
       {bool forceRefresh = false, bool? hasAccess}) async {
-    if (_isLoadingCategory[categoryId] == true && !forceRefresh) {
-      debugLog('CourseProvider',
-          '⏳ Already loading courses for category $categoryId');
-      return;
-    }
-
-    if (!forceRefresh && _hasLoadedCategory[categoryId] == true) {
-      final lastLoaded = _lastLoadedTime[categoryId];
-      if (lastLoaded != null &&
-          DateTime.now().difference(lastLoaded) < _cacheDuration) {
-        debugLog('CourseProvider',
-            '✅ Using cached courses for category: $categoryId (${_coursesByCategory[categoryId]?.length ?? 0} courses)');
-        return;
-      }
-    }
-
     _isLoadingCategory[categoryId] = true;
     _isLoading = true;
     _error = null;
     _notifySafely();
 
-    try {
-      debugLog(
-          'CourseProvider', '📥 Loading courses for category: $categoryId');
+    if (!forceRefresh) {
+      final cachedCourses =
+          await deviceService.getCacheItem<List<Course>>('courses_$categoryId');
 
-      if (!forceRefresh) {
-        final cachedCourses = await deviceService
-            .getCacheItem<List<Course>>('courses_$categoryId');
+      if (cachedCourses != null && cachedCourses.isNotEmpty) {
+        _coursesByCategory[categoryId] = cachedCourses;
+        _hasLoadedCategory[categoryId] = true;
+        _lastLoadedTime[categoryId] = DateTime.now();
+        _updateMainCoursesList(cachedCourses);
 
-        if (cachedCourses != null && cachedCourses.isNotEmpty) {
-          _coursesByCategory[categoryId] = cachedCourses;
-          _hasLoadedCategory[categoryId] = true;
-          _lastLoadedTime[categoryId] = DateTime.now();
-          _updateMainCoursesList(cachedCourses);
+        _isLoadingCategory[categoryId] = false;
+        _isLoading = false;
 
-          _isLoadingCategory[categoryId] = false;
-          _isLoading = false;
+        _coursesUpdateController.add({categoryId: cachedCourses});
+        _notifySafely();
 
-          _coursesUpdateController.add({categoryId: cachedCourses});
-          _notifySafely();
+        debugLog('CourseProvider',
+            '✅ Loaded ${cachedCourses.length} courses from cache for category $categoryId');
 
-          debugLog('CourseProvider',
-              '✅ Loaded ${cachedCourses.length} courses from cache for category $categoryId');
-
-          unawaited(_refreshInBackground(categoryId, hasAccess));
-          return;
-        }
+        unawaited(_refreshInBackground(categoryId, hasAccess));
+        return;
       }
+    }
 
+    debugLog('CourseProvider', '📥 Loading courses for category: $categoryId');
+
+    try {
       final response = await apiService.getCoursesByCategory(categoryId);
 
       if (!response.success) {
@@ -330,7 +313,7 @@ class CourseProvider with ChangeNotifier {
 
   Future<bool> _isLoggingOut() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool('is_logging_out') ?? false;
+    return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
   }
 
   Future<void> clearCoursesForCategory(int categoryId) async {
