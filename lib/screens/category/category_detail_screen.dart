@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import 'package:pull_to_refresh/pull_to_refresh.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-
 import '../../models/category_model.dart';
 import '../../models/payment_model.dart';
 import '../../services/device_service.dart';
@@ -24,6 +23,7 @@ import '../../widgets/common/app_dialog.dart';
 import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
 import '../../utils/ui_helpers.dart';
+import '../../utils/app_enums.dart';
 import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
@@ -47,10 +47,12 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
   bool _hasPendingPayment = false;
   String? _rejectionReason;
 
+  bool _isLoadingCategory = true;
+  bool _isLoadingCourses = false;
+  bool _isLoadingPayments = false;
   bool _hasCachedData = false;
   bool _isOffline = false;
   bool _isRefreshing = false;
-  bool _isLoading = true;
 
   final RefreshController _refreshController = RefreshController();
   StreamSubscription? _subscriptionListener;
@@ -91,79 +93,6 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     });
   }
 
-  Widget _buildGradientButton({
-    required String label,
-    required VoidCallback onPressed,
-    required List<Color> gradient,
-  }) {
-    return AppButton.primary(
-      label: label,
-      onPressed: onPressed,
-    );
-  }
-
-  Widget _buildGlassButton({
-    required String label,
-    required VoidCallback onPressed,
-    required Color color,
-  }) {
-    return AppButton.glass(
-      label: label,
-      onPressed: onPressed,
-    );
-  }
-
-  Widget _buildLocalPlaceholder() {
-    if (_category == null) return const SizedBox.shrink();
-
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            AppColors.telegramBlue.withValues(alpha: 0.8),
-            AppColors.telegramPurple.withValues(alpha: 0.8),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
-      child: Center(
-        child: ResponsiveColumn(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: ResponsiveValues.avatarSizeLarge(context),
-              height: ResponsiveValues.avatarSizeLarge(context),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                shape: BoxShape.circle,
-              ),
-              child: Center(
-                child: ResponsiveText(
-                  _category!.initials,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-            const ResponsiveSizedBox(height: AppSpacing.l),
-            ResponsiveText(
-              _category!.name,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Future<void> _checkConnectivity() async {
     final connectivityService = context.read<ConnectivityService>();
     setState(() => _isOffline = !connectivityService.isOnline);
@@ -172,34 +101,30 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
   Future<void> _initializeScreen() async {
     await _checkConnectivity();
 
+    setState(() => _isLoadingCategory = true);
+
     await _loadFromCache();
 
     if (_category != null && _hasCachedData) {
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _isLoadingCategory = false);
 
       if (!_isOffline) {
         _refreshInBackground();
       }
     } else {
-      setState(() {
-        _isLoading = true;
-      });
-
       await _loadFreshData();
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _isLoadingCategory = false);
     }
   }
 
   Future<void> _loadFromCache() async {
     try {
       final deviceService = context.read<DeviceService>();
-      final cachedCategory = await deviceService
-          .getCacheItem<Map<String, dynamic>>('category_${widget.categoryId}',
-              isUserSpecific: true);
+      final cachedCategory =
+          await deviceService.getCacheItem<Map<String, dynamic>>(
+        'category_${widget.categoryId}',
+        isUserSpecific: true,
+      );
 
       if (cachedCategory != null) {
         _category = Category.fromJson(cachedCategory['category']);
@@ -228,11 +153,16 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
 
     try {
       final categoryProvider = context.read<CategoryProvider>();
-      if (categoryProvider.categories.isEmpty) {
-        await categoryProvider.loadCategories(forceRefresh: true);
-      }
 
-      _category = categoryProvider.getCategoryById(widget.categoryId);
+      debugLog('CategoryDetail',
+          '🔍 Calling getCategoryByIdAsync for ${widget.categoryId}');
+
+      _category =
+          await categoryProvider.getCategoryByIdAsync(widget.categoryId);
+
+      debugLog('CategoryDetail',
+          '✅ getCategoryByIdAsync returned: ${_category != null}');
+
       if (_category == null) throw Exception('Category not found');
 
       await _checkAccessStatus();
@@ -271,9 +201,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
 
       if (mounted) setState(() {});
     } finally {
-      if (mounted) {
-        _isRefreshing = false;
-      }
+      if (mounted) _isRefreshing = false;
     }
   }
 
@@ -354,38 +282,54 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
 
   Future<void> _loadPaymentInfo({bool forceRefresh = false}) async {
     if (_category == null) return;
+
+    setState(() => _isLoadingPayments = true);
+
     final paymentProvider = context.read<PaymentProvider>();
     try {
       await paymentProvider.loadPayments(
           forceRefresh: forceRefresh && !_isOffline);
       final pendingPayments = paymentProvider.getPendingPayments();
-      _hasPendingPayment = pendingPayments.any((payment) =>
-          payment.categoryName.toLowerCase() == _category!.name.toLowerCase());
+      _hasPendingPayment = pendingPayments.any(
+        (payment) =>
+            payment.categoryName.toLowerCase() == _category!.name.toLowerCase(),
+      );
 
       final rejectedPayments = paymentProvider.getRejectedPayments();
       final recentRejected = rejectedPayments.firstWhere(
         (p) => p.categoryName.toLowerCase() == _category!.name.toLowerCase(),
         orElse: () => Payment(
-            id: 0,
-            paymentType: '',
-            amount: 0,
-            paymentMethod: '',
-            status: '',
-            createdAt: DateTime.now(),
-            categoryName: ''),
+          id: 0,
+          paymentType: '',
+          amount: 0,
+          paymentMethod: '',
+          status: '',
+          createdAt: DateTime.now(),
+          categoryName: '',
+        ),
       );
       _rejectionReason =
           recentRejected.id != 0 ? recentRejected.rejectionReason : null;
     } catch (e) {
       debugLog('CategoryDetail', 'Error loading payment info: $e');
+    } finally {
+      setState(() => _isLoadingPayments = false);
     }
   }
 
   Future<void> _loadCourses({bool forceRefresh = false}) async {
     if (_category == null) return;
+
+    setState(() => _isLoadingCourses = true);
+
     final courseProvider = context.read<CourseProvider>();
-    await courseProvider.loadCoursesByCategory(widget.categoryId,
-        forceRefresh: forceRefresh && !_isOffline, hasAccess: _hasAccess);
+    await courseProvider.loadCoursesByCategory(
+      widget.categoryId,
+      forceRefresh: forceRefresh && !_isOffline,
+      hasAccess: _hasAccess,
+    );
+
+    setState(() => _isLoadingCourses = false);
   }
 
   Future<void> _saveToCache() async {
@@ -393,16 +337,17 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     try {
       final deviceService = context.read<DeviceService>();
       await deviceService.saveCacheItem(
-          'category_${widget.categoryId}',
-          {
-            'category': _category!.toJson(),
-            'has_access': _hasAccess,
-            'has_pending_payment': _hasPendingPayment,
-            'rejection_reason': _rejectionReason,
-            'timestamp': DateTime.now().toIso8601String(),
-          },
-          ttl: const Duration(hours: 1),
-          isUserSpecific: true);
+        'category_${widget.categoryId}',
+        {
+          'category': _category!.toJson(),
+          'has_access': _hasAccess,
+          'has_pending_payment': _hasPendingPayment,
+          'rejection_reason': _rejectionReason,
+          'timestamp': DateTime.now().toIso8601String(),
+        },
+        ttl: const Duration(hours: 1),
+        isUserSpecific: true,
+      );
     } catch (e) {
       debugLog('CategoryDetail', 'Error saving to cache: $e');
     }
@@ -422,8 +367,9 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     final subscriptionProvider = context.read<SubscriptionProvider>();
     final subscriptions = subscriptionProvider.allSubscriptions;
 
-    final bool hasExpiredSubscription = subscriptions
-        .any((sub) => sub.categoryId == _category!.id && sub.isExpired);
+    final bool hasExpiredSubscription = subscriptions.any(
+      (sub) => sub.categoryId == _category!.id && sub.isExpired,
+    );
 
     final String paymentType =
         hasExpiredSubscription ? 'repayment' : 'first_time';
@@ -519,16 +465,13 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                 decoration: BoxDecoration(
                   color: accessColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(
-                    ResponsiveValues.radiusMedium(context),
-                  ),
+                      ResponsiveValues.radiusMedium(context)),
                 ),
-                child: Icon(
-                  accessIcon,
-                  size: ResponsiveValues.iconSizeL(context),
-                  color: accessColor,
-                ),
+                child: Icon(accessIcon,
+                    size: ResponsiveValues.iconSizeL(context),
+                    color: accessColor),
               ),
-              const ResponsiveSizedBox(width: AppSpacing.l),
+              SizedBox(width: ResponsiveValues.spacingL(context)),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -536,26 +479,20 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                     Text(
                       accessTitle,
                       style: AppTextStyles.titleSmall(context).copyWith(
-                        color: accessColor,
-                        fontWeight: FontWeight.w600,
-                      ),
+                          color: accessColor, fontWeight: FontWeight.w600),
                     ),
-                    const ResponsiveSizedBox(height: AppSpacing.xs),
+                    SizedBox(height: ResponsiveValues.spacingXS(context)),
                     Text(
                       message,
-                      style: AppTextStyles.bodySmall(context).copyWith(
-                        color: AppColors.getTextSecondary(context),
-                      ),
+                      style: AppTextStyles.bodySmall(context)
+                          .copyWith(color: AppColors.getTextSecondary(context)),
                     ),
                   ],
                 ),
               ),
               if (actionText != null && onAction != null) ...[
-                const ResponsiveSizedBox(width: AppSpacing.m),
-                AppButton.glass(
-                  label: actionText,
-                  onPressed: onAction,
-                ),
+                SizedBox(width: ResponsiveValues.spacingM(context)),
+                AppButton.glass(label: actionText, onPressed: onAction),
               ],
             ],
           ),
@@ -598,7 +535,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                 end: Alignment.bottomCenter,
                 colors: [
                   Colors.transparent,
-                  Colors.black.withValues(alpha: 0.7),
+                  Colors.black.withValues(alpha: 0.7)
                 ],
               ),
             ),
@@ -608,32 +545,28 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
           bottom: ResponsiveValues.spacingXL(context),
           left: ResponsiveValues.spacingL(context),
           right: ResponsiveValues.spacingL(context),
-          child: ResponsiveColumn(
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 _category!.name,
-                style: AppTextStyles.displaySmall(context).copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                ),
+                style: AppTextStyles.displaySmall(context)
+                    .copyWith(color: Colors.white, fontWeight: FontWeight.w700),
               ),
               if (_category!.description != null &&
                   _category!.description!.isNotEmpty)
                 Padding(
-                  padding: EdgeInsets.only(
-                    top: ResponsiveValues.spacingS(context),
-                  ),
+                  padding:
+                      EdgeInsets.only(top: ResponsiveValues.spacingS(context)),
                   child: Text(
                     _category!.description!,
-                    style: AppTextStyles.bodyLarge(context).copyWith(
-                      color: Colors.white.withValues(alpha: 0.9),
-                    ),
+                    style: AppTextStyles.bodyLarge(context)
+                        .copyWith(color: Colors.white.withValues(alpha: 0.9)),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-              const ResponsiveSizedBox(height: AppSpacing.m),
+              SizedBox(height: ResponsiveValues.spacingM(context)),
               Row(
                 children: [
                   Container(
@@ -644,26 +577,24 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(
-                        ResponsiveValues.radiusFull(context),
-                      ),
+                          ResponsiveValues.radiusFull(context)),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const Icon(Icons.menu_book_rounded,
                             size: 16, color: Colors.white),
-                        const ResponsiveSizedBox(width: AppSpacing.xs),
+                        SizedBox(width: ResponsiveValues.spacingXS(context)),
                         Text(
                           '${_category!.courseCount} courses',
-                          style: AppTextStyles.labelSmall(context).copyWith(
-                            color: Colors.white,
-                          ),
+                          style: AppTextStyles.labelSmall(context)
+                              .copyWith(color: Colors.white),
                         ),
                       ],
                     ),
                   ),
                   if (_category!.price != null && _category!.price! > 0) ...[
-                    const ResponsiveSizedBox(width: AppSpacing.m),
+                    SizedBox(width: ResponsiveValues.spacingM(context)),
                     Container(
                       padding: EdgeInsets.symmetric(
                         horizontal: ResponsiveValues.spacingM(context),
@@ -672,8 +603,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                       decoration: BoxDecoration(
                         color: AppColors.telegramBlue,
                         borderRadius: BorderRadius.circular(
-                          ResponsiveValues.radiusFull(context),
-                        ),
+                            ResponsiveValues.radiusFull(context)),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -683,9 +613,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                           Text(
                             _category!.priceDisplay,
                             style: AppTextStyles.labelSmall(context).copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                            ),
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700),
                           ),
                         ],
                       ),
@@ -701,9 +630,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
               ResponsiveValues.spacingM(context),
           left: ResponsiveValues.spacingL(context),
           child: AppButton.icon(
-            icon: Icons.arrow_back_rounded,
-            onPressed: () => context.pop(),
-          ),
+              icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
         ),
         if (_isRefreshing)
           Positioned(
@@ -714,9 +641,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
               width: ResponsiveValues.iconSizeXL(context),
               height: ResponsiveValues.iconSizeXL(context),
               decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.3),
-                shape: BoxShape.circle,
-              ),
+                  color: Colors.black.withValues(alpha: 0.3),
+                  shape: BoxShape.circle),
               child: Center(
                 child: SizedBox(
                   width: ResponsiveValues.iconSizeS(context),
@@ -733,13 +659,57 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     );
   }
 
+  Widget _buildLocalPlaceholder() {
+    if (_category == null) return const SizedBox.shrink();
+
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            AppColors.telegramBlue.withValues(alpha: 0.8),
+            AppColors.telegramPurple.withValues(alpha: 0.8)
+          ],
+        ),
+      ),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: ResponsiveValues.avatarSizeLarge(context),
+              height: ResponsiveValues.avatarSizeLarge(context),
+              decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  shape: BoxShape.circle),
+              child: Center(
+                child: Text(
+                  _category!.initials,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+            SizedBox(height: ResponsiveValues.spacingL(context)),
+            Text(
+              _category!.name,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildHeaderShimmer() {
     return const AppShimmer(type: ShimmerType.rectangle);
   }
 
   Widget _buildSkeletonLoader() {
-    final columns = ResponsiveValues.gridColumns(context);
-
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       body: CustomScrollView(
@@ -747,35 +717,28 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
         slivers: [
           SliverAppBar(
             expandedHeight: ScreenSize.responsiveDouble(
-              context: context,
-              mobile: 200,
-              tablet: 250,
-              desktop: 300,
-            ),
+                context: context, mobile: 200, tablet: 250, desktop: 300),
             pinned: true,
-            flexibleSpace: FlexibleSpaceBar(
-              background: _buildHeaderShimmer(),
-            ),
+            flexibleSpace: FlexibleSpaceBar(background: _buildHeaderShimmer()),
             leading: AppButton.icon(
-              icon: Icons.arrow_back_rounded,
-              onPressed: () => context.pop(),
-            ),
+                icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
           ),
           SliverToBoxAdapter(
             child: Padding(
               padding: ResponsiveValues.screenPadding(context),
-              child: const ResponsiveColumn(
+              child: Column(
                 children: [
-                  AppShimmer(type: ShimmerType.rectangle, customHeight: 60),
-                  ResponsiveSizedBox(height: AppSpacing.xl),
-                  Row(
+                  const AppShimmer(
+                      type: ShimmerType.rectangle, customHeight: 60),
+                  SizedBox(height: ResponsiveValues.spacingXL(context)),
+                  const Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       AppShimmer(type: ShimmerType.textLine, customWidth: 150),
                       AppShimmer(type: ShimmerType.textLine, customWidth: 50),
                     ],
                   ),
-                  ResponsiveSizedBox(height: AppSpacing.l),
+                  SizedBox(height: ResponsiveValues.spacingL(context)),
                 ],
               ),
             ),
@@ -786,8 +749,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
               delegate: SliverChildBuilderDelegate(
                 (context, index) => Padding(
                   padding: EdgeInsets.only(
-                    bottom: ResponsiveValues.spacingL(context),
-                  ),
+                      bottom: ResponsiveValues.spacingL(context)),
                   child: AppShimmer(type: ShimmerType.courseCard, index: index),
                 ),
                 childCount: 5,
@@ -799,18 +761,22 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     );
   }
 
-  int _getChildCount(List courses, bool isLoadingCourses, bool isLoading) {
-    if (courses.isNotEmpty) {
-      return courses.length;
-    }
-    if (isLoading || isLoadingCourses) {
-      return 5;
-    }
-    return 1;
-  }
+  @override
+  Widget build(BuildContext context) {
+    final categoryProvider = context.watch<CategoryProvider>();
+    final courseProvider = context.watch<CourseProvider>();
+    final courses = courseProvider.getCoursesByCategory(widget.categoryId);
 
-  Widget _buildMobileLayout() {
-    if (_isLoading && !_hasCachedData) {
+    final isCategoryLoading =
+        categoryProvider.isLoadingCategory(widget.categoryId) ||
+            _isLoadingCategory;
+
+    debugLog('CategoryDetail',
+        'Building - isCategoryLoading: $isCategoryLoading, hasCachedData: $_hasCachedData, category: ${_category != null}');
+
+    if (isCategoryLoading || _isLoadingCourses || _isLoadingPayments) {
+      debugLog('CategoryDetail',
+          'Showing shimmer - loading states: cat:$isCategoryLoading, courses:$_isLoadingCourses, payments:$_isLoadingPayments');
       return _buildSkeletonLoader();
     }
 
@@ -821,9 +787,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
           backgroundColor: AppColors.getBackground(context),
           elevation: 0,
           leading: AppButton.icon(
-            icon: Icons.arrow_back_rounded,
-            onPressed: () => context.pop(),
-          ),
+              icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
         ),
         body: Center(
           child: AppEmptyState.error(
@@ -837,11 +801,6 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
       );
     }
 
-    final courseProvider = context.watch<CourseProvider>();
-    final courses = courseProvider.getCoursesByCategory(widget.categoryId);
-    final isLoadingCourses =
-        courseProvider.isLoadingCategory(widget.categoryId);
-
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       body: Container(
@@ -851,7 +810,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
             end: Alignment.bottomCenter,
             colors: [
               AppColors.getBackground(context).withValues(alpha: 0.95),
-              AppColors.getBackground(context),
+              AppColors.getBackground(context)
             ],
           ),
         ),
@@ -882,11 +841,12 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                     children: [
                       Text(
                         'Courses',
-                        style: AppTextStyles.titleLarge(context).copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
+                        style: AppTextStyles.titleLarge(context)
+                            .copyWith(fontWeight: FontWeight.w700),
                       ),
-                      if (!isLoadingCourses && courses.isNotEmpty)
+                      if (!_isLoadingCourses &&
+                          !_isLoadingPayments &&
+                          courses.isNotEmpty)
                         Container(
                           padding: EdgeInsets.symmetric(
                             horizontal: ResponsiveValues.spacingM(context),
@@ -895,12 +855,10 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                           decoration: BoxDecoration(
                             color: AppColors.blueFaded,
                             borderRadius: BorderRadius.circular(
-                              ResponsiveValues.radiusFull(context),
-                            ),
+                                ResponsiveValues.radiusFull(context)),
                             border: Border.all(
-                              color:
-                                  AppColors.telegramBlue.withValues(alpha: 0.3),
-                            ),
+                                color: AppColors.telegramBlue
+                                    .withValues(alpha: 0.3)),
                           ),
                           child: Text(
                             '${courses.length}',
@@ -919,11 +877,10 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                 sliver: SliverList(
                   delegate: SliverChildBuilderDelegate(
                     (context, index) {
-                      if (_isLoading && courses.isEmpty) {
+                      if (_isLoadingCourses && courses.isEmpty) {
                         return Padding(
                           padding: EdgeInsets.only(
-                            bottom: ResponsiveValues.spacingL(context),
-                          ),
+                              bottom: ResponsiveValues.spacingL(context)),
                           child: AppShimmer(
                               type: ShimmerType.courseCard, index: index),
                         );
@@ -933,26 +890,22 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                         final course = courses[index];
                         return Padding(
                           padding: EdgeInsets.only(
-                            bottom: ResponsiveValues.spacingL(context),
-                          ),
+                              bottom: ResponsiveValues.spacingL(context)),
                           child: CourseCard(
                             course: course,
                             categoryId: widget.categoryId,
-                            onTap: () => context.push('/course/${course.id}',
-                                extra: {
-                                  'course': course,
-                                  'category': _category,
-                                  'hasAccess': _hasAccess
-                                }),
+                            onTap: () =>
+                                context.push('/course/${course.id}', extra: {
+                              'course': course,
+                              'category': _category,
+                              'hasAccess': _hasAccess,
+                            }),
                             index: index,
                           ),
                         );
                       }
 
-                      if (!_isLoading &&
-                          !isLoadingCourses &&
-                          courses.isEmpty &&
-                          index == 0) {
+                      if (!_isLoadingCourses && courses.isEmpty && index == 0) {
                         return Center(
                           child: Padding(
                             padding: EdgeInsets.symmetric(
@@ -970,36 +923,20 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
 
                       return null;
                     },
-                    childCount:
-                        _getChildCount(courses, isLoadingCourses, _isLoading),
+                    childCount: courses.isNotEmpty
+                        ? courses.length
+                        : (_isLoadingCourses ? 5 : 1),
                   ),
                 ),
               ),
-              const SliverToBoxAdapter(
-                child: ResponsiveSizedBox(height: AppSpacing.xxl),
-              ),
+              SliverToBoxAdapter(
+                  child:
+                      SizedBox(height: ResponsiveValues.spacingXXL(context))),
             ],
           ),
         ),
       ),
-    ).animate().fadeIn(duration: AppThemes.animationDurationMedium);
-  }
-
-  Widget _buildTabletLayout() {
-    return _buildMobileLayout();
-  }
-
-  Widget _buildDesktopLayout() {
-    return _buildMobileLayout();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ResponsiveLayout(
-      mobile: _buildMobileLayout(),
-      tablet: _buildTabletLayout(),
-      desktop: _buildDesktopLayout(),
-    );
+    ).animate().fadeIn(duration: AppThemes.animationMedium);
   }
 
   @override
