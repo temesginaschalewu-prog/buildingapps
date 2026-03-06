@@ -1,22 +1,16 @@
-import 'dart:ui';
-import 'package:familyacademyclient/widgets/common/app_shimmer.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-
 import '../../models/exam_model.dart';
 import '../../providers/payment_provider.dart';
-import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
-import '../../utils/responsive.dart';
+import '../../themes/app_themes.dart';
 import '../../utils/responsive_values.dart';
 import '../../utils/ui_helpers.dart';
-import '../../widgets/common/app_card.dart';
-import '../../widgets/common/app_button.dart';
-import '../../widgets/common/app_dialog.dart';
-import '../common/responsive_widgets.dart';
+import '../common/app_card.dart';
+import '../common/app_dialog.dart';
 
 class ExamCard extends StatelessWidget {
   final Exam exam;
@@ -31,7 +25,7 @@ class ExamCard extends StatelessWidget {
   });
 
   Color _getStatusColor(BuildContext context) {
-    if (exam.isBlockedByPendingPayment) return AppColors.statusPending;
+    if (exam.isBlockedByPendingPayment) return AppColors.pending;
     if (exam.canTakeExam) return AppColors.telegramGreen;
     if (exam.requiresPayment) return AppColors.telegramBlue;
     if (exam.maxAttemptsReached) return AppColors.telegramRed;
@@ -47,7 +41,7 @@ class ExamCard extends StatelessWidget {
     if (color == AppColors.telegramBlue) return AppColors.blueFaded;
     if (color == AppColors.telegramRed) return AppColors.redFaded;
     if (color == AppColors.telegramYellow) return AppColors.yellowFaded;
-    if (color == AppColors.statusPending) return AppColors.orangeFaded;
+    if (color == AppColors.pending) return AppColors.orangeFaded;
     if (color == AppColors.telegramGray) return AppColors.grayFaded;
     return color.withValues(alpha: 0.1);
   }
@@ -157,12 +151,9 @@ class ExamCard extends StatelessWidget {
     final iconSize = ResponsiveValues.iconSizeXXL(context);
     final titleSize = ResponsiveValues.fontTitleMedium(context);
     final padding = ResponsiveValues.cardPadding(context);
-    const spacing = 16.0;
 
     return Container(
-      margin: EdgeInsets.only(
-        bottom: ResponsiveValues.spacingL(context),
-      ),
+      margin: EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
       child: AppCard.exam(
         statusColor: statusColor,
         child: Material(
@@ -182,24 +173,19 @@ class ExamCard extends StatelessWidget {
                       gradient: LinearGradient(
                         colors: [
                           statusColor.withValues(alpha: 0.2),
-                          statusColor.withValues(alpha: 0.05),
+                          statusColor.withValues(alpha: 0.05)
                         ],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
                       borderRadius: BorderRadius.circular(
-                        ResponsiveValues.radiusLarge(context),
-                      ),
+                          ResponsiveValues.radiusLarge(context)),
                       border: Border.all(
-                        color: statusColor.withValues(alpha: 0.3),
-                        width: 1.5,
-                      ),
+                          color: statusColor.withValues(alpha: 0.3),
+                          width: 1.5),
                     ),
-                    child: Icon(
-                      _getStatusIcon(),
-                      size: iconSize * 0.5,
-                      color: statusColor,
-                    ),
+                    child: Icon(_getStatusIcon(),
+                        size: iconSize * 0.5, color: statusColor),
                   ),
                   SizedBox(width: ResponsiveValues.spacingL(context)),
                   Expanded(
@@ -229,20 +215,17 @@ class ExamCard extends StatelessWidget {
                               decoration: BoxDecoration(
                                 color: statusBgColor,
                                 borderRadius: BorderRadius.circular(
-                                  ResponsiveValues.radiusFull(context),
-                                ),
+                                    ResponsiveValues.radiusFull(context)),
                                 border: Border.all(
-                                  color: statusColor.withValues(alpha: 0.3),
-                                ),
+                                    color: statusColor.withValues(alpha: 0.3)),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(
-                                    _getStatusIcon(),
-                                    size: ResponsiveValues.iconSizeXXS(context),
-                                    color: statusColor,
-                                  ),
+                                  Icon(_getStatusIcon(),
+                                      size:
+                                          ResponsiveValues.iconSizeXXS(context),
+                                      color: statusColor),
                                   SizedBox(
                                       width:
                                           ResponsiveValues.spacingXXS(context)),
@@ -265,31 +248,28 @@ class ExamCard extends StatelessWidget {
                               decoration: BoxDecoration(
                                 color: AppColors.grayFaded,
                                 borderRadius: BorderRadius.circular(
-                                  ResponsiveValues.radiusFull(context),
-                                ),
+                                    ResponsiveValues.radiusFull(context)),
                                 border: Border.all(
-                                  color: AppColors.telegramGray
-                                      .withValues(alpha: 0.2),
-                                ),
+                                    color: AppColors.telegramGray
+                                        .withValues(alpha: 0.2)),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(
-                                    Icons.timer_rounded,
-                                    size: ResponsiveValues.iconSizeXXS(context),
-                                    color: AppColors.getTextSecondary(context),
-                                  ),
+                                  Icon(Icons.timer_rounded,
+                                      size:
+                                          ResponsiveValues.iconSizeXXS(context),
+                                      color:
+                                          AppColors.getTextSecondary(context)),
                                   SizedBox(
                                       width:
                                           ResponsiveValues.spacingXXS(context)),
                                   Text(
                                     _getTimeInfo(),
-                                    style:
-                                        AppTextStyles.caption(context).copyWith(
-                                      color:
-                                          AppColors.getTextSecondary(context),
-                                    ),
+                                    style: AppTextStyles.caption(context)
+                                        .copyWith(
+                                            color: AppColors.getTextSecondary(
+                                                context)),
                                   ),
                                 ],
                               ),
@@ -299,13 +279,11 @@ class ExamCard extends StatelessWidget {
                         if (exam.attemptsTaken > 0)
                           Padding(
                             padding: EdgeInsets.only(
-                              top: ResponsiveValues.spacingS(context),
-                            ),
+                                top: ResponsiveValues.spacingS(context)),
                             child: Text(
                               'Attempts: ${exam.attemptsTaken}/${exam.maxAttempts}',
                               style: AppTextStyles.caption(context).copyWith(
-                                color: AppColors.getTextSecondary(context),
-                              ),
+                                  color: AppColors.getTextSecondary(context)),
                             ),
                           ),
                         if (exam.requiresPayment &&
@@ -313,40 +291,21 @@ class ExamCard extends StatelessWidget {
                             !exam.isBlockedByPendingPayment)
                           Padding(
                             padding: EdgeInsets.only(
-                              top: ResponsiveValues.spacingS(context),
-                            ),
+                                top: ResponsiveValues.spacingS(context)),
                             child: Text(
                               'Purchase "${exam.categoryName}" to access',
-                              style: AppTextStyles.caption(context).copyWith(
-                                color: AppColors.telegramBlue,
-                              ),
+                              style: AppTextStyles.caption(context)
+                                  .copyWith(color: AppColors.telegramBlue),
                             ),
                           ),
                         if (exam.isBlockedByPendingPayment)
                           Padding(
                             padding: EdgeInsets.only(
-                              top: ResponsiveValues.spacingS(context),
-                            ),
+                                top: ResponsiveValues.spacingS(context)),
                             child: Text(
                               'Payment pending verification',
-                              style: AppTextStyles.caption(context).copyWith(
-                                color: AppColors.statusPending,
-                              ),
-                            ),
-                          ),
-                        if (ScreenSize.isTablet(context) ||
-                            ScreenSize.isDesktop(context))
-                          Padding(
-                            padding: EdgeInsets.only(
-                              top: ResponsiveValues.spacingS(context),
-                            ),
-                            child: Text(
-                              exam.courseName,
-                              style: AppTextStyles.caption(context).copyWith(
-                                color: AppColors.getTextSecondary(context),
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                              style: AppTextStyles.caption(context)
+                                  .copyWith(color: AppColors.pending),
                             ),
                           ),
                       ],
@@ -370,7 +329,7 @@ class ExamCard extends StatelessWidget {
                       color: exam.canTakeExam
                           ? AppColors.telegramBlue
                           : (exam.isBlockedByPendingPayment
-                              ? AppColors.statusPending
+                              ? AppColors.pending
                               : AppColors.getTextSecondary(context)),
                     ),
                   ),
@@ -383,35 +342,14 @@ class ExamCard extends StatelessWidget {
     )
         .animate()
         .fadeIn(
-            duration: AppThemes.animationDurationMedium, delay: (index * 50).ms)
+          duration: AppThemes.animationMedium,
+          delay: (index * 50).ms,
+        )
         .slideX(
           begin: 0.1,
           end: 0,
-          duration: AppThemes.animationDurationMedium,
+          duration: AppThemes.animationMedium,
           delay: (index * 50).ms,
         );
-  }
-}
-
-class ExamCardShimmer extends StatelessWidget {
-  final int index;
-
-  const ExamCardShimmer({super.key, this.index = 0});
-
-  @override
-  Widget build(BuildContext context) {
-    ResponsiveValues.iconSizeXXL(context);
-    ResponsiveValues.cardPadding(context);
-
-    return Container(
-      margin: EdgeInsets.only(
-        bottom: ResponsiveValues.spacingL(context),
-      ),
-      child: AppShimmer(
-        type: ShimmerType.examCard,
-        index: index,
-      ),
-    ).animate().fadeIn(
-        duration: AppThemes.animationDurationMedium, delay: (index * 50).ms);
   }
 }
