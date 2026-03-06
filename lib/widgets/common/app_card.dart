@@ -1,22 +1,8 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:familyacademyclient/themes/app_colors.dart';
-import 'package:familyacademyclient/utils/responsive_values.dart';
-
-enum CardVariant {
-  glass,
-  solid,
-  outline,
-  elevated,
-  flat,
-}
-
-enum CardSize {
-  small,
-  medium,
-  large,
-  compact,
-}
+import '../../themes/app_colors.dart';
+import '../../utils/responsive_values.dart';
+import '../../utils/app_enums.dart';
 
 class AppCard extends StatelessWidget {
   final Widget child;
@@ -303,10 +289,9 @@ class AppCard extends StatelessWidget {
         boxShadow: hasShadow
             ? [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2))
               ]
             : null,
       ),
@@ -320,9 +305,7 @@ class AppCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.transparent,
         borderRadius: BorderRadius.circular(borderRadius),
-        border: Border.all(
-          color: borderColor ?? AppColors.getDivider(context),
-        ),
+        border: Border.all(color: borderColor ?? AppColors.getDivider(context)),
       ),
       padding: padding ?? _getDefaultPadding(context),
       child: child,
@@ -375,12 +358,9 @@ class AppCard extends StatelessWidget {
   }
 
   EdgeInsets _getDefaultMargin(BuildContext context) {
-    return EdgeInsets.only(
-      bottom: ResponsiveValues.spacingM(context),
-    );
+    return EdgeInsets.only(bottom: ResponsiveValues.spacingM(context));
   }
 
-  double _getBorderRadius(BuildContext context) {
-    return ResponsiveValues.radiusXLarge(context);
-  }
+  double _getBorderRadius(BuildContext context) =>
+      ResponsiveValues.radiusXLarge(context);
 }
