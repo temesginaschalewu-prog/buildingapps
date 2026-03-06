@@ -1,23 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:familyacademyclient/themes/app_colors.dart';
-import 'package:familyacademyclient/themes/app_text_styles.dart';
-import 'package:familyacademyclient/utils/responsive_values.dart';
-
-enum ButtonVariant {
-  primary,
-  secondary,
-  success,
-  danger,
-  outline,
-  text,
-  icon,
-}
-
-enum ButtonSize {
-  small,
-  medium,
-  large,
-}
+import '../../themes/app_colors.dart';
+import '../../themes/app_text_styles.dart';
+import '../../utils/responsive_values.dart';
+import '../../utils/app_enums.dart';
 
 class AppButton extends StatelessWidget {
   final String? label;
@@ -150,9 +135,7 @@ class AppButton extends StatelessWidget {
         child: InkWell(
           onTap: isEnabled ? onPressed : null,
           borderRadius: BorderRadius.circular(borderRadiusValue),
-          splashColor: variant == ButtonVariant.secondary
-              ? AppColors.telegramBlue.withValues(alpha: 0.1)
-              : Colors.white.withValues(alpha: 0.2),
+          splashColor: _getSplashColor(context),
           highlightColor: Colors.transparent,
           child: Container(
             padding: padding ?? _getDefaultPadding(context),
@@ -162,18 +145,12 @@ class AppButton extends StatelessWidget {
       ),
     );
 
-    if (expanded) {
-      button = Center(child: button);
-    }
-
     return button;
   }
 
   Widget _buildContent(BuildContext context, bool isEnabled) {
-    if (variant == ButtonVariant.icon) {
+    if (variant == ButtonVariant.icon)
       return _buildIconContent(context, isEnabled);
-    }
-
     return _buildLabelContent(context, isEnabled);
   }
 
@@ -195,11 +172,7 @@ class AppButton extends StatelessWidget {
           )
         else ...[
           if (icon != null) ...[
-            Icon(
-              icon,
-              size: _getIconSize(context),
-              color: textColor,
-            ),
+            Icon(icon, size: _getIconSize(context), color: textColor),
             SizedBox(width: _getSpacing(context)),
           ],
           if (label != null)
@@ -249,10 +222,7 @@ class AppButton extends StatelessWidget {
   }
 
   BoxDecoration _getDecoration(
-    BuildContext context,
-    bool isEnabled,
-    double borderRadius,
-  ) {
+      BuildContext context, bool isEnabled, double borderRadius) {
     switch (variant) {
       case ButtonVariant.primary:
         return BoxDecoration(
@@ -265,10 +235,9 @@ class AppButton extends StatelessWidget {
           boxShadow: isEnabled
               ? [
                   BoxShadow(
-                    color: AppColors.telegramBlue.withValues(alpha: 0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
+                      color: AppColors.telegramBlue.withValues(alpha: 0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2))
                 ]
               : null,
         );
@@ -276,12 +245,10 @@ class AppButton extends StatelessWidget {
       case ButtonVariant.secondary:
         return BoxDecoration(
           gradient: isEnabled
-              ? LinearGradient(
-                  colors: [
-                    AppColors.getCard(context).withValues(alpha: 0.4),
-                    AppColors.getCard(context).withValues(alpha: 0.2),
-                  ],
-                )
+              ? LinearGradient(colors: [
+                  AppColors.getCard(context).withValues(alpha: 0.4),
+                  AppColors.getCard(context).withValues(alpha: 0.2)
+                ])
               : null,
           borderRadius: BorderRadius.circular(borderRadius),
           border: Border.all(
@@ -292,10 +259,9 @@ class AppButton extends StatelessWidget {
           boxShadow: isEnabled
               ? [
                   BoxShadow(
-                    color: AppColors.telegramBlue.withValues(alpha: 0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
+                      color: AppColors.telegramBlue.withValues(alpha: 0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2))
                 ]
               : null,
         );
@@ -311,10 +277,9 @@ class AppButton extends StatelessWidget {
           boxShadow: isEnabled
               ? [
                   BoxShadow(
-                    color: AppColors.telegramGreen.withValues(alpha: 0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
+                      color: AppColors.telegramGreen.withValues(alpha: 0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2))
                 ]
               : null,
         );
@@ -330,10 +295,9 @@ class AppButton extends StatelessWidget {
           boxShadow: isEnabled
               ? [
                   BoxShadow(
-                    color: AppColors.telegramRed.withValues(alpha: 0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
+                      color: AppColors.telegramRed.withValues(alpha: 0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2))
                 ]
               : null,
         );
@@ -361,10 +325,17 @@ class AppButton extends StatelessWidget {
     }
   }
 
-  Color _getTextColor(BuildContext context, bool isEnabled) {
-    if (!isEnabled) {
-      return AppColors.getTextSecondary(context);
+  Color _getSplashColor(BuildContext context) {
+    switch (variant) {
+      case ButtonVariant.secondary:
+        return AppColors.telegramBlue.withValues(alpha: 0.1);
+      default:
+        return Colors.white.withValues(alpha: 0.2);
     }
+  }
+
+  Color _getTextColor(BuildContext context, bool isEnabled) {
+    if (!isEnabled) return AppColors.getTextSecondary(context);
 
     switch (variant) {
       case ButtonVariant.primary:
@@ -372,10 +343,8 @@ class AppButton extends StatelessWidget {
       case ButtonVariant.danger:
         return Colors.white;
       case ButtonVariant.secondary:
-        return AppColors.telegramBlue;
       case ButtonVariant.outline:
       case ButtonVariant.text:
-        return AppColors.telegramBlue;
       case ButtonVariant.icon:
         return AppColors.telegramBlue;
     }
@@ -384,20 +353,14 @@ class AppButton extends StatelessWidget {
   TextStyle _getTextStyle(BuildContext context, Color color) {
     switch (size) {
       case ButtonSize.small:
-        return AppTextStyles.labelSmall(context).copyWith(
-          color: color,
-          fontWeight: FontWeight.w600,
-        );
+        return AppTextStyles.labelSmall(context)
+            .copyWith(color: color, fontWeight: FontWeight.w600);
       case ButtonSize.medium:
-        return AppTextStyles.labelLarge(context).copyWith(
-          color: color,
-          fontWeight: FontWeight.w600,
-        );
+        return AppTextStyles.labelLarge(context)
+            .copyWith(color: color, fontWeight: FontWeight.w600);
       case ButtonSize.large:
-        return AppTextStyles.buttonLarge(context).copyWith(
-          color: color,
-          fontWeight: FontWeight.w600,
-        );
+        return AppTextStyles.buttonLarge(context)
+            .copyWith(color: color, fontWeight: FontWeight.w600);
     }
   }
 
@@ -412,18 +375,13 @@ class AppButton extends StatelessWidget {
     }
   }
 
-  double _getIconContainerSize(BuildContext context) {
-    return ResponsiveValues.appBarButtonSize(context);
-  }
-
-  double _getSpacing(BuildContext context) {
-    return ResponsiveValues.spacingXS(context);
-  }
+  double _getIconContainerSize(BuildContext context) =>
+      ResponsiveValues.appBarButtonSize(context);
+  double _getSpacing(BuildContext context) =>
+      ResponsiveValues.spacingXS(context);
 
   EdgeInsets _getDefaultPadding(BuildContext context) {
-    if (variant == ButtonVariant.icon) {
-      return EdgeInsets.zero;
-    }
+    if (variant == ButtonVariant.icon) return EdgeInsets.zero;
 
     switch (size) {
       case ButtonSize.small:
