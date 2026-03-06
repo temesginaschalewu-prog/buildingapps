@@ -378,8 +378,6 @@ class AppRouter {
             );
           },
         ),
-        // REMOVED: '/course/:courseId/exams' route - exams now shown directly in CourseDetailScreen
-
         ShellRoute(
           builder: (context, state, child) => MainNavigation(child: child),
           routes: [
