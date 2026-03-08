@@ -24,8 +24,6 @@ class NotificationButton extends StatefulWidget {
 }
 
 class _NotificationButtonState extends State<NotificationButton> {
-  late StreamSubscription _notificationSubscription;
-
   @override
   void initState() {
     super.initState();
@@ -36,6 +34,7 @@ class _NotificationButtonState extends State<NotificationButton> {
     final notificationProvider =
         Provider.of<NotificationProvider>(context, listen: false);
     await notificationProvider.refreshUnreadCount();
+    if (!mounted) return;
   }
 
   @override
@@ -63,8 +62,11 @@ class _NotificationButtonState extends State<NotificationButton> {
                 onTap: widget.onTap ??
                     () async {
                       await provider.loadNotifications();
-                      if (context.mounted)
-                        GoRouter.of(context).push('/notifications');
+    if (!mounted) return;
+                      if (context.mounted) {
+                        await GoRouter.of(context).push('/notifications');
+    if (!mounted) return;
+                      }
                     },
                 borderRadius: BorderRadius.circular(
                     ResponsiveValues.radiusFull(context) / 2),
