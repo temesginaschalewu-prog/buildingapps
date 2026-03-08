@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../providers/device_provider.dart';
 import '../../services/connectivity_service.dart';
+import '../../services/refresh_service.dart';
 import '../../services/snackbar_service.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_button.dart';
@@ -15,11 +16,8 @@ import '../../widgets/common/app_bar.dart';
 import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
-import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
 import '../../utils/helpers.dart';
-import '../../utils/app_enums.dart';
-import '../../widgets/common/responsive_widgets.dart';
 
 class TvPairingScreen extends StatefulWidget {
   const TvPairingScreen({super.key});
@@ -35,7 +33,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
   bool _isLoading = false;
   bool _isRefreshing = false;
   bool _isOffline = false;
-  String _refreshSubtitle = '';
+  int _pendingCount = 0;
   StreamSubscription? _connectivitySubscription;
 
   late AnimationController _pulseAnimationController;
@@ -61,7 +59,12 @@ class _TvPairingScreenState extends State<TvPairingScreen>
     final connectivityService = context.read<ConnectivityService>();
     _connectivitySubscription =
         connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (mounted) setState(() => _isOffline = !isOnline);
+      if (mounted) {
+        setState(() {
+          _isOffline = !isOnline;
+          _pendingCount = connectivityService.pendingActionsCount;
+        });
+      }
     });
   }
 
@@ -92,31 +95,22 @@ class _TvPairingScreenState extends State<TvPairingScreen>
   Future<void> _manualRefresh() async {
     if (_isRefreshing) return;
 
-    final connectivityService = context.read<ConnectivityService>();
-    if (!connectivityService.isOnline) {
-      setState(() => _isOffline = true);
-      SnackbarService().showOffline(context);
-      return;
-    }
-
     setState(() {
       _isRefreshing = true;
-      _refreshSubtitle = 'Refreshing...';
     });
 
-    try {
-      await _checkDeviceStatus();
-      setState(() => _isOffline = false);
-      SnackbarService().showSuccess(context, 'Device status updated');
-    } catch (e) {
-      setState(() => _isOffline = true);
-      SnackbarService().showError(context, 'Refresh failed, using cached data');
-    } finally {
-      setState(() {
-        _isRefreshing = false;
-        _refreshSubtitle = '';
-      });
-    }
+    final success = await RefreshService().executeRefresh(
+      context: context,
+      refreshFunction: () async {
+        await _checkDeviceStatus();
+        if (mounted) setState(() => _isOffline = false);
+      },
+      successMessage: 'Device status updated',
+    );
+
+    if (!success && mounted) setState(() => _isOffline = true);
+
+    if (mounted) setState(() => _isRefreshing = false);
   }
 
   Future<void> _pairDevice() async {
@@ -130,6 +124,12 @@ class _TvPairingScreenState extends State<TvPairingScreen>
 
     if (code.length != 6) {
       SnackbarService().showError(context, 'Please enter a valid 6-digit code');
+      return;
+    }
+
+    final connectivity = ConnectivityService();
+    if (!connectivity.isOnline) {
+      SnackbarService().showOffline(context, action: 'pair device');
       return;
     }
 
@@ -149,6 +149,12 @@ class _TvPairingScreenState extends State<TvPairingScreen>
   }
 
   Future<void> _unpairDevice() async {
+    final connectivity = ConnectivityService();
+    if (!connectivity.isOnline) {
+      SnackbarService().showOffline(context, action: 'unpair device');
+      return;
+    }
+
     final confirmed = await AppDialog.confirm(
       context: context,
       title: 'Unpair TV Device',
@@ -360,6 +366,8 @@ class _TvPairingScreenState extends State<TvPairingScreen>
               maxLength: 6,
               keyboardType: TextInputType.number,
               onChanged: (_) => setState(() {}),
+              enabled: !_isOffline,
+              requiresOnline: true,
             ),
             SizedBox(height: ResponsiveValues.spacingXL(context)),
             SizedBox(
@@ -370,6 +378,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                 onPressed: _isVerifying ? null : _pairDevice,
                 isLoading: _isVerifying,
                 expanded: true,
+                requiresOnline: true,
               ),
             ),
           ],
@@ -537,7 +546,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (_isOffline)
+                    if (_pendingCount > 0)
                       Container(
                         margin: EdgeInsets.only(
                             bottom: ResponsiveValues.spacingL(context)),
@@ -545,26 +554,25 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
-                              AppColors.telegramYellow.withValues(alpha: 0.2),
-                              AppColors.telegramYellow.withValues(alpha: 0.1)
+                              AppColors.info.withValues(alpha: 0.2),
+                              AppColors.info.withValues(alpha: 0.1)
                             ],
                           ),
                           borderRadius: BorderRadius.circular(
                               ResponsiveValues.radiusMedium(context)),
                           border: Border.all(
-                              color: AppColors.telegramYellow
-                                  .withValues(alpha: 0.3)),
+                              color: AppColors.info.withValues(alpha: 0.3)),
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.wifi_off_rounded,
-                                color: AppColors.telegramYellow, size: 20),
+                            const Icon(Icons.schedule_rounded,
+                                color: AppColors.info, size: 20),
                             SizedBox(width: ResponsiveValues.spacingM(context)),
                             Expanded(
                               child: Text(
-                                'Offline mode - showing cached data',
+                                '$_pendingCount pending change${_pendingCount > 1 ? 's' : ''}',
                                 style: AppTextStyles.bodySmall(context)
-                                    .copyWith(color: AppColors.telegramYellow),
+                                    .copyWith(color: AppColors.info),
                               ),
                             ),
                           ],
