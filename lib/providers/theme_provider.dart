@@ -3,22 +3,37 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/constants.dart';
 import '../themes/app_themes.dart';
 import '../utils/helpers.dart';
+import '../services/connectivity_service.dart';
 
 class ThemeProvider with ChangeNotifier {
+  final ConnectivityService connectivityService;
+
   ThemeMode _themeMode = ThemeMode.light;
   bool _isLoading = false;
   bool _hasLoaded = false;
+  bool _isOffline = false;
 
   final GlobalKey _rootKey = GlobalKey();
 
-  ThemeProvider() {
+  ThemeProvider({required this.connectivityService}) {
     _loadTheme();
+    _setupConnectivityListener();
+  }
+
+  void _setupConnectivityListener() {
+    connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (_isOffline != !isOnline) {
+        _isOffline = !isOnline;
+        notifyListeners();
+      }
+    });
   }
 
   ThemeMode get themeMode => _themeMode;
   ThemeData get lightTheme => AppThemes.lightTheme;
   ThemeData get darkTheme => AppThemes.darkTheme;
   bool get isLoading => _isLoading;
+  bool get isOffline => _isOffline;
   GlobalKey get rootKey => _rootKey;
 
   bool get isDarkMode => _themeMode == ThemeMode.dark;
@@ -80,5 +95,6 @@ class ThemeProvider with ChangeNotifier {
 
   Future<void> clearUserData() async {
     debugLog('ThemeProvider', 'Theme preferences preserved (device-specific)');
+    // Theme is device-specific, not user-specific
   }
 }
