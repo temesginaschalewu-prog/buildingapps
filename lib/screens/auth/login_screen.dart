@@ -17,7 +17,6 @@ import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/helpers.dart';
 import '../../utils/constants.dart';
-import '../../widgets/common/responsive_widgets.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -33,19 +32,27 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _isLoading = false;
   bool _isOffline = false;
+  int _pendingCount = 0;
 
   @override
   void initState() {
     super.initState();
     _checkConnectivity();
+    _checkPendingCount();
     _loadSavedCredentials();
   }
 
   Future<void> _checkConnectivity() async {
     final connectivityService = context.read<ConnectivityService>();
-    if (!connectivityService.isOnline) {
-      setState(() => _isOffline = true);
-    }
+    setState(() {
+      _isOffline = !connectivityService.isOnline;
+      _pendingCount = connectivityService.pendingActionsCount;
+    });
+  }
+
+  Future<void> _checkPendingCount() async {
+    final connectivity = ConnectivityService();
+    setState(() => _pendingCount = connectivity.pendingActionsCount);
   }
 
   Future<void> _loadSavedCredentials() async {
@@ -184,6 +191,35 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           textAlign: TextAlign.center,
         ),
+        if (_pendingCount > 0) ...[
+          SizedBox(height: ResponsiveValues.spacingM(context)),
+          Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: ResponsiveValues.spacingM(context),
+              vertical: ResponsiveValues.spacingXS(context),
+            ),
+            decoration: BoxDecoration(
+              color: AppColors.info.withValues(alpha: 0.1),
+              borderRadius:
+                  BorderRadius.circular(ResponsiveValues.radiusFull(context)),
+              border: Border.all(color: AppColors.info.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.schedule_rounded,
+                    size: ResponsiveValues.iconSizeXS(context),
+                    color: AppColors.info),
+                SizedBox(width: ResponsiveValues.spacingXXS(context)),
+                Text(
+                  '$_pendingCount pending ${_pendingCount > 1 ? 'actions' : 'action'}',
+                  style: AppTextStyles.caption(context)
+                      .copyWith(color: AppColors.info),
+                ),
+              ],
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -254,6 +290,7 @@ class _LoginScreenState extends State<LoginScreen> {
           setState(() => _isOffline = false);
           _checkConnectivity();
         },
+        pendingCount: _pendingCount,
       );
     }
 
