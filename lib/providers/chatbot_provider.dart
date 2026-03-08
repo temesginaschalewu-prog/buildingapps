@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/user_session.dart';
+import '../services/connectivity_service.dart';
 import '../models/chatbot_model.dart';
 import '../utils/constants.dart';
 import '../utils/helpers.dart';
@@ -11,6 +12,7 @@ import '../utils/parsers.dart';
 
 class ChatbotProvider with ChangeNotifier {
   final ApiService apiService;
+  final ConnectivityService connectivityService;
 
   List<ChatbotMessage> _messages = [];
   List<ChatbotConversation> _conversations = [];
@@ -20,6 +22,7 @@ class ChatbotProvider with ChangeNotifier {
   bool _isLoadingMessages = false;
   bool _isLoadingConversations = false;
   String? _error;
+  bool _isOffline = false;
 
   int _remainingMessages = 30;
   int _dailyLimit = 30;
@@ -30,10 +33,26 @@ class ChatbotProvider with ChangeNotifier {
   bool _hasMoreConversations = true;
   bool _isLoadingMore = false;
 
-  ChatbotProvider({required this.apiService}) {
+  ChatbotProvider({
+    required this.apiService,
+    required this.connectivityService,
+  }) {
     _loadCachedData();
     loadConversations();
     loadUsageStats();
+    _setupConnectivityListener();
+  }
+
+  void _setupConnectivityListener() {
+    connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (_isOffline != !isOnline) {
+        _isOffline = !isOnline;
+        if (!_isOffline) {
+          syncPendingMessages();
+        }
+        notifyListeners();
+      }
+    });
   }
 
   List<ChatbotMessage> get messages => List.unmodifiable(_messages);
@@ -45,6 +64,7 @@ class ChatbotProvider with ChangeNotifier {
   bool get isLoadingMessages => _isLoadingMessages;
   bool get isLoadingConversations => _isLoadingConversations;
   String? get error => _error;
+  bool get isOffline => _isOffline;
 
   int get remainingMessages => _remainingMessages;
   int get dailyLimit => _dailyLimit;
@@ -144,6 +164,8 @@ class ChatbotProvider with ChangeNotifier {
 
   Future<void> loadUsageStats() async {
     try {
+      if (_isOffline) return;
+
       final response = await apiService.dio.get('/chatbot/usage');
       if (response.statusCode == 200 && response.data['success'] == true) {
         final stats = ChatbotUsageStats.fromJson(
@@ -162,7 +184,8 @@ class ChatbotProvider with ChangeNotifier {
     }
   }
 
-  Future<void> loadConversations({bool forceRefresh = false}) async {
+  Future<void> loadConversations(
+      {bool forceRefresh = false, bool isManualRefresh = false}) async {
     if (forceRefresh) {
       _currentPage = 1;
       _hasMoreConversations = true;
@@ -176,6 +199,18 @@ class ChatbotProvider with ChangeNotifier {
     notifyListeners();
 
     try {
+      if (_isOffline) {
+        _isLoadingConversations = false;
+        _isLoadingMore = false;
+        notifyListeners();
+
+        if (isManualRefresh) {
+          throw Exception(
+              'Network error. Please check your internet connection.');
+        }
+        return;
+      }
+
       final response = await apiService.dio.get(
         '/chatbot/conversations',
         queryParameters: {'page': _currentPage, 'limit': 20},
@@ -206,10 +241,19 @@ class ChatbotProvider with ChangeNotifier {
         debugLog('ChatbotProvider',
             '📋 Loaded ${newConversations.length} conversations');
         await _saveToCache();
+      } else {
+        if (isManualRefresh) {
+          throw Exception(
+              response.data['message'] ?? 'Failed to load conversations');
+        }
       }
     } catch (e) {
       _error = 'Failed to load conversations';
       debugLog('ChatbotProvider', 'Error loading conversations: $e');
+
+      if (isManualRefresh) {
+        rethrow;
+      }
     } finally {
       _isLoadingConversations = false;
       _isLoadingMore = false;
@@ -218,12 +262,23 @@ class ChatbotProvider with ChangeNotifier {
   }
 
   Future<void> loadMessages(int conversationId,
-      {bool forceRefresh = false}) async {
+      {bool forceRefresh = false, bool isManualRefresh = false}) async {
     _isLoadingMessages = true;
     _error = null;
     notifyListeners();
 
     try {
+      if (_isOffline) {
+        _isLoadingMessages = false;
+        notifyListeners();
+
+        if (isManualRefresh) {
+          throw Exception(
+              'Network error. Please check your internet connection.');
+        }
+        return;
+      }
+
       final response = await apiService.dio.get(
         '/chatbot/conversations/$conversationId/messages',
       );
@@ -248,10 +303,19 @@ class ChatbotProvider with ChangeNotifier {
 
         debugLog('ChatbotProvider', '💬 Loaded ${_messages.length} messages');
         await _saveToCache();
+      } else {
+        if (isManualRefresh) {
+          throw Exception(
+              response.data['message'] ?? 'Failed to load messages');
+        }
       }
     } catch (e) {
       _error = 'Failed to load messages';
       debugLog('ChatbotProvider', 'Error loading messages: $e');
+
+      if (isManualRefresh) {
+        rethrow;
+      }
     } finally {
       _isLoadingMessages = false;
       notifyListeners();
@@ -286,6 +350,18 @@ class ChatbotProvider with ChangeNotifier {
     notifyListeners();
 
     try {
+      if (_isOffline) {
+        // Queue message for offline sync
+        await _queueMessageOffline(message, conversationId);
+        _isLoading = false;
+        notifyListeners();
+        return {
+          'success': true,
+          'queued': true,
+          'message': 'Message saved offline. Will send when online.'
+        };
+      }
+
       final List<String> history = [];
       if (_messages.length > 1) {
         for (int i = 0; i < _messages.length - 1; i++) {
@@ -357,8 +433,110 @@ class ChatbotProvider with ChangeNotifier {
     }
   }
 
+  Future<void> _queueMessageOffline(String message, int? conversationId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = await UserSession().getCurrentUserId();
+
+      if (userId == null) return;
+
+      const pendingKey = 'pending_chat_messages';
+      final userPendingKey = '${pendingKey}_$userId';
+      final existingJson = prefs.getString(userPendingKey);
+      List<Map<String, dynamic>> pendingMessages = [];
+
+      if (existingJson != null) {
+        try {
+          pendingMessages =
+              List<Map<String, dynamic>>.from(jsonDecode(existingJson));
+        } catch (e) {
+          debugLog('ChatbotProvider', 'Error parsing pending messages: $e');
+        }
+      }
+
+      pendingMessages.add({
+        'message': message,
+        'conversation_id': conversationId,
+        'timestamp': DateTime.now().toIso8601String(),
+        'retry_count': 0,
+      });
+
+      await prefs.setString(userPendingKey, jsonEncode(pendingMessages));
+      debugLog('ChatbotProvider', '📝 Queued message for offline sync');
+    } catch (e) {
+      debugLog('ChatbotProvider', 'Error queueing message: $e');
+    }
+  }
+
+  Future<void> syncPendingMessages() async {
+    if (_isOffline) return;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = await UserSession().getCurrentUserId();
+
+      if (userId == null) return;
+
+      const pendingKey = 'pending_chat_messages';
+      final userPendingKey = '${pendingKey}_$userId';
+      final existingJson = prefs.getString(userPendingKey);
+
+      if (existingJson == null) return;
+
+      List<Map<String, dynamic>> pendingMessages = [];
+      try {
+        pendingMessages =
+            List<Map<String, dynamic>>.from(jsonDecode(existingJson));
+      } catch (e) {
+        debugLog('ChatbotProvider', 'Error parsing pending messages: $e');
+        await prefs.remove(userPendingKey);
+        return;
+      }
+
+      if (pendingMessages.isEmpty) return;
+
+      debugLog('ChatbotProvider',
+          '🔄 Syncing ${pendingMessages.length} pending messages');
+
+      final List<Map<String, dynamic>> failedMessages = [];
+
+      for (final msg in pendingMessages) {
+        try {
+          await sendMessage(
+            msg['message'],
+            conversationId: msg['conversation_id'],
+          );
+          debugLog('ChatbotProvider', '✅ Synced message');
+        } catch (e) {
+          debugLog('ChatbotProvider', '❌ Failed to sync message: $e');
+
+          final retryCount = (msg['retry_count'] ?? 0) + 1;
+          if (retryCount <= 3) {
+            msg['retry_count'] = retryCount;
+            failedMessages.add(msg);
+          }
+        }
+      }
+
+      if (failedMessages.isEmpty) {
+        await prefs.remove(userPendingKey);
+        debugLog('ChatbotProvider', '✅ All pending messages synced');
+      } else {
+        await prefs.setString(userPendingKey, jsonEncode(failedMessages));
+        debugLog('ChatbotProvider',
+            '⚠️ ${failedMessages.length} messages still pending');
+      }
+    } catch (e) {
+      debugLog('ChatbotProvider', 'Error syncing pending messages: $e');
+    }
+  }
+
   Future<bool> renameConversation(int conversationId, String title) async {
     try {
+      if (_isOffline) {
+        return false;
+      }
+
       final response = await apiService.dio.put(
         '/chatbot/conversations/$conversationId',
         data: {'title': title},
@@ -403,6 +581,10 @@ class ChatbotProvider with ChangeNotifier {
 
   Future<bool> deleteConversation(int conversationId) async {
     try {
+      if (_isOffline) {
+        return false;
+      }
+
       final response = await apiService.dio.delete(
         '/chatbot/conversations/$conversationId',
       );
@@ -455,6 +637,12 @@ class ChatbotProvider with ChangeNotifier {
 
     debugLog(
         'ChatbotProvider', '🔄 Different user logout - clearing chatbot data');
+
+    // Clear pending messages
+    if (lastUserId != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('pending_chat_messages_$lastUserId');
+    }
 
     _messages.clear();
     _conversations.clear();
