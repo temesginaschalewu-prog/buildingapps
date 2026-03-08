@@ -4,47 +4,31 @@ import 'responsive_values.dart';
 
 enum AppSpacing {
   none(0),
-
   xxs(2),
-
   xs(4),
-
   s(6),
-
   m(8),
-
   l(12),
-
   xl(16),
-
   xxl(20),
-
   xxxl(24),
-
   xxxxl(32),
-
   section(20),
-
   card(12),
-
   avatar(120),
-
   statusBadge(24),
-
   infoItem(56),
-
   menuItem(56),
-
   splash(40),
-
   splashLarge(56);
 
   final double value;
   const AppSpacing(this.value);
 
   double getValue(BuildContext context) {
-    if (this == AppSpacing.avatar)
+    if (this == AppSpacing.avatar) {
       return ResponsiveValues.avatarSizeLarge(context);
+    }
 
     if (ScreenSize.isDesktop(context)) return value * 1.1;
     if (ScreenSize.isTablet(context)) return value * 1.05;
@@ -125,6 +109,8 @@ enum EmptyStateType {
   noData,
   success,
   offline,
+  queued,
+  syncing,
 }
 
 enum ShimmerType {
@@ -176,4 +162,20 @@ enum SnackbarType {
   warning,
   info,
   offline,
+  queued,
+  syncComplete,
+}
+
+enum OfflineState {
+  online,
+  offline,
+  queued,
+  syncing,
+}
+
+enum CachePriority {
+  critical,
+  high,
+  normal,
+  low,
 }
