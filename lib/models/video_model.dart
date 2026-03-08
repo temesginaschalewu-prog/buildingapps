@@ -1,4 +1,3 @@
-import '../utils/constants.dart';
 import '../utils/parsers.dart';
 
 class VideoQuality {
@@ -142,8 +141,7 @@ class Video {
     }
 
     if (normalized.contains('/Documents/.familyacademy_cache/')) {
-      return 'file://' +
-          normalized.replaceFirst('https://', '').replaceFirst('http://', '');
+      return 'file://${normalized.replaceFirst('https://', '').replaceFirst('http://', '')}';
     }
 
     if (normalized.contains('dsros0pyh.res.cloudinary.com')) {
