@@ -4,11 +4,9 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../models/video_model.dart';
 import '../../providers/video_provider.dart';
-import '../../providers/progress_provider.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/responsive_values.dart';
-import '../../utils/app_enums.dart';
 import '../common/app_card.dart';
 import '../common/app_button.dart';
 import '../common/app_dialog.dart';
@@ -39,7 +37,6 @@ class VideoCard extends StatefulWidget {
 
 class _VideoCardState extends State<VideoCard> {
   late VideoProvider _videoProvider;
-  late ProgressProvider _progressProvider;
   bool _isDownloaded = false;
   bool _isDownloading = false;
   double _downloadProgress = 0.0;
@@ -55,7 +52,6 @@ class _VideoCardState extends State<VideoCard> {
 
   void _initProviders() {
     _videoProvider = context.read<VideoProvider>();
-    _progressProvider = context.read<ProgressProvider>();
 
     _videoProvider.videoUpdates.listen((update) {
       if (!mounted) return;
@@ -358,8 +354,9 @@ class _VideoCardState extends State<VideoCard> {
                           widget.onShowQualitySelector!
                                   (widget.video, forPlayback: true)
                               .then((quality) {
-                            if (widget.onDownload != null)
+                            if (widget.onDownload != null) {
                               widget.onDownload!(quality);
+                            }
                           });
                         }
                       },
@@ -451,8 +448,9 @@ class _VideoCardState extends State<VideoCard> {
                           widget.onShowQualitySelector!
                                   (widget.video, forPlayback: true)
                               .then((quality) {
-                            if (widget.onDownload != null)
+                            if (widget.onDownload != null) {
                               widget.onDownload!(quality);
+                            }
                           });
                         }
                       },
@@ -482,8 +480,9 @@ class _VideoCardState extends State<VideoCard> {
                                 widget.onShowQualitySelector!
                                         (widget.video, forPlayback: false)
                                     .then((quality) {
-                                  if (widget.onDownload != null)
+                                  if (widget.onDownload != null) {
                                     widget.onDownload!(quality);
+                                  }
                                 });
                               } else if (widget.onDownload != null) {
                                 widget.onDownload!(null);
