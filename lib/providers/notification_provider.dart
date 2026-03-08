@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../services/user_session.dart';
+import '../services/connectivity_service.dart';
 import '../models/notification_model.dart' as notification_model;
 import '../utils/constants.dart';
 import '../utils/helpers.dart';
@@ -12,6 +14,7 @@ import '../utils/api_response.dart';
 class NotificationProvider with ChangeNotifier {
   final ApiService apiService;
   final DeviceService deviceService;
+  final ConnectivityService connectivityService;
 
   List<notification_model.Notification> _notifications = [];
   bool _isLoading = false;
@@ -20,14 +23,33 @@ class NotificationProvider with ChangeNotifier {
   bool _hasLoaded = false;
   DateTime? _lastLoadTime;
   Timer? _refreshTimer;
+  bool _isOffline = false;
 
-  static const Duration _cacheDuration = Duration(minutes: 15);
+  static const Duration _cacheDuration = AppConstants.cacheTTLNotifications;
   static const Duration _refreshInterval = Duration(minutes: 5);
 
-  NotificationProvider(
-      {required this.apiService, required this.deviceService}) {
+  NotificationProvider({
+    required this.apiService,
+    required this.deviceService,
+    required this.connectivityService,
+  }) {
+    _setupConnectivityListener();
     _refreshTimer = Timer.periodic(_refreshInterval, (_) {
-      if (_hasLoaded && !_isLoading) unawaited(loadNotifications());
+      if (_hasLoaded && !_isLoading && !_isOffline) {
+        unawaited(loadNotifications());
+      }
+    });
+  }
+
+  void _setupConnectivityListener() {
+    connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (_isOffline != !isOnline) {
+        _isOffline = !isOnline;
+        if (!_isOffline && _notifications.isNotEmpty) {
+          _refreshFromApi();
+        }
+        notifyListeners();
+      }
     });
   }
 
@@ -36,6 +58,7 @@ class NotificationProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
   int get unreadCount => _unreadCount;
+  bool get isOffline => _isOffline;
 
   List<notification_model.Notification> get unreadNotifications {
     return _notifications.where((n) => !n.isRead && n.isDelivered).toList();
@@ -45,8 +68,14 @@ class NotificationProvider with ChangeNotifier {
     return _notifications.where((n) => n.isRead && n.isDelivered).toList();
   }
 
-  Future<void> loadNotifications({bool forceRefresh = false}) async {
+  Future<void> loadNotifications(
+      {bool forceRefresh = false, bool isManualRefresh = false}) async {
     if (_isLoading && !forceRefresh) return;
+
+    // If this is a manual refresh, ALWAYS force refresh
+    if (isManualRefresh) {
+      forceRefresh = true;
+    }
 
     if (!forceRefresh && _hasLoaded) {
       final now = DateTime.now();
@@ -67,7 +96,9 @@ class NotificationProvider with ChangeNotifier {
             _notifications.where((n) => !n.isRead && n.isDelivered).length;
         _hasLoaded = true;
         _notifySafely();
-        unawaited(_refreshFromApi());
+        if (!_isOffline) {
+          unawaited(_refreshFromApi());
+        }
         return;
       }
     }
@@ -77,6 +108,19 @@ class NotificationProvider with ChangeNotifier {
     _notifySafely();
 
     try {
+      if (_isOffline) {
+        _error = 'You are offline. Using cached data.';
+        _isLoading = false;
+        _notifySafely();
+
+        // THROW exception for manual refresh!
+        if (isManualRefresh) {
+          throw Exception(
+              'Network error. Please check your internet connection.');
+        }
+        return;
+      }
+
       final response = await apiService.getMyNotifications();
 
       if (response.success && response.data != null) {
@@ -91,11 +135,20 @@ class NotificationProvider with ChangeNotifier {
             ttl: _cacheDuration, isUserSpecific: true);
       } else {
         _error = response.message;
+
+        if (isManualRefresh) {
+          throw Exception(response.message);
+        }
       }
     } catch (e) {
       _error = e.toString();
       if (!_hasLoaded) _error = 'No internet connection';
       debugLog('NotificationProvider', 'Error loading notifications: $e');
+
+      // Re-throw for manual refresh
+      if (isManualRefresh) {
+        rethrow;
+      }
     } finally {
       _isLoading = false;
       _notifySafely();
@@ -103,6 +156,8 @@ class NotificationProvider with ChangeNotifier {
   }
 
   Future<void> _refreshFromApi() async {
+    if (_isOffline) return;
+
     try {
       final response = await apiService.getMyNotifications();
 
@@ -168,10 +223,111 @@ class NotificationProvider with ChangeNotifier {
             ttl: _cacheDuration, isUserSpecific: true);
         _notifySafely();
 
-        unawaited(apiService.markNotificationAsRead(logId));
+        if (!_isOffline) {
+          unawaited(apiService.markNotificationAsRead(logId));
+        } else {
+          // Queue for offline sync
+          await _queueMarkAsReadOffline(logId);
+        }
       }
     } catch (e) {
       debugLog('NotificationProvider', 'Error marking as read: $e');
+    }
+  }
+
+  Future<void> _queueMarkAsReadOffline(int logId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = await UserSession().getCurrentUserId();
+
+      if (userId == null) return;
+
+      const pendingKey = 'pending_notification_reads';
+      final userPendingKey = '${pendingKey}_$userId';
+      final existingJson = prefs.getString(userPendingKey);
+      List<Map<String, dynamic>> pendingReads = [];
+
+      if (existingJson != null) {
+        try {
+          pendingReads =
+              List<Map<String, dynamic>>.from(jsonDecode(existingJson));
+        } catch (e) {
+          debugLog('NotificationProvider', 'Error parsing pending reads: $e');
+        }
+      }
+
+      pendingReads.add({
+        'log_id': logId,
+        'timestamp': DateTime.now().toIso8601String(),
+        'retry_count': 0,
+      });
+
+      await prefs.setString(userPendingKey, jsonEncode(pendingReads));
+      debugLog('NotificationProvider',
+          '📝 Queued mark as read for notification $logId');
+    } catch (e) {
+      debugLog('NotificationProvider', 'Error queueing mark as read: $e');
+    }
+  }
+
+  Future<void> syncPendingReads() async {
+    if (_isOffline) return;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = await UserSession().getCurrentUserId();
+
+      if (userId == null) return;
+
+      const pendingKey = 'pending_notification_reads';
+      final userPendingKey = '${pendingKey}_$userId';
+      final existingJson = prefs.getString(userPendingKey);
+
+      if (existingJson == null) return;
+
+      List<Map<String, dynamic>> pendingReads = [];
+      try {
+        pendingReads =
+            List<Map<String, dynamic>>.from(jsonDecode(existingJson));
+      } catch (e) {
+        debugLog('NotificationProvider', 'Error parsing pending reads: $e');
+        await prefs.remove(userPendingKey);
+        return;
+      }
+
+      if (pendingReads.isEmpty) return;
+
+      debugLog('NotificationProvider',
+          '🔄 Syncing ${pendingReads.length} pending notification reads');
+
+      final List<Map<String, dynamic>> failedReads = [];
+
+      for (final read in pendingReads) {
+        try {
+          await apiService.markNotificationAsRead(read['log_id']);
+          debugLog('NotificationProvider',
+              '✅ Synced read for notification ${read['log_id']}');
+        } catch (e) {
+          debugLog('NotificationProvider', '❌ Failed to sync read: $e');
+
+          final retryCount = (read['retry_count'] ?? 0) + 1;
+          if (retryCount <= 3) {
+            read['retry_count'] = retryCount;
+            failedReads.add(read);
+          }
+        }
+      }
+
+      if (failedReads.isEmpty) {
+        await prefs.remove(userPendingKey);
+        debugLog('NotificationProvider', '✅ All pending reads synced');
+      } else {
+        await prefs.setString(userPendingKey, jsonEncode(failedReads));
+        debugLog('NotificationProvider',
+            '⚠️ ${failedReads.length} reads still pending');
+      }
+    } catch (e) {
+      debugLog('NotificationProvider', 'Error syncing pending reads: $e');
     }
   }
 
@@ -199,7 +355,9 @@ class NotificationProvider with ChangeNotifier {
           ttl: _cacheDuration, isUserSpecific: true);
       _notifySafely();
 
-      unawaited(apiService.markAllNotificationsAsRead());
+      if (!_isOffline) {
+        unawaited(apiService.markAllNotificationsAsRead());
+      }
     } catch (e) {
       debugLog('NotificationProvider', 'Error marking all as read: $e');
     }
@@ -215,16 +373,18 @@ class NotificationProvider with ChangeNotifier {
           ttl: _cacheDuration, isUserSpecific: true);
       _notifySafely();
 
-      unawaited(apiService.deleteNotification(logId).catchError((e) {
-        debugLog('NotificationProvider',
-            ' Backend delete failed, but removed locally: $e');
-        unawaited(loadNotifications(forceRefresh: true));
+      if (!_isOffline) {
+        unawaited(apiService.deleteNotification(logId).catchError((e) {
+          debugLog('NotificationProvider',
+              ' Backend delete failed, but removed locally: $e');
+          unawaited(loadNotifications(forceRefresh: true));
 
-        return Future.value(ApiResponse<void>(
-          success: false,
-          message: 'Backend delete failed, but removed locally',
-        ));
-      }));
+          return Future.value(ApiResponse<void>(
+            success: false,
+            message: 'Backend delete failed, but removed locally',
+          ));
+        }));
+      }
     } catch (e) {
       debugLog('NotificationProvider', '❌ Delete notification error: $e');
     }
@@ -271,6 +431,13 @@ class NotificationProvider with ChangeNotifier {
       debugLog('NotificationProvider',
           '✅ Same user - preserving notification cache');
       return;
+    }
+
+    // Clear pending reads
+    final userId = await session.getCurrentUserId();
+    if (userId != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('pending_notification_reads_$userId');
     }
 
     await deviceService.clearCacheByPrefix('notifications');
