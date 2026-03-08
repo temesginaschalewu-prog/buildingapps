@@ -1,33 +1,34 @@
-import 'package:familyacademyclient/providers/theme_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:familyacademyclient/providers/theme_provider.dart';
+import 'package:familyacademyclient/services/connectivity_service.dart';
 import 'package:provider/provider.dart';
-
-import 'package:familyacademyclient/providers/auth_provider.dart';
-import 'package:familyacademyclient/services/api_service.dart';
-import 'package:familyacademyclient/services/storage_service.dart';
 
 void main() {
   testWidgets('Counter increments smoke test', (WidgetTester tester) async {
+    // Create mock services
+    final connectivityService = ConnectivityService();
+
     // Build our app and trigger a frame.
     await tester.pumpWidget(
       MultiProvider(
         providers: [
-          ChangeNotifierProvider(create: (_) => ThemeProvider()),
+          Provider<ConnectivityService>.value(value: connectivityService),
           ChangeNotifierProvider(
-            create: (_) => AuthProvider(
-              apiService: ApiService(),
-              storageService: StorageService(),
-            ),
+            create: (_) =>
+                ThemeProvider(connectivityService: connectivityService),
           ),
         ],
         child: const MaterialApp(
-          home: Scaffold(body: Center(child: Text('Family Academy Test'))),
+          home: Scaffold(
+            body: Center(
+              child: Text('Family Academy Test'),
+            ),
+          ),
         ),
       ),
     );
 
-    // Verify that our counter starts at 0.
     expect(find.text('Family Academy Test'), findsOneWidget);
   });
 }
