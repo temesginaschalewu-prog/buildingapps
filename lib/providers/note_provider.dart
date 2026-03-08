@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../services/user_session.dart';
+import '../services/connectivity_service.dart';
 import '../models/note_model.dart';
 import '../utils/constants.dart';
 import '../utils/helpers.dart';
@@ -11,6 +12,7 @@ import '../utils/helpers.dart';
 class NoteProvider with ChangeNotifier {
   final ApiService apiService;
   final DeviceService deviceService;
+  final ConnectivityService connectivityService;
 
   final List<Note> _notes = [];
   final Map<int, List<Note>> _notesByChapter = {};
@@ -20,15 +22,30 @@ class NoteProvider with ChangeNotifier {
   final Map<int, bool> _noteViewedStatus = {};
   bool _isLoading = false;
   String? _error;
+  bool _isOffline = false;
 
   StreamController<Map<String, dynamic>> _noteUpdateController =
       StreamController<Map<String, dynamic>>.broadcast();
 
-  static const Duration cacheDuration = Duration(hours: 24);
+  static const Duration cacheDuration = AppConstants.cacheTTLNotes;
   static const Duration viewedCacheDuration = Duration(days: 30);
 
-  NoteProvider({required this.apiService, required this.deviceService}) {
+  NoteProvider({
+    required this.apiService,
+    required this.deviceService,
+    required this.connectivityService,
+  }) {
     _preloadCommonChapters();
+    _setupConnectivityListener();
+  }
+
+  void _setupConnectivityListener() {
+    connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (_isOffline != !isOnline) {
+        _isOffline = !isOnline;
+        notifyListeners();
+      }
+    });
   }
 
   Future<void> _preloadCommonChapters() async {
@@ -43,6 +60,7 @@ class NoteProvider with ChangeNotifier {
   List<Note> get notes => _notes;
   bool get isLoading => _isLoading;
   String? get error => _error;
+  bool get isOffline => _isOffline;
   Stream<Map<String, dynamic>> get noteUpdates => _noteUpdateController.stream;
 
   bool hasLoadedForChapter(int chapterId) =>
@@ -72,21 +90,17 @@ class NoteProvider with ChangeNotifier {
   }
 
   Future<void> loadNotesByChapter(int chapterId,
-      {bool forceRefresh = false}) async {
+      {bool forceRefresh = false, bool isManualRefresh = false}) async {
     if (_isLoadingForChapter[chapterId] == true && !forceRefresh) {
       return;
     }
 
-    final lastLoaded = _lastLoadedTime[chapterId];
-    final hasCache = _hasLoadedForChapter[chapterId] == true;
-    final isCacheValid = lastLoaded != null &&
-        DateTime.now().difference(lastLoaded) < cacheDuration;
-
-    if (hasCache && !forceRefresh && isCacheValid) {
-      debugLog('NoteProvider', '✅ Using cached notes for chapter: $chapterId');
-      return;
+    // If this is a manual refresh, ALWAYS force refresh
+    if (isManualRefresh) {
+      forceRefresh = true;
     }
 
+    // STEP 1: ALWAYS try cache first (even when offline)
     if (!forceRefresh) {
       try {
         final cachedNotes = await deviceService.getCacheItem<List<dynamic>>(
@@ -115,22 +129,41 @@ class NoteProvider with ChangeNotifier {
 
             await _loadViewedStatus(chapterId);
 
-            debugLog('NoteProvider',
-                '✅ Loaded ${noteList.length} notes from cache for chapter $chapterId');
-
             _noteUpdateController.add({
               'type': 'notes_loaded_cached',
               'chapter_id': chapterId,
               'count': noteList.length
             });
 
-            unawaited(_refreshInBackground(chapterId));
+            _notifySafely();
+
+            debugLog('NoteProvider',
+                '✅ Loaded ${noteList.length} notes from cache for chapter $chapterId');
+
+            // STEP 2: If online, refresh in background
+            if (!_isOffline) {
+              unawaited(_refreshInBackground(chapterId));
+            }
             return;
           }
         }
       } catch (e) {
         debugLog('NoteProvider', 'Error loading cache: $e');
       }
+    }
+
+    // STEP 3: If no cache, try API (only if online)
+    if (_isOffline) {
+      _error = 'You are offline. No cached notes available.';
+      _isLoadingForChapter[chapterId] = false;
+      _isLoading = false;
+      _notifySafely();
+
+      if (isManualRefresh) {
+        throw Exception(
+            'Network error. Please check your internet connection.');
+      }
+      return;
     }
 
     _isLoadingForChapter[chapterId] = true;
@@ -140,6 +173,7 @@ class NoteProvider with ChangeNotifier {
 
     try {
       debugLog('NoteProvider', '📥 Loading notes for chapter: $chapterId');
+
       final response = await apiService.getNotesByChapter(chapterId);
 
       final responseData = response.data ?? {};
@@ -165,6 +199,7 @@ class NoteProvider with ChangeNotifier {
           }
         }
 
+        // Save to cache for next time
         await deviceService.saveCacheItem(
           AppConstants.notesChapterKey(chapterId),
           noteList.map((n) => n.toJson()).toList(),
@@ -173,14 +208,14 @@ class NoteProvider with ChangeNotifier {
 
         await _loadViewedStatus(chapterId);
 
-        debugLog('NoteProvider',
-            '✅ Loaded ${noteList.length} notes for chapter $chapterId from API');
-
         _noteUpdateController.add({
           'type': 'notes_loaded',
           'chapter_id': chapterId,
           'count': noteList.length
         });
+
+        debugLog('NoteProvider',
+            '✅ Loaded ${noteList.length} notes for chapter $chapterId from API');
       } else {
         _notesByChapter[chapterId] = [];
         _hasLoadedForChapter[chapterId] = true;
@@ -204,6 +239,10 @@ class NoteProvider with ChangeNotifier {
         'chapter_id': chapterId,
         'error': _error
       });
+
+      if (isManualRefresh) {
+        rethrow;
+      }
     } finally {
       _isLoadingForChapter[chapterId] = false;
       _isLoading = false;
@@ -212,6 +251,8 @@ class NoteProvider with ChangeNotifier {
   }
 
   Future<void> _refreshInBackground(int chapterId) async {
+    if (_isOffline) return;
+
     try {
       debugLog('NoteProvider', '🔄 Background refresh for chapter $chapterId');
 
