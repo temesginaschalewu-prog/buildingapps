@@ -5,15 +5,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../services/user_session.dart';
+import '../services/connectivity_service.dart';
 import '../models/category_model.dart';
 import '../utils/helpers.dart';
-import '../utils/parsers.dart';
 import '../utils/ui_helpers.dart';
 import '../themes/app_colors.dart';
 
 class CategoryProvider with ChangeNotifier {
   final ApiService apiService;
   final DeviceService deviceService;
+  final ConnectivityService connectivityService;
 
   List<Category> _categories = [];
   List<Category> _activeCategories = [];
@@ -25,12 +26,13 @@ class CategoryProvider with ChangeNotifier {
   bool _isLoading = false;
   bool _hasLoaded = false;
   String? _error;
+  bool _isOffline = false;
 
   final Map<int, bool> _isLoadingCategory = {};
 
   Timer? _backgroundRefreshTimer;
   static const Duration _backgroundRefreshInterval = Duration(minutes: 5);
-  static const Duration _cacheDuration = Duration(hours: 1);
+  static const Duration _cacheDuration = AppConstants.cacheTTLCategories;
 
   final StreamController<List<Category>> _categoriesUpdateController =
       StreamController<List<Category>>.broadcast();
@@ -40,8 +42,25 @@ class CategoryProvider with ChangeNotifier {
   final Map<int, Completer<bool>> _waitForCheckCompleters = {};
   bool _isSyncingSubscription = false;
 
-  CategoryProvider({required this.apiService, required this.deviceService}) {
+  CategoryProvider({
+    required this.apiService,
+    required this.deviceService,
+    required this.connectivityService,
+  }) {
     _initBackgroundRefresh();
+    _setupConnectivityListener();
+  }
+
+  void _setupConnectivityListener() {
+    connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (_isOffline != !isOnline) {
+        _isOffline = !isOnline;
+        if (!_isOffline && _hasLoaded) {
+          _refreshInBackground();
+        }
+        notifyListeners();
+      }
+    });
   }
 
   List<Category> get categories => List.unmodifiable(_categories);
@@ -51,6 +70,7 @@ class CategoryProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get hasLoaded => _hasLoaded;
   String? get error => _error;
+  bool get isOffline => _isOffline;
   bool get isSyncingSubscription => _isSyncingSubscription;
 
   bool isLoadingCategory(int categoryId) =>
@@ -125,7 +145,7 @@ class CategoryProvider with ChangeNotifier {
 
   void _initBackgroundRefresh() {
     _backgroundRefreshTimer = Timer.periodic(_backgroundRefreshInterval, (_) {
-      if (_hasLoaded && !_isLoading) {
+      if (_hasLoaded && !_isLoading && !_isOffline) {
         unawaited(_refreshInBackground());
       }
     });
@@ -193,12 +213,12 @@ class CategoryProvider with ChangeNotifier {
     _comingSoonCategories = _categories.where((c) => c.isComingSoon).toList();
   }
 
-  Future<void> loadCategories({bool forceRefresh = false}) async {
+  Future<void> loadCategories(
+      {bool forceRefresh = false, bool isManualRefresh = false}) async {
     if (_isLoading && !forceRefresh) return;
 
-    if (_hasLoaded && !forceRefresh && _categories.isNotEmpty) {
-      debugLog('CategoryProvider', '📦 Using cached categories');
-      return;
+    if (isManualRefresh) {
+      forceRefresh = true;
     }
 
     _isLoading = true;
@@ -208,10 +228,13 @@ class CategoryProvider with ChangeNotifier {
     try {
       debugLog('CategoryProvider', '📥 Loading categories');
 
+      // STEP 1: ALWAYS try cache first (EVEN WHEN OFFLINE)
       if (!forceRefresh) {
         final cachedData =
-            await deviceService.getCacheItem<Map<String, dynamic>>('categories',
-                isUserSpecific: true);
+            await deviceService.getCacheItem<Map<String, dynamic>>(
+          'categories',
+          isUserSpecific: true,
+        );
 
         if (cachedData != null && cachedData['categories'] is List) {
           final categoriesList = cachedData['categories'] as List;
@@ -246,9 +269,25 @@ class CategoryProvider with ChangeNotifier {
           debugLog('CategoryProvider',
               '✅ Loaded ${_categories.length} categories from cache');
 
-          unawaited(_refreshInBackground());
+          // STEP 2: If online, refresh in background
+          if (!_isOffline) {
+            unawaited(_refreshInBackground());
+          }
           return;
         }
+      }
+
+      // STEP 3: If offline and no cache, show error
+      if (_isOffline) {
+        _error = 'You are offline. No cached categories available.';
+        _isLoading = false;
+        _notifySafely();
+
+        if (isManualRefresh) {
+          throw Exception(
+              'Network error. Please check your internet connection.');
+        }
+        return;
       }
 
       final response = await apiService.getCategories();
@@ -292,10 +331,18 @@ class CategoryProvider with ChangeNotifier {
         _error = response.message;
         debugLog('CategoryProvider',
             '❌ Failed to load categories: ${response.message}');
+
+        if (isManualRefresh) {
+          throw Exception(response.message);
+        }
       }
     } catch (e) {
       _error = e.toString();
       debugLog('CategoryProvider', '❌ loadCategories error: $e');
+
+      if (isManualRefresh) {
+        rethrow;
+      }
     } finally {
       _isLoading = false;
       _notifySafely();
@@ -306,7 +353,7 @@ class CategoryProvider with ChangeNotifier {
       {bool forceRefresh = false}) async {
     await loadCategories(forceRefresh: forceRefresh);
 
-    if (_activeCategories.isNotEmpty) {
+    if (_activeCategories.isNotEmpty && !_isOffline) {
       debugLog('CategoryProvider',
           '🔍 Will check subscription status for ${_activeCategories.length} active categories');
 
@@ -318,15 +365,15 @@ class CategoryProvider with ChangeNotifier {
     }
   }
 
-  Future<void> _refreshCategorySubscription(int categoryId) async {}
+  Future<void> _refreshCategorySubscription(int categoryId) async {
+    // This will be handled by subscription provider
+  }
 
   Future<Category?> getCategoryByIdAsync(int id) async {
     debugLog(
         'CategoryProvider', '🔍 getCategoryByIdAsync called for category $id');
 
     _isLoadingCategory[id] = true;
-    debugLog(
-        'CategoryProvider', '📥 Setting loading state TRUE for category $id');
     _notifySafely();
 
     try {
@@ -334,8 +381,6 @@ class CategoryProvider with ChangeNotifier {
       if (existing != null) {
         debugLog('CategoryProvider', '✅ Found category $id in cache');
         _isLoadingCategory[id] = false;
-        debugLog('CategoryProvider',
-            '📥 Setting loading state FALSE for category $id');
         _notifySafely();
         return existing;
       }
@@ -343,11 +388,23 @@ class CategoryProvider with ChangeNotifier {
       debugLog(
           'CategoryProvider', '🔄 Category $id not in cache, loading from API');
 
-      if (!_hasLoaded) {
-        await loadCategories(forceRefresh: true);
-      } else {
-        await loadCategories(forceRefresh: true);
+      if (_isLoading) {
+        debugLog('CategoryProvider', '⏳ Waiting for existing categories load');
+
+        while (_isLoading) {
+          await Future.delayed(const Duration(milliseconds: 100));
+        }
+
+        final afterLoad = getCategoryById(id);
+        if (afterLoad != null) {
+          debugLog('CategoryProvider', '✅ Found category $id after waiting');
+          _isLoadingCategory[id] = false;
+          _notifySafely();
+          return afterLoad;
+        }
       }
+
+      await loadCategories(forceRefresh: true);
 
       final category = getCategoryById(id);
       debugLog('CategoryProvider',
@@ -355,8 +412,6 @@ class CategoryProvider with ChangeNotifier {
       return category;
     } finally {
       _isLoadingCategory[id] = false;
-      debugLog('CategoryProvider',
-          '📥 Setting loading state FALSE for category $id');
       _notifySafely();
     }
   }
