@@ -184,4 +184,27 @@ class AppTextStyles {
         height: 1.4,
         color: AppColors.getTextSecondary(context),
       );
+
+  // Offline mode text style
+  static TextStyle offlineIndicator(BuildContext context) => TextStyle(
+        fontSize: ResponsiveValues.fontCaption(context),
+        fontWeight: FontWeight.w600,
+        height: 1.2,
+        color: AppColors.warning,
+      );
+
+  static TextStyle syncIndicator(BuildContext context) => TextStyle(
+        fontSize: ResponsiveValues.fontCaption(context),
+        fontWeight: FontWeight.w600,
+        height: 1.2,
+        color: AppColors.info,
+      );
+
+  static TextStyle queuedAction(BuildContext context) => TextStyle(
+        fontSize: ResponsiveValues.fontBodySmall(context),
+        fontWeight: FontWeight.w500,
+        height: 1.4,
+        color: AppColors.info,
+        fontStyle: FontStyle.italic,
+      );
 }
