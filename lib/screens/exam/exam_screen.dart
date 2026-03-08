@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -17,15 +18,11 @@ import '../../widgets/common/app_dialog.dart';
 import '../../widgets/common/app_shimmer.dart';
 import '../../widgets/common/app_empty_state.dart';
 import '../../widgets/exam/question_widget.dart';
-import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
-import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
 import '../../utils/helpers.dart';
 import '../../utils/api_response.dart';
-import '../../utils/app_enums.dart';
-import '../../widgets/common/responsive_widgets.dart';
 
 class ExamScreen extends StatefulWidget {
   final int examId;
@@ -56,6 +53,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
   bool _checkingAccess = true;
   bool _hasLoadedQuestions = false;
   bool _isOffline = false;
+  int _pendingCount = 0;
 
   ExamResult? _submittedResult;
   final Map<int, Map<String, dynamic>> _answerDetails = {};
@@ -91,7 +89,12 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     final connectivityService = context.read<ConnectivityService>();
     _connectivitySubscription =
         connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (mounted) setState(() => _isOffline = !isOnline);
+      if (mounted) {
+        setState(() {
+          _isOffline = !isOnline;
+          _pendingCount = connectivityService.pendingActionsCount;
+        });
+      }
     });
   }
 
@@ -152,11 +155,15 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
 
   Future<void> _checkConnectivity() async {
     final connectivityService = context.read<ConnectivityService>();
-    setState(() => _isOffline = !connectivityService.isOnline);
+    setState(() {
+      _isOffline = !connectivityService.isOnline;
+      _pendingCount = connectivityService.pendingActionsCount;
+    });
   }
 
   Future<void> _checkExamAccess() async {
     await _checkConnectivity();
+    if (!mounted) return;
 
     final subscriptionProvider = context.read<SubscriptionProvider>();
     final authProvider = context.read<AuthProvider>();
@@ -183,15 +190,15 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       }
 
       final examProvider = context.read<ExamProvider>();
-      final existingResult = examProvider.myExamResults.firstWhere(
+      final ExamResult? existingResult =
+          examProvider.myExamResults.firstWhereOrNull(
         (result) => result.examId == _exam.id && result.status == 'completed',
-        orElse: () => null as ExamResult,
       );
 
       if (_exam.attemptsTaken >= _exam.maxAttempts) {
         _hasReachedMaxAttempts = true;
         _submittedResult = existingResult;
-        if (existingResult.answerDetails != null) {
+        if (existingResult != null && existingResult.answerDetails != null) {
           for (var detail in existingResult.answerDetails!) {
             if (detail is Map<String, dynamic>) {
               _answerDetails[detail['question_id']] = detail;
@@ -208,6 +215,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       setState(() => _checkingAccess = false);
       if (_hasAccess && !_hasLoadedQuestions && !_hasReachedMaxAttempts) {
         await _loadExamQuestions();
+        if (!mounted) return;
         _hasLoadedQuestions = true;
       }
     }
@@ -233,8 +241,10 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
           _initializeExamSettings();
         });
         await _checkExamAccess();
+        if (!mounted) return;
       } else {
         await examProvider.loadAvailableExams(courseId: widget.courseId);
+        if (!mounted) return;
         final loadedExam = examProvider.getExamById(widget.examId);
         if (loadedExam != null && mounted) {
           setState(() {
@@ -242,6 +252,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
             _initializeExamSettings();
           });
           await _checkExamAccess();
+          if (!mounted) return;
         } else {
           setState(() {
             _checkingAccess = false;
@@ -262,6 +273,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     final provider = context.read<ExamQuestionProvider>();
     try {
       await provider.loadExamQuestions(_exam.id);
+      if (!mounted) return;
     } catch (e) {
       setState(() => _isOffline = true);
     }
@@ -394,7 +406,19 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
 
     final connectivityService = context.read<ConnectivityService>();
     if (!connectivityService.isOnline) {
-      SnackbarService().showOffline(context, action: 'submit exam');
+      // Queue for offline submission
+      final confirmed = await AppDialog.confirm(
+        context: context,
+        title: 'Submit Exam Offline',
+        message:
+            'You are offline. Your exam will be saved and submitted when you\'re back online.',
+        confirmText: 'Save Offline',
+      );
+
+      if (confirmed == true) {
+        await _queueExamOffline();
+        if (!mounted) return;
+      }
       return;
     }
 
@@ -404,10 +428,54 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       message:
           'Are you sure you want to submit the exam? You cannot change answers after submission.',
       confirmText: 'Submit',
-      cancelText: 'Cancel',
     );
 
     if (confirmed == true) await _doSubmitExam();
+    if (!mounted) return;
+  }
+
+  Future<void> _queueExamOffline() async {
+    setState(() => _isSubmitting = true);
+
+    try {
+      final provider = context.read<ExamQuestionProvider>();
+      final questions = provider.getQuestionsByExam(_exam.id);
+
+      final answerList = questions.map((question) {
+        return {
+          'question_id': question.id,
+          'selected_option': _answers[question.id] ?? ''
+        };
+      }).toList();
+
+      await provider.deviceService.saveCacheItem(
+        'offline_exam_submission_${_exam.id}_$_currentUserId',
+        {
+          'exam_id': _exam.id,
+          'answers': answerList,
+          'timestamp': DateTime.now().toIso8601String(),
+        },
+        ttl: const Duration(days: 7),
+        isUserSpecific: true,
+      );
+
+      // Clear progress cache
+      await provider.deviceService.removeCacheItem(
+        'exam_progress_${_exam.id}_$_currentUserId',
+        isUserSpecific: true,
+      );
+
+      SnackbarService().showQueued(context, action: 'Exam submission');
+
+      // Navigate back
+      if (mounted) {
+        if (mounted) context.pop();
+      }
+    } catch (e) {
+      SnackbarService().showError(context, 'Failed to save exam offline');
+    } finally {
+      setState(() => _isSubmitting = false);
+    }
   }
 
   Future<void> _autoSubmitExam() async {
@@ -415,6 +483,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
 
     AppDialog.showLoading(context, message: 'Submitting Exam...');
     await _doSubmitExam();
+    if (!mounted) return;
     AppDialog.hideLoading(context);
   }
 
@@ -436,6 +505,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       }).toList();
 
       final startResponse = await provider.apiService.startExam(_exam.id);
+      if (!mounted) return;
 
       int examResultId = 0;
       if (startResponse.data is Map<String, dynamic>) {
@@ -444,11 +514,13 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
             (data['data'] is Map ? data['data']['exam_result_id'] : 0);
       }
 
-      if (examResultId == 0)
+      if (examResultId == 0) {
         throw ApiError(message: 'Failed to start exam session');
+      }
 
       final submitResponse =
           await provider.apiService.submitExam(examResultId, answerList);
+      if (!mounted) return;
 
       if (submitResponse.success) {
         if (submitResponse.data is Map<String, dynamic>) {
@@ -491,6 +563,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
 
         final examProvider = context.read<ExamProvider>();
         await examProvider.loadMyExamResults(forceRefresh: true);
+        if (!mounted) return;
 
         if (mounted) {
           setState(() {
@@ -505,13 +578,15 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       if (e.isUnauthorized) {
         _handleUnauthorizedError();
       } else {
-        if (mounted)
+        if (mounted) {
           SnackbarService().showError(context, e.userFriendlyMessage);
+        }
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         SnackbarService()
             .showError(context, 'Failed to submit exam. Please try again.');
+      }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -521,6 +596,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     final authProvider = context.read<AuthProvider>();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await authProvider.logout();
+      if (!mounted) return;
       if (mounted) GoRouter.of(context).go('/auth/login');
     });
   }
@@ -533,6 +609,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       Future.microtask(() async {
         try {
           await _saveProgressToCache();
+          if (!mounted) return;
         } catch (e) {}
       });
     }
@@ -969,7 +1046,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
               SizedBox(
                 width: double.infinity,
                 child: AppButton.primary(
-                  label: 'Start Exam Now',
+                  label: _isOffline ? 'Start (Offline Mode)' : 'Start Exam Now',
                   onPressed: () {
                     setState(() => _showInstructions = false);
                     _startTimer();
@@ -1063,6 +1140,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                   );
                   if (confirm == true && mounted) {
                     await _saveProgressToCache();
+                    if (!mounted) return;
                     GoRouter.of(context).pop();
                   }
                 },
@@ -1218,7 +1296,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                   SizedBox(
                     width: double.infinity,
                     child: AppButton.primary(
-                      label: 'Submit Exam',
+                      label: _isOffline ? 'Save Offline' : 'Submit Exam',
                       onPressed: _isSubmitting ? null : _submitExam,
                       isLoading: _isSubmitting,
                       expanded: true,
@@ -1527,6 +1605,8 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                 ? 'No cached questions available. Connect to load questions.'
                 : 'Could not load exam questions. Please try again.',
             onRefresh: _loadExamQuestions,
+            isOffline: _isOffline,
+            pendingCount: _pendingCount,
           ),
         ),
       );
