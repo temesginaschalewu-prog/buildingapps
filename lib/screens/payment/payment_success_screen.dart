@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../models/category_model.dart';
 import '../../services/device_service.dart';
+import '../../services/connectivity_service.dart';
 import '../../providers/category_provider.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_button.dart';
@@ -14,8 +15,6 @@ import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
-import '../../utils/app_enums.dart';
-import '../../widgets/common/responsive_widgets.dart';
 
 class PaymentSuccessScreen extends StatefulWidget {
   final Map<String, dynamic>? extra;
@@ -42,6 +41,8 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
   String _durationText = '';
   String? _accountHolderName;
   bool _animationComplete = false;
+  bool _isQueued = false;
+  int _pendingCount = 0;
   Timer? _redirectTimer;
   int _secondsRemaining = 5;
 
@@ -63,6 +64,17 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
             parent: _pulseAnimationController, curve: Curves.easeInOut));
 
     _loadData();
+    _checkConnectivity();
+    _checkPendingCount();
+  }
+
+  Future<void> _checkConnectivity() async {
+    context.read<ConnectivityService>();
+  }
+
+  Future<void> _checkPendingCount() async {
+    final connectivity = ConnectivityService();
+    setState(() => _pendingCount = connectivity.pendingActionsCount);
   }
 
   @override
@@ -88,6 +100,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
         _durationText =
             args['duration_text'] as String? ?? _getAccessDurationText();
         _accountHolderName = args['account_holder_name'] as String?;
+        _isQueued = args['queued'] == true;
 
         final categoryId = args['category_id'] as int?;
         final category = args['category'];
@@ -169,6 +182,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
               cachedPaymentData['durationText'] ?? _getAccessDurationText();
           _accountHolderName =
               cachedPaymentData['accountHolderName'] as String?;
+          _isQueued = cachedPaymentData['queued'] == true;
           _isLoading = false;
         });
       } else {
@@ -244,8 +258,10 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                 shape: BoxShape.circle,
                 gradient: RadialGradient(
                   colors: [
-                    AppColors.telegramGreen.withValues(alpha: 0.3),
-                    AppColors.telegramGreen.withValues(alpha: 0.1),
+                    (_isQueued ? AppColors.info : AppColors.telegramGreen)
+                        .withValues(alpha: 0.3),
+                    (_isQueued ? AppColors.info : AppColors.telegramGreen)
+                        .withValues(alpha: 0.1),
                     Colors.transparent
                   ],
                   stops: const [0.1, 0.5, 1.0],
@@ -265,22 +281,29 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                 height: ResponsiveValues.avatarSizeLarge(context),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [
-                      AppColors.telegramGreen,
-                      AppColors.telegramGreen.withValues(alpha: 0.8)
-                    ],
+                    colors: _isQueued
+                        ? [AppColors.info, AppColors.telegramBlue]
+                        : [
+                            AppColors.telegramGreen,
+                            AppColors.telegramGreen.withValues(alpha: 0.8)
+                          ],
                   ),
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.telegramGreen.withValues(alpha: 0.3),
+                      color:
+                          (_isQueued ? AppColors.info : AppColors.telegramGreen)
+                              .withValues(alpha: 0.3),
                       blurRadius: ResponsiveValues.spacingXL(context),
                       spreadRadius: ResponsiveValues.spacingS(context),
                     ),
                   ],
                 ),
-                child: const Icon(Icons.check_rounded,
-                    size: 60, color: Colors.white),
+                child: Icon(
+                  _isQueued ? Icons.schedule_rounded : Icons.check_rounded,
+                  size: 60,
+                  color: Colors.white,
+                ),
               ),
             );
           },
@@ -290,12 +313,16 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
   }
 
   Widget _buildSuccessContent(BuildContext context) {
-    final title = _paymentType == 'first_time'
-        ? 'Payment Submitted!'
-        : 'Renewal Submitted!';
-    final message = _categoryName.isNotEmpty
-        ? 'Your payment for "$_categoryName" has been submitted successfully.'
-        : 'Your payment has been submitted successfully.';
+    final title = _isQueued
+        ? 'Payment Queued!'
+        : (_paymentType == 'first_time'
+            ? 'Payment Submitted!'
+            : 'Renewal Submitted!');
+    final message = _isQueued
+        ? 'Your payment for "$_categoryName" has been saved offline. It will be submitted when you\'re back online.'
+        : (_categoryName.isNotEmpty
+            ? 'Your payment for "$_categoryName" has been submitted successfully.'
+            : 'Your payment has been submitted successfully.');
 
     return Column(
       children: [
@@ -321,24 +348,32 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
-                AppColors.pending.withValues(alpha: 0.2),
-                AppColors.pending.withValues(alpha: 0.1)
+                (_isQueued ? AppColors.info : AppColors.pending)
+                    .withValues(alpha: 0.2),
+                (_isQueued ? AppColors.info : AppColors.pending)
+                    .withValues(alpha: 0.1)
               ],
             ),
             borderRadius:
                 BorderRadius.circular(ResponsiveValues.radiusFull(context)),
-            border: Border.all(color: AppColors.pending.withValues(alpha: 0.3)),
+            border: Border.all(
+                color: (_isQueued ? AppColors.info : AppColors.pending)
+                    .withValues(alpha: 0.3)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.schedule_rounded,
-                  size: 16, color: AppColors.pending),
+              Icon(
+                _isQueued ? Icons.schedule_rounded : Icons.pending_rounded,
+                size: 16,
+                color: _isQueued ? AppColors.info : AppColors.pending,
+              ),
               SizedBox(width: ResponsiveValues.spacingXS(context)),
               Text(
-                'Pending Verification',
+                _isQueued ? 'Queued for Sync' : 'Pending Verification',
                 style: AppTextStyles.labelSmall(context).copyWith(
-                    color: AppColors.pending, fontWeight: FontWeight.w600),
+                    color: _isQueued ? AppColors.info : AppColors.pending,
+                    fontWeight: FontWeight.w600),
               ),
             ],
           ),
@@ -411,8 +446,8 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
             _buildDetailRow(
               icon: Icons.info_rounded,
               label: 'Status',
-              value: 'Pending Verification',
-              valueColor: AppColors.pending,
+              value: _isQueued ? 'Queued for Sync' : 'Pending Verification',
+              valueColor: _isQueued ? AppColors.info : AppColors.pending,
             ),
           ],
         ),
@@ -545,6 +580,38 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
           padding: ResponsiveValues.screenPadding(context),
           child: Column(
             children: [
+              if (_pendingCount > 0 && _isQueued)
+                Container(
+                  margin: EdgeInsets.only(
+                      bottom: ResponsiveValues.spacingL(context)),
+                  padding: ResponsiveValues.cardPadding(context),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        AppColors.info.withValues(alpha: 0.2),
+                        AppColors.info.withValues(alpha: 0.1)
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(
+                        ResponsiveValues.radiusMedium(context)),
+                    border: Border.all(
+                        color: AppColors.info.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.schedule_rounded,
+                          color: AppColors.info, size: 20),
+                      SizedBox(width: ResponsiveValues.spacingM(context)),
+                      Expanded(
+                        child: Text(
+                          '$_pendingCount pending payment${_pendingCount > 1 ? 's' : ''} in queue',
+                          style: AppTextStyles.bodySmall(context)
+                              .copyWith(color: AppColors.info),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               SizedBox(height: ResponsiveValues.spacingXXL(context)),
               _buildSuccessIcon(context),
               SizedBox(height: ResponsiveValues.spacingXXL(context)),
@@ -572,6 +639,37 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  if (_pendingCount > 0 && _isQueued)
+                    Container(
+                      margin: EdgeInsets.only(
+                          bottom: ResponsiveValues.spacingL(context)),
+                      padding: ResponsiveValues.cardPadding(context),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            AppColors.info.withValues(alpha: 0.2),
+                            AppColors.info.withValues(alpha: 0.1)
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(
+                            ResponsiveValues.radiusMedium(context)),
+                        border: Border.all(
+                            color: AppColors.info.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.schedule_rounded,
+                              color: AppColors.info, size: 20),
+                          SizedBox(width: ResponsiveValues.spacingM(context)),
+                          Text(
+                            '$_pendingCount pending payment${_pendingCount > 1 ? 's' : ''}',
+                            style: AppTextStyles.bodySmall(context)
+                                .copyWith(color: AppColors.info),
+                          ),
+                        ],
+                      ),
+                    ),
                   _buildSuccessIcon(context),
                   SizedBox(height: ResponsiveValues.spacingXXL(context)),
                   _buildSuccessContent(context),
