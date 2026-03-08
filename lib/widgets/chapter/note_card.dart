@@ -399,8 +399,6 @@ class NoteDetailScreen extends StatelessWidget {
   Widget _buildPdfViewer(String filePath) => SfPdfViewer.file(File(filePath));
 
   Widget _buildHtmlContent(BuildContext context, String content) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return SingleChildScrollView(
       padding: ResponsiveValues.screenPadding(context),
       child: HtmlWidget(
@@ -417,7 +415,7 @@ class NoteDetailScreen extends StatelessWidget {
           }
           return false;
         },
-        factoryBuilder: () => _MyWidgetFactory(),
+        factoryBuilder: _MyWidgetFactory.new,
       ),
     );
   }
@@ -518,9 +516,4 @@ class NoteDetailScreen extends StatelessWidget {
   }
 }
 
-class _MyWidgetFactory extends WidgetFactory {
-  @override
-  void parse(BuildMetadata meta) {
-    super.parse(meta);
-  }
-}
+class _MyWidgetFactory extends WidgetFactory {}
