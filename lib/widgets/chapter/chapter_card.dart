@@ -14,8 +14,6 @@ import '../../themes/app_text_styles.dart';
 import '../../themes/app_themes.dart';
 import '../../utils/responsive_values.dart';
 import '../../utils/helpers.dart';
-import '../common/app_card.dart';
-import '../common/responsive_widgets.dart';
 import '../common/app_dialog.dart';
 
 class ChapterCard extends StatelessWidget {
@@ -146,7 +144,9 @@ class ChapterCard extends StatelessWidget {
 
         final iconSize = ResponsiveValues.iconSizeXXL(context);
         final titleSize = ResponsiveValues.fontTitleMedium(context);
+        final badgeSize = ResponsiveValues.fontBodySmall(context);
         final padding = ResponsiveValues.cardPadding(context);
+        final iconSpacing = ResponsiveValues.spacingS(context);
 
         return Container(
           margin: margin ??
@@ -209,10 +209,11 @@ class ChapterCard extends StatelessWidget {
                             child: Icon(_getStatusIcon(hasAccess),
                                 size: iconSize * 0.5, color: statusColor),
                           ),
-                          SizedBox(width: ResponsiveValues.spacingL(context)),
+                          SizedBox(width: iconSpacing),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
                                   chapter.name,
@@ -229,10 +230,8 @@ class ChapterCard extends StatelessWidget {
                                     height: ResponsiveValues.spacingS(context)),
                                 Container(
                                   padding: EdgeInsets.symmetric(
-                                    horizontal:
-                                        ResponsiveValues.spacingS(context),
-                                    vertical:
-                                        ResponsiveValues.spacingXXS(context),
+                                    horizontal: iconSpacing,
+                                    vertical: 2,
                                   ),
                                   decoration: BoxDecoration(
                                     color: statusBgColor,
@@ -246,16 +245,13 @@ class ChapterCard extends StatelessWidget {
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       Icon(_getStatusIcon(hasAccess),
-                                          size: ResponsiveValues.iconSizeXXS(
-                                              context),
+                                          size: badgeSize * 1.2,
                                           color: statusColor),
-                                      SizedBox(
-                                          width: ResponsiveValues.spacingXS(
-                                              context)),
+                                      const SizedBox(width: 4),
                                       Text(
                                         _getStatusText(hasAccess),
-                                        style: AppTextStyles.caption(context)
-                                            .copyWith(
+                                        style: TextStyle(
+                                          fontSize: badgeSize,
                                           color: statusColor,
                                           fontWeight: FontWeight.w600,
                                         ),
@@ -263,41 +259,29 @@ class ChapterCard extends StatelessWidget {
                                     ],
                                   ),
                                 ),
-                                if (!hasAccess && !chapter.isFree)
-                                  Padding(
-                                    padding: EdgeInsets.only(
-                                        top:
-                                            ResponsiveValues.spacingS(context)),
-                                    child: Text(
-                                      'Purchase "$categoryName" to unlock',
-                                      style: AppTextStyles.caption(context)
-                                          .copyWith(
-                                        color:
-                                            AppColors.getTextSecondary(context),
-                                      ),
-                                    ),
-                                  ),
                               ],
                             ),
                           ),
-                          Container(
-                            padding: EdgeInsets.all(
-                                ResponsiveValues.spacingS(context)),
-                            decoration: BoxDecoration(
-                              color: hasAccess
-                                  ? AppColors.telegramBlue
-                                      .withValues(alpha: 0.1)
-                                  : Colors.transparent,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              hasAccess
-                                  ? Icons.chevron_right_rounded
-                                  : Icons.lock_rounded,
-                              size: ResponsiveValues.iconSizeL(context),
-                              color: hasAccess
-                                  ? AppColors.telegramBlue
-                                  : AppColors.getTextSecondary(context),
+                          Padding(
+                            padding: EdgeInsets.only(left: iconSpacing),
+                            child: Container(
+                              padding: EdgeInsets.all(iconSpacing),
+                              decoration: BoxDecoration(
+                                color: hasAccess
+                                    ? AppColors.telegramBlue
+                                        .withValues(alpha: 0.1)
+                                    : Colors.transparent,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                hasAccess
+                                    ? Icons.chevron_right_rounded
+                                    : Icons.lock_rounded,
+                                size: badgeSize * 1.5,
+                                color: hasAccess
+                                    ? AppColors.telegramBlue
+                                    : AppColors.getTextSecondary(context),
+                              ),
                             ),
                           ),
                         ],
