@@ -1,20 +1,23 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:dio/dio.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../services/user_session.dart';
+import '../services/connectivity_service.dart';
 import '../models/video_model.dart';
 import '../utils/constants.dart';
 import '../utils/helpers.dart';
-import 'package:dio/dio.dart';
 import '../utils/app_enums.dart';
 
 class VideoProvider with ChangeNotifier {
   final ApiService apiService;
   final DeviceService deviceService;
+  final ConnectivityService connectivityService;
   final Dio _dio = Dio();
 
   final List<Video> _videos = [];
@@ -34,18 +37,35 @@ class VideoProvider with ChangeNotifier {
 
   bool _isLoading = false;
   String? _error;
+  bool _isOffline = false;
 
-  static const Duration _cacheDuration = Duration(hours: 24);
-  static const Duration _downloadMetadataCache = Duration(days: 30);
+  static const Duration _cacheDuration = AppConstants.cacheTTLVideos;
+  static const Duration _downloadMetadataCache =
+      AppConstants.cacheTTLDownloadMetadata;
 
-  VideoProvider({required this.apiService, required this.deviceService}) {
+  VideoProvider({
+    required this.apiService,
+    required this.deviceService,
+    required this.connectivityService,
+  }) {
     _initDio();
     _loadDownloadedVideos();
+    _setupConnectivityListener();
+  }
+
+  void _setupConnectivityListener() {
+    connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (_isOffline != !isOnline) {
+        _isOffline = !isOnline;
+        notifyListeners();
+      }
+    });
   }
 
   List<Video> get videos => List.unmodifiable(_videos);
   bool get isLoading => _isLoading;
   String? get error => _error;
+  bool get isOffline => _isOffline;
   Stream<Map<String, dynamic>> get videoUpdates =>
       _videoUpdateController.stream;
 
@@ -198,20 +218,15 @@ class VideoProvider with ChangeNotifier {
   }
 
   Future<void> loadVideosByChapter(int chapterId,
-      {bool forceRefresh = false}) async {
+      {bool forceRefresh = false, bool isManualRefresh = false}) async {
     if (_isLoadingForChapter[chapterId] == true && !forceRefresh) return;
 
-    final lastLoaded = _lastLoadedTime[chapterId];
-    final hasCache = _hasLoadedForChapter[chapterId] == true;
-    final isCacheValid = lastLoaded != null &&
-        DateTime.now().difference(lastLoaded) < _cacheDuration;
-
-    if (hasCache && !forceRefresh && isCacheValid) {
-      debugLog(
-          'VideoProvider', '✅ Using cached videos for chapter: $chapterId');
-      return;
+    // If this is a manual refresh, ALWAYS force refresh
+    if (isManualRefresh) {
+      forceRefresh = true;
     }
 
+    // STEP 1: ALWAYS try cache first (even when offline)
     if (!forceRefresh) {
       try {
         final cached = await deviceService.getCacheItem<List<dynamic>>(
@@ -247,16 +262,35 @@ class VideoProvider with ChangeNotifier {
               'count': list.length
             });
 
+            _notifySafely();
+
             debugLog('VideoProvider',
                 '✅ Loaded ${list.length} videos from cache for chapter $chapterId');
 
-            unawaited(_refreshInBackground(chapterId));
+            // STEP 2: If online, refresh in background
+            if (!_isOffline) {
+              unawaited(_refreshInBackground(chapterId));
+            }
             return;
           }
         }
       } catch (e) {
         debugLog('VideoProvider', 'Error loading cache: $e');
       }
+    }
+
+    // STEP 3: If no cache, try API (only if online)
+    if (_isOffline) {
+      _error = 'You are offline. No cached videos available.';
+      _isLoadingForChapter[chapterId] = false;
+      _isLoading = false;
+      _notifySafely();
+
+      if (isManualRefresh) {
+        throw Exception(
+            'Network error. Please check your internet connection.');
+      }
+      return;
     }
 
     _isLoadingForChapter[chapterId] = true;
@@ -297,6 +331,7 @@ class VideoProvider with ChangeNotifier {
         }
       }
 
+      // Save to cache for next time
       await deviceService.saveCacheItem(
         AppConstants.videosByChapterKey(chapterId),
         list.map((v) => v.toJson()).toList(),
@@ -327,6 +362,10 @@ class VideoProvider with ChangeNotifier {
         'chapter_id': chapterId,
         'error': _error
       });
+
+      if (isManualRefresh) {
+        rethrow;
+      }
     } finally {
       _isLoadingForChapter[chapterId] = false;
       _isLoading = false;
@@ -335,6 +374,8 @@ class VideoProvider with ChangeNotifier {
   }
 
   Future<void> _refreshInBackground(int chapterId) async {
+    if (_isOffline) return;
+
     try {
       debugLog('VideoProvider', '🔄 Background refresh for chapter $chapterId');
 
@@ -457,7 +498,7 @@ class VideoProvider with ChangeNotifier {
       _downloadProgress.remove(video.id);
       _downloadedQualities.remove(video.id);
 
-      String errorMessage = _getUserFriendlyError(e);
+      final String errorMessage = _getUserFriendlyError(e);
 
       _notifySafely();
       throw Exception(errorMessage);
@@ -560,6 +601,13 @@ class VideoProvider with ChangeNotifier {
   Future<void> incrementViewCount(int videoId) async {
     try {
       debugLog('VideoProvider', 'Incrementing view count for video: $videoId');
+
+      if (_isOffline) {
+        // Queue for offline sync
+        await _queueViewCountForSync(videoId);
+        return;
+      }
+
       await apiService.incrementVideoViewCount(videoId);
 
       final index = _videos.indexWhere((v) => v.id == videoId);
@@ -601,6 +649,101 @@ class VideoProvider with ChangeNotifier {
     }
   }
 
+  Future<void> _queueViewCountForSync(int videoId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = await UserSession().getCurrentUserId();
+
+      if (userId == null) return;
+
+      const pendingKey = 'pending_view_counts';
+      final userPendingKey = '${pendingKey}_$userId';
+      final existingJson = prefs.getString(userPendingKey);
+      List<Map<String, dynamic>> pendingViews = [];
+
+      if (existingJson != null) {
+        try {
+          pendingViews =
+              List<Map<String, dynamic>>.from(jsonDecode(existingJson));
+        } catch (e) {
+          debugLog('VideoProvider', 'Error parsing pending views: $e');
+        }
+      }
+
+      pendingViews.add({
+        'video_id': videoId,
+        'timestamp': DateTime.now().toIso8601String(),
+        'retry_count': 0,
+      });
+
+      await prefs.setString(userPendingKey, jsonEncode(pendingViews));
+      debugLog('VideoProvider', '📝 Queued view count for video $videoId');
+    } catch (e) {
+      debugLog('VideoProvider', 'Error queueing view count: $e');
+    }
+  }
+
+  Future<void> syncPendingViewCounts() async {
+    if (_isOffline) return;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = await UserSession().getCurrentUserId();
+
+      if (userId == null) return;
+
+      const pendingKey = 'pending_view_counts';
+      final userPendingKey = '${pendingKey}_$userId';
+      final existingJson = prefs.getString(userPendingKey);
+
+      if (existingJson == null) return;
+
+      List<Map<String, dynamic>> pendingViews = [];
+      try {
+        pendingViews =
+            List<Map<String, dynamic>>.from(jsonDecode(existingJson));
+      } catch (e) {
+        debugLog('VideoProvider', 'Error parsing pending views: $e');
+        await prefs.remove(userPendingKey);
+        return;
+      }
+
+      if (pendingViews.isEmpty) return;
+
+      debugLog('VideoProvider',
+          '🔄 Syncing ${pendingViews.length} pending view counts');
+
+      final List<Map<String, dynamic>> failedViews = [];
+
+      for (final view in pendingViews) {
+        try {
+          await apiService.incrementVideoViewCount(view['video_id']);
+          debugLog('VideoProvider',
+              '✅ Synced view count for video ${view['video_id']}');
+        } catch (e) {
+          debugLog('VideoProvider', '❌ Failed to sync view count: $e');
+
+          final retryCount = (view['retry_count'] ?? 0) + 1;
+          if (retryCount <= 3) {
+            view['retry_count'] = retryCount;
+            failedViews.add(view);
+          }
+        }
+      }
+
+      if (failedViews.isEmpty) {
+        await prefs.remove(userPendingKey);
+        debugLog('VideoProvider', '✅ All pending view counts synced');
+      } else {
+        await prefs.setString(userPendingKey, jsonEncode(failedViews));
+        debugLog('VideoProvider',
+            '⚠️ ${failedViews.length} view counts still pending');
+      }
+    } catch (e) {
+      debugLog('VideoProvider', 'Error syncing pending views: $e');
+    }
+  }
+
   int getViewCount(int videoId) {
     return _videoViewCounts[videoId] ?? 0;
   }
@@ -615,6 +758,13 @@ class VideoProvider with ChangeNotifier {
     if (!isDifferentUser || !isLoggingOut) {
       debugLog('VideoProvider', '✅ Same user - preserving video cache');
       return;
+    }
+
+    // Clear pending view counts
+    final userId = await session.getCurrentUserId();
+    if (userId != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('pending_view_counts_$userId');
     }
 
     await deviceService.clearCacheByPrefix('videos_');
