@@ -10,17 +10,15 @@ import '../../providers/notification_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
+import '../../services/refresh_service.dart';
 import '../../widgets/common/app_bar.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_shimmer.dart';
 import '../../widgets/common/app_empty_state.dart';
 import '../../widgets/progress/achievement_badge.dart';
-import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
-import '../../utils/parsers.dart';
-import '../../utils/app_enums.dart';
 
 class ProgressScreen extends StatefulWidget {
   const ProgressScreen({super.key});
@@ -98,7 +96,7 @@ class _ProgressScreenState extends State<ProgressScreen>
         connectivityService.onConnectivityChanged.listen((isOnline) {
       if (mounted) {
         setState(() => _isOffline = !isOnline);
-        if (isOnline && !_isRefreshing) {
+        if (isOnline && !_isRefreshing && _hasInitialData) {
           _refreshDataInBackground();
         }
       }
@@ -159,6 +157,7 @@ class _ProgressScreenState extends State<ProgressScreen>
       ]);
 
       await _loadNotifications();
+      if (!mounted) return;
 
       _hasInitialData = true;
 
@@ -170,6 +169,7 @@ class _ProgressScreenState extends State<ProgressScreen>
 
         if (!_isOffline) {
           await _refreshDataInBackground();
+          if (!mounted) return;
         }
       }
     } catch (e) {
@@ -208,11 +208,11 @@ class _ProgressScreenState extends State<ProgressScreen>
       ]);
 
       await _loadNotifications();
+      if (!mounted) return;
 
       _lastRefreshTime = DateTime.now();
 
       if (mounted) setState(() => _updateLoadingStates(progressProvider));
-    } catch (e) {
     } finally {
       _isRefreshing = false;
     }
@@ -220,53 +220,38 @@ class _ProgressScreenState extends State<ProgressScreen>
 
   Future<void> _manualRefresh() async {
     if (_isRefreshing) return;
-
-    final connectivityService = context.read<ConnectivityService>();
-    if (!connectivityService.isOnline) {
-      setState(() => _isOffline = true);
-      SnackbarService().showOffline(context);
-      return;
-    }
-
     setState(() => _isRefreshing = true);
 
-    try {
-      final streakProvider = context.read<StreakProvider>();
-      final examProvider = context.read<ExamProvider>();
-      final progressProvider = context.read<ProgressProvider>();
+    final success = await RefreshService().executeRefresh(
+      context: context,
+      refreshFunction: () async {
+        final streakProvider = context.read<StreakProvider>();
+        final examProvider = context.read<ExamProvider>();
+        final progressProvider = context.read<ProgressProvider>();
 
-      await Future.wait([
-        streakProvider.loadStreak(forceRefresh: true),
-        examProvider.loadMyExamResults(forceRefresh: true),
-        progressProvider.loadOverallProgress(forceRefresh: true),
-      ]);
+        await Future.wait([
+          streakProvider.loadStreak(forceRefresh: true),
+          examProvider.loadMyExamResults(forceRefresh: true),
+          progressProvider.loadOverallProgress(forceRefresh: true),
+        ]);
 
-      await _loadNotifications();
+        await _loadNotifications();
+        if (!mounted) return;
+        _lastRefreshTime = DateTime.now();
+        if (mounted) setState(() => _isOffline = false);
+      },
+      successMessage: 'Progress updated',
+    );
 
-      _lastRefreshTime = DateTime.now();
-
-      if (mounted) {
-        setState(() {
-          _updateLoadingStates(progressProvider);
-          _isOffline = false;
-        });
-        SnackbarService().showSuccess(context, 'Progress refreshed');
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isOffline = true);
-        SnackbarService().showError(
-            context, 'Failed to refresh progress. Using cached data.');
-      }
-    } finally {
-      if (mounted) setState(() => _isRefreshing = false);
-    }
+    if (!success && mounted) setState(() => _isOffline = true);
+    if (mounted) setState(() => _isRefreshing = false);
   }
 
   Future<void> _loadNotifications() async {
     try {
       final notificationProvider = context.read<NotificationProvider>();
       await notificationProvider.loadNotifications();
+      if (!mounted) return;
     } catch (e) {}
   }
 
@@ -278,10 +263,12 @@ class _ProgressScreenState extends State<ProgressScreen>
       if (user != null && user.accountStatus != 'active') {
         final subscriptionProvider = context.read<SubscriptionProvider>();
         await subscriptionProvider.loadSubscriptions();
+        if (!mounted) return;
 
         if (subscriptionProvider.activeSubscriptions.isNotEmpty) {
           final updatedUser = user.copyWith(accountStatus: 'active');
           await authProvider.updateUser(updatedUser);
+          if (!mounted) return;
           if (mounted) setState(() {});
         }
       }
