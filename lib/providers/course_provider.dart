@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../services/user_session.dart';
+import '../services/connectivity_service.dart';
 import '../models/course_model.dart';
 import '../utils/constants.dart';
 import '../utils/helpers.dart';
@@ -11,6 +12,7 @@ import '../utils/helpers.dart';
 class CourseProvider with ChangeNotifier {
   final ApiService apiService;
   final DeviceService deviceService;
+  final ConnectivityService connectivityService;
 
   final List<Course> _courses = [];
   final Map<int, List<Course>> _coursesByCategory = {};
@@ -19,17 +21,34 @@ class CourseProvider with ChangeNotifier {
   final Map<int, DateTime> _lastLoadedTime = {};
   bool _isLoading = false;
   String? _error;
+  bool _isOffline = false;
 
-  static const Duration _cacheDuration = Duration(hours: 24);
+  static const Duration _cacheDuration = AppConstants.cacheTTLCourses;
 
   StreamController<Map<int, List<Course>>> _coursesUpdateController =
       StreamController<Map<int, List<Course>>>.broadcast();
 
-  CourseProvider({required this.apiService, required this.deviceService});
+  CourseProvider({
+    required this.apiService,
+    required this.deviceService,
+    required this.connectivityService,
+  }) {
+    _setupConnectivityListener();
+  }
+
+  void _setupConnectivityListener() {
+    connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (_isOffline != !isOnline) {
+        _isOffline = !isOnline;
+        notifyListeners();
+      }
+    });
+  }
 
   List<Course> get courses => List.unmodifiable(_courses);
   bool get isLoading => _isLoading;
   String? get error => _error;
+  bool get isOffline => _isOffline;
   Stream<Map<int, List<Course>>> get coursesUpdates =>
       _coursesUpdateController.stream;
 
@@ -72,17 +91,36 @@ class CourseProvider with ChangeNotifier {
   }
 
   Future<void> loadCoursesByCategory(int categoryId,
-      {bool forceRefresh = false, bool? hasAccess}) async {
+      {bool forceRefresh = false,
+      bool? hasAccess,
+      bool isManualRefresh = false}) async {
+    // If this is a manual refresh, ALWAYS force refresh
+    if (isManualRefresh) {
+      forceRefresh = true;
+    }
+
     _isLoadingCategory[categoryId] = true;
     _isLoading = true;
     _error = null;
     _notifySafely();
 
+    debugLog('CourseProvider',
+        '🔍 loadCoursesByCategory called for category $categoryId, forceRefresh: $forceRefresh, isOffline: $_isOffline');
+
+    // STEP 1: ALWAYS try cache first (EVEN WHEN OFFLINE) - NO CONDITIONAL!
     if (!forceRefresh) {
-      final cachedCourses =
-          await deviceService.getCacheItem<List<Course>>('courses_$categoryId');
+      debugLog('CourseProvider',
+          '📦 Attempting to load from cache for category $categoryId');
+
+      final cachedCourses = await deviceService.getCacheItem<List<Course>>(
+        'courses_$categoryId',
+        isUserSpecific: true,
+      );
 
       if (cachedCourses != null && cachedCourses.isNotEmpty) {
+        debugLog('CourseProvider',
+            '✅ FOUND ${cachedCourses.length} courses in cache for category $categoryId');
+
         _coursesByCategory[categoryId] = cachedCourses;
         _hasLoadedCategory[categoryId] = true;
         _lastLoadedTime[categoryId] = DateTime.now();
@@ -94,15 +132,42 @@ class CourseProvider with ChangeNotifier {
         _coursesUpdateController.add({categoryId: cachedCourses});
         _notifySafely();
 
-        debugLog('CourseProvider',
-            '✅ Loaded ${cachedCourses.length} courses from cache for category $categoryId');
-
-        unawaited(_refreshInBackground(categoryId, hasAccess));
+        // STEP 2: If online, refresh in background
+        if (!_isOffline) {
+          debugLog('CourseProvider',
+              '🔄 Online - refreshing in background for category $categoryId');
+          unawaited(_refreshInBackground(categoryId, hasAccess));
+        } else {
+          debugLog('CourseProvider',
+              '📴 Offline - using cached courses for category $categoryId');
+        }
         return;
+      } else {
+        debugLog('CourseProvider',
+            '📦 No cached courses found for category $categoryId');
       }
+    } else {
+      debugLog('CourseProvider', '🔄 forceRefresh = true, skipping cache');
     }
 
-    debugLog('CourseProvider', '📥 Loading courses for category: $categoryId');
+    // STEP 3: If offline and no cache, show error
+    if (_isOffline) {
+      debugLog(
+          'CourseProvider', '📴 Offline and no cache for category $categoryId');
+      _error = 'You are offline. No cached courses available.';
+      _isLoadingCategory[categoryId] = false;
+      _isLoading = false;
+      _notifySafely();
+
+      if (isManualRefresh) {
+        throw Exception(
+            'Network error. Please check your internet connection.');
+      }
+      return;
+    }
+
+    debugLog('CourseProvider',
+        '📥 Loading courses from API for category: $categoryId');
 
     try {
       final response = await apiService.getCoursesByCategory(categoryId);
@@ -145,8 +210,15 @@ class CourseProvider with ChangeNotifier {
           }
         }
 
-        await deviceService.saveCacheItem('courses_$categoryId', parsedCourses,
-            ttl: _cacheDuration);
+        // Save to cache for next time
+        debugLog('CourseProvider',
+            '💾 Saving ${parsedCourses.length} courses to cache for category $categoryId');
+        await deviceService.saveCacheItem(
+          'courses_$categoryId',
+          parsedCourses,
+          ttl: _cacheDuration,
+          isUserSpecific: true,
+        );
 
         _coursesByCategory[categoryId] = parsedCourses;
         _hasLoadedCategory[categoryId] = true;
@@ -155,6 +227,7 @@ class CourseProvider with ChangeNotifier {
         _updateMainCoursesList(parsedCourses);
 
         _coursesUpdateController.add({categoryId: parsedCourses});
+        _notifySafely();
 
         debugLog('CourseProvider',
             '✅ Parsed ${parsedCourses.length} courses for category $categoryId, access: $categoryHasAccess');
@@ -171,6 +244,7 @@ class CourseProvider with ChangeNotifier {
         _lastLoadedTime[categoryId] = DateTime.now();
 
         _coursesUpdateController.add({categoryId: []});
+        _notifySafely();
       }
     } catch (e) {
       _error = e.toString();
@@ -182,6 +256,12 @@ class CourseProvider with ChangeNotifier {
         _hasLoadedCategory[categoryId] = true;
         _lastLoadedTime[categoryId] = DateTime.now();
         _coursesUpdateController.add({categoryId: []});
+        _notifySafely();
+      }
+
+      // Re-throw for manual refresh
+      if (isManualRefresh) {
+        rethrow;
       }
     } finally {
       _isLoadingCategory[categoryId] = false;
@@ -191,6 +271,8 @@ class CourseProvider with ChangeNotifier {
   }
 
   Future<void> _refreshInBackground(int categoryId, bool? hasAccess) async {
+    if (_isOffline) return;
+
     try {
       debugLog(
           'CourseProvider', '🔄 Background refresh for category $categoryId');
@@ -229,9 +311,11 @@ class CourseProvider with ChangeNotifier {
           }
 
           if (parsedCourses.isNotEmpty) {
+            debugLog('CourseProvider',
+                '💾 Background refresh - updating cache for category $categoryId');
             await deviceService.saveCacheItem(
                 'courses_$categoryId', parsedCourses,
-                ttl: _cacheDuration);
+                ttl: _cacheDuration, isUserSpecific: true);
 
             _coursesByCategory[categoryId] = parsedCourses;
             _lastLoadedTime[categoryId] = DateTime.now();
@@ -265,7 +349,8 @@ class CourseProvider with ChangeNotifier {
       debugLog('CourseProvider',
           'Refreshing courses for category $categoryId with access: $hasAccess');
 
-      await deviceService.removeCacheItem('courses_$categoryId');
+      await deviceService.removeCacheItem('courses_$categoryId',
+          isUserSpecific: true);
 
       _coursesByCategory.remove(categoryId);
       _hasLoadedCategory.remove(categoryId);
@@ -273,7 +358,7 @@ class CourseProvider with ChangeNotifier {
       _lastLoadedTime.remove(categoryId);
 
       await loadCoursesByCategory(categoryId,
-          forceRefresh: true, hasAccess: hasAccess);
+          forceRefresh: true, hasAccess: hasAccess, isManualRefresh: true);
 
       debugLog('CourseProvider', '✅ Courses refreshed with access: $hasAccess');
     } catch (e) {
@@ -294,7 +379,8 @@ class CourseProvider with ChangeNotifier {
     }
 
     for (final categoryId in _coursesByCategory.keys) {
-      await deviceService.removeCacheItem('courses_$categoryId');
+      await deviceService.removeCacheItem('courses_$categoryId',
+          isUserSpecific: true);
     }
 
     _courses.clear();
@@ -317,7 +403,8 @@ class CourseProvider with ChangeNotifier {
   }
 
   Future<void> clearCoursesForCategory(int categoryId) async {
-    await deviceService.removeCacheItem('courses_$categoryId');
+    await deviceService.removeCacheItem('courses_$categoryId',
+        isUserSpecific: true);
 
     final categoryCourses = _coursesByCategory[categoryId] ?? [];
     _courses
