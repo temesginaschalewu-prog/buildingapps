@@ -2,7 +2,6 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../../themes/app_colors.dart';
 import '../../utils/responsive_values.dart';
-import '../../utils/app_enums.dart';
 
 class AppCard extends StatelessWidget {
   final Widget child;
@@ -15,6 +14,7 @@ class AppCard extends StatelessWidget {
   final VoidCallback? onTap;
   final bool hasShadow;
   final Color? backgroundColor;
+  final bool isOffline;
 
   const AppCard({
     super.key,
@@ -28,6 +28,7 @@ class AppCard extends StatelessWidget {
     this.onTap,
     this.hasShadow = true,
     this.backgroundColor,
+    this.isOffline = false,
   });
 
   const AppCard.glass({
@@ -40,6 +41,7 @@ class AppCard extends StatelessWidget {
     this.borderRadius,
     this.onTap,
     this.hasShadow = true,
+    this.isOffline = false,
   })  : variant = CardVariant.glass,
         backgroundColor = null;
 
@@ -54,16 +56,19 @@ class AppCard extends StatelessWidget {
     this.onTap,
     this.backgroundColor,
     this.hasShadow = true,
+    this.isOffline = false,
   }) : variant = CardVariant.solid;
 
   factory AppCard.category({
     required Widget child,
     VoidCallback? onTap,
     bool isSelected = false,
+    bool isOffline = false,
   }) {
     return AppCard.glass(
       onTap: onTap,
       borderColor: isSelected ? AppColors.telegramBlue : null,
+      isOffline: isOffline,
       child: child,
     );
   }
@@ -72,10 +77,12 @@ class AppCard extends StatelessWidget {
     required Widget child,
     VoidCallback? onTap,
     Color? accentColor,
+    bool isOffline = false,
   }) {
     return AppCard.glass(
       onTap: onTap,
       borderColor: accentColor,
+      isOffline: isOffline,
       child: child,
     );
   }
@@ -84,10 +91,12 @@ class AppCard extends StatelessWidget {
     required Widget child,
     VoidCallback? onTap,
     bool hasAccess = false,
+    bool isOffline = false,
   }) {
     return AppCard.glass(
       onTap: onTap,
       borderColor: hasAccess ? AppColors.telegramGreen : null,
+      isOffline: isOffline,
       child: child,
     );
   }
@@ -96,10 +105,12 @@ class AppCard extends StatelessWidget {
     required Widget child,
     VoidCallback? onTap,
     bool isDownloaded = false,
+    bool isOffline = false,
   }) {
     return AppCard.glass(
       onTap: onTap,
       borderColor: isDownloaded ? AppColors.telegramGreen : null,
+      isOffline: isOffline,
       child: child,
     );
   }
@@ -108,10 +119,12 @@ class AppCard extends StatelessWidget {
     required Widget child,
     VoidCallback? onTap,
     bool isDownloaded = false,
+    bool isOffline = false,
   }) {
     return AppCard.glass(
       onTap: onTap,
       borderColor: isDownloaded ? AppColors.telegramGreen : null,
+      isOffline: isOffline,
       child: child,
     );
   }
@@ -120,10 +133,12 @@ class AppCard extends StatelessWidget {
     required Widget child,
     VoidCallback? onTap,
     Color? statusColor,
+    bool isOffline = false,
   }) {
     return AppCard.glass(
       onTap: onTap,
       borderColor: statusColor,
+      isOffline: isOffline,
       child: child,
     );
   }
@@ -132,10 +147,12 @@ class AppCard extends StatelessWidget {
     required Widget child,
     VoidCallback? onTap,
     bool isUnread = false,
+    bool isOffline = false,
   }) {
     return AppCard.glass(
       onTap: onTap,
       borderColor: isUnread ? AppColors.telegramBlue : null,
+      isOffline: isOffline,
       child: child,
     );
   }
@@ -144,10 +161,12 @@ class AppCard extends StatelessWidget {
     required Widget child,
     VoidCallback? onTap,
     bool isSelected = false,
+    bool isOffline = false,
   }) {
     return AppCard.glass(
       onTap: onTap,
       borderColor: isSelected ? AppColors.telegramBlue : null,
+      isOffline: isOffline,
       child: child,
     );
   }
@@ -156,10 +175,12 @@ class AppCard extends StatelessWidget {
     required Widget child,
     VoidCallback? onTap,
     Color? statusColor,
+    bool isOffline = false,
   }) {
     return AppCard.glass(
       onTap: onTap,
       borderColor: statusColor,
+      isOffline: isOffline,
       child: child,
     );
   }
@@ -168,10 +189,12 @@ class AppCard extends StatelessWidget {
     required Widget child,
     VoidCallback? onTap,
     bool isSelected = false,
+    bool isOffline = false,
   }) {
     return AppCard.glass(
       onTap: onTap,
       borderColor: isSelected ? AppColors.telegramBlue : null,
+      isOffline: isOffline,
       child: child,
     );
   }
@@ -180,10 +203,12 @@ class AppCard extends StatelessWidget {
     required Widget child,
     VoidCallback? onTap,
     Color? accentColor,
+    bool isOffline = false,
   }) {
     return AppCard.glass(
       onTap: onTap,
       borderColor: accentColor,
+      isOffline: isOffline,
       child: child,
     );
   }
@@ -191,19 +216,23 @@ class AppCard extends StatelessWidget {
   factory AppCard.menu({
     required Widget child,
     VoidCallback? onTap,
+    bool isOffline = false,
   }) {
     return AppCard.glass(
       onTap: onTap,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      isOffline: isOffline,
       child: child,
     );
   }
 
   factory AppCard.stats({
     required Widget child,
+    bool isOffline = false,
   }) {
     return AppCard.glass(
       padding: const EdgeInsets.all(16),
+      isOffline: isOffline,
       child: child,
     );
   }
@@ -256,6 +285,8 @@ class AppCard extends StatelessWidget {
   }
 
   Widget _buildGlassCard(BuildContext context, double borderRadius) {
+    final offlineColor = isOffline ? AppColors.warning : AppColors.telegramBlue;
+
     return BackdropFilter(
       filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
       child: Container(
@@ -264,14 +295,18 @@ class AppCard extends StatelessWidget {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              AppColors.getCard(context).withValues(alpha: 0.4),
-              AppColors.getCard(context).withValues(alpha: 0.2),
+              AppColors.getCard(context)
+                  .withValues(alpha: isOffline ? 0.3 : 0.4),
+              AppColors.getCard(context)
+                  .withValues(alpha: isOffline ? 0.15 : 0.2),
             ],
           ),
           borderRadius: BorderRadius.circular(borderRadius),
           border: Border.all(
-            color: borderColor?.withValues(alpha: 0.3) ??
-                AppColors.telegramBlue.withValues(alpha: 0.2),
+            color: isOffline
+                ? offlineColor.withValues(alpha: 0.2)
+                : (borderColor?.withValues(alpha: 0.3) ??
+                    AppColors.telegramBlue.withValues(alpha: 0.2)),
           ),
         ),
         padding: padding ?? _getDefaultPadding(context),
@@ -289,7 +324,8 @@ class AppCard extends StatelessWidget {
         boxShadow: hasShadow
             ? [
                 BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
+                    color:
+                        Colors.black.withValues(alpha: isOffline ? 0.02 : 0.05),
                     blurRadius: 8,
                     offset: const Offset(0, 2))
               ]
@@ -301,11 +337,15 @@ class AppCard extends StatelessWidget {
   }
 
   Widget _buildOutlineCard(BuildContext context, double borderRadius) {
+    final offlineColor = isOffline ? AppColors.warning : null;
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.transparent,
         borderRadius: BorderRadius.circular(borderRadius),
-        border: Border.all(color: borderColor ?? AppColors.getDivider(context)),
+        border: Border.all(
+          color: offlineColor ?? borderColor ?? AppColors.getDivider(context),
+        ),
       ),
       padding: padding ?? _getDefaultPadding(context),
       child: child,
@@ -319,7 +359,8 @@ class AppCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(borderRadius),
         boxShadow: [
           BoxShadow(
-            color: AppColors.telegramBlue.withValues(alpha: 0.15),
+            color: (isOffline ? AppColors.warning : AppColors.telegramBlue)
+                .withValues(alpha: isOffline ? 0.1 : 0.15),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
