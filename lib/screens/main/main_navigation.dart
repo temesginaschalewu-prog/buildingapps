@@ -6,15 +6,14 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
-import '../../utils/app_enums.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../providers/category_provider.dart';
 import '../../providers/notification_provider.dart';
+import '../../services/connectivity_service.dart';
 import '../../themes/app_colors.dart';
-import '../../themes/app_text_styles.dart';
-import '../../widgets/common/responsive_widgets.dart';
+// For offline indicator in app bar
 
 class MainNavigation extends StatefulWidget {
   final Widget child;
@@ -45,6 +44,8 @@ class _MainNavigationState extends State<MainNavigation>
         vsync: this, duration: const Duration(milliseconds: 300));
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkConnectivity();
+      _checkPendingCount();
       _initializeUserDataInBackground();
       _setupStreamListeners();
       _updateCurrentIndexFromRoute();
@@ -55,8 +56,17 @@ class _MainNavigationState extends State<MainNavigation>
     });
   }
 
+  Future<void> _checkConnectivity() async {
+    context.read<ConnectivityService>();
+    setState(() {});
+  }
+
+  Future<void> _checkPendingCount() async {}
+
   void _setupStreamListeners() {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final connectivityService = context.read<ConnectivityService>();
+
     _notificationProvider =
         Provider.of<NotificationProvider>(context, listen: false);
 
@@ -65,6 +75,12 @@ class _MainNavigationState extends State<MainNavigation>
         _initializeUserDataInBackground();
       } else {
         setState(() => _dataLoadedInBackground = false);
+      }
+    });
+
+    connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (mounted) {
+        setState(() {});
       }
     });
 
@@ -92,6 +108,7 @@ class _MainNavigationState extends State<MainNavigation>
     if (authProvider.isAuthenticated && !_dataLoadedInBackground) {
       try {
         await userProvider.loadUserProfile();
+    if (!mounted) return;
         await Future.wait([
           subscriptionProvider.loadSubscriptions(),
           categoryProvider.loadCategoriesWithSubscriptionCheck()
