@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../services/user_session.dart';
+import '../services/connectivity_service.dart';
 import '../providers/streak_provider.dart';
 import '../models/progress_model.dart';
 import '../utils/constants.dart';
@@ -15,6 +17,7 @@ class ProgressProvider with ChangeNotifier {
   final ApiService apiService;
   final DeviceService deviceService;
   final StreakProvider streakProvider;
+  final ConnectivityService connectivityService;
 
   List<UserProgress> _userProgress = [];
   Map<int, UserProgress> _progressByChapter = {};
@@ -28,6 +31,7 @@ class ProgressProvider with ChangeNotifier {
   bool _hasLoadedOverall = false;
   bool _hasLoadedProgress = false;
   String? _error;
+  bool _isOffline = false;
 
   final Set<int> _pendingSaves = {};
   final Map<int, Timer> _saveDebounceTimers = {};
@@ -39,15 +43,33 @@ class ProgressProvider with ChangeNotifier {
   StreamController<Map<String, dynamic>> _overallStatsController =
       StreamController<Map<String, dynamic>>.broadcast();
 
-  static const Duration _cacheDuration = Duration(minutes: 30);
+  static const Duration _cacheDuration = AppConstants.cacheTTLUserProfile;
   static const Duration _saveDebounceDuration = Duration(seconds: 5);
 
   ProgressProvider({
     required this.apiService,
     required this.deviceService,
     required this.streakProvider,
+    required this.connectivityService,
   }) {
     _init();
+    _setupConnectivityListener();
+  }
+
+  void _setupConnectivityListener() {
+    connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (_isOffline != !isOnline) {
+        _isOffline = !isOnline;
+        if (_isOffline) {
+          debugLog(
+              'ProgressProvider', '📴 Offline mode - using cached progress');
+        } else {
+          debugLog('ProgressProvider', '📶 Online - syncing pending progress');
+          _syncPendingProgress();
+        }
+        notifyListeners();
+      }
+    });
   }
 
   Future<void> _init() async {
@@ -66,6 +88,7 @@ class ProgressProvider with ChangeNotifier {
   bool get hasLoadedOverall => _hasLoadedOverall;
   bool get hasLoadedProgress => _hasLoadedProgress;
   String? get error => _error;
+  bool get isOffline => _isOffline;
 
   Stream<List<UserProgress>> get progressUpdates =>
       _progressUpdateController.stream;
@@ -163,7 +186,10 @@ class ProgressProvider with ChangeNotifier {
         debugLog('ProgressProvider', '✅ Loaded overall stats from cache');
       }
 
-      await _loadAllProgressFromApi();
+      // If online, refresh in background
+      if (!_isOffline) {
+        await _loadAllProgressFromApi();
+      }
     } catch (e) {
       debugLog('ProgressProvider', 'Error loading cached progress: $e');
     }
@@ -218,8 +244,13 @@ class ProgressProvider with ChangeNotifier {
   }
 
   Future<void> loadUserProgressForCourse(int courseId,
-      {bool forceRefresh = false}) async {
+      {bool forceRefresh = false, bool isManualRefresh = false}) async {
     if (_isLoading) return;
+
+    // If this is a manual refresh, ALWAYS force refresh
+    if (isManualRefresh) {
+      forceRefresh = true;
+    }
 
     if (!forceRefresh && _hasLoadedProgress && _userProgress.isNotEmpty) {
       debugLog(
@@ -240,7 +271,7 @@ class ProgressProvider with ChangeNotifier {
       final cachedProgress = await deviceService
           .getCacheItem<List<dynamic>>(cacheKey, isUserSpecific: true);
 
-      if (cachedProgress != null && !forceRefresh) {
+      if (cachedProgress != null && !forceRefresh && !_isOffline) {
         _userProgress = cachedProgress
             .map((json) => UserProgress.fromJson(json as Map<String, dynamic>))
             .toList();
@@ -253,7 +284,21 @@ class ProgressProvider with ChangeNotifier {
         debugLog('ProgressProvider',
             ' Loaded ${_userProgress.length} progress entries from cache');
 
-        await _refreshCourseProgressInBackground(courseId);
+        if (!_isOffline) {
+          await _refreshCourseProgressInBackground(courseId);
+        }
+        return;
+      }
+
+      if (_isOffline) {
+        _error = 'You are offline. Using cached data.';
+        _isLoading = false;
+        _notifySafely();
+
+        if (isManualRefresh) {
+          throw Exception(
+              'Network error. Please check your internet connection.');
+        }
         return;
       }
 
@@ -272,13 +317,25 @@ class ProgressProvider with ChangeNotifier {
 
         debugLog('ProgressProvider',
             '✅ Loaded ${_userProgress.length} progress entries from API');
+      } else {
+        if (isManualRefresh) {
+          throw Exception(response.message);
+        }
       }
     } on ApiError catch (e) {
       _error = e.userFriendlyMessage;
       debugLog('ProgressProvider', 'ApiError loading progress: ${e.message}');
+
+      if (isManualRefresh) {
+        rethrow;
+      }
     } catch (e) {
       _error = 'Failed to load progress: ${e.toString()}';
       debugLog('ProgressProvider', 'Error loading progress: $e');
+
+      if (isManualRefresh) {
+        rethrow;
+      }
     } finally {
       _isLoading = false;
       _notifySafely();
@@ -286,6 +343,8 @@ class ProgressProvider with ChangeNotifier {
   }
 
   Future<void> _refreshCourseProgressInBackground(int courseId) async {
+    if (_isOffline) return;
+
     try {
       final response = await apiService.getUserProgressForCourse(courseId);
       if (response.success && response.data != null) {
@@ -308,15 +367,23 @@ class ProgressProvider with ChangeNotifier {
     }
   }
 
-  Future<void> loadOverallProgress({bool forceRefresh = false}) async {
+  Future<void> loadOverallProgress(
+      {bool forceRefresh = false, bool isManualRefresh = false}) async {
     if (_isLoadingOverall) return;
+
+    // If this is a manual refresh, ALWAYS force refresh
+    if (isManualRefresh) {
+      forceRefresh = true;
+    }
 
     if (!forceRefresh && _hasLoadedOverall && _overallStats.isNotEmpty) {
       debugLog('ProgressProvider', ' Using cached overall stats');
       _overallStatsController.add(_overallStats);
       notifyListeners();
 
-      await _refreshOverallProgressInBackground();
+      if (!_isOffline) {
+        await _refreshOverallProgressInBackground();
+      }
       return;
     }
 
@@ -356,7 +423,22 @@ class ProgressProvider with ChangeNotifier {
         _overallStatsController.add(_overallStats);
         debugLog('ProgressProvider', '✅ Loaded overall stats from cache');
 
-        await _refreshOverallProgressInBackground();
+        if (!_isOffline) {
+          await _refreshOverallProgressInBackground();
+        }
+        return;
+      }
+
+      if (_isOffline) {
+        _setEmptyProgressData();
+        _error = 'You are offline. Showing cached data.';
+        _isLoadingOverall = false;
+        _notifySafely();
+
+        if (isManualRefresh) {
+          throw Exception(
+              'Network error. Please check your internet connection.');
+        }
         return;
       }
 
@@ -394,14 +476,26 @@ class ProgressProvider with ChangeNotifier {
         debugLog('ProgressProvider', '✅ Loaded overall progress stats');
       } else {
         _setEmptyProgressData();
+
+        if (isManualRefresh) {
+          throw Exception(response.message);
+        }
       }
     } on ApiError catch (e) {
       debugLog('ProgressProvider', 'ApiError loading overall progress: $e');
       _setEmptyProgressData();
+
+      if (isManualRefresh) {
+        rethrow;
+      }
     } catch (e) {
       _error = 'Failed to load overall progress: ${e.toString()}';
       debugLog('ProgressProvider', 'Error loading overall progress: $e');
       _setEmptyProgressData();
+
+      if (isManualRefresh) {
+        rethrow;
+      }
     } finally {
       _isLoadingOverall = false;
       _notifySafely();
@@ -409,6 +503,8 @@ class ProgressProvider with ChangeNotifier {
   }
 
   Future<void> _refreshOverallProgressInBackground() async {
+    if (_isOffline) return;
+
     try {
       final response = await apiService.getOverallProgress();
       if (response.success && response.data != null) {
@@ -527,30 +623,39 @@ class ProgressProvider with ChangeNotifier {
           _chapterProgressController.add(_progressByChapter);
           _notifySafely();
 
-          try {
-            await apiService.saveUserProgress(
-              chapterId: chapterId,
-              videoProgress: newProgress.videoProgress,
-              notesViewed: newProgress.notesViewed,
-              questionsAttempted: newProgress.questionsAttempted,
-              questionsCorrect: newProgress.questionsCorrect,
-            );
+          // Try to sync with server if online
+          if (!_isOffline) {
+            try {
+              await apiService.saveUserProgress(
+                chapterId: chapterId,
+                videoProgress: newProgress.videoProgress,
+                notesViewed: newProgress.notesViewed,
+                questionsAttempted: newProgress.questionsAttempted,
+                questionsCorrect: newProgress.questionsCorrect,
+              );
 
-            if (videoProgress != null ||
-                notesViewed == true ||
-                questionsAttempted != null) {
-              await streakProvider.updateStreak();
+              if (videoProgress != null ||
+                  notesViewed == true ||
+                  questionsAttempted != null) {
+                await streakProvider.updateStreak();
+              }
+
+              await loadOverallProgress(forceRefresh: true);
+
+              debugLog('ProgressProvider',
+                  '✅ Progress saved to API for chapter: $chapterId');
+
+              completer.complete();
+            } catch (apiError) {
+              debugLog('ProgressProvider',
+                  '⚠️ API save failed, will retry later: $apiError');
+              await _markAsPendingSync(chapterId, newProgress);
+              completer.complete();
             }
-
-            await loadOverallProgress(forceRefresh: true);
-
+          } else {
+            // Offline - queue for later sync
             debugLog('ProgressProvider',
-                '✅ Progress saved to API for chapter: $chapterId');
-
-            completer.complete();
-          } catch (apiError) {
-            debugLog('ProgressProvider',
-                '⚠️ API save failed, will retry later: $apiError');
+                '📴 Offline - queued progress for chapter: $chapterId');
             await _markAsPendingSync(chapterId, newProgress);
             completer.complete();
           }
@@ -590,39 +695,82 @@ class ProgressProvider with ChangeNotifier {
 
   Future<void> _markAsPendingSync(int chapterId, UserProgress progress) async {
     try {
-      const pendingKey = 'pending_progress';
-      final existing = await deviceService
-              .getCacheItem<List<dynamic>>(pendingKey, isUserSpecific: true) ??
-          [];
+      final prefs = await SharedPreferences.getInstance();
+      const pendingKey = AppConstants.pendingProgressKey;
+      final userId = await UserSession().getCurrentUserId();
 
-      final updated = [
-        ...existing,
-        {
-          'chapter_id': chapterId,
-          'progress': progress.toJson(),
-          'timestamp': DateTime.now().toIso8601String(),
+      if (userId == null) return;
+
+      final userPendingKey = '${pendingKey}_$userId';
+      final existingJson = prefs.getString(userPendingKey);
+      List<Map<String, dynamic>> pendingItems = [];
+
+      if (existingJson != null) {
+        try {
+          pendingItems =
+              List<Map<String, dynamic>>.from(jsonDecode(existingJson));
+        } catch (e) {
+          debugLog('ProgressProvider', 'Error parsing pending progress: $e');
         }
-      ];
+      }
 
-      await deviceService.saveCacheItem(pendingKey, updated,
-          ttl: const Duration(days: 7), isUserSpecific: true);
+      // Update or add
+      final existingIndex =
+          pendingItems.indexWhere((item) => item['chapter_id'] == chapterId);
+
+      final newItem = {
+        'chapter_id': chapterId,
+        'progress': progress.toJson(),
+        'timestamp': DateTime.now().toIso8601String(),
+        'retry_count': 0,
+      };
+
+      if (existingIndex >= 0) {
+        pendingItems[existingIndex] = newItem;
+      } else {
+        pendingItems.add(newItem);
+      }
+
+      await prefs.setString(userPendingKey, jsonEncode(pendingItems));
+
+      debugLog('ProgressProvider',
+          '📝 Marked chapter $chapterId for pending sync (total: ${pendingItems.length})');
     } catch (e) {
       debugLog('ProgressProvider', 'Error marking pending sync: $e');
     }
   }
 
   Future<void> _syncPendingProgress() async {
-    try {
-      const pendingKey = 'pending_progress';
-      final pendingItems = await deviceService
-          .getCacheItem<List<dynamic>>(pendingKey, isUserSpecific: true);
+    if (_isOffline) return;
 
-      if (pendingItems == null || pendingItems.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = await UserSession().getCurrentUserId();
+
+      if (userId == null) return;
+
+      const pendingKey = AppConstants.pendingProgressKey;
+      final userPendingKey = '${pendingKey}_$userId';
+      final existingJson = prefs.getString(userPendingKey);
+
+      if (existingJson == null) return;
+
+      List<Map<String, dynamic>> pendingItems = [];
+      try {
+        pendingItems =
+            List<Map<String, dynamic>>.from(jsonDecode(existingJson));
+      } catch (e) {
+        debugLog('ProgressProvider', 'Error parsing pending progress: $e');
+        await prefs.remove(userPendingKey);
+        return;
+      }
+
+      if (pendingItems.isEmpty) return;
 
       debugLog('ProgressProvider',
           '🔄 Syncing ${pendingItems.length} pending progress items');
 
-      final List<dynamic> failedItems = [];
+      final List<Map<String, dynamic>> failedItems = [];
 
       for (final item in pendingItems) {
         try {
@@ -643,16 +791,33 @@ class ProgressProvider with ChangeNotifier {
               'ProgressProvider', '✅ Synced progress for chapter: $chapterId');
         } catch (e) {
           debugLog('ProgressProvider', '❌ Failed to sync item: $e');
-          failedItems.add(item);
+
+          final retryCount = (item['retry_count'] ?? 0) + 1;
+          if (retryCount <= 3) {
+            item['retry_count'] = retryCount;
+            failedItems.add(item);
+            debugLog(
+                'ProgressProvider', '🔄 Will retry (attempt $retryCount/3)');
+          } else {
+            debugLog(
+                'ProgressProvider', '❌ Permanently failed after 3 retries');
+            // Store permanently failed items separately if needed
+          }
         }
       }
 
       if (failedItems.isEmpty) {
-        await deviceService.removeCacheItem(pendingKey, isUserSpecific: true);
+        await prefs.remove(userPendingKey);
+        debugLog(
+            'ProgressProvider', '✅ All pending progress synced successfully');
       } else {
-        await deviceService.saveCacheItem(pendingKey, failedItems,
-            ttl: const Duration(days: 7), isUserSpecific: true);
+        await prefs.setString(userPendingKey, jsonEncode(failedItems));
+        debugLog('ProgressProvider',
+            '⚠️ ${failedItems.length} items still pending after sync');
       }
+
+      // Refresh overall progress after sync
+      await loadOverallProgress(forceRefresh: true);
     } catch (e) {
       debugLog('ProgressProvider', 'Error syncing pending progress: $e');
     }
@@ -689,6 +854,13 @@ class ProgressProvider with ChangeNotifier {
     }
     _saveDebounceTimers.clear();
     _pendingSaves.clear();
+
+    // Clear user-specific pending progress
+    final userId = await session.getCurrentUserId();
+    if (userId != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('${AppConstants.pendingProgressKey}_$userId');
+    }
 
     await deviceService.clearCacheByPrefix('progress_');
     await deviceService.clearCacheByPrefix('pending_');
