@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:familyacademyclient/services/api_service.dart';
 import 'package:familyacademyclient/services/device_service.dart';
 import 'package:familyacademyclient/services/user_session.dart';
+import 'package:familyacademyclient/services/connectivity_service.dart';
 import 'package:familyacademyclient/models/school_model.dart';
 import 'package:familyacademyclient/utils/constants.dart';
 import 'package:familyacademyclient/utils/helpers.dart';
@@ -11,27 +12,45 @@ import 'package:familyacademyclient/utils/helpers.dart';
 class SchoolProvider with ChangeNotifier {
   final ApiService apiService;
   final DeviceService deviceService;
+  final ConnectivityService connectivityService;
 
   List<School> _schools = [];
   int? _selectedSchoolId;
   bool _isLoading = false;
   String? _error;
   bool _hasError = false;
+  bool _isOffline = false;
 
   StreamController<List<School>> _schoolsUpdateController =
       StreamController<List<School>>.broadcast();
   StreamController<int?> _selectedSchoolController =
       StreamController<int?>.broadcast();
 
-  static const Duration _schoolsCacheTTL = Duration(hours: 24);
+  static const Duration _schoolsCacheTTL = AppConstants.cacheTTLSchools;
 
-  SchoolProvider({required this.apiService, required this.deviceService});
+  SchoolProvider({
+    required this.apiService,
+    required this.deviceService,
+    required this.connectivityService,
+  }) {
+    _setupConnectivityListener();
+  }
+
+  void _setupConnectivityListener() {
+    connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (_isOffline != !isOnline) {
+        _isOffline = !isOnline;
+        notifyListeners();
+      }
+    });
+  }
 
   List<School> get schools => List.unmodifiable(_schools);
   int? get selectedSchoolId => _selectedSchoolId;
   bool get isLoading => _isLoading;
   String? get error => _error;
   bool get hasError => _hasError;
+  bool get isOffline => _isOffline;
 
   Stream<List<School>> get schoolsUpdates => _schoolsUpdateController.stream;
   Stream<int?> get selectedSchoolUpdates => _selectedSchoolController.stream;
@@ -49,9 +68,11 @@ class SchoolProvider with ChangeNotifier {
     return school?.name;
   }
 
-  Future<void> loadSchools({bool forceRefresh = false}) async {
+  Future<void> loadSchools(
+      {bool forceRefresh = false, bool isManualRefresh = false}) async {
     if (_isLoading && !forceRefresh) return;
 
+    // STEP 1: ALWAYS try cache first (even when offline)
     if (!forceRefresh) {
       try {
         final cachedSchools = await deviceService
@@ -61,11 +82,29 @@ class SchoolProvider with ChangeNotifier {
           _hasError = false;
           _schoolsUpdateController.add(_schools);
           _notifySafely();
+
+          // STEP 2: If online, refresh in background
+          if (!_isOffline) {
+            unawaited(_refreshInBackground());
+          }
           return;
         }
       } catch (e) {
         debugLog('SchoolProvider', 'Cache read error: $e');
       }
+    }
+
+    // STEP 3: If no cache, try API (only if online)
+    if (_isOffline) {
+      _error = 'You are offline. No cached schools available.';
+      _isLoading = false;
+      _notifySafely();
+
+      if (isManualRefresh) {
+        throw Exception(
+            'Network error. Please check your internet connection.');
+      }
+      return;
     }
 
     _isLoading = true;
@@ -75,11 +114,13 @@ class SchoolProvider with ChangeNotifier {
 
     try {
       debugLog('SchoolProvider', 'Loading schools');
+
       final response = await apiService.getSchools();
 
       if (response.success && response.data != null) {
         _schools = response.data ?? [];
 
+        // Save to cache for next time
         await deviceService.saveCacheItem(AppConstants.schoolsListKey, _schools,
             ttl: _schoolsCacheTTL);
         await _loadSelectedSchool();
@@ -91,14 +132,46 @@ class SchoolProvider with ChangeNotifier {
         _error = response.message;
         _hasError = true;
         debugLog('SchoolProvider', 'API error: $_error');
+
+        if (isManualRefresh) {
+          throw Exception(response.message);
+        }
       }
     } catch (e) {
       _error = e.toString();
       _hasError = true;
       debugLog('SchoolProvider', 'loadSchools error: $e');
+
+      if (isManualRefresh) {
+        rethrow;
+      }
     } finally {
       _isLoading = false;
       _notifySafely();
+    }
+  }
+
+  Future<void> _refreshInBackground() async {
+    if (_isOffline) return;
+
+    try {
+      debugLog('SchoolProvider', '🔄 Background refresh of schools');
+
+      final response = await apiService.getSchools();
+
+      if (response.success && response.data != null) {
+        _schools = response.data ?? [];
+
+        await deviceService.saveCacheItem(AppConstants.schoolsListKey, _schools,
+            ttl: _schoolsCacheTTL);
+
+        _schoolsUpdateController.add(_schools);
+        _notifySafely();
+
+        debugLog('SchoolProvider', '✅ Background refresh completed');
+      }
+    } catch (e) {
+      debugLog('SchoolProvider', '⚠️ Background refresh error: $e');
     }
   }
 
