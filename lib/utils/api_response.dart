@@ -6,6 +6,7 @@ class ApiResponse<T> {
   final int? statusCode;
   final DateTime timestamp;
   final bool isOffline;
+  final bool isQueued;
 
   ApiResponse({
     required this.success,
@@ -15,6 +16,7 @@ class ApiResponse<T> {
     this.statusCode,
     DateTime? timestamp,
     this.isOffline = false,
+    this.isQueued = false,
   }) : timestamp = timestamp ?? DateTime.now();
 
   factory ApiResponse.success(
@@ -32,7 +34,8 @@ class ApiResponse<T> {
       dynamic error,
       int? statusCode,
       T? data,
-      bool isOffline = false}) {
+      bool isOffline = false,
+      bool isQueued = false}) {
     return ApiResponse<T>(
       success: false,
       message: message,
@@ -40,16 +43,29 @@ class ApiResponse<T> {
       statusCode: statusCode ?? 500,
       data: data,
       isOffline: isOffline,
+      isQueued: isQueued,
     );
   }
 
-  factory ApiResponse.offline({String? message, T? data}) {
+  factory ApiResponse.offline(
+      {String? message, T? data, bool isQueued = false}) {
     return ApiResponse<T>(
       success: false,
       message: message ?? 'You are offline. Showing cached data.',
       isOffline: true,
+      isQueued: isQueued,
       data: data,
       statusCode: 0,
+    );
+  }
+
+  factory ApiResponse.queued({String? message, T? data}) {
+    return ApiResponse<T>(
+      success: true,
+      message: message ?? 'Action saved offline. Will sync when online.',
+      isQueued: true,
+      data: data,
+      statusCode: 202, // Accepted
     );
   }
 
@@ -63,6 +79,7 @@ class ApiResponse<T> {
         error: json['error'],
         statusCode: json['statusCode'],
         isOffline: json['offline'] == true,
+        isQueued: json['queued'] == true,
       );
     } catch (e) {
       return ApiResponse<T>(
@@ -82,6 +99,7 @@ class ApiResponse<T> {
       'statusCode': statusCode,
       'timestamp': timestamp.toIso8601String(),
       'offline': isOffline,
+      'queued': isQueued,
     };
   }
 
@@ -105,6 +123,7 @@ class ApiResponse<T> {
         statusCode: statusCode,
         timestamp: timestamp,
         isOffline: isOffline,
+        isQueued: isQueued,
       );
     }
 
@@ -116,6 +135,7 @@ class ApiResponse<T> {
       statusCode: statusCode,
       timestamp: timestamp,
       isOffline: isOffline,
+      isQueued: isQueued,
     );
   }
 
@@ -129,7 +149,7 @@ class ApiResponse<T> {
 
   @override
   String toString() =>
-      'ApiResponse{success: $success, message: $message, hasData: ${data != null}, statusCode: $statusCode, isOffline: $isOffline}';
+      'ApiResponse{success: $success, message: $message, hasData: ${data != null}, statusCode: $statusCode, isOffline: $isOffline, isQueued: $isQueued}';
 }
 
 class ApiError implements Exception {
@@ -139,6 +159,7 @@ class ApiError implements Exception {
   final String? action;
   final DateTime timestamp;
   final bool isOffline;
+  final bool isQueued;
 
   ApiError({
     required this.message,
@@ -147,6 +168,7 @@ class ApiError implements Exception {
     this.action,
     DateTime? timestamp,
     this.isOffline = false,
+    this.isQueued = false,
   }) : timestamp = timestamp ?? DateTime.now();
 
   @override
@@ -159,6 +181,7 @@ class ApiError implements Exception {
       data: json['data'],
       action: json['action'],
       isOffline: json['offline'] == true,
+      isQueued: json['queued'] == true,
     );
   }
 
@@ -168,6 +191,7 @@ class ApiError implements Exception {
       statusCode: response.statusCode,
       data: response.data,
       isOffline: response.isOffline,
+      isQueued: response.isQueued,
     );
   }
 
@@ -192,6 +216,13 @@ class ApiError implements Exception {
     return ApiError(message: 'Resource not found.', statusCode: 404);
   }
 
+  factory ApiError.queued() {
+    return ApiError(
+        message: 'Action saved offline. Will sync when online.',
+        statusCode: 202,
+        isQueued: true);
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'message': message,
@@ -200,6 +231,7 @@ class ApiError implements Exception {
       'action': action,
       'timestamp': timestamp.toIso8601String(),
       'offline': isOffline,
+      'queued': isQueued,
     };
   }
 
@@ -216,6 +248,9 @@ class ApiError implements Exception {
   bool get isServerError => statusCode != null && statusCode! >= 500;
 
   String get userFriendlyMessage {
+    if (isQueued) {
+      return 'Action saved offline. Will sync when online.';
+    }
     if (isNetworkError) {
       return 'Network error. Please check your internet connection.';
     }
