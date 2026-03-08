@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:familyacademyclient/providers/exam_provider.dart';
 import 'package:familyacademyclient/providers/subscription_provider.dart';
@@ -7,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../services/user_session.dart';
+import '../services/connectivity_service.dart';
 import '../models/exam_question_model.dart';
 import '../utils/constants.dart';
 import '../utils/helpers.dart';
@@ -16,6 +18,7 @@ import '../utils/parsers.dart';
 class ExamQuestionProvider with ChangeNotifier {
   final ApiService apiService;
   final DeviceService deviceService;
+  final ConnectivityService connectivityService;
   BuildContext? _context;
 
   final List<ExamQuestion> _examQuestions = [];
@@ -26,6 +29,7 @@ class ExamQuestionProvider with ChangeNotifier {
   final Map<int, bool> _examHasAccess = {};
   bool _isLoading = false;
   String? _error;
+  bool _isOffline = false;
   Timer? _cacheCleanupTimer;
 
   StreamController<Map<int, List<ExamQuestion>>> _questionsUpdateController =
@@ -33,15 +37,26 @@ class ExamQuestionProvider with ChangeNotifier {
   StreamController<Map<int, bool>> _examAccessController =
       StreamController<Map<int, bool>>.broadcast();
 
-  static const Duration _cacheDuration = Duration(minutes: 30);
+  static const Duration _cacheDuration = AppConstants.cacheTTLQuestions;
   static const Duration _cacheCleanupInterval = Duration(minutes: 15);
 
   ExamQuestionProvider({
     required this.apiService,
     required this.deviceService,
+    required this.connectivityService,
   }) {
     _cacheCleanupTimer = Timer.periodic(_cacheCleanupInterval, (_) {
       _cleanupExpiredCache();
+    });
+    _setupConnectivityListener();
+  }
+
+  void _setupConnectivityListener() {
+    connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (_isOffline != !isOnline) {
+        _isOffline = !isOnline;
+        notifyListeners();
+      }
     });
   }
 
@@ -55,6 +70,7 @@ class ExamQuestionProvider with ChangeNotifier {
   List<ExamQuestion> get examQuestions => List.unmodifiable(_examQuestions);
   bool get isLoading => _isLoading;
   String? get error => _error;
+  bool get isOffline => _isOffline;
   Stream<Map<int, List<ExamQuestion>>> get questionsUpdates =>
       _questionsUpdateController.stream;
   Stream<Map<int, bool>> get examAccessUpdates => _examAccessController.stream;
@@ -77,7 +93,7 @@ class ExamQuestionProvider with ChangeNotifier {
 
   Future<bool> checkExamAccess(int examId, {bool forceCheck = false}) async {
     final lastChecked = _examAccessChecked[examId];
-    if (lastChecked == true && !forceCheck) {
+    if (lastChecked == true && !forceCheck && !_isOffline) {
       final hasAccess = _examHasAccess[examId] ?? false;
       debugLog('ExamQuestionProvider',
           'Using cached access for exam $examId: $hasAccess');
@@ -89,6 +105,13 @@ class ExamQuestionProvider with ChangeNotifier {
 
     try {
       debugLog('ExamQuestionProvider', 'Checking access for exam: $examId');
+
+      if (_isOffline) {
+        debugLog('ExamQuestionProvider', 'Offline - using cached access');
+        _examHasAccess[examId] = _examHasAccess[examId] ?? false;
+        _examAccessController.add({examId: _examHasAccess[examId]!});
+        return _examHasAccess[examId]!;
+      }
 
       final BuildContext? checkContext = _context;
 
@@ -148,7 +171,7 @@ class ExamQuestionProvider with ChangeNotifier {
       {bool forceRefresh = false, bool checkAccess = true}) async {
     if (_isLoadingExam[examId] == true && !forceRefresh) return;
 
-    if (checkAccess) {
+    if (checkAccess && !_isOffline) {
       final hasAccess = await checkExamAccess(examId, forceCheck: forceRefresh);
       if (!hasAccess) {
         debugLog('ExamQuestionProvider',
@@ -157,7 +180,7 @@ class ExamQuestionProvider with ChangeNotifier {
       }
     }
 
-    if (!forceRefresh) {
+    if (!forceRefresh && !_isOffline) {
       final cachedQuestions = await _getCachedExamQuestions(examId);
       if (cachedQuestions != null && cachedQuestions.isNotEmpty) {
         _questionsByExam[examId] = cachedQuestions;
@@ -177,6 +200,15 @@ class ExamQuestionProvider with ChangeNotifier {
 
     try {
       debugLog('ExamQuestionProvider', 'Loading questions for exam: $examId');
+
+      if (_isOffline) {
+        _error = 'You are offline. Using cached data.';
+        _isLoadingExam[examId] = false;
+        _isLoading = false;
+        _notifySafely();
+        return;
+      }
+
       final response = await apiService.getExamQuestions(examId);
 
       debugLog(
@@ -382,6 +414,12 @@ class ExamQuestionProvider with ChangeNotifier {
     try {
       debugLog('ExamQuestionProvider',
           'Saving progress for exam result: $examResultId');
+
+      if (_isOffline) {
+        await _saveExamProgressOffline(examResultId, answers);
+        return {'queued': true};
+      }
+
       final response = await apiService.saveExamProgress(examResultId, answers);
       return response.data ?? {};
     } catch (e) {
@@ -391,6 +429,111 @@ class ExamQuestionProvider with ChangeNotifier {
     } finally {
       _isLoading = false;
       _notifySafely();
+    }
+  }
+
+  Future<void> _saveExamProgressOffline(
+      int examResultId, List<Map<String, dynamic>> answers) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = await UserSession().getCurrentUserId();
+
+      if (userId == null) return;
+
+      const pendingKey = 'pending_exam_progress';
+      final userPendingKey = '${pendingKey}_$userId';
+      final existingJson = prefs.getString(userPendingKey);
+      List<Map<String, dynamic>> pendingProgress = [];
+
+      if (existingJson != null) {
+        try {
+          pendingProgress =
+              List<Map<String, dynamic>>.from(jsonDecode(existingJson));
+        } catch (e) {
+          debugLog(
+              'ExamQuestionProvider', 'Error parsing pending progress: $e');
+        }
+      }
+
+      pendingProgress.add({
+        'exam_result_id': examResultId,
+        'answers': answers,
+        'timestamp': DateTime.now().toIso8601String(),
+        'retry_count': 0,
+      });
+
+      await prefs.setString(userPendingKey, jsonEncode(pendingProgress));
+      debugLog('ExamQuestionProvider',
+          '📝 Saved exam progress offline for result $examResultId');
+    } catch (e) {
+      debugLog(
+          'ExamQuestionProvider', 'Error saving exam progress offline: $e');
+    }
+  }
+
+  Future<void> syncPendingExamProgress() async {
+    if (_isOffline) return;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = await UserSession().getCurrentUserId();
+
+      if (userId == null) return;
+
+      const pendingKey = 'pending_exam_progress';
+      final userPendingKey = '${pendingKey}_$userId';
+      final existingJson = prefs.getString(userPendingKey);
+
+      if (existingJson == null) return;
+
+      List<Map<String, dynamic>> pendingProgress = [];
+      try {
+        pendingProgress =
+            List<Map<String, dynamic>>.from(jsonDecode(existingJson));
+      } catch (e) {
+        debugLog('ExamQuestionProvider', 'Error parsing pending progress: $e');
+        await prefs.remove(userPendingKey);
+        return;
+      }
+
+      if (pendingProgress.isEmpty) return;
+
+      debugLog('ExamQuestionProvider',
+          '🔄 Syncing ${pendingProgress.length} pending exam progress items');
+
+      final List<Map<String, dynamic>> failedProgress = [];
+
+      for (final progress in pendingProgress) {
+        try {
+          await apiService.saveExamProgress(
+            progress['exam_result_id'],
+            List<Map<String, dynamic>>.from(progress['answers']),
+          );
+          debugLog('ExamQuestionProvider',
+              '✅ Synced progress for exam result ${progress['exam_result_id']}');
+        } catch (e) {
+          debugLog(
+              'ExamQuestionProvider', '❌ Failed to sync exam progress: $e');
+
+          final retryCount = (progress['retry_count'] ?? 0) + 1;
+          if (retryCount <= 3) {
+            progress['retry_count'] = retryCount;
+            failedProgress.add(progress);
+          }
+        }
+      }
+
+      if (failedProgress.isEmpty) {
+        await prefs.remove(userPendingKey);
+        debugLog('ExamQuestionProvider', '✅ All pending exam progress synced');
+      } else {
+        await prefs.setString(userPendingKey, jsonEncode(failedProgress));
+        debugLog('ExamQuestionProvider',
+            '⚠️ ${failedProgress.length} exam progress items still pending');
+      }
+    } catch (e) {
+      debugLog(
+          'ExamQuestionProvider', 'Error syncing pending exam progress: $e');
     }
   }
 
@@ -446,6 +589,13 @@ class ExamQuestionProvider with ChangeNotifier {
       debugLog('ExamQuestionProvider',
           '✅ Same user - preserving exam question cache');
       return;
+    }
+
+    // Clear pending exam progress
+    final userId = await session.getCurrentUserId();
+    if (userId != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('pending_exam_progress_$userId');
     }
 
     final keys = _questionsByExam.keys.toList();
