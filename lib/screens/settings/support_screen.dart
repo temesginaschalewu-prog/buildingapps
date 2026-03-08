@@ -21,8 +21,6 @@ import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
-import '../../utils/app_enums.dart';
-import '../../widgets/common/responsive_widgets.dart';
 
 class SupportScreen extends StatefulWidget {
   const SupportScreen({super.key});
@@ -40,7 +38,7 @@ class _SupportScreenState extends State<SupportScreen>
   final List<RefreshController> _refreshControllers = [];
   bool _isRefreshing = false;
   bool _isOffline = false;
-  String _refreshSubtitle = '';
+  int _pendingCount = 0;
   StreamSubscription? _connectivitySubscription;
 
   late AnimationController _pulseAnimationController;
@@ -59,6 +57,7 @@ class _SupportScreenState extends State<SupportScreen>
         [RefreshController(), RefreshController(), RefreshController()]);
 
     _checkConnectivity();
+    _checkPendingCount();
     _loadContactSettings();
     _setupConnectivityListener();
   }
@@ -67,8 +66,18 @@ class _SupportScreenState extends State<SupportScreen>
     final connectivityService = context.read<ConnectivityService>();
     _connectivitySubscription =
         connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (mounted) setState(() => _isOffline = !isOnline);
+      if (mounted) {
+        setState(() {
+          _isOffline = !isOnline;
+          _pendingCount = connectivityService.pendingActionsCount;
+        });
+      }
     });
+  }
+
+  Future<void> _checkPendingCount() async {
+    final connectivity = ConnectivityService();
+    setState(() => _pendingCount = connectivity.pendingActionsCount);
   }
 
   @override
@@ -84,7 +93,10 @@ class _SupportScreenState extends State<SupportScreen>
 
   Future<void> _checkConnectivity() async {
     final connectivityService = context.read<ConnectivityService>();
-    setState(() => _isOffline = !connectivityService.isOnline);
+    setState(() {
+      _isOffline = !connectivityService.isOnline;
+      _pendingCount = connectivityService.pendingActionsCount;
+    });
   }
 
   Future<void> _loadContactSettings() async {
@@ -99,7 +111,9 @@ class _SupportScreenState extends State<SupportScreen>
     try {
       final settingsProvider = context.read<SettingsProvider>();
       await settingsProvider.getAllSettings();
+    if (!mounted) return;
       await settingsProvider.loadContactSettings(forceRefresh: true);
+    if (!mounted) return;
       setState(() => _isLoading = false);
     } catch (e) {
       setState(() {
@@ -122,13 +136,14 @@ class _SupportScreenState extends State<SupportScreen>
 
     setState(() {
       _isRefreshing = true;
-      _refreshSubtitle = 'Refreshing...';
     });
 
     try {
       final settingsProvider = context.read<SettingsProvider>();
       await settingsProvider.getAllSettings();
+    if (!mounted) return;
       await settingsProvider.loadContactSettings(forceRefresh: true);
+    if (!mounted) return;
 
       _refreshControllers[tabIndex].refreshCompleted();
       setState(() {
@@ -149,7 +164,6 @@ class _SupportScreenState extends State<SupportScreen>
       if (mounted) {
         setState(() {
           _isRefreshing = false;
-          _refreshSubtitle = '';
         });
       }
     }
@@ -216,6 +230,7 @@ class _SupportScreenState extends State<SupportScreen>
     try {
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!mounted) return;
       } else {
         if (type == ContactType.other || type == ContactType.website) {
           _showCopyDialog(context, value);
@@ -254,8 +269,9 @@ class _SupportScreenState extends State<SupportScreen>
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            onTap:
-                canTap ? () => _handleContactTap(type, value, context) : null,
+            onTap: canTap && !_isOffline
+                ? () => _handleContactTap(type, value, context)
+                : null,
             borderRadius:
                 BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
             splashColor: color.withValues(alpha: 0.1),
@@ -281,7 +297,7 @@ class _SupportScreenState extends State<SupportScreen>
                     child: Center(
                       child: Icon(icon,
                           size: ResponsiveValues.iconSizeL(context),
-                          color: color),
+                          color: _isOffline ? AppColors.warning : color),
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -305,7 +321,7 @@ class _SupportScreenState extends State<SupportScreen>
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        if (canTap) ...[
+                        if (canTap && !_isOffline) ...[
                           const SizedBox(height: 8),
                           Row(
                             children: [
@@ -332,7 +348,7 @@ class _SupportScreenState extends State<SupportScreen>
                       ],
                     ),
                   ),
-                  if (canTap)
+                  if (canTap && !_isOffline)
                     Icon(
                       Icons.chevron_right_rounded,
                       size: ResponsiveValues.iconSizeS(context),
@@ -361,7 +377,7 @@ class _SupportScreenState extends State<SupportScreen>
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: onTap,
+          onTap: _isOffline ? null : onTap,
           borderRadius:
               BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
           splashColor: color.withValues(alpha: 0.1),
@@ -389,7 +405,7 @@ class _SupportScreenState extends State<SupportScreen>
                   child: Center(
                     child: Icon(icon,
                         size: ResponsiveValues.iconSizeS(context),
-                        color: color),
+                        color: _isOffline ? AppColors.warning : color),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -539,6 +555,38 @@ class _SupportScreenState extends State<SupportScreen>
           ),
           sliver: SliverList(
             delegate: SliverChildListDelegate([
+              if (_pendingCount > 0)
+                Container(
+                  margin: EdgeInsets.only(
+                      bottom: ResponsiveValues.spacingL(context)),
+                  padding: ResponsiveValues.cardPadding(context),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        AppColors.info.withValues(alpha: 0.2),
+                        AppColors.info.withValues(alpha: 0.1)
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(
+                        ResponsiveValues.radiusMedium(context)),
+                    border: Border.all(
+                        color: AppColors.info.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.schedule_rounded,
+                          color: AppColors.info, size: 20),
+                      SizedBox(width: ResponsiveValues.spacingM(context)),
+                      Expanded(
+                        child: Text(
+                          '$_pendingCount pending change${_pendingCount > 1 ? 's' : ''}',
+                          style: AppTextStyles.bodySmall(context)
+                              .copyWith(color: AppColors.info),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               _buildSectionHeader('Contact Information'),
               if (contactInfo.isEmpty)
                 AppCard.glass(
@@ -1051,8 +1099,9 @@ class _SupportScreenState extends State<SupportScreen>
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading && !_isRefreshing && !_hasError)
+    if (_isLoading && !_isRefreshing && !_hasError) {
       return _buildSkeletonLoader();
+    }
 
     if (_hasError) {
       return Scaffold(
