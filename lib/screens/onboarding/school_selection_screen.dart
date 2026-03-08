@@ -19,9 +19,6 @@ import '../../themes/app_text_styles.dart';
 import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
 import '../../utils/helpers.dart';
-import '../../utils/constants.dart';
-import '../../utils/app_enums.dart';
-import '../../widgets/common/responsive_widgets.dart';
 
 class SchoolSelectionScreen extends StatefulWidget {
   const SchoolSelectionScreen({super.key});
@@ -38,6 +35,7 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
   bool _isLoading = false;
   bool _schoolsLoaded = false;
   bool _isOffline = false;
+  int _pendingCount = 0;
   Timer? _debounceTimer;
   StreamSubscription? _connectivitySubscription;
 
@@ -52,6 +50,7 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkConnectivity();
+      _checkPendingCount();
       _loadSchools();
       _headerAnimationController.forward();
     });
@@ -63,8 +62,18 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
     final connectivityService = context.read<ConnectivityService>();
     _connectivitySubscription =
         connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (mounted) setState(() => _isOffline = !isOnline);
+      if (mounted) {
+        setState(() {
+          _isOffline = !isOnline;
+          _pendingCount = connectivityService.pendingActionsCount;
+        });
+      }
     });
+  }
+
+  Future<void> _checkPendingCount() async {
+    final connectivity = ConnectivityService();
+    setState(() => _pendingCount = connectivity.pendingActionsCount);
   }
 
   @override
@@ -78,7 +87,10 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
 
   Future<void> _checkConnectivity() async {
     final connectivityService = context.read<ConnectivityService>();
-    setState(() => _isOffline = !connectivityService.isOnline);
+    setState(() {
+      _isOffline = !connectivityService.isOnline;
+      _pendingCount = connectivityService.pendingActionsCount;
+    });
   }
 
   void _filterSchools() {
@@ -205,8 +217,9 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
       await Future.delayed(const Duration(milliseconds: 100));
       if (mounted) context.go('/');
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         SnackbarService().showError(context, 'Failed to proceed: $e');
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -525,6 +538,38 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
               padding: ResponsiveValues.screenPadding(context),
               child: Column(
                 children: [
+                  if (_pendingCount > 0)
+                    Container(
+                      margin: EdgeInsets.only(
+                          bottom: ResponsiveValues.spacingL(context)),
+                      padding: ResponsiveValues.cardPadding(context),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            AppColors.info.withValues(alpha: 0.2),
+                            AppColors.info.withValues(alpha: 0.1)
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(
+                            ResponsiveValues.radiusMedium(context)),
+                        border: Border.all(
+                            color: AppColors.info.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.schedule_rounded,
+                              color: AppColors.info, size: 20),
+                          SizedBox(width: ResponsiveValues.spacingM(context)),
+                          Expanded(
+                            child: Text(
+                              '$_pendingCount pending change${_pendingCount > 1 ? 's' : ''}',
+                              style: AppTextStyles.bodySmall(context)
+                                  .copyWith(color: AppColors.info),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   if (_isOffline)
                     Container(
                       padding: ResponsiveValues.cardPadding(context),
@@ -533,26 +578,25 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
-                            AppColors.telegramYellow.withValues(alpha: 0.2),
-                            AppColors.telegramYellow.withValues(alpha: 0.1)
+                            AppColors.warning.withValues(alpha: 0.2),
+                            AppColors.warning.withValues(alpha: 0.1)
                           ],
                         ),
                         borderRadius: BorderRadius.circular(
                             ResponsiveValues.radiusMedium(context)),
                         border: Border.all(
-                            color: AppColors.telegramYellow
-                                .withValues(alpha: 0.3)),
+                            color: AppColors.warning.withValues(alpha: 0.3)),
                       ),
                       child: Row(
                         children: [
                           const Icon(Icons.wifi_off_rounded,
-                              color: AppColors.telegramYellow, size: 20),
+                              color: AppColors.warning, size: 20),
                           SizedBox(width: ResponsiveValues.spacingM(context)),
                           Expanded(
                             child: Text(
                               'You are offline. Showing cached schools.',
                               style: AppTextStyles.bodySmall(context)
-                                  .copyWith(color: AppColors.telegramYellow),
+                                  .copyWith(color: AppColors.warning),
                             ),
                           ),
                         ],
