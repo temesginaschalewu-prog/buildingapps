@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/responsive_values.dart';
-import '../../utils/app_enums.dart';
+import '../../services/connectivity_service.dart';
 import 'app_card.dart';
 import 'app_button.dart';
 
@@ -18,9 +18,12 @@ class AppDialog {
     VoidCallback? onCancel,
     Widget? customContent,
     bool barrierDismissible = true,
+    bool requiresOnline = false, // NEW
   }) {
     final colors = _getColors(variant);
     final icon = _getIcon(variant);
+    final connectivity = ConnectivityService();
+    final isOfflineDisabled = requiresOnline && connectivity.isOffline;
 
     return showDialog<T>(
       context: context,
@@ -45,13 +48,15 @@ class AppDialog {
                     ),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(icon,
-                      size: ResponsiveValues.iconSizeXL(context),
-                      color: colors.first),
+                  child: Icon(
+                    isOfflineDisabled ? Icons.wifi_off_rounded : icon,
+                    size: ResponsiveValues.iconSizeXL(context),
+                    color: isOfflineDisabled ? AppColors.warning : colors.first,
+                  ),
                 ),
                 SizedBox(height: ResponsiveValues.spacingL(context)),
                 Text(
-                  title,
+                  isOfflineDisabled ? 'Internet Required' : title,
                   style: AppTextStyles.titleLarge(context)
                       .copyWith(fontWeight: FontWeight.w700),
                   textAlign: TextAlign.center,
@@ -61,7 +66,9 @@ class AppDialog {
                   customContent
                 else
                   Text(
-                    message,
+                    isOfflineDisabled
+                        ? 'This action requires an internet connection. Please connect and try again.'
+                        : message,
                     style: AppTextStyles.bodyMedium(context)
                         .copyWith(color: AppColors.getTextSecondary(context)),
                     textAlign: TextAlign.center,
@@ -83,11 +90,13 @@ class AppDialog {
                     ],
                     Expanded(
                       child: AppButton.primary(
-                        label: confirmText ?? 'OK',
-                        onPressed: () {
-                          Navigator.of(context).pop(true);
-                          onConfirm?.call();
-                        },
+                        label: isOfflineDisabled ? 'OK' : (confirmText ?? 'OK'),
+                        onPressed: isOfflineDisabled
+                            ? () => Navigator.of(context).pop(false)
+                            : () {
+                                Navigator.of(context).pop(true);
+                                onConfirm?.call();
+                              },
                       ),
                     ),
                   ],
@@ -165,6 +174,7 @@ class AppDialog {
     required String message,
     String confirmText = 'Confirm',
     String cancelText = 'Cancel',
+    bool requiresOnline = false,
   }) {
     return show<bool>(
       context: context,
@@ -173,6 +183,7 @@ class AppDialog {
       variant: DialogVariant.confirm,
       confirmText: confirmText,
       cancelText: cancelText,
+      requiresOnline: requiresOnline,
     );
   }
 
@@ -182,66 +193,91 @@ class AppDialog {
     required String message,
     String confirmText = 'Delete',
     String cancelText = 'Cancel',
+    bool requiresOnline = false,
   }) {
     return showDialog<bool>(
       context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: AppCard.glass(
-          child: Padding(
-            padding: ResponsiveValues.dialogPadding(context),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(colors: [
-                      AppColors.telegramRed,
-                      AppColors.telegramPink
-                    ]),
-                    shape: BoxShape.circle,
+      builder: (context) {
+        final connectivity = ConnectivityService();
+        final isOfflineDisabled = requiresOnline && connectivity.isOffline;
+
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          child: AppCard.glass(
+            child: Padding(
+              padding: ResponsiveValues.dialogPadding(context),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
+                    decoration: BoxDecoration(
+                      gradient: isOfflineDisabled
+                          ? const LinearGradient(colors: [
+                              AppColors.warning,
+                              AppColors.telegramOrange
+                            ])
+                          : const LinearGradient(colors: [
+                              AppColors.telegramRed,
+                              AppColors.telegramPink
+                            ]),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      isOfflineDisabled
+                          ? Icons.wifi_off_rounded
+                          : Icons.delete_outline_rounded,
+                      size: 32,
+                      color: Colors.white,
+                    ),
                   ),
-                  child: const Icon(Icons.delete_outline_rounded,
-                      size: 32, color: Colors.white),
-                ),
-                SizedBox(height: ResponsiveValues.spacingL(context)),
-                Text(
-                  title,
-                  style: AppTextStyles.titleLarge(context)
-                      .copyWith(fontWeight: FontWeight.w700),
-                  textAlign: TextAlign.center,
-                ),
-                SizedBox(height: ResponsiveValues.spacingM(context)),
-                Text(
-                  message,
-                  style: AppTextStyles.bodyMedium(context)
-                      .copyWith(color: AppColors.getTextSecondary(context)),
-                  textAlign: TextAlign.center,
-                ),
-                SizedBox(height: ResponsiveValues.spacingXL(context)),
-                Row(
-                  children: [
-                    Expanded(
-                      child: AppButton.outline(
-                        label: cancelText,
-                        onPressed: () => Navigator.of(context).pop(false),
+                  SizedBox(height: ResponsiveValues.spacingL(context)),
+                  Text(
+                    isOfflineDisabled ? 'Internet Required' : title,
+                    style: AppTextStyles.titleLarge(context)
+                        .copyWith(fontWeight: FontWeight.w700),
+                    textAlign: TextAlign.center,
+                  ),
+                  SizedBox(height: ResponsiveValues.spacingM(context)),
+                  Text(
+                    isOfflineDisabled
+                        ? 'This action requires an internet connection.'
+                        : message,
+                    style: AppTextStyles.bodyMedium(context)
+                        .copyWith(color: AppColors.getTextSecondary(context)),
+                    textAlign: TextAlign.center,
+                  ),
+                  SizedBox(height: ResponsiveValues.spacingXL(context)),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: AppButton.outline(
+                          label: cancelText,
+                          onPressed: () => Navigator.of(context).pop(false),
+                        ),
                       ),
-                    ),
-                    SizedBox(width: ResponsiveValues.spacingM(context)),
-                    Expanded(
-                      child: AppButton.danger(
-                        label: confirmText,
-                        onPressed: () => Navigator.of(context).pop(true),
+                      SizedBox(width: ResponsiveValues.spacingM(context)),
+                      Expanded(
+                        child: isOfflineDisabled
+                            ? AppButton.primary(
+                                label: 'OK',
+                                onPressed: () =>
+                                    Navigator.of(context).pop(false),
+                              )
+                            : AppButton.danger(
+                                label: confirmText,
+                                onPressed: () =>
+                                    Navigator.of(context).pop(true),
+                              ),
                       ),
-                    ),
-                  ],
-                ),
-              ],
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -255,9 +291,12 @@ class AppDialog {
     TextInputType keyboardType = TextInputType.text,
     bool obscureText = false,
     String? Function(String?)? validator,
+    bool requiresOnline = false,
   }) {
     final controller = TextEditingController(text: initialValue);
     final formKey = GlobalKey<FormState>();
+    final connectivity = ConnectivityService();
+    final isOfflineDisabled = requiresOnline && connectivity.isOffline;
 
     return showDialog<String>(
       context: context,
@@ -271,28 +310,37 @@ class AppDialog {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  title,
+                  isOfflineDisabled ? 'Internet Required' : title,
                   style: AppTextStyles.titleLarge(context)
                       .copyWith(fontWeight: FontWeight.w700),
                 ),
                 SizedBox(height: ResponsiveValues.spacingL(context)),
-                Form(
-                  key: formKey,
-                  child: TextFormField(
-                    controller: controller,
-                    keyboardType: keyboardType,
-                    obscureText: obscureText,
-                    validator: validator,
-                    decoration: InputDecoration(
-                      hintText: hintText,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(
-                            ResponsiveValues.radiusMedium(context)),
-                      ),
+                if (isOfflineDisabled)
+                  const Center(
+                    child: Icon(
+                      Icons.wifi_off_rounded,
+                      size: 48,
+                      color: AppColors.warning,
                     ),
-                    autofocus: true,
+                  )
+                else
+                  Form(
+                    key: formKey,
+                    child: TextFormField(
+                      controller: controller,
+                      keyboardType: keyboardType,
+                      obscureText: obscureText,
+                      validator: validator,
+                      decoration: InputDecoration(
+                        hintText: hintText,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(
+                              ResponsiveValues.radiusMedium(context)),
+                        ),
+                      ),
+                      autofocus: true,
+                    ),
                   ),
-                ),
                 SizedBox(height: ResponsiveValues.spacingXL(context)),
                 Row(
                   children: [
@@ -305,12 +353,14 @@ class AppDialog {
                     SizedBox(width: ResponsiveValues.spacingM(context)),
                     Expanded(
                       child: AppButton.primary(
-                        label: confirmText,
-                        onPressed: () {
-                          if (formKey.currentState!.validate()) {
-                            Navigator.of(context).pop(controller.text);
-                          }
-                        },
+                        label: isOfflineDisabled ? 'OK' : confirmText,
+                        onPressed: isOfflineDisabled
+                            ? () => Navigator.of(context).pop()
+                            : () {
+                                if (formKey.currentState!.validate()) {
+                                  Navigator.of(context).pop(controller.text);
+                                }
+                              },
                       ),
                     ),
                   ],
