@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -8,18 +7,18 @@ import '../../models/chatbot_model.dart';
 import '../../providers/chatbot_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/notification_provider.dart';
+import '../../services/connectivity_service.dart';
+import '../../services/snackbar_service.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../themes/app_themes.dart';
 import '../../utils/helpers.dart';
 import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
-import '../../utils/app_enums.dart';
 import '../../widgets/common/app_bar.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_empty_state.dart';
 import '../../widgets/common/app_shimmer.dart';
-import '../../widgets/common/responsive_widgets.dart';
 
 class ChatbotScreen extends StatefulWidget {
   final int? conversationId;
@@ -42,10 +41,11 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   bool _showConversationList = false;
   bool _isRefreshing = false;
   String _greeting = '';
-  String _refreshSubtitle = '';
   late AnimationController _slideController;
   late Animation<Offset> _slideAnimation;
   bool _isOffline = false;
+  int _pendingCount = 0;
+  StreamSubscription? _connectivitySubscription;
 
   @override
   void initState() {
@@ -60,11 +60,25 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _setGreeting();
-      _checkConnectivity();
+      _setupConnectivityListener();
       _initializeChat();
       _loadNotifications();
       _setupScreenSize();
       _getCurrentUserId();
+      _checkPendingMessages();
+    });
+  }
+
+  void _setupConnectivityListener() {
+    final connectivityService = context.read<ConnectivityService>();
+    _connectivitySubscription =
+        connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (mounted) {
+        setState(() {
+          _isOffline = !isOnline;
+          _pendingCount = connectivityService.pendingActionsCount;
+        });
+      }
     });
   }
 
@@ -72,12 +86,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     Provider.of<AuthProvider>(context, listen: false);
   }
 
-  Future<void> _checkConnectivity() async {
-    final hasConnection = await hasInternetConnection();
-    if (!hasConnection) {
-      setState(() => _isOffline = true);
-      showOfflineMessage(context);
-    }
+  Future<void> _checkPendingMessages() async {
+    final connectivity = ConnectivityService();
+    setState(() => _pendingCount = connectivity.pendingActionsCount);
   }
 
   void _setGreeting() {
@@ -108,6 +119,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
     if (widget.conversationId != null) {
       await chatbotProvider.loadMessages(widget.conversationId!);
+      if (!mounted) return;
     }
 
     _scrollToBottom();
@@ -118,6 +130,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       final notificationProvider =
           Provider.of<NotificationProvider>(context, listen: false);
       await notificationProvider.loadNotifications();
+      if (!mounted) return;
     } catch (e) {
       debugLog('ChatbotScreen', 'Error loading notifications: $e');
     }
@@ -126,38 +139,39 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   Future<void> _manualRefresh() async {
     if (_isRefreshing) return;
 
-    final hasConnection = await hasInternetConnection();
-    if (!hasConnection) {
-      setState(() => _isOffline = true);
+    final connectivityService = context.read<ConnectivityService>();
+    if (!connectivityService.isOnline) {
+      setState(() {
+        _isRefreshing = false;
+        _isOffline = true;
+      });
       _refreshController.refreshFailed();
-      showTopSnackBar(
-          context, 'You are offline. Please check your internet connection.',
-          isError: true);
+      SnackbarService().showOffline(context, action: 'refresh');
       return;
     }
 
     setState(() {
       _isRefreshing = true;
-      _refreshSubtitle = 'Refreshing...';
     });
 
     try {
       final chatbotProvider =
           Provider.of<ChatbotProvider>(context, listen: false);
       await chatbotProvider.loadConversations(forceRefresh: true);
+      if (!mounted) return;
 
       if (widget.conversationId != null) {
         await chatbotProvider.loadMessages(widget.conversationId!,
             forceRefresh: true);
       }
-
-      showTopSnackBar(context, 'Chat refreshed');
+      setState(() => _isOffline = false);
+      SnackbarService().showSuccess(context, 'Chat updated');
     } catch (e) {
-      showTopSnackBar(context, 'Refresh failed', isError: true);
+      setState(() => _isOffline = true);
+      SnackbarService().showError(context, 'Failed to refresh');
     } finally {
       setState(() {
         _isRefreshing = false;
-        _refreshSubtitle = '';
       });
       _refreshController.refreshCompleted();
     }
@@ -167,8 +181,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _setGreeting();
-      _checkConnectivity();
-      _loadNotifications();
+      _checkPendingMessages();
     }
   }
 
@@ -180,6 +193,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     _focusNode.dispose();
     _slideController.dispose();
     _refreshController.dispose();
+    _connectivitySubscription?.cancel();
     super.dispose();
   }
 
@@ -199,15 +213,31 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     final message = _messageController.text.trim();
     if (message.isEmpty || _isSending) return;
 
-    final hasConnection = await hasInternetConnection();
-    if (!hasConnection) {
-      showOfflineError(context, action: 'send messages');
-      setState(() => _isOffline = true);
-      return;
-    }
-
+    final connectivity = ConnectivityService();
     final chatbotProvider =
         Provider.of<ChatbotProvider>(context, listen: false);
+
+    if (!connectivity.isOnline) {
+      setState(() => _isSending = true);
+      _messageController.clear();
+
+      try {
+        await chatbotProvider.sendMessage(
+          message,
+          conversationId:
+              widget.conversationId ?? chatbotProvider.currentConversation?.id,
+        );
+        SnackbarService().showQueued(context, action: 'Message');
+        _scrollToBottom();
+        await _checkPendingMessages();
+        if (!mounted) return;
+      } catch (e) {
+        SnackbarService().showError(context, 'Failed to queue message');
+      } finally {
+        setState(() => _isSending = false);
+      }
+      return;
+    }
 
     if (!chatbotProvider.hasMessagesLeft) {
       _showLimitReachedDialog();
@@ -230,20 +260,15 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         if (result['conversationId'] != null &&
             widget.conversationId == null &&
             chatbotProvider.currentConversation == null) {
-          GoRouter.of(context)
+          await GoRouter.of(context)
               .replace('/chatbot?conv=${result['conversationId']}');
         }
       } else {
-        showTopSnackBar(context, result['error'] ?? 'Failed to send message',
-            isError: true);
+        SnackbarService()
+            .showError(context, result['error'] ?? 'Failed to send message');
       }
     } catch (e) {
-      if (isNetworkError(e)) {
-        showOfflineError(context, action: 'send messages');
-        setState(() => _isOffline = true);
-      } else {
-        showTopSnackBar(context, formatErrorMessage(e), isError: true);
-      }
+      SnackbarService().showError(context, formatErrorMessage(e));
     } finally {
       setState(() => _isSending = false);
     }
@@ -297,9 +322,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                   children: [
                     Expanded(
                       child: Container(
-                        decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                                colors: AppColors.blueGradient)),
+                        decoration: const BoxDecoration(
+                            gradient:
+                                LinearGradient(colors: AppColors.blueGradient)),
                         child: ElevatedButton(
                           onPressed: () => Navigator.pop(context),
                           style: ElevatedButton.styleFrom(
@@ -389,9 +414,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                     SizedBox(width: ResponsiveValues.spacingM(context)),
                     Expanded(
                       child: Container(
-                        decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                                colors: AppColors.blueGradient)),
+                        decoration: const BoxDecoration(
+                            gradient:
+                                LinearGradient(colors: AppColors.blueGradient)),
                         child: ElevatedButton(
                           onPressed: () {
                             Navigator.pop(context);
@@ -857,9 +882,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                     SizedBox(width: ResponsiveValues.spacingM(context)),
                     Expanded(
                       child: Container(
-                        decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                                colors: AppColors.blueGradient)),
+                        decoration: const BoxDecoration(
+                            gradient:
+                                LinearGradient(colors: AppColors.blueGradient)),
                         child: ElevatedButton(
                           onPressed: () async {
                             if (controller.text.trim().isNotEmpty) {
@@ -871,7 +896,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                                 controller.text.trim(),
                               );
                               if (success && mounted) {
-                                showTopSnackBar(
+                                SnackbarService().showSuccess(
                                     context, 'Conversation renamed');
                               }
                               if (mounted) Navigator.pop(context);
@@ -964,9 +989,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                     SizedBox(width: ResponsiveValues.spacingM(context)),
                     Expanded(
                       child: Container(
-                        decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                                colors: AppColors.pinkGradient)),
+                        decoration: const BoxDecoration(
+                            gradient:
+                                LinearGradient(colors: AppColors.pinkGradient)),
                         child: ElevatedButton(
                           onPressed: () async {
                             final success = await Provider.of<ChatbotProvider>(
@@ -974,7 +999,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                                     listen: false)
                                 .deleteConversation(conv.id);
                             if (success && mounted) {
-                              showTopSnackBar(context, 'Conversation deleted');
+                              SnackbarService()
+                                  .showSuccess(context, 'Conversation deleted');
                               if (conv.id ==
                                   Provider.of<ChatbotProvider>(context,
                                           listen: false)
@@ -1045,12 +1071,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                   padding: EdgeInsets.only(
                       right: ResponsiveValues.spacingS(context)),
                   child: GestureDetector(
-                    onTap: _isOffline
-                        ? null
-                        : () {
-                            _messageController.text = question;
-                            _sendMessage();
-                          },
+                    onTap: () {
+                      _messageController.text = question;
+                      _sendMessage();
+                    },
                     child: AppCard.glass(
                       child: Container(
                         padding: EdgeInsets.symmetric(
@@ -1060,10 +1084,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                         child: Text(
                           question,
                           style: AppTextStyles.labelSmall(context).copyWith(
-                            color: _isOffline
-                                ? AppColors.getTextSecondary(context)
-                                    .withValues(alpha: 0.3)
-                                : AppColors.telegramBlue,
+                            color: AppColors.telegramBlue,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
@@ -1074,17 +1095,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
               }).toList(),
             ),
           ),
-          if (_isOffline)
-            Padding(
-              padding: EdgeInsets.only(
-                  top: ResponsiveValues.spacingS(context),
-                  left: ResponsiveValues.spacingS(context)),
-              child: Text(
-                'Connect to internet to send messages',
-                style: AppTextStyles.caption(context)
-                    .copyWith(color: AppColors.telegramYellow),
-              ),
-            ),
         ],
       ),
     );
@@ -1104,7 +1114,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
               Icons.message,
               size: ResponsiveValues.iconSizeS(context),
               color: _isOffline
-                  ? AppColors.telegramGray
+                  ? AppColors.warning
                   : (provider.remainingMessages > 0
                       ? AppColors.telegramGreen
                       : AppColors.telegramRed),
@@ -1117,7 +1127,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
               style: AppTextStyles.labelSmall(context).copyWith(
                 fontWeight: FontWeight.w600,
                 color: _isOffline
-                    ? AppColors.telegramGray
+                    ? AppColors.warning
                     : (provider.remainingMessages > 0
                         ? AppColors.telegramGreen
                         : AppColors.telegramRed),
@@ -1131,7 +1141,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   Widget _buildInputArea(ChatbotProvider provider) {
     final hasMessagesLeft = provider.hasMessagesLeft;
-    final isEnabled = hasMessagesLeft && !_isSending && !_isOffline;
+    final isEnabled = !_isSending;
 
     return AppCard.glass(
       child: Container(
@@ -1150,7 +1160,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                       focusNode: _focusNode,
                       decoration: InputDecoration(
                         hintText: _isOffline
-                            ? 'You are offline'
+                            ? 'You are offline (messages queued)'
                             : (hasMessagesLeft
                                 ? 'Ask about any subject...'
                                 : 'Daily limit reached'),
@@ -1194,19 +1204,18 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                   )
                 else
                   GestureDetector(
-                    onTap: isEnabled ? _sendMessage : null,
+                    onTap: _sendMessage,
                     child: AppCard.glass(
                       child: SizedBox(
                         width: ResponsiveValues.iconSizeXL(context),
                         height: ResponsiveValues.iconSizeXL(context),
                         child: Center(
                           child: Icon(
-                            Icons.send,
+                            _isOffline ? Icons.schedule_rounded : Icons.send,
                             size: ResponsiveValues.iconSizeS(context),
-                            color: isEnabled
-                                ? AppColors.telegramBlue
-                                : AppColors.getTextSecondary(context)
-                                    .withValues(alpha: 0.4),
+                            color: _isOffline
+                                ? AppColors.warning
+                                : AppColors.telegramBlue,
                           ),
                         ),
                       ),
@@ -1214,6 +1223,26 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                   ),
               ],
             ),
+            if (_isOffline && _pendingCount > 0)
+              Padding(
+                padding:
+                    EdgeInsets.only(top: ResponsiveValues.spacingS(context)),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.schedule_rounded,
+                      size: ResponsiveValues.iconSizeXXS(context),
+                      color: AppColors.info,
+                    ),
+                    SizedBox(width: ResponsiveValues.spacingXXS(context)),
+                    Text(
+                      '$_pendingCount message${_pendingCount > 1 ? 's' : ''} queued',
+                      style: AppTextStyles.queuedAction(context),
+                    ),
+                  ],
+                ),
+              ),
           ],
         ),
       ),
@@ -1254,7 +1283,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
               icon: Icons.smart_toy,
               title: 'AI Learning Assistant',
               message: _isOffline
-                  ? 'You are offline. Connect to start chatting with the AI assistant.'
+                  ? 'You are offline. Messages will be queued and sent when online.'
                   : 'Ask me about mathematics, sciences, Amharic, Ethiopian history, or get study tips. You have ${provider.remainingMessages}/${provider.dailyLimit} messages left today.',
             ),
           );
@@ -1275,6 +1304,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   Widget build(BuildContext context) {
     Provider.of<AuthProvider>(context);
     final chatbotProvider = Provider.of<ChatbotProvider>(context);
+    final connectivity = Provider.of<ConnectivityService>(context);
 
     if (_isOffline &&
         chatbotProvider.messages.isEmpty &&
@@ -1286,11 +1316,11 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           child: AppEmptyState.offline(
             dataType: 'chat',
             message:
-                'You are offline. Connect to start chatting with the AI assistant.',
+                'You are offline. Messages will be queued and sent when online.',
             onRetry: () {
               setState(() => _isOffline = false);
-              _checkConnectivity();
             },
+            pendingCount: _pendingCount,
           ),
         ),
       );
