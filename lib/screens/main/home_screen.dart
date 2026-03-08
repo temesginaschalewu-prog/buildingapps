@@ -19,7 +19,6 @@ import '../../utils/responsive_values.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../themes/app_themes.dart';
-import '../../utils/app_enums.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -37,9 +36,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _isFirstLoad = true;
   bool _hasCachedCategories = false;
   bool _isRefreshing = false;
+  bool _isOffline = false;
   String _refreshSubtitle = '';
   final Map<int, bool> _categorySubscriptionCache = {};
   StreamSubscription? _subscriptionUpdatesSubscription;
+  StreamSubscription? _connectivitySubscription;
   Timer? _refreshTimer;
   String _greeting = '';
   String _ethiopianTime = '';
@@ -54,6 +55,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _initializeProviders();
       _setGreeting();
       _setEthiopianTime();
+      _setupConnectivityListener();
       _loadHomeScreen();
       _setupStreamListeners();
 
@@ -87,6 +89,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
   }
 
+  void _setupConnectivityListener() {
+    final connectivityService = context.read<ConnectivityService>();
+    _connectivitySubscription =
+        connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (mounted) {
+        setState(() {
+          _isOffline = !isOnline;
+        });
+
+        if (isOnline && !_isRefreshing && _hasCachedCategories) {
+          _silentRefresh();
+        }
+      }
+    });
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -108,7 +126,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
 
     _refreshTimer = Timer.periodic(const Duration(minutes: 10), (_) {
-      if (mounted && !_isRefreshing) _silentRefresh();
+      if (mounted && !_isRefreshing && !_isOffline) _silentRefresh();
     });
   }
 
@@ -129,7 +147,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _categorySubscriptionCache[category.id] = status;
       }
 
-      await _refreshInBackground();
+      if (!_isOffline) {
+        await _refreshInBackground();
+        if (!mounted) return;
+      }
       return;
     }
 
@@ -137,8 +158,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     try {
       await _categoryProvider.loadCategories();
+      if (!mounted) return;
       await _subscriptionProvider.loadSubscriptions();
+      if (!mounted) return;
       await _loadNotifications();
+      if (!mounted) return;
 
       final activeCategories = _categoryProvider.activeCategories;
       if (activeCategories.isNotEmpty) {
@@ -153,13 +177,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _refreshInBackground() async {
-    if (_isRefreshing) return;
+    if (_isRefreshing || _isOffline) return;
     _isRefreshing = true;
 
     try {
       await _subscriptionProvider.loadSubscriptions(forceRefresh: true);
+      if (!mounted) return;
       await _categoryProvider.loadCategories(forceRefresh: true);
+      if (!mounted) return;
       await _loadNotifications();
+      if (!mounted) return;
 
       final activeCategories = _categoryProvider.activeCategories;
       if (activeCategories.isNotEmpty) {
@@ -179,6 +206,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     final connectivityService = context.read<ConnectivityService>();
     if (!connectivityService.isOnline) {
+      setState(() {
+        _isRefreshing = false;
+        _refreshSubtitle = '';
+        _isOffline = true;
+      });
       _refreshController.refreshFailed();
       SnackbarService().showOffline(context, action: 'refresh');
       return;
@@ -191,8 +223,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     try {
       await _subscriptionProvider.loadSubscriptions(forceRefresh: true);
-      await _categoryProvider.loadCategories(forceRefresh: true);
+      if (!mounted) return;
+      await _categoryProvider.loadCategories(
+          forceRefresh: true, isManualRefresh: true);
+      if (!mounted) return;
       await _loadNotifications();
+      if (!mounted) return;
 
       final activeCategories = _categoryProvider.activeCategories;
       if (activeCategories.isNotEmpty) {
@@ -202,14 +238,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         if (mounted) {
           setState(() {
             _categorySubscriptionCache.addAll(results);
+            _isOffline = false;
           });
         }
       }
 
       _setEthiopianTime();
-      SnackbarService().showSuccess(context, 'Content refreshed');
+      SnackbarService().showSuccess(context, 'Content updated');
     } catch (e) {
-      SnackbarService().showError(context, 'Refresh failed, using cached data');
+      setState(() => _isOffline = true);
+      SnackbarService().showError(context, 'Failed to refresh');
     } finally {
       setState(() {
         _isRefreshing = false;
@@ -220,11 +258,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _silentRefresh() async {
-    if (_isRefreshing) return;
+    if (_isRefreshing || _isOffline) return;
     try {
       await _subscriptionProvider.loadSubscriptions(forceRefresh: true);
+      if (!mounted) return;
       await _categoryProvider.loadCategories(forceRefresh: true);
+      if (!mounted) return;
       await _loadNotifications();
+      if (!mounted) return;
       if (mounted) {
         final activeCategories = _categoryProvider.activeCategories;
         for (final category in activeCategories) {
@@ -240,6 +281,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _loadNotifications() async {
     try {
       await _notificationProvider.loadNotifications();
+      if (!mounted) return;
     } catch (e) {}
   }
 
@@ -354,6 +396,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               child: AppEmptyState.noData(
                 dataType: 'Categories',
                 onRefresh: _manualRefresh,
+                isRefreshing: _isRefreshing,
+                isOffline: _isOffline,
               ),
             ),
           ),
@@ -538,7 +582,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       _setGreeting();
       _setEthiopianTime();
-      if (_hasCachedCategories) _silentRefresh();
+      if (_hasCachedCategories && !_isOffline) _silentRefresh();
     }
   }
 
@@ -547,6 +591,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _refreshTimer?.cancel();
     _subscriptionUpdatesSubscription?.cancel();
+    _connectivitySubscription?.cancel();
     _refreshController.dispose();
     super.dispose();
   }
