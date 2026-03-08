@@ -1,5 +1,7 @@
+import 'package:familyacademyclient/utils/app_enums.dart';
 import 'package:flutter/material.dart';
 import '../themes/app_colors.dart';
+import '../services/connectivity_service.dart';
 
 class UiHelpers {
   static Color getCategoryAccessColor({
@@ -63,8 +65,9 @@ class UiHelpers {
 
   static Color getExamStatusColor(
       bool isCompleted, bool passed, bool isInProgress) {
-    if (isCompleted)
+    if (isCompleted) {
       return passed ? AppColors.telegramGreen : AppColors.telegramRed;
+    }
     if (isInProgress) return AppColors.telegramBlue;
     return AppColors.telegramGray;
   }
@@ -177,5 +180,62 @@ class UiHelpers {
       default:
         return Icons.notifications_rounded;
     }
+  }
+
+  static Color getOfflineStatusColor(OfflineState state) {
+    switch (state) {
+      case OfflineState.online:
+        return AppColors.telegramGreen;
+      case OfflineState.offline:
+        return AppColors.warning;
+      case OfflineState.queued:
+        return AppColors.info;
+      case OfflineState.syncing:
+        return AppColors.telegramBlue;
+    }
+  }
+
+  static IconData getOfflineStatusIcon(OfflineState state) {
+    switch (state) {
+      case OfflineState.online:
+        return Icons.wifi_rounded;
+      case OfflineState.offline:
+        return Icons.wifi_off_rounded;
+      case OfflineState.queued:
+        return Icons.schedule_rounded;
+      case OfflineState.syncing:
+        return Icons.sync_rounded;
+    }
+  }
+
+  static String getOfflineStatusText(OfflineState state, [int? count]) {
+    switch (state) {
+      case OfflineState.online:
+        return 'Online';
+      case OfflineState.offline:
+        return 'Offline';
+      case OfflineState.queued:
+        return count != null && count > 0
+            ? '$count change${count > 1 ? 's' : ''} pending'
+            : 'Changes pending';
+      case OfflineState.syncing:
+        return 'Syncing...';
+    }
+  }
+
+  static bool shouldDisableWhenOffline(
+    BuildContext context, {
+    required bool requiresOnline,
+    bool requiresAuth = true,
+  }) {
+    final connectivity = ConnectivityService();
+    if (requiresOnline && connectivity.isOffline) {
+      return true;
+    }
+    return false;
+  }
+
+  static Color getDisabledColor(BuildContext context) {
+    return AppColors.getTextSecondary(context).withValues(alpha: 0.3);
   }
 }
