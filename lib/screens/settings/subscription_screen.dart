@@ -7,6 +7,7 @@ import '../../models/subscription_model.dart';
 import '../../providers/subscription_provider.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
+import '../../services/refresh_service.dart';
 import '../../utils/ui_helpers.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_button.dart';
@@ -16,11 +17,7 @@ import '../../widgets/common/app_bar.dart';
 import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
-import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
-import '../../utils/helpers.dart';
-import '../../utils/app_enums.dart';
-import '../../widgets/common/responsive_widgets.dart';
 
 class SubscriptionScreen extends StatefulWidget {
   const SubscriptionScreen({super.key});
@@ -33,8 +30,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
     with TickerProviderStateMixin {
   bool _isRefreshing = false;
   bool _isOffline = false;
+  int _pendingCount = 0;
   Timer? _refreshTimer;
-  String _refreshSubtitle = '';
   StreamSubscription? _connectivitySubscription;
 
   bool _hasCachedData = false;
@@ -45,6 +42,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkConnectivity();
+      _checkPendingCount();
       _checkCachedData();
       _loadSubscriptions();
     });
@@ -59,7 +57,12 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
     final connectivityService = context.read<ConnectivityService>();
     _connectivitySubscription =
         connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (mounted) setState(() => _isOffline = !isOnline);
+      if (mounted) {
+        setState(() {
+          _isOffline = !isOnline;
+          _pendingCount = connectivityService.pendingActionsCount;
+        });
+      }
     });
   }
 
@@ -67,6 +70,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
     final subscriptionProvider = context.read<SubscriptionProvider>();
     _hasCachedData = subscriptionProvider.hasLoaded &&
         subscriptionProvider.allSubscriptions.isNotEmpty;
+  }
+
+  Future<void> _checkPendingCount() async {
+    final connectivity = ConnectivityService();
+    setState(() => _pendingCount = connectivity.pendingActionsCount);
   }
 
   @override
@@ -78,7 +86,10 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
 
   Future<void> _checkConnectivity() async {
     final connectivityService = context.read<ConnectivityService>();
-    setState(() => _isOffline = !connectivityService.isOnline);
+    setState(() {
+      _isOffline = !connectivityService.isOnline;
+      _pendingCount = connectivityService.pendingActionsCount;
+    });
   }
 
   Future<void> _loadSubscriptions({bool forceRefresh = false}) async {
@@ -95,35 +106,20 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
 
   Future<void> _manualRefresh() async {
     if (_isRefreshing) return;
+    setState(() => _isRefreshing = true);
 
-    final connectivityService = context.read<ConnectivityService>();
-    if (!connectivityService.isOnline) {
-      setState(() => _isOffline = true);
-      SnackbarService().showOffline(context);
-      return;
-    }
+    final success = await RefreshService().executeRefresh(
+      context: context,
+      refreshFunction: () async {
+        final subscriptionProvider = context.read<SubscriptionProvider>();
+        await subscriptionProvider.loadSubscriptions(forceRefresh: true);
+        if (mounted) setState(() => _isOffline = false);
+      },
+      successMessage: 'Subscriptions updated',
+    );
 
-    setState(() {
-      _isRefreshing = true;
-      _refreshSubtitle = 'Refreshing...';
-    });
-
-    try {
-      final subscriptionProvider = context.read<SubscriptionProvider>();
-      await subscriptionProvider.loadSubscriptions(forceRefresh: true);
-      setState(() {
-        _isOffline = false;
-        _hasCachedData = true;
-      });
-      SnackbarService().showSuccess(context, 'Subscriptions refreshed');
-    } catch (e) {
-      SnackbarService().showError(context, 'Refresh failed: $e');
-    } finally {
-      setState(() {
-        _isRefreshing = false;
-        _refreshSubtitle = '';
-      });
-    }
+    if (!success && mounted) setState(() => _isOffline = true);
+    if (mounted) setState(() => _isRefreshing = false);
   }
 
   Color _getStatusColor(String status) =>
@@ -548,7 +544,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                 ),
               ),
             ),
-            if (_isOffline && allSubscriptions.isNotEmpty)
+            if (_pendingCount > 0)
               SliverPadding(
                 padding: EdgeInsets.symmetric(
                     horizontal: ResponsiveValues.spacingL(context)),
@@ -560,26 +556,25 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
-                          AppColors.telegramYellow.withValues(alpha: 0.2),
-                          AppColors.telegramYellow.withValues(alpha: 0.1)
+                          AppColors.info.withValues(alpha: 0.2),
+                          AppColors.info.withValues(alpha: 0.1)
                         ],
                       ),
                       borderRadius: BorderRadius.circular(
                           ResponsiveValues.radiusMedium(context)),
                       border: Border.all(
-                          color:
-                              AppColors.telegramYellow.withValues(alpha: 0.3)),
+                          color: AppColors.info.withValues(alpha: 0.3)),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.wifi_off_rounded,
-                            color: AppColors.telegramYellow, size: 20),
+                        const Icon(Icons.schedule_rounded,
+                            color: AppColors.info, size: 20),
                         SizedBox(width: ResponsiveValues.spacingM(context)),
                         Expanded(
                           child: Text(
-                            'Offline mode - showing cached subscriptions',
+                            '$_pendingCount pending change${_pendingCount > 1 ? 's' : ''}',
                             style: AppTextStyles.bodySmall(context)
-                                .copyWith(color: AppColors.telegramYellow),
+                                .copyWith(color: AppColors.info),
                           ),
                         ),
                       ],
@@ -706,6 +701,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                             _checkConnectivity();
                             _manualRefresh();
                           },
+                          pendingCount: _pendingCount,
                         )
                       : AppEmptyState.noData(
                           dataType: 'subscriptions',
