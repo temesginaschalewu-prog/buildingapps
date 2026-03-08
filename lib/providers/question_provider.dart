@@ -1,17 +1,19 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../services/user_session.dart';
+import '../services/connectivity_service.dart';
 import '../models/question_model.dart';
 import '../utils/constants.dart';
 import '../utils/helpers.dart';
-import '../utils/parsers.dart';
 
 class QuestionProvider with ChangeNotifier {
   final ApiService apiService;
   final DeviceService deviceService;
+  final ConnectivityService connectivityService;
 
   final List<Question> _questions = [];
   final Map<int, List<Question>> _questionsByChapter = {};
@@ -22,24 +24,41 @@ class QuestionProvider with ChangeNotifier {
   final Map<int, Map<int, String>> _selectedAnswers = {};
   bool _isLoading = false;
   String? _error;
+  bool _isOffline = false;
 
   StreamController<Map<String, dynamic>> _questionUpdateController =
       StreamController<Map<String, dynamic>>.broadcast();
   StreamController<Map<String, dynamic>> _answerUpdateController =
       StreamController<Map<String, dynamic>>.broadcast();
 
-  static const Duration cacheDuration = Duration(hours: 24);
+  static const Duration cacheDuration = AppConstants.cacheTTLQuestions;
   static const Duration answerCacheDuration = Duration(days: 7);
 
-  QuestionProvider({required this.apiService, required this.deviceService}) {
+  QuestionProvider({
+    required this.apiService,
+    required this.deviceService,
+    required this.connectivityService,
+  }) {
     _initPreload();
+    _setupConnectivityListener();
+  }
+
+  void _setupConnectivityListener() {
+    connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (_isOffline != !isOnline) {
+        _isOffline = !isOnline;
+        notifyListeners();
+      }
+    });
   }
 
   Future<void> _initPreload() async {
     Future.delayed(Duration.zero, () async {
       try {
         final userId = await UserSession().getCurrentUserId();
-        if (userId != null) {}
+        if (userId != null) {
+          // Preload common chapters if needed
+        }
       } catch (e) {}
     });
   }
@@ -47,6 +66,7 @@ class QuestionProvider with ChangeNotifier {
   List<Question> get questions => _questions;
   bool get isLoading => _isLoading;
   String? get error => _error;
+  bool get isOffline => _isOffline;
 
   Stream<Map<String, dynamic>> get questionUpdates =>
       _questionUpdateController.stream;
@@ -89,22 +109,17 @@ class QuestionProvider with ChangeNotifier {
   }
 
   Future<void> loadPracticeQuestions(int chapterId,
-      {bool forceRefresh = false}) async {
+      {bool forceRefresh = false, bool isManualRefresh = false}) async {
     if (_isLoadingForChapter[chapterId] == true && !forceRefresh) {
       return;
     }
 
-    final lastLoaded = _lastLoadedTime[chapterId];
-    final hasCache = _hasLoadedForChapter[chapterId] == true;
-    final isCacheValid = lastLoaded != null &&
-        DateTime.now().difference(lastLoaded) < cacheDuration;
-
-    if (hasCache && !forceRefresh && isCacheValid) {
-      debugLog('QuestionProvider',
-          '✅ Using cached questions for chapter: $chapterId');
-      return;
+    // If this is a manual refresh, ALWAYS force refresh
+    if (isManualRefresh) {
+      forceRefresh = true;
     }
 
+    // STEP 1: ALWAYS try cache first (even when offline)
     if (!forceRefresh) {
       try {
         final cachedQuestions = await deviceService.getCacheItem<List<dynamic>>(
@@ -133,22 +148,41 @@ class QuestionProvider with ChangeNotifier {
 
             await _loadAnswerResults(chapterId);
 
-            debugLog('QuestionProvider',
-                '✅ Loaded ${questionList.length} questions from cache for chapter $chapterId');
-
             _questionUpdateController.add({
               'type': 'questions_loaded_cached',
               'chapter_id': chapterId,
               'count': questionList.length
             });
 
-            unawaited(_refreshInBackground(chapterId));
+            _notifySafely();
+
+            debugLog('QuestionProvider',
+                '✅ Loaded ${questionList.length} questions from cache for chapter $chapterId');
+
+            // STEP 2: If online, refresh in background
+            if (!_isOffline) {
+              unawaited(_refreshInBackground(chapterId));
+            }
             return;
           }
         }
       } catch (e) {
         debugLog('QuestionProvider', 'Error loading cached questions: $e');
       }
+    }
+
+    // STEP 3: If no cache, try API (only if online)
+    if (_isOffline) {
+      _error = 'You are offline. No cached questions available.';
+      _isLoadingForChapter[chapterId] = false;
+      _isLoading = false;
+      _notifySafely();
+
+      if (isManualRefresh) {
+        throw Exception(
+            'Network error. Please check your internet connection.');
+      }
+      return;
     }
 
     _isLoadingForChapter[chapterId] = true;
@@ -159,6 +193,7 @@ class QuestionProvider with ChangeNotifier {
     try {
       debugLog('QuestionProvider',
           '📥 Loading practice questions for chapter: $chapterId');
+
       final response = await apiService.getPracticeQuestions(chapterId);
 
       final responseData = response.data ?? {};
@@ -185,6 +220,7 @@ class QuestionProvider with ChangeNotifier {
           }
         }
 
+        // Save to cache for next time
         await deviceService.saveCacheItem(
           AppConstants.questionsChapterKey(chapterId),
           questionList.map((q) => q.toJson()).toList(),
@@ -193,14 +229,14 @@ class QuestionProvider with ChangeNotifier {
 
         await _loadAnswerResults(chapterId);
 
-        debugLog('QuestionProvider',
-            '✅ Loaded ${questionList.length} questions from API for chapter $chapterId');
-
         _questionUpdateController.add({
           'type': 'questions_loaded',
           'chapter_id': chapterId,
           'count': questionList.length
         });
+
+        debugLog('QuestionProvider',
+            '✅ Loaded ${questionList.length} questions from API for chapter $chapterId');
       } else {
         _questionsByChapter[chapterId] = [];
         _hasLoadedForChapter[chapterId] = true;
@@ -208,6 +244,10 @@ class QuestionProvider with ChangeNotifier {
 
         _questionUpdateController.add(
             {'type': 'questions_loaded', 'chapter_id': chapterId, 'count': 0});
+
+        if (isManualRefresh) {
+          throw Exception('No questions found');
+        }
       }
     } catch (e) {
       _error = e.toString();
@@ -224,6 +264,10 @@ class QuestionProvider with ChangeNotifier {
         'chapter_id': chapterId,
         'error': _error
       });
+
+      if (isManualRefresh) {
+        rethrow;
+      }
     } finally {
       _isLoadingForChapter[chapterId] = false;
       _isLoading = false;
@@ -232,6 +276,8 @@ class QuestionProvider with ChangeNotifier {
   }
 
   Future<void> _refreshInBackground(int chapterId) async {
+    if (_isOffline) return;
+
     try {
       debugLog(
           'QuestionProvider', '🔄 Background refresh for chapter $chapterId');
@@ -319,6 +365,13 @@ class QuestionProvider with ChangeNotifier {
     try {
       debugLog('QuestionProvider',
           '✅ Checking answer for question:$questionId option:$selectedOption');
+
+      if (_isOffline) {
+        // Handle offline answer checking
+        await _saveAnswerOffline(questionId, selectedOption);
+        return {'success': true, 'queued': true};
+      }
+
       final response = await apiService.checkAnswer(questionId, selectedOption);
 
       final index = _questions.indexWhere((q) => q.id == questionId);
@@ -398,6 +451,113 @@ class QuestionProvider with ChangeNotifier {
     }
   }
 
+  Future<void> _saveAnswerOffline(int questionId, String selectedOption) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = await UserSession().getCurrentUserId();
+
+      if (userId == null) return;
+
+      const pendingKey = 'pending_answers';
+      final userPendingKey = '${pendingKey}_$userId';
+      final existingJson = prefs.getString(userPendingKey);
+      List<Map<String, dynamic>> pendingAnswers = [];
+
+      if (existingJson != null) {
+        try {
+          pendingAnswers =
+              List<Map<String, dynamic>>.from(jsonDecode(existingJson));
+        } catch (e) {
+          debugLog('QuestionProvider', 'Error parsing pending answers: $e');
+        }
+      }
+
+      pendingAnswers.add({
+        'question_id': questionId,
+        'selected_option': selectedOption,
+        'timestamp': DateTime.now().toIso8601String(),
+        'retry_count': 0,
+      });
+
+      await prefs.setString(userPendingKey, jsonEncode(pendingAnswers));
+
+      debugLog('QuestionProvider',
+          '📝 Saved answer offline for question $questionId');
+
+      _answerUpdateController.add({
+        'type': 'answer_queued',
+        'question_id': questionId,
+        'selected_option': selectedOption,
+      });
+    } catch (e) {
+      debugLog('QuestionProvider', 'Error saving answer offline: $e');
+    }
+  }
+
+  Future<void> syncPendingAnswers() async {
+    if (_isOffline) return;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = await UserSession().getCurrentUserId();
+
+      if (userId == null) return;
+
+      const pendingKey = 'pending_answers';
+      final userPendingKey = '${pendingKey}_$userId';
+      final existingJson = prefs.getString(userPendingKey);
+
+      if (existingJson == null) return;
+
+      List<Map<String, dynamic>> pendingAnswers = [];
+      try {
+        pendingAnswers =
+            List<Map<String, dynamic>>.from(jsonDecode(existingJson));
+      } catch (e) {
+        debugLog('QuestionProvider', 'Error parsing pending answers: $e');
+        await prefs.remove(userPendingKey);
+        return;
+      }
+
+      if (pendingAnswers.isEmpty) return;
+
+      debugLog('QuestionProvider',
+          '🔄 Syncing ${pendingAnswers.length} pending answers');
+
+      final List<Map<String, dynamic>> failedAnswers = [];
+
+      for (final answer in pendingAnswers) {
+        try {
+          await apiService.checkAnswer(
+            answer['question_id'],
+            answer['selected_option'],
+          );
+          debugLog('QuestionProvider',
+              '✅ Synced answer for question ${answer['question_id']}');
+        } catch (e) {
+          debugLog('QuestionProvider', '❌ Failed to sync answer: $e');
+
+          final retryCount = (answer['retry_count'] ?? 0) + 1;
+          if (retryCount <= 3) {
+            answer['retry_count'] = retryCount;
+            failedAnswers.add(answer);
+          }
+        }
+      }
+
+      if (failedAnswers.isEmpty) {
+        await prefs.remove(userPendingKey);
+        debugLog('QuestionProvider', '✅ All pending answers synced');
+      } else {
+        await prefs.setString(userPendingKey, jsonEncode(failedAnswers));
+        debugLog('QuestionProvider',
+            '⚠️ ${failedAnswers.length} answers still pending');
+      }
+    } catch (e) {
+      debugLog('QuestionProvider', 'Error syncing pending answers: $e');
+    }
+  }
+
   Question? getQuestionById(int id) {
     try {
       return _questions.firstWhere((q) => q.id == id);
@@ -444,6 +604,13 @@ class QuestionProvider with ChangeNotifier {
     if (!isDifferentUser || !isLoggingOut) {
       debugLog('QuestionProvider', '✅ Same user - preserving question cache');
       return;
+    }
+
+    // Clear pending answers
+    final userId = await session.getCurrentUserId();
+    if (userId != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('pending_answers_$userId');
     }
 
     _questions.clear();
