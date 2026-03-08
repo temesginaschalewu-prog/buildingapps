@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:familyacademyclient/services/refresh_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
@@ -40,14 +41,13 @@ import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_dialog.dart';
 import '../../widgets/common/app_shimmer.dart';
 import '../../widgets/common/app_empty_state.dart';
+import '../../widgets/common/app_bar.dart';
 import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
 import '../../utils/helpers.dart';
-import '../../utils/app_enums.dart';
-import '../../widgets/common/responsive_widgets.dart';
 
 class ChapterContentScreen extends StatefulWidget {
   final int chapterId;
@@ -75,7 +75,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   final ScrollController _scrollController = ScrollController();
 
   Chapter? _chapter;
-  Course? _course;
   Category? _category;
 
   bool _isLoading = true;
@@ -86,12 +85,12 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   bool _hasCachedData = false;
   bool _isOffline = false;
   bool _isRefreshing = false;
+  int _pendingCount = 0;
 
   VideoPlayerController? _videoController;
   ChewieController? _chewieController;
   media_kit.Player? _mediaKitPlayer;
   media_kit_video.VideoController? _mediaKitVideoController;
-  int? _currentPlayingVideoId;
   bool _isPlayingVideo = false;
   bool _isVideoDialogOpen = false;
   bool _useMediaKit =
@@ -151,7 +150,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     _connectivitySubscription =
         connectivityService.onConnectivityChanged.listen((isOnline) {
       if (mounted) {
-        setState(() => _isOffline = !isOnline);
+        setState(() {
+          _isOffline = !isOnline;
+          _pendingCount = connectivityService.pendingActionsCount;
+        });
         if (isOnline && !_isRefreshing && _chapter != null) {
           _refreshInBackground();
         }
@@ -204,8 +206,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     try {
       WakelockPlus.disable();
     } catch (e) {}
-
-    _currentPlayingVideoId = null;
   }
 
   void _cleanupResources() {
@@ -220,7 +220,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
   Future<void> _checkConnectivity() async {
     final connectivityService = context.read<ConnectivityService>();
-    setState(() => _isOffline = !connectivityService.isOnline);
+    setState(() {
+      _isOffline = !connectivityService.isOnline;
+      _pendingCount = connectivityService.pendingActionsCount;
+    });
   }
 
   Future<void> _initialize() async {
@@ -234,7 +237,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         _isCheckingAccess = false;
       });
       if (!_isOffline) {
-        _refreshInBackground();
+        await _refreshInBackground();
       }
     } else {
       await _checkAccessAndLoadData();
@@ -338,7 +341,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
     if (widget.chapter != null) {
       _chapter = widget.chapter;
-      _course = widget.course;
       _category = widget.category;
       _hasAccess = widget.hasAccess ?? false;
       _hasCachedData = true;
@@ -352,7 +354,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         for (final chapter in chapters) {
           if (chapter.id == widget.chapterId) {
             _chapter = chapter;
-            _course = course;
             _category = category;
             _hasCachedData = true;
             break;
@@ -385,24 +386,26 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
     final connectivityService = context.read<ConnectivityService>();
     if (!connectivityService.isOnline) {
-      setState(() => _isOffline = true);
       SnackbarService().showOffline(context);
+      setState(() => _isOffline = true);
       return;
     }
 
     setState(() => _isRefreshing = true);
 
-    try {
-      await _checkAccessAndLoadData(forceRefresh: true);
-      if (mounted) SnackbarService().showSuccess(context, 'Content updated');
-    } catch (e) {
+    final success = await RefreshService().executeRefresh(
+      context: context,
+      refreshFunction: () async {
+        await _checkAccessAndLoadData(forceRefresh: true);
+      },
+      successMessage: 'Chapter updated',
+    );
+
+    if (!success) {
       setState(() => _isOffline = true);
-      if (mounted)
-        SnackbarService()
-            .showError(context, 'Refresh failed, using cached data');
-    } finally {
-      setState(() => _isRefreshing = false);
     }
+
+    setState(() => _isRefreshing = false);
   }
 
   Future<void> _checkAccessAndLoadData({bool forceRefresh = false}) async {
@@ -472,7 +475,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         for (final chapter in chapters) {
           if (chapter.id == widget.chapterId) {
             _chapter = chapter;
-            _course = course;
             _category = category;
             return;
           }
@@ -561,7 +563,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       debugLog('VideoCard', 'Playing from local file: $localPath');
       _useMediaKit = false;
       final uri = Uri.file(localPath);
-      _playWithUrl(video, uri.toString());
+      await _playWithUrl(video, uri.toString());
       return;
     }
 
@@ -569,16 +571,9 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
     if (video.hasQualities) {
       selectedQuality = await _showQualitySelector(video, forPlayback: true);
-      if (selectedQuality == null) {
-        selectedQuality = video.getRecommendedQuality();
-      }
+      selectedQuality ??= video.getRecommendedQuality();
     } else {
       selectedQuality = video.getRecommendedQuality();
-    }
-
-    if (selectedQuality == null) {
-      debugLog('VideoCard', 'Playback cancelled by user');
-      return;
     }
 
     final String videoUrl = selectedQuality.url;
@@ -598,7 +593,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
     try {
       setState(() {
-        _currentPlayingVideoId = video.id;
         _isPlayingVideo = true;
         _isVideoDialogOpen = true;
         _isPlayerInitialized = false;
@@ -622,8 +616,9 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         _useMediaKit = false;
         await _playVideo(video);
       } else {
-        if (mounted)
+        if (mounted) {
           SnackbarService().showError(context, 'Failed to play video: $e');
+        }
       }
     }
   }
@@ -646,7 +641,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         }
       });
 
-      await _mediaKitPlayer!.open(media_kit.Media(videoUrl), play: true);
+      await _mediaKitPlayer!.open(media_kit.Media(videoUrl));
       await _mediaKitPlayer!.setVolume(1.0);
       await _mediaKitPlayer!.setRate(1.0);
 
@@ -748,7 +743,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         _chewieController = null;
       }
 
-      String fixedUrl = videoUrl;
+      final String fixedUrl = videoUrl;
 
       if (fixedUrl.startsWith('file://')) {
         final filePath = fixedUrl.replaceFirst('file://', '');
@@ -776,10 +771,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       _chewieController = ChewieController(
         videoPlayerController: _videoController!,
         autoPlay: true,
-        looping: false,
-        allowFullScreen: true,
-        allowPlaybackSpeedChanging: true,
-        showControls: true,
         materialProgressColors: ChewieProgressColors(
           playedColor: AppColors.telegramBlue,
           handleColor: AppColors.telegramBlue,
@@ -895,9 +886,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       );
     } catch (e) {
       debugLog('VideoCard', 'Error in _playWithVideoPlayer: $e');
-      if (mounted)
+      if (mounted) {
         SnackbarService().showError(
             context, 'Failed to play video. Please try downloading first.');
+      }
       rethrow;
     }
   }
@@ -1175,8 +1167,9 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       );
 
       final file = File(filePath);
-      if (!await file.exists())
+      if (!await file.exists()) {
         throw Exception('Download failed - file not created');
+      }
 
       final fileSize = await file.length();
       if (fileSize < 1024) {
@@ -1264,10 +1257,11 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
 
       final fullFilePath = note.fullNoteFilePath;
-      if (fullFilePath == null || fullFilePath.isEmpty)
+      if (fullFilePath == null || fullFilePath.isEmpty) {
         throw Exception('Invalid file path');
+      }
 
-      final extension = path.extension(note.filePath!) ?? '.pdf';
+      final extension = path.extension(note.filePath!);
       final fileName =
           'note_${note.id}_${DateTime.now().millisecondsSinceEpoch}$extension';
       final filePath = '${cacheDir.path}/$fileName';
@@ -1293,9 +1287,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
       await _saveCacheMetadata();
 
-      if (mounted)
+      if (mounted) {
         SnackbarService()
             .showSuccess(context, 'Note downloaded for offline viewing');
+      }
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -1470,8 +1465,9 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
       await _saveQuestionProgress();
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         SnackbarService().showError(context, 'Failed to check answer');
+      }
     }
   }
 
@@ -1480,11 +1476,9 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
-      appBar: AppBar(
-        title: Text(_chapter?.name ?? 'Chapter',
-            style: AppTextStyles.titleMedium(context)),
-        backgroundColor: AppColors.getBackground(context),
-        elevation: 0,
+      appBar: CustomAppBar(
+        title: _chapter?.name ?? 'Chapter',
+        subtitle: isFree ? 'Coming Soon' : 'Locked',
         leading: AppButton.icon(
             icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
       ),
@@ -1574,6 +1568,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
               : 'There are no videos for this chapter yet.',
           onRefresh: () => videoProvider.loadVideosByChapter(widget.chapterId,
               forceRefresh: true),
+          isOffline: _isOffline,
+          pendingCount: _pendingCount,
         ),
       );
     }
@@ -1647,6 +1643,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
               : 'There are no notes for this chapter yet.',
           onRefresh: () => noteProvider.loadNotesByChapter(widget.chapterId,
               forceRefresh: true),
+          isOffline: _isOffline,
+          pendingCount: _pendingCount,
         ),
       );
     }
@@ -1737,6 +1735,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
               : 'Practice questions will be added soon.',
           onRefresh: () => questionProvider
               .loadPracticeQuestions(widget.chapterId, forceRefresh: true),
+          isOffline: _isOffline,
+          pendingCount: _pendingCount,
         ),
       );
     }
@@ -1929,111 +1929,18 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     if (state == AppLifecycleState.resumed) _resumeVideoIfNeeded();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    if (_isLoading && !_hasCachedData) {
-      return Scaffold(
-        backgroundColor: AppColors.getBackground(context),
-        appBar: AppBar(
-          title: const AppShimmer(type: ShimmerType.textLine, customWidth: 200),
-          backgroundColor: AppColors.getBackground(context),
-          elevation: 0,
-        ),
-        body: ListView.builder(
-          padding: ResponsiveValues.screenPadding(context),
-          itemCount: 5,
-          itemBuilder: (context, index) => Padding(
-            padding:
-                EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
-            child: AppShimmer(type: ShimmerType.videoCard, index: index),
-          ),
-        ),
-      );
-    }
-
-    if (_errorMessage != null) {
-      return Scaffold(
-        backgroundColor: AppColors.getBackground(context),
-        appBar: AppBar(
-          title: Text('Error', style: AppTextStyles.titleMedium(context)),
-          backgroundColor: AppColors.getBackground(context),
-          elevation: 0,
-          leading: AppButton.icon(
-              icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
-        ),
-        body: Center(
-          child: AppEmptyState.error(
-            title: 'Something went wrong',
-            message: _errorMessage!,
-            onRetry: _initialize,
-          ),
-        ),
-      );
-    }
-
-    if (_chapter == null) {
-      return Scaffold(
-        backgroundColor: AppColors.getBackground(context),
-        appBar: AppBar(
-          title: Text('Not Found', style: AppTextStyles.titleMedium(context)),
-          backgroundColor: AppColors.getBackground(context),
-          elevation: 0,
-          leading: AppButton.icon(
-              icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
-        ),
-        body: Center(
-          child: AppEmptyState.error(
-            title: 'Chapter not found',
-            message: _isOffline
-                ? 'No cached data available. Please check your connection.'
-                : 'The chapter you\'re looking for doesn\'t exist.',
-            onRetry: _manualRefresh,
-          ),
-        ),
-      );
-    }
-
-    if (!_hasAccess && !_isCheckingAccess) return _buildAccessDeniedScreen();
-
+  Widget _buildSkeletonLoader() {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
-      appBar: AppBar(
-        title: Text(_chapter!.name,
-            style: AppTextStyles.titleMedium(context),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis),
-        backgroundColor: AppColors.getBackground(context),
-        elevation: 0,
+      appBar: CustomAppBar(
+        title: 'Chapter',
+        subtitle: 'Loading...',
         leading: AppButton.icon(
             icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
-        actions: [
-          PopupMenuButton<String>(
-            icon: Icon(Icons.more_vert_rounded,
-                color: AppColors.getTextPrimary(context)),
-            onSelected: (value) {
-              if (value == 'clear_downloads') _clearAllDownloads();
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                  value: 'clear_downloads', child: Text('Clear Downloads')),
-            ],
-          ),
-          if (_isRefreshing)
-            Padding(
-              padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
-              child: SizedBox(
-                width: ResponsiveValues.iconSizeS(context),
-                height: ResponsiveValues.iconSizeS(context),
-                child: const CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation(AppColors.telegramBlue)),
-              ),
-            ),
-        ],
-        bottom: PreferredSize(
-          preferredSize:
-              Size.fromHeight(ResponsiveValues.appBarHeight(context)),
-          child: Container(
+      ),
+      body: Column(
+        children: [
+          Container(
             decoration: BoxDecoration(
               border: Border(
                   bottom: BorderSide(
@@ -2054,23 +1961,133 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
               unselectedLabelColor: AppColors.getTextSecondary(context),
             ),
           ),
-        ),
-      ),
-      body: Column(
-        children: [
           Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildVideosTab(),
-                _buildNotesTab(),
-                _buildPracticeTab()
-              ],
+            child: ListView.builder(
+              padding: ResponsiveValues.screenPadding(context),
+              itemCount: 3,
+              itemBuilder: (context, index) => Padding(
+                padding:
+                    EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
+                child: AppShimmer(type: ShimmerType.videoCard, index: index),
+              ),
             ),
           ),
         ],
       ),
-    ).animate().fadeIn(duration: AppThemes.animationMedium);
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading && !_hasCachedData) {
+      return _buildSkeletonLoader();
+    }
+
+    if (_errorMessage != null) {
+      return Scaffold(
+        backgroundColor: AppColors.getBackground(context),
+        appBar: CustomAppBar(
+          title: 'Error',
+          subtitle: 'Something went wrong',
+          leading: AppButton.icon(
+              icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
+        ),
+        body: Center(
+          child: AppEmptyState.error(
+            title: 'Something went wrong',
+            message: _errorMessage!,
+            onRetry: _initialize,
+          ),
+        ),
+      );
+    }
+
+    if (_chapter == null) {
+      return Scaffold(
+        backgroundColor: AppColors.getBackground(context),
+        appBar: CustomAppBar(
+          title: 'Not Found',
+          subtitle: 'Chapter not found',
+          leading: AppButton.icon(
+              icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
+        ),
+        body: Center(
+          child: AppEmptyState.error(
+            title: 'Chapter not found',
+            message: _isOffline
+                ? 'No cached data available. Please check your connection.'
+                : 'The chapter you\'re looking for doesn\'t exist.',
+            onRetry: _manualRefresh,
+          ),
+        ),
+      );
+    }
+
+    if (!_hasAccess && !_isCheckingAccess) return _buildAccessDeniedScreen();
+
+    return Scaffold(
+        backgroundColor: AppColors.getBackground(context),
+        appBar: CustomAppBar(
+          title: _chapter!.name,
+          subtitle: _isRefreshing
+              ? 'Refreshing...'
+              : (_isOffline ? 'Offline mode' : 'Chapter content'),
+          leading: AppButton.icon(
+              icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
+          actions: [
+            PopupMenuButton<String>(
+              icon: Icon(Icons.more_vert_rounded,
+                  color: AppColors.getTextPrimary(context)),
+              onSelected: (value) {
+                if (value == 'clear_downloads') _clearAllDownloads();
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                    value: 'clear_downloads', child: Text('Clear Downloads')),
+              ],
+            ),
+          ],
+        ),
+        body: RefreshIndicator(
+          onRefresh: _manualRefresh,
+          color: AppColors.telegramBlue,
+          backgroundColor: AppColors.getSurface(context),
+          child: Column(
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  border: Border(
+                      bottom: BorderSide(
+                          color: AppColors.getDivider(context), width: 0.5)),
+                ),
+                child: TabBar(
+                  controller: _tabController,
+                  tabs: const [
+                    Tab(icon: Icon(Icons.videocam_rounded), text: 'Videos'),
+                    Tab(icon: Icon(Icons.note_alt_rounded), text: 'Notes'),
+                    Tab(icon: Icon(Icons.quiz_rounded), text: 'Practice'),
+                  ],
+                  labelStyle: AppTextStyles.labelMedium(context),
+                  unselectedLabelStyle: AppTextStyles.labelMedium(context),
+                  indicatorColor: AppColors.telegramBlue,
+                  indicatorWeight: 3,
+                  labelColor: AppColors.telegramBlue,
+                  unselectedLabelColor: AppColors.getTextSecondary(context),
+                ),
+              ),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildVideosTab(),
+                    _buildNotesTab(),
+                    _buildPracticeTab()
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ).animate().fadeIn(duration: AppThemes.animationMedium));
   }
 
   Future<void> _clearAllDownloads() async {
@@ -2163,16 +2180,9 @@ class NoteDetailScreen extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
-      appBar: AppBar(
-        title: Text(
-          note.title,
-          style: AppTextStyles.titleMedium(context)
-              .copyWith(fontWeight: FontWeight.w600),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        backgroundColor: AppColors.getBackground(context),
-        elevation: 0,
+      appBar: CustomAppBar(
+        title: note.title,
+        subtitle: isPdf ? 'PDF Document' : 'Text Document',
         leading: AppButton.icon(
             icon: Icons.arrow_back_rounded,
             onPressed: () => Navigator.pop(context)),
@@ -2185,67 +2195,10 @@ class NoteDetailScreen extends StatelessWidget {
       ),
       body: Column(
         children: [
-          if (hasFile)
-            Container(
-              padding: ResponsiveValues.screenPadding(context),
-              decoration: BoxDecoration(
-                color: AppColors.getSurface(context),
-                border: Border(
-                    bottom: BorderSide(
-                        color: AppColors.getDivider(context), width: 0.5)),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: ResponsiveValues.iconSizeXL(context) * 1.5,
-                    height: ResponsiveValues.iconSizeXL(context) * 1.5,
-                    decoration: BoxDecoration(
-                      color: AppColors.telegramBlue.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(
-                          ResponsiveValues.radiusMedium(context)),
-                    ),
-                    child: Icon(
-                      isPdf
-                          ? Icons.picture_as_pdf_rounded
-                          : Icons.note_alt_rounded,
-                      size: ResponsiveValues.iconSizeL(context),
-                      color: AppColors.telegramBlue,
-                    ),
-                  ),
-                  SizedBox(width: ResponsiveValues.spacingL(context)),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(isPdf ? 'PDF Document' : 'Text Document',
-                            style: AppTextStyles.titleSmall(context)),
-                        if (cachedPath != null)
-                          Row(
-                            children: [
-                              const Icon(Icons.check_circle_rounded,
-                                  size: 14, color: AppColors.telegramGreen),
-                              SizedBox(
-                                  width: ResponsiveValues.spacingXS(context)),
-                              Text(
-                                'Available Offline',
-                                style: AppTextStyles.caption(context).copyWith(
-                                  color: AppColors.telegramGreen,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          Expanded(
-            child: hasFile && cachedPath != null && isPdf
-                ? _buildPdfViewer(cachedPath!)
-                : _buildTextContent(context, note.content),
-          ),
+          if (hasFile && cachedPath != null && isPdf)
+            Expanded(child: _buildPdfViewer(cachedPath!))
+          else
+            Expanded(child: _buildTextContent(context, note.content)),
         ],
       ),
     );
