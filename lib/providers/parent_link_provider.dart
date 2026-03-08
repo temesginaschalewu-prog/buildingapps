@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../services/user_session.dart';
+import '../services/connectivity_service.dart';
 import '../models/parent_link_model.dart';
 import '../utils/constants.dart';
 import '../utils/helpers.dart';
@@ -12,6 +13,7 @@ import '../utils/api_response.dart';
 class ParentLinkProvider with ChangeNotifier {
   final ApiService apiService;
   final DeviceService deviceService;
+  final ConnectivityService connectivityService;
 
   String? _parentToken;
   DateTime? _tokenExpiresAt;
@@ -26,13 +28,32 @@ class ParentLinkProvider with ChangeNotifier {
   String? _parentName;
   ParentLink? _parentLinkData;
   Duration? _serverTimeOffset;
+  bool _isOffline = false;
 
   final StreamController<ParentLink?> _parentLinkUpdateController =
       StreamController<ParentLink?>.broadcast();
   final StreamController<bool> _linkStatusUpdateController =
       StreamController<bool>.broadcast();
 
-  ParentLinkProvider({required this.apiService, required this.deviceService});
+  ParentLinkProvider({
+    required this.apiService,
+    required this.deviceService,
+    required this.connectivityService,
+  }) {
+    _setupConnectivityListener();
+  }
+
+  void _setupConnectivityListener() {
+    connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (_isOffline != !isOnline) {
+        _isOffline = !isOnline;
+        if (!_isOffline && _hasLoaded) {
+          getParentLinkStatus(forceRefresh: true);
+        }
+        notifyListeners();
+      }
+    });
+  }
 
   String? get parentToken => _parentToken;
   DateTime? get tokenExpiresAt => _tokenExpiresAt;
@@ -45,6 +66,7 @@ class ParentLinkProvider with ChangeNotifier {
   String? get error => _error;
   String? get parentName => _parentName;
   ParentLink? get parentLinkData => _parentLinkData;
+  bool get isOffline => _isOffline;
 
   Stream<ParentLink?> get parentLinkUpdates =>
       _parentLinkUpdateController.stream;
@@ -108,6 +130,8 @@ class ParentLinkProvider with ChangeNotifier {
         }
       }
 
+      if (_isOffline) return;
+
       try {
         final startTime = DateTime.now();
         final response = await apiService.dio.get('/health');
@@ -170,6 +194,13 @@ class ParentLinkProvider with ChangeNotifier {
     _notifySafely();
 
     try {
+      if (_isOffline) {
+        _error = 'You are offline. Please connect to generate token.';
+        _isLoading = false;
+        _notifySafely();
+        return;
+      }
+
       await deviceService.removeCacheItem(AppConstants.parentTokenKey);
       await deviceService.removeCacheItem(AppConstants.parentLinkStatusKey);
 
@@ -224,7 +255,8 @@ class ParentLinkProvider with ChangeNotifier {
     }
   }
 
-  Future<void> getParentLinkStatus({bool forceRefresh = false}) async {
+  Future<void> getParentLinkStatus(
+      {bool forceRefresh = false, bool isManualRefresh = false}) async {
     if (_isLoading && !forceRefresh) return;
 
     _isLoading = true;
@@ -238,8 +270,33 @@ class ParentLinkProvider with ChangeNotifier {
         await deviceService.removeCacheItem(AppConstants.parentLinkStatusKey);
       }
 
+      if (!forceRefresh && !_isOffline) {
+        final cached = await deviceService
+            .getCacheItem<ParentLink>(AppConstants.parentLinkStatusKey);
+        if (cached != null) {
+          _parentLinkData = cached;
+          _updateFromParentLink(cached);
+          _isLoading = false;
+          _notifySafely();
+          return;
+        }
+      }
+
       debugLog('ParentLinkProvider',
           'Fetching parent link status (forceRefresh: $forceRefresh)');
+
+      if (_isOffline) {
+        _error = 'You are offline. Using cached data.';
+        _isLoading = false;
+        _notifySafely();
+
+        if (isManualRefresh) {
+          throw Exception(
+              'Network error. Please check your internet connection.');
+        }
+        return;
+      }
+
       final response = await apiService.getParentLinkStatus();
 
       if (response.success && response.data != null) {
@@ -275,10 +332,18 @@ class ParentLinkProvider with ChangeNotifier {
       debugLog(
           'ParentLinkProvider', 'getParentLinkStatus API error: ${e.message}');
       _hasLoaded = true;
+
+      if (isManualRefresh) {
+        rethrow;
+      }
     } catch (e) {
       _error = e.toString();
       debugLog('ParentLinkProvider', 'getParentLinkStatus error: $e');
       _hasLoaded = true;
+
+      if (isManualRefresh) {
+        rethrow;
+      }
     } finally {
       _isLoading = false;
       _notifySafely();
@@ -320,6 +385,13 @@ class ParentLinkProvider with ChangeNotifier {
     _notifySafely();
 
     try {
+      if (_isOffline) {
+        _error = 'You are offline. Please connect to unlink parent.';
+        _isLoading = false;
+        _notifySafely();
+        return;
+      }
+
       debugLog('ParentLinkProvider', 'Unlinking parent');
       final response = await apiService.unlinkParent();
 
