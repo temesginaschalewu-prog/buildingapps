@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../providers/theme_provider.dart';
+import '../../../services/connectivity_service.dart';
 import '../../../themes/app_colors.dart';
 import '../../../themes/app_text_styles.dart';
 import '../../../utils/responsive_values.dart';
@@ -15,6 +16,7 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   final bool showThemeToggle;
   final bool showNotification;
   final Widget? customTrailing;
+  final VoidCallback? onSync;
 
   const CustomAppBar({
     super.key,
@@ -25,6 +27,7 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.showThemeToggle = true,
     this.showNotification = true,
     this.customTrailing,
+    this.onSync,
   });
 
   @override
@@ -32,9 +35,12 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<ThemeProvider>(
-      builder: (context, themeProvider, child) {
+    return Consumer2<ConnectivityService, ThemeProvider>(
+      builder: (context, connectivity, themeProvider, child) {
         final isDark = Theme.of(context).brightness == Brightness.dark;
+        final isOnline = connectivity.isOnline;
+        final pendingCount = connectivity.pendingActionsCount;
+
         final backgroundColor = isDark
             ? AppColors.darkSurface.withValues(alpha: 0.95)
             : AppColors.lightSurface.withValues(alpha: 0.95);
@@ -124,24 +130,40 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
                             ],
                           ),
                         ),
-                        _buildButtonRow(context, themeProvider),
+                        _buildButtonRow(
+                            context, themeProvider, isOnline, pendingCount),
                       ],
                     ),
                   ],
                 ),
               ),
             ),
-            SizedBox(height: ResponsiveValues.spacingXS(context)),
+            // Subtle offline indicator - ONLY shows icon and sync count, no banner
+            if (!isOnline || pendingCount > 0)
+              Container(
+                height: 2,
+                color: !isOnline
+                    ? AppColors.warning.withValues(alpha: 0.5)
+                    : AppColors.info.withValues(alpha: 0.5),
+              ),
           ],
         );
       },
     );
   }
 
-  Widget _buildButtonRow(BuildContext context, ThemeProvider themeProvider) {
+  Widget _buildButtonRow(BuildContext context, ThemeProvider themeProvider,
+      bool isOnline, int pendingCount) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        // Offline/Sync indicator in app bar buttons
+        if (!isOnline || pendingCount > 0)
+          Padding(
+            padding: EdgeInsets.only(
+                right: ResponsiveValues.appBarButtonSpacing(context)),
+            child: _buildStatusIcon(context, isOnline, pendingCount),
+          ),
         if (showThemeToggle) ...[
           Padding(
             padding: EdgeInsets.only(
@@ -172,6 +194,59 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
         ],
         if (actions != null) ...actions!,
       ],
+    );
+  }
+
+  Widget _buildStatusIcon(
+      BuildContext context, bool isOnline, int pendingCount) {
+    final size = ResponsiveValues.appBarButtonSize(context);
+
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: !isOnline
+            ? AppColors.warning.withValues(alpha: 0.1)
+            : AppColors.info.withValues(alpha: 0.1),
+        shape: BoxShape.circle,
+      ),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Center(
+            child: Icon(
+              !isOnline ? Icons.wifi_off_rounded : Icons.sync_rounded,
+              size: ResponsiveValues.appBarIconSize(context) * 0.8,
+              color: !isOnline ? AppColors.warning : AppColors.info,
+            ),
+          ),
+          if (pendingCount > 0 && isOnline)
+            Positioned(
+              top: -2,
+              right: -2,
+              child: Container(
+                padding: const EdgeInsets.all(2),
+                decoration: const BoxDecoration(
+                  color: AppColors.info,
+                  shape: BoxShape.circle,
+                ),
+                constraints: const BoxConstraints(
+                  minWidth: 12,
+                  minHeight: 12,
+                ),
+                child: Text(
+                  pendingCount > 9 ? '9+' : pendingCount.toString(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 8,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
