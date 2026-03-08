@@ -26,13 +26,9 @@ import '../../widgets/common/app_shimmer.dart';
 import '../../widgets/common/app_empty_state.dart';
 import '../../widgets/common/app_dialog.dart';
 import '../../utils/helpers.dart';
-import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
-import '../../utils/constants.dart';
-import '../../utils/app_enums.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
-import '../../widgets/common/responsive_widgets.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -57,11 +53,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _notificationsEnabled = true;
   bool _isOffline = false;
   bool _isRefreshing = false;
-  String _refreshSubtitle = '';
 
   User? _cachedUser;
   bool _hasCachedData = false;
   bool _isFirstLoad = true;
+  int _pendingCount = 0;
 
   Timer? _refreshTimer;
   StreamSubscription? _userSubscription;
@@ -73,6 +69,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkConnectivity();
+      _checkPendingCount();
       _initializeScreen();
       _setupStreamListeners();
       _checkSubscriptionStatus();
@@ -85,12 +82,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _connectivitySubscription =
         connectivityService.onConnectivityChanged.listen((isOnline) {
       if (mounted) {
-        setState(() => _isOffline = !isOnline);
+        setState(() {
+          _isOffline = !isOnline;
+          _pendingCount = connectivityService.pendingActionsCount;
+        });
         if (isOnline && !_isRefreshing && _cachedUser != null) {
           _refreshInBackground();
         }
       }
     });
+  }
+
+  Future<void> _checkPendingCount() async {
+    final connectivity = ConnectivityService();
+    setState(() => _pendingCount = connectivity.pendingActionsCount);
   }
 
   @override
@@ -106,7 +111,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _checkConnectivity() async {
     final connectivityService = context.read<ConnectivityService>();
-    setState(() => _isOffline = !connectivityService.isOnline);
+    setState(() {
+      _isOffline = !connectivityService.isOnline;
+      _pendingCount = connectivityService.pendingActionsCount;
+    });
   }
 
   Future<void> _initializeScreen() async {
@@ -233,17 +241,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _manualRefresh() async {
     if (_isRefreshing) return;
 
-    final connectivityService = context.read<ConnectivityService>();
-    if (!connectivityService.isOnline) {
-      setState(() => _isOffline = true);
-      SnackbarService().showOffline(context);
-      return;
-    }
-
     setState(() {
       _isRefreshing = true;
-      _refreshSubtitle = 'Refreshing...';
     });
+
+    final connectivity = ConnectivityService();
+    if (!connectivity.isOnline) {
+      setState(() {
+        _isRefreshing = false;
+      });
+      SnackbarService().showOffline(context, action: 'refresh');
+      return;
+    }
 
     try {
       final userProvider = context.read<UserProvider>();
@@ -264,16 +273,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         }
         await _saveToCache(user);
       }
-
       SnackbarService().showSuccess(context, 'Profile updated');
     } catch (e) {
-      debugLog('ProfileScreen', 'Error during manual refresh: $e');
-      setState(() => _isOffline = true);
-      SnackbarService().showError(context, 'Refresh failed, using cached data');
+      SnackbarService().showError(context, 'Failed to refresh');
     } finally {
       setState(() {
         _isRefreshing = false;
-        _refreshSubtitle = '';
       });
     }
   }
@@ -478,7 +483,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     final connectivityService = context.read<ConnectivityService>();
     if (!connectivityService.isOnline) {
-      SnackbarService().showOffline(context, action: 'update profile');
+      // Queue for offline sync
+      setState(() => _isSaving = true);
+      try {
+        final userProvider = context.read<UserProvider>();
+        final email = _emailController.text.trim();
+        final phone = _phoneController.text.trim();
+
+        await userProvider.updateProfile(
+          email: email.isNotEmpty ? email : null,
+          phone: phone.isNotEmpty ? phone : null,
+        );
+
+        SnackbarService().showQueued(context, action: 'Profile update');
+        setState(() {
+          _isEditing = false;
+          _isSaving = false;
+          _pendingCount++;
+        });
+      } catch (e) {
+        SnackbarService().showError(context, 'Failed to queue update');
+        setState(() => _isSaving = false);
+      }
       return;
     }
 
@@ -676,7 +702,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
         ),
-        if (_isOffline)
+        if (_pendingCount > 0)
           Padding(
             padding: EdgeInsets.only(top: ResponsiveValues.spacingS(context)),
             child: Container(
@@ -685,14 +711,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 vertical: ResponsiveValues.spacingXXS(context),
               ),
               decoration: BoxDecoration(
-                color: AppColors.telegramYellow.withValues(alpha: 0.1),
+                color: AppColors.info.withValues(alpha: 0.1),
                 borderRadius:
                     BorderRadius.circular(ResponsiveValues.radiusFull(context)),
-                border: Border.all(
-                    color: AppColors.telegramYellow.withValues(alpha: 0.3)),
+                border:
+                    Border.all(color: AppColors.info.withValues(alpha: 0.3)),
               ),
-              child: const Icon(Icons.wifi_off_rounded,
-                  size: 12, color: AppColors.telegramYellow),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.schedule_rounded,
+                      size: 12, color: AppColors.info),
+                  SizedBox(width: ResponsiveValues.spacingXXS(context)),
+                  Text(
+                    '$_pendingCount pending ${_pendingCount > 1 ? 'changes' : 'change'}',
+                    style: AppTextStyles.caption(context)
+                        .copyWith(color: AppColors.info),
+                  ),
+                ],
+              ),
             ),
           ),
       ],
@@ -777,7 +814,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            'You are offline. Connect to update profile.',
+                            'You are offline. Changes will be queued.',
                             style: AppTextStyles.bodySmall(context)
                                 .copyWith(color: AppColors.telegramYellow),
                           ),
@@ -798,8 +835,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   SizedBox(width: ResponsiveValues.spacingM(context)),
                   Expanded(
                     child: AppButton.primary(
-                      label: _isOffline ? 'Offline' : 'Save',
-                      onPressed: _isSaving || _isOffline ? null : _saveProfile,
+                      label: _isOffline ? 'Queue Changes' : 'Save',
+                      onPressed: _isSaving ? null : _saveProfile,
                       isLoading: _isSaving,
                       expanded: true,
                     ),
@@ -896,7 +933,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           child: Container(
             padding: EdgeInsets.symmetric(
               horizontal: ResponsiveValues.spacingL(context),
-              vertical: 0,
             ),
             height: 56,
             child: Row(
@@ -1093,7 +1129,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       title: 'Logout',
       message: 'Are you sure you want to logout?',
       confirmText: 'Logout',
-      cancelText: 'Cancel',
     );
 
     if (confirmed == true && mounted) {
