@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../services/user_session.dart';
+import '../services/connectivity_service.dart';
 import '../models/user_model.dart';
 import '../models/payment_model.dart';
 import '../models/notification_model.dart' as notification_model;
@@ -14,6 +16,7 @@ import '../utils/parsers.dart';
 class UserProvider with ChangeNotifier {
   final ApiService apiService;
   final DeviceService deviceService;
+  final ConnectivityService connectivityService;
 
   User? _currentUser;
   List<Payment> _payments = [];
@@ -24,6 +27,7 @@ class UserProvider with ChangeNotifier {
   bool _hasLoadedPayments = false;
   String? _error;
   String? _currentUserId;
+  bool _isOffline = false;
 
   bool _isBackgroundRefreshing = false;
   bool _hasInitialCache = false;
@@ -39,14 +43,31 @@ class UserProvider with ChangeNotifier {
   DateTime? _lastProfileCacheTime;
   DateTime? _lastNotificationsCacheTime;
   DateTime? _lastPaymentsCacheTime;
-  static const Duration _cacheExpiry = Duration(minutes: 10);
+  static const Duration _cacheExpiry = AppConstants.cacheTTLUserProfile;
   static const Duration _backgroundRefreshInterval = Duration(minutes: 10);
   static const Duration _minRefreshInterval = Duration(minutes: 2);
   static final Map<String, DateTime> _lastRefreshTime = {};
   final Map<String, Completer<bool>> _ongoingRefreshes = {};
 
-  UserProvider({required this.apiService, required this.deviceService}) {
+  UserProvider({
+    required this.apiService,
+    required this.deviceService,
+    required this.connectivityService,
+  }) {
     _init();
+    _setupConnectivityListener();
+  }
+
+  void _setupConnectivityListener() {
+    connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (_isOffline != !isOnline) {
+        _isOffline = !isOnline;
+        if (!_isOffline && _hasInitialCache) {
+          _refreshAllInBackground();
+        }
+        notifyListeners();
+      }
+    });
   }
 
   Future<void> _init() async {
@@ -67,6 +88,7 @@ class UserProvider with ChangeNotifier {
   bool get isBackgroundRefreshing => _isBackgroundRefreshing;
   bool get hasInitialCache => _hasInitialCache;
   String? get error => _error;
+  bool get isOffline => _isOffline;
 
   Stream<User?> get userUpdates => _userUpdateController.stream;
   Stream<List<Payment>> get paymentsUpdates => _paymentsUpdateController.stream;
@@ -76,7 +98,9 @@ class UserProvider with ChangeNotifier {
   bool get hasActiveSubscription {
     if (_currentUser == null) return false;
     if (_currentUser!.subscriptions == null ||
-        _currentUser!.subscriptions!.isEmpty) return false;
+        _currentUser!.subscriptions!.isEmpty) {
+      return false;
+    }
 
     final now = DateTime.now();
     return _currentUser!.subscriptions!.any((sub) {
@@ -93,8 +117,9 @@ class UserProvider with ChangeNotifier {
   }
 
   bool hasActiveSubscriptionForCategory(int categoryId) {
-    if (_currentUser == null || _currentUser!.subscriptions == null)
+    if (_currentUser == null || _currentUser!.subscriptions == null) {
       return false;
+    }
 
     final now = DateTime.now();
     return _currentUser!.subscriptions!.any((sub) {
@@ -171,7 +196,8 @@ class UserProvider with ChangeNotifier {
     return DateTime.now().difference(cacheTime) > _cacheExpiry;
   }
 
-  Future<void> loadUserProfile({bool forceRefresh = false}) async {
+  Future<void> loadUserProfile(
+      {bool forceRefresh = false, bool isManualRefresh = false}) async {
     if (!forceRefresh && _hasLoadedProfile && _currentUser != null) {
       _userUpdateController.add(_currentUser);
       return;
@@ -183,7 +209,7 @@ class UserProvider with ChangeNotifier {
     }
 
     try {
-      if (!forceRefresh && _currentUserId != null) {
+      if (!forceRefresh && !_isOffline && _currentUserId != null) {
         final cachedUser = await deviceService.getCacheItem<User>(
             AppConstants.userProfileKey(_currentUserId!),
             isUserSpecific: true);
@@ -193,11 +219,22 @@ class UserProvider with ChangeNotifier {
           _hasInitialCache = true;
           _lastProfileCacheTime = DateTime.now();
           _userUpdateController.add(_currentUser);
-          if (_isCacheStale(_lastProfileCacheTime)) {
+          if (_isCacheStale(_lastProfileCacheTime) && !_isOffline) {
             unawaited(_refreshProfileInBackground());
           }
           return;
         }
+      }
+
+      if (_isOffline) {
+        _error = 'You are offline. Using cached data.';
+        _isLoading = false;
+        _notifySafely();
+        if (isManualRefresh) {
+          throw Exception(
+              'Network error. Please check your internet connection.');
+        }
+        return;
       }
 
       final response = await apiService.getMyProfile();
@@ -238,6 +275,8 @@ class UserProvider with ChangeNotifier {
     await _executeRefresh('profile', () async {
       _isBackgroundRefreshing = true;
       try {
+        if (_isOffline) return;
+
         final response = await apiService.getMyProfile();
         if (response.success) {
           User? updatedUser;
@@ -276,7 +315,7 @@ class UserProvider with ChangeNotifier {
     }
 
     try {
-      if (!forceRefresh && _currentUserId != null) {
+      if (!forceRefresh && !_isOffline && _currentUserId != null) {
         final cachedPayments = await deviceService.getCacheItem<List<Payment>>(
             AppConstants.userPaymentsKey(_currentUserId!),
             isUserSpecific: true);
@@ -285,11 +324,18 @@ class UserProvider with ChangeNotifier {
           _hasLoadedPayments = true;
           _lastPaymentsCacheTime = DateTime.now();
           _paymentsUpdateController.add(_payments);
-          if (_isCacheStale(_lastPaymentsCacheTime)) {
+          if (_isCacheStale(_lastPaymentsCacheTime) && !_isOffline) {
             unawaited(_refreshPaymentsInBackground());
           }
           return;
         }
+      }
+
+      if (_isOffline) {
+        _error = 'You are offline. Using cached data.';
+        _isLoading = false;
+        _notifySafely();
+        return;
       }
 
       final response = await apiService.getMyPayments();
@@ -330,7 +376,7 @@ class UserProvider with ChangeNotifier {
     }
 
     try {
-      if (!forceRefresh && _currentUserId != null) {
+      if (!forceRefresh && !_isOffline && _currentUserId != null) {
         final cachedNotifications = await deviceService
             .getCacheItem<List<notification_model.Notification>>(
                 AppConstants.userNotificationsKey(_currentUserId!),
@@ -340,11 +386,18 @@ class UserProvider with ChangeNotifier {
           _hasLoadedNotifications = true;
           _lastNotificationsCacheTime = DateTime.now();
           _notificationsUpdateController.add(_notifications);
-          if (_isCacheStale(_lastNotificationsCacheTime)) {
+          if (_isCacheStale(_lastNotificationsCacheTime) && !_isOffline) {
             unawaited(_refreshNotificationsInBackground());
           }
           return;
         }
+      }
+
+      if (_isOffline) {
+        _error = 'You are offline. Using cached data.';
+        _isLoading = false;
+        _notifySafely();
+        return;
       }
 
       final response = await apiService.getMyNotifications();
@@ -377,7 +430,7 @@ class UserProvider with ChangeNotifier {
     _stopBackgroundRefresh();
     _backgroundRefreshTimer =
         Timer.periodic(_backgroundRefreshInterval, (timer) async {
-      if (!_isLoading && !_isBackgroundRefreshing) {
+      if (!_isLoading && !_isBackgroundRefreshing && !_isOffline) {
         await _refreshAllInBackground();
       }
     });
@@ -398,6 +451,8 @@ class UserProvider with ChangeNotifier {
 
   Future<void> _refreshPaymentsInBackground() async {
     await _executeRefresh('payments', () async {
+      if (_isOffline) return;
+
       try {
         final response = await apiService.getMyPayments();
         if (response.data != null && response.data!.isNotEmpty) {
@@ -418,6 +473,8 @@ class UserProvider with ChangeNotifier {
 
   Future<void> _refreshNotificationsInBackground() async {
     await _executeRefresh('notifications', () async {
+      if (_isOffline) return;
+
       try {
         final response = await apiService.getMyNotifications();
         if (response.data != null) {
@@ -447,6 +504,14 @@ class UserProvider with ChangeNotifier {
     _notifySafely();
 
     try {
+      if (_isOffline) {
+        // Queue for offline sync
+        await _queueProfileUpdateOffline(email, phone, profileImage);
+        _isLoading = false;
+        _notifySafely();
+        return;
+      }
+
       await apiService.updateMyProfile(
           email: email, phone: phone, profileImage: profileImage);
 
@@ -482,6 +547,110 @@ class UserProvider with ChangeNotifier {
     } finally {
       _isLoading = false;
       _notifySafely();
+    }
+  }
+
+  Future<void> _queueProfileUpdateOffline(
+      String? email, String? phone, String? profileImage) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = await UserSession().getCurrentUserId();
+
+      if (userId == null) return;
+
+      const pendingKey = 'pending_profile_updates';
+      final userPendingKey = '${pendingKey}_$userId';
+      final existingJson = prefs.getString(userPendingKey);
+      List<Map<String, dynamic>> pendingUpdates = [];
+
+      if (existingJson != null) {
+        try {
+          pendingUpdates =
+              List<Map<String, dynamic>>.from(jsonDecode(existingJson));
+        } catch (e) {
+          debugLog('UserProvider', 'Error parsing pending updates: $e');
+        }
+      }
+
+      pendingUpdates.add({
+        'email': email,
+        'phone': phone,
+        'profileImage': profileImage,
+        'timestamp': DateTime.now().toIso8601String(),
+        'retry_count': 0,
+      });
+
+      await prefs.setString(userPendingKey, jsonEncode(pendingUpdates));
+      debugLog('UserProvider', '📝 Queued profile update for offline sync');
+    } catch (e) {
+      debugLog('UserProvider', 'Error queueing profile update: $e');
+    }
+  }
+
+  Future<void> syncPendingProfileUpdates() async {
+    if (_isOffline) return;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = await UserSession().getCurrentUserId();
+
+      if (userId == null) return;
+
+      const pendingKey = 'pending_profile_updates';
+      final userPendingKey = '${pendingKey}_$userId';
+      final existingJson = prefs.getString(userPendingKey);
+
+      if (existingJson == null) return;
+
+      List<Map<String, dynamic>> pendingUpdates = [];
+      try {
+        pendingUpdates =
+            List<Map<String, dynamic>>.from(jsonDecode(existingJson));
+      } catch (e) {
+        debugLog('UserProvider', 'Error parsing pending updates: $e');
+        await prefs.remove(userPendingKey);
+        return;
+      }
+
+      if (pendingUpdates.isEmpty) return;
+
+      debugLog('UserProvider',
+          '🔄 Syncing ${pendingUpdates.length} pending profile updates');
+
+      final List<Map<String, dynamic>> failedUpdates = [];
+
+      for (final update in pendingUpdates) {
+        try {
+          await apiService.updateMyProfile(
+            email: update['email'],
+            phone: update['phone'],
+            profileImage: update['profileImage'],
+          );
+          debugLog('UserProvider', '✅ Synced profile update');
+        } catch (e) {
+          debugLog('UserProvider', '❌ Failed to sync profile update: $e');
+
+          final retryCount = (update['retry_count'] ?? 0) + 1;
+          if (retryCount <= 3) {
+            update['retry_count'] = retryCount;
+            failedUpdates.add(update);
+          }
+        }
+      }
+
+      if (failedUpdates.isEmpty) {
+        await prefs.remove(userPendingKey);
+        debugLog('UserProvider', '✅ All pending profile updates synced');
+      } else {
+        await prefs.setString(userPendingKey, jsonEncode(failedUpdates));
+        debugLog('UserProvider',
+            '⚠️ ${failedUpdates.length} profile updates still pending');
+      }
+
+      // Refresh profile after sync
+      await loadUserProfile(forceRefresh: true);
+    } catch (e) {
+      debugLog('UserProvider', 'Error syncing pending updates: $e');
     }
   }
 
@@ -523,6 +692,13 @@ class UserProvider with ChangeNotifier {
     if (!isDifferentUser || !isLoggingOut) {
       debugLog('UserProvider', '✅ Same user - preserving user cache');
       return;
+    }
+
+    // Clear pending updates
+    final userId = await session.getCurrentUserId();
+    if (userId != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('pending_profile_updates_$userId');
     }
 
     if (_currentUserId != null) {
