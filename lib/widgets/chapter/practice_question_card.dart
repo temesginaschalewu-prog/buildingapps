@@ -492,7 +492,6 @@ class _PracticeQuestionCardState extends State<PracticeQuestionCard> {
   @override
   Widget build(BuildContext context) {
     final questionId = widget.question.id;
-    final isAnswered = widget.questionAnswered[questionId] == true;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
