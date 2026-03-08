@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
 import 'package:familyacademyclient/services/api_service.dart';
+import 'package:familyacademyclient/services/connectivity_service.dart';
+import 'package:familyacademyclient/services/platform_service.dart';
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/utils/constants.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -34,17 +36,24 @@ class NotificationService {
   String? _fcmToken;
 
   ApiService? _apiService;
+  ConnectivityService? _connectivityService;
 
   set apiService(ApiService service) {
     _apiService = service;
     debugLog('NotificationService', 'ApiService set');
   }
 
+  set connectivityService(ConnectivityService service) {
+    _connectivityService = service;
+    debugLog('NotificationService', 'ConnectivityService set');
+  }
+
   final Map<String, DateTime> _lastNotificationTime = {};
   final Set<String> _processedMessageIds = {};
   final Set<String> _preventDuplicateIds = {};
 
-  Future<void> init({bool forceReinit = false}) async {
+  Future<void> init(
+      {bool forceReinit = false, bool forceMinimal = false}) async {
     if (_isInitialized && !forceReinit) return;
     if (_isInitializing) return;
 
@@ -54,7 +63,7 @@ class NotificationService {
       tz.initializeTimeZones();
       await _initLocalNotifications();
 
-      if (Platform.isAndroid || Platform.isIOS) {
+      if (PlatformService.isMobile) {
         try {
           await Firebase.initializeApp();
           debugLog('NotificationService', 'Firebase initialized');
@@ -63,13 +72,19 @@ class NotificationService {
         }
       }
 
-      await _initFirebaseMessaging();
-      await _requestPermissions();
-      _setupTokenRefreshListener();
-      await _setupMessageListeners();
+      if (PlatformService.isMobile && !forceMinimal) {
+        await _initFirebaseMessaging();
+        await _requestPermissions();
+        _setupTokenRefreshListener();
+        await _setupMessageListeners();
+      } else {
+        debugLog('NotificationService',
+            'ℹ️ Skipping Firebase messaging on desktop/minimal mode');
+      }
 
       _isInitialized = true;
-      debugLog('NotificationService', 'Notification service initialized');
+      debugLog('NotificationService',
+          'Notification service initialized (mode: ${forceMinimal ? 'minimal' : 'full'})');
     } catch (e) {
       debugLog('NotificationService', 'Init error: $e');
     } finally {
@@ -107,7 +122,7 @@ class NotificationService {
 
   Future<void> _initFirebaseMessaging() async {
     try {
-      if (Platform.isAndroid || Platform.isIOS) {
+      if (PlatformService.isMobile) {
         _firebaseMessaging = FirebaseMessaging.instance;
         _fcmToken = await _firebaseMessaging!.getToken();
         if (_fcmToken != null) {
@@ -124,7 +139,7 @@ class NotificationService {
     if (_listenersSetUp) return;
 
     try {
-      if (Platform.isAndroid || Platform.isIOS && _firebaseMessaging != null) {
+      if (PlatformService.isMobile && _firebaseMessaging != null) {
         FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
         FirebaseMessaging.onMessageOpenedApp.listen(_handleMessageOpenedApp);
 
@@ -145,7 +160,7 @@ class NotificationService {
 
   Future<void> _requestPermissions() async {
     try {
-      if (Platform.isIOS && _firebaseMessaging != null) {
+      if (PlatformService.isMobile && _firebaseMessaging != null) {
         await _firebaseMessaging!.requestPermission();
       }
     } catch (e) {
@@ -154,7 +169,7 @@ class NotificationService {
   }
 
   void _setupTokenRefreshListener() {
-    if (_firebaseMessaging != null) {
+    if (_firebaseMessaging != null && PlatformService.isMobile) {
       _firebaseMessaging!.onTokenRefresh.listen((newToken) async {
         _fcmToken = newToken;
         await _saveFCMToken(newToken);
@@ -173,14 +188,53 @@ class NotificationService {
   }
 
   Future<void> sendFcmTokenToBackendIfAuthenticated() async {
+    if (!PlatformService.isMobile) return;
+
     try {
       if (_fcmToken == null) return;
+
+      final connectivity = _connectivityService ?? ConnectivityService();
+      if (!connectivity.isOnline) {
+        debugLog('NotificationService', 'Offline - will send token later');
+        await _queueFcmTokenForSync(_fcmToken!);
+        return;
+      }
+
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString(AppConstants.tokenKey);
       if (token == null || token.isEmpty) return;
       await _sendFcmTokenToBackend(_fcmToken!);
     } catch (e) {
       debugLog('NotificationService', 'Error sending FCM token: $e');
+    }
+  }
+
+  Future<void> _queueFcmTokenForSync(String fcmToken) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('pending_fcm_token', fcmToken);
+      debugLog('NotificationService', '📝 Queued FCM token for sync');
+    } catch (e) {
+      debugLog('NotificationService', 'Error queueing FCM token: $e');
+    }
+  }
+
+  Future<void> syncPendingFcmToken() async {
+    if (!PlatformService.isMobile) return;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final pendingToken = prefs.getString('pending_fcm_token');
+      if (pendingToken == null) return;
+
+      final connectivity = _connectivityService ?? ConnectivityService();
+      if (!connectivity.isOnline) return;
+
+      await _sendFcmTokenToBackend(pendingToken);
+      await prefs.remove('pending_fcm_token');
+      debugLog('NotificationService', '✅ Synced pending FCM token');
+    } catch (e) {
+      debugLog('NotificationService', 'Error syncing FCM token: $e');
     }
   }
 
@@ -380,9 +434,7 @@ class NotificationService {
             .where((key) =>
                 now.difference(_lastNotificationTime[key]!).inMinutes > 5)
             .toList();
-        for (final key in keysToRemove) {
-          _lastNotificationTime.remove(key);
-        }
+        keysToRemove.forEach(_lastNotificationTime.remove);
       }
 
       Color notificationColor;
@@ -440,8 +492,8 @@ class NotificationService {
       );
 
       final notificationDetails = NotificationDetails(
-        android: androidDetails,
-        iOS: iosDetails,
+        android: PlatformService.isMobile ? androidDetails : null,
+        iOS: PlatformService.isMobile ? iosDetails : null,
         linux: linuxDetails,
       );
 
@@ -463,7 +515,7 @@ class NotificationService {
   }
 
   Future<String?> getFCMToken() async {
-    if (_fcmToken == null) {
+    if (_fcmToken == null && PlatformService.isMobile) {
       try {
         _fcmToken = await _firebaseMessaging?.getToken();
         if (_fcmToken != null) await _saveFCMToken(_fcmToken!);
