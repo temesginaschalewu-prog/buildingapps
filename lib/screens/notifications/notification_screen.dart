@@ -16,10 +16,7 @@ import '../../widgets/common/app_dialog.dart';
 import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
-import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
-import '../../utils/app_enums.dart';
-import '../../widgets/common/responsive_widgets.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -34,13 +31,12 @@ class _NotificationsScreenState extends State<NotificationsScreen>
   bool _isRefreshing = false;
   bool _isLoadingMore = false;
   bool _isOffline = false;
+  int _pendingCount = 0;
   final ScrollController _scrollController = ScrollController();
   bool _showFAB = true;
   Timer? _scrollTimer;
-  int _page = 1;
   final int _pageSize = 20;
   bool _hasMore = true;
-  String? _currentUserId;
 
   late AnimationController _fabAnimationController;
   StreamSubscription? _connectivitySubscription;
@@ -56,6 +52,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _getCurrentUserId();
       _checkConnectivity();
+      _checkPendingCount();
       _loadNotifications();
     });
 
@@ -90,18 +87,30 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     final connectivityService = context.read<ConnectivityService>();
     _connectivitySubscription =
         connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (mounted) setState(() => _isOffline = !isOnline);
+      if (mounted) {
+        setState(() {
+          _isOffline = !isOnline;
+          _pendingCount = connectivityService.pendingActionsCount;
+        });
+      }
     });
   }
 
   Future<void> _getCurrentUserId() async {
-    final authProvider = context.read<AuthProvider>();
-    _currentUserId = authProvider.currentUser?.id.toString();
+    context.read<AuthProvider>();
   }
 
   Future<void> _checkConnectivity() async {
     final connectivityService = context.read<ConnectivityService>();
-    setState(() => _isOffline = !connectivityService.isOnline);
+    setState(() {
+      _isOffline = !connectivityService.isOnline;
+      _pendingCount = connectivityService.pendingActionsCount;
+    });
+  }
+
+  Future<void> _checkPendingCount() async {
+    final connectivity = ConnectivityService();
+    setState(() => _pendingCount = connectivity.pendingActionsCount);
   }
 
   @override
@@ -127,7 +136,6 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       setState(() => _isRefreshing = true);
       try {
         await provider.loadNotifications(forceRefresh: !_isOffline);
-        _page = 1;
         _hasMore = provider.notifications.length >= _pageSize;
       } finally {
         if (mounted) {
@@ -154,9 +162,11 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     final provider = context.read<NotificationProvider>();
     try {
       await provider.loadNotifications(forceRefresh: true);
-      _page = 1;
       _hasMore = provider.notifications.length >= _pageSize;
       setState(() => _isOffline = false);
+      SnackbarService().showSuccess(context, 'Notifications updated');
+    } catch (e) {
+      SnackbarService().showError(context, 'Failed to refresh');
     } finally {
       if (mounted) setState(() => _isRefreshing = false);
     }
@@ -170,7 +180,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
 
     setState(() => _isLoadingMore = true);
     try {
-      _page++;
+      // In a real implementation, you'd load more here
+      await Future.delayed(const Duration(milliseconds: 500));
     } finally {
       if (mounted) setState(() => _isLoadingMore = false);
     }
@@ -202,14 +213,18 @@ class _NotificationsScreenState extends State<NotificationsScreen>
   Color _getNotificationColor(AppNotification.Notification notification) {
     final title = notification.title.toLowerCase();
     if (title.contains('payment')) return AppColors.telegramGreen;
-    if (title.contains('exam') || title.contains('result'))
+    if (title.contains('exam') || title.contains('result')) {
       return AppColors.telegramYellow;
-    if (title.contains('streak') || title.contains('progress'))
+    }
+    if (title.contains('streak') || title.contains('progress')) {
       return AppColors.telegramGreen;
-    if (title.contains('expiring') || title.contains('expired'))
+    }
+    if (title.contains('expiring') || title.contains('expired')) {
       return AppColors.telegramRed;
-    if (title.contains('system') || title.contains('announcement'))
+    }
+    if (title.contains('system') || title.contains('announcement')) {
       return AppColors.telegramBlue;
+    }
     return AppColors.telegramBlue;
   }
 
@@ -726,6 +741,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                   _checkConnectivity();
                   _refreshNotifications();
                 },
+                pendingCount: _pendingCount,
               )
             : AppEmptyState.noData(
                 dataType: 'notifications',
@@ -747,7 +763,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         controller: _scrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
-          if (_isOffline)
+          if (_pendingCount > 0)
             SliverToBoxAdapter(
               child: Container(
                 margin: ResponsiveValues.screenPadding(context),
@@ -755,33 +771,31 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [
-                      AppColors.telegramYellow.withValues(alpha: 0.2),
-                      AppColors.telegramYellow.withValues(alpha: 0.1)
+                      AppColors.info.withValues(alpha: 0.2),
+                      AppColors.info.withValues(alpha: 0.1)
                     ],
                   ),
                   borderRadius: BorderRadius.circular(
                       ResponsiveValues.radiusMedium(context)),
-                  border: Border.all(
-                      color: AppColors.telegramYellow.withValues(alpha: 0.3)),
+                  border:
+                      Border.all(color: AppColors.info.withValues(alpha: 0.3)),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.wifi_off_rounded,
-                        color: AppColors.telegramYellow, size: 20),
+                    const Icon(Icons.schedule_rounded,
+                        color: AppColors.info, size: 20),
                     SizedBox(width: ResponsiveValues.spacingM(context)),
                     Expanded(
                       child: Text(
-                        'Offline mode - showing cached notifications',
+                        '$_pendingCount notification${_pendingCount > 1 ? 's' : ''} queued for sync',
                         style: AppTextStyles.bodySmall(context)
-                            .copyWith(color: AppColors.telegramYellow),
+                            .copyWith(color: AppColors.info),
                       ),
                     ),
                   ],
                 ),
               ),
             ),
-          SliverToBoxAdapter(
-              child: SizedBox(height: ResponsiveValues.spacingS(context))),
           if (unreadNotifications.isNotEmpty) ...[
             SliverToBoxAdapter(
                 child:
