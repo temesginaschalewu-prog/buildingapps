@@ -1,34 +1,48 @@
-// lib/providers/settings_provider.dart
-// Settings provider - manages app settings and configurations
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../services/user_session.dart';
+import '../services/connectivity_service.dart';
 import '../models/setting_model.dart';
 import '../utils/constants.dart';
 import '../utils/helpers.dart';
-import '../utils/parsers.dart';
 import '../utils/app_enums.dart';
 
 class SettingsProvider with ChangeNotifier {
   final ApiService apiService;
   final DeviceService deviceService;
+  final ConnectivityService connectivityService;
 
   List<Setting> _allSettings = [];
   final Map<String, Setting> _settingsMap = {};
   final Map<String, List<Setting>> _settingsByCategory = {};
   bool _isLoading = false;
   String? _error;
+  bool _isOffline = false;
 
   final Map<String, DateTime> _lastCategoryLoadTime = {};
   final Map<String, Completer<bool>> _ongoingLoads = {};
   StreamController<List<Setting>> _settingsUpdateController =
       StreamController<List<Setting>>.broadcast();
 
-  SettingsProvider({required this.apiService, required this.deviceService});
+  SettingsProvider({
+    required this.apiService,
+    required this.deviceService,
+    required this.connectivityService,
+  }) {
+    _setupConnectivityListener();
+  }
+
+  void _setupConnectivityListener() {
+    connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (_isOffline != !isOnline) {
+        _isOffline = !isOnline;
+        notifyListeners();
+      }
+    });
+  }
 
   // ===== GETTERS =====
   List<Setting> get allSettings => List.unmodifiable(_allSettings);
@@ -36,6 +50,7 @@ class SettingsProvider with ChangeNotifier {
       Map.unmodifiable(_settingsByCategory);
   bool get isLoading => _isLoading;
   String? get error => _error;
+  bool get isOffline => _isOffline;
   Stream<List<Setting>> get settingsUpdates => _settingsUpdateController.stream;
 
   List<Setting> getSettingsByCategory(String category) {
@@ -427,7 +442,7 @@ class SettingsProvider with ChangeNotifier {
   }
 
   // ===== GET ALL SETTINGS =====
-  Future<void> getAllSettings() async {
+  Future<void> getAllSettings({bool isManualRefresh = false}) async {
     if (_isLoading) return;
 
     _isLoading = true;
@@ -443,7 +458,22 @@ class SettingsProvider with ChangeNotifier {
         _isLoading = false;
         _settingsUpdateController.add(_allSettings);
         _notifySafely();
-        await _refreshSettingsInBackground();
+
+        if (!_isOffline) {
+          await _refreshSettingsInBackground();
+        }
+        return;
+      }
+
+      if (_isOffline) {
+        _error = 'You are offline. Using cached data.';
+        _isLoading = false;
+        _notifySafely();
+
+        if (isManualRefresh) {
+          throw Exception(
+              'Network error. Please check your internet connection.');
+        }
         return;
       }
 
@@ -455,7 +485,11 @@ class SettingsProvider with ChangeNotifier {
         _allSettings = response.data!;
         await deviceService.saveCacheItem(
             AppConstants.allSettingsKey, _allSettings,
-            ttl: const Duration(minutes: 30));
+            ttl: AppConstants.cacheTTLSettings);
+      } else {
+        if (isManualRefresh) {
+          throw Exception(response.message ?? 'Failed to load settings');
+        }
       }
 
       _rebuildMaps();
@@ -464,6 +498,10 @@ class SettingsProvider with ChangeNotifier {
       _error = e.toString();
       debugLog('SettingsProvider', 'Error getting all settings: $e');
       _rebuildMaps();
+
+      if (isManualRefresh) {
+        rethrow;
+      }
     } finally {
       _isLoading = false;
       _notifySafely();
@@ -471,6 +509,8 @@ class SettingsProvider with ChangeNotifier {
   }
 
   Future<void> _refreshSettingsInBackground() async {
+    if (_isOffline) return;
+
     try {
       final response = await apiService.getAllSettings();
       if (response.success &&
@@ -481,7 +521,7 @@ class SettingsProvider with ChangeNotifier {
         _settingsUpdateController.add(_allSettings);
         await deviceService.saveCacheItem(
             AppConstants.allSettingsKey, _allSettings,
-            ttl: const Duration(minutes: 30));
+            ttl: AppConstants.cacheTTLSettings);
       }
     } catch (e) {
       debugLog('SettingsProvider', 'Background refresh error: $e');
@@ -529,6 +569,12 @@ class SettingsProvider with ChangeNotifier {
         _isLoading = false;
         _lastCategoryLoadTime[category] = DateTime.now();
         completer.complete(true);
+        return;
+      }
+
+      if (_isOffline) {
+        _isLoading = false;
+        completer.complete(false);
         return;
       }
 
