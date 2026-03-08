@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'app_colors.dart';
-import 'app_text_styles.dart';
 
 class AppThemes {
   static const Duration animationFast = Duration(milliseconds: 150);
@@ -18,26 +17,24 @@ class AppThemes {
         primaryContainer: AppColors.telegramBlueLight,
         secondary: AppColors.telegramGreen,
         secondaryContainer: Color(0x1A10B981),
-        surface: AppColors.lightSurface,
         surfaceContainerHighest: AppColors.lightCardAlt,
         error: AppColors.telegramRed,
-        onPrimary: Colors.white,
         onSecondary: Colors.white,
         outline: AppColors.lightDivider,
         outlineVariant: AppColors.lightCardAlt,
       ),
       scaffoldBackgroundColor: AppColors.lightBackground,
-      appBarTheme: AppBarTheme(
+      appBarTheme: const AppBarTheme(
         backgroundColor: AppColors.lightBackground,
         foregroundColor: AppColors.lightTextPrimary,
         elevation: 0,
         centerTitle: false,
-        titleTextStyle: const TextStyle(
+        titleTextStyle: TextStyle(
           fontSize: 18,
           fontWeight: FontWeight.w600,
           color: AppColors.lightTextPrimary,
         ),
-        iconTheme: const IconThemeData(
+        iconTheme: IconThemeData(
           color: AppColors.lightTextPrimary,
           size: 24,
         ),
@@ -495,20 +492,36 @@ class AppThemes {
   }
 
   static List<Effect<dynamic>> get fadeInSlideUp => [
-        FadeEffect(duration: animationMedium),
-        SlideEffect(
-          begin: const Offset(0, 0.1),
+        const FadeEffect(duration: animationMedium),
+        const SlideEffect(
+          begin: Offset(0, 0.1),
           end: Offset.zero,
           duration: animationMedium,
         ),
       ];
 
   static List<Effect<dynamic>> get scaleIn => [
-        ScaleEffect(
-          begin: const Offset(0.95, 0.95),
-          end: const Offset(1, 1),
+        const ScaleEffect(
+          begin: Offset(0.95, 0.95),
+          end: Offset(1, 1),
           duration: animationMedium,
         ),
-        FadeEffect(duration: animationMedium),
+        const FadeEffect(duration: animationMedium),
       ];
+
+  static Color get offlineWarningColor => AppColors.warning;
+  static Color get offlineSyncColor => AppColors.info;
+  static Color get offlineDisabledColor => AppColors.telegramGray;
+
+  static TextStyle get offlineStatusText => const TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+        color: AppColors.warning,
+      );
+
+  static TextStyle get syncStatusText => const TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+        color: AppColors.info,
+      );
 }
