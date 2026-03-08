@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'responsive.dart';
 import 'app_enums.dart';
-import '../themes/app_colors.dart';
 
 export 'app_enums.dart';
 
