@@ -6,6 +6,7 @@ class AppConstants {
   static const int apiTimeoutSeconds = 30;
   static const int tokenRefreshThresholdMinutes = 5;
 
+  // ===== API ENDPOINTS =====
   static const String healthEndpoint = '/health';
 
   static const String registerEndpoint = '/auth/register';
@@ -137,6 +138,7 @@ class AppConstants {
       '$chatbotEndpoint/conversations';
   static const String chatbotUsageEndpoint = '$chatbotEndpoint/usage';
 
+  // ===== STORAGE KEYS =====
   static const String tokenKey = 'auth_token';
   static const String refreshTokenKey = 'refresh_token';
   static const String userDataKey = 'user_data';
@@ -155,6 +157,14 @@ class AppConstants {
   static const String pairingCodeKey = 'pairing_code';
   static const String pairingExpiresAtKey = 'pairing_expires_at';
 
+  // ===== OFFLINE SYNC KEYS =====
+  static const String offlineQueueKey = 'offline_action_queue';
+  static const String lastSyncTimeKey = 'last_sync_time';
+  static const String pendingPaymentsKey = 'pending_payments_offline';
+  static const String pendingProgressKey = 'pending_progress';
+  static const String pendingExamResultsKey = 'pending_exam_results';
+
+  // ===== CACHE PREFIXES =====
   static const String cachePrefix = 'cache_';
   static const String subscriptionsCacheKey = 'subscriptions';
   static const String paymentsCacheKey = 'payments';
@@ -203,13 +213,39 @@ class AppConstants {
       'category_access_$categoryId';
   static String streakKey(String userId) => 'streak_$userId';
 
-  static const Duration defaultCacheTTL = Duration(days: 7);
-  static const Duration defaultCacheTTLHours = Duration(hours: 24);
+  // ===== CACHE DURATIONS (by data type) =====
+  // Static/Long-lived content (24 hours)
+  static const Duration cacheTTLCategories = Duration(hours: 24);
+  static const Duration cacheTTLCourses = Duration(hours: 24);
+  static const Duration cacheTTLChapters = Duration(hours: 24);
+  static const Duration cacheTTLSchools = Duration(hours: 24);
+  static const Duration cacheTTLSettings = Duration(hours: 24);
 
+  // Semi-dynamic content (1-6 hours)
+  static const Duration cacheTTLExams = Duration(hours: 6);
+  static const Duration cacheTTLQuestions = Duration(hours: 6);
+  static const Duration cacheTTLUserProfile = Duration(hours: 1);
+
+  // Dynamic content (15-30 minutes)
+  static const Duration cacheTTLSubscriptions = Duration(minutes: 30);
+  static const Duration cacheTTLPayments = Duration(minutes: 30);
+  static const Duration cacheTTLNotifications = Duration(minutes: 15);
+  static const Duration cacheTTLStreak = Duration(minutes: 30);
+
+  // Downloaded content (7-30 days)
+  static const Duration cacheTTLVideos = Duration(days: 7);
+  static const Duration cacheTTLNotes = Duration(days: 7);
+  static const Duration cacheTTLDownloadMetadata = Duration(days: 30);
+
+  // Default fallback
+  static const Duration defaultCacheTTL = Duration(hours: 24);
+
+  // ===== DEVICE ID PREFIXES =====
   static const String androidDevicePrefix = 'ANDROID_';
   static const String iosDevicePrefix = 'IOS_';
   static const String fallbackDevicePrefix = 'FA_';
 
+  // ===== NOTIFICATION CONSTANTS =====
   static const String notificationChannelId = 'family_academy_channel';
   static const String notificationChannelName = 'Family Academy Notifications';
   static const String notificationChannelDescription =
@@ -217,13 +253,16 @@ class AppConstants {
   static const int notificationLedOnMs = 1000;
   static const int notificationLedOffMs = 500;
 
+  // ===== PAIRING CONSTANTS =====
   static const int pairingExpiryMinutes = 10;
   static const int parentTokenExpiryMinutes = 30;
 
+  // ===== APP INFO =====
   static const String appName = 'Family Academy';
   static const String appVersion = '1.4.0+1';
   static const String appCopyright = '© 2024 Family Academy';
 
+  // ===== QUICK QUESTIONS & FAQ =====
   static const List<String> quickQuestions = [
     'Help with math',
     'Tell me about Ethiopia',
@@ -309,6 +348,14 @@ class AppStrings {
   static const String noInternet = 'No internet connection';
   static const String offline = 'Offline Mode';
   static const String comingSoon = 'Coming Soon';
+
+  // Offline mode strings
+  static const String offlineMode = 'Offline Mode';
+  static const String usingCachedData = 'Using cached data';
+  static const String waitingToSync = 'Waiting to sync';
+  static const String syncNow = 'Sync Now';
+  static const String changesQueued = 'changes queued';
+  static const String lastSync = 'Last sync';
 
   static const String home = 'Home';
   static const String chat = 'Chat';
