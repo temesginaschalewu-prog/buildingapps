@@ -4,15 +4,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../services/user_session.dart';
+import '../services/connectivity_service.dart';
 import '../models/exam_model.dart';
 import '../models/exam_result_model.dart';
 import '../utils/constants.dart';
 import '../utils/helpers.dart';
-import '../utils/parsers.dart';
 
 class ExamProvider with ChangeNotifier {
   final ApiService apiService;
   final DeviceService deviceService;
+  final ConnectivityService connectivityService;
 
   List<Exam> _availableExams = [];
   List<ExamResult> _myExamResults = [];
@@ -21,6 +22,7 @@ class ExamProvider with ChangeNotifier {
   Map<int, bool> _isLoadingCourse = {};
   bool _isLoading = false;
   String? _error;
+  bool _isOffline = false;
   Timer? _cacheCleanupTimer;
 
   final Map<int, bool> _pendingPaymentsByCategory = {};
@@ -30,12 +32,29 @@ class ExamProvider with ChangeNotifier {
   StreamController<List<ExamResult>> _resultsUpdateController =
       StreamController<List<ExamResult>>.broadcast();
 
-  static const Duration _cacheDuration = Duration(hours: 24);
+  static const Duration _cacheDuration = AppConstants.cacheTTLExams;
   static const Duration _cacheCleanupInterval = Duration(minutes: 30);
 
-  ExamProvider({required this.apiService, required this.deviceService}) {
+  ExamProvider({
+    required this.apiService,
+    required this.deviceService,
+    required this.connectivityService,
+  }) {
+    _setupConnectivityListener();
     _cacheCleanupTimer = Timer.periodic(_cacheCleanupInterval, (_) {
       _cleanupExpiredCache();
+    });
+  }
+
+  void _setupConnectivityListener() {
+    connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (_isOffline != !isOnline) {
+        _isOffline = !isOnline;
+        if (!_isOffline && _availableExams.isNotEmpty) {
+          _refreshAvailableExamsInBackground();
+        }
+        notifyListeners();
+      }
     });
   }
 
@@ -43,6 +62,7 @@ class ExamProvider with ChangeNotifier {
   List<ExamResult> get myExamResults => List.unmodifiable(_myExamResults);
   bool get isLoading => _isLoading;
   String? get error => _error;
+  bool get isOffline => _isOffline;
 
   Stream<List<Exam>> get examsUpdates => _examsUpdateController.stream;
   Stream<List<ExamResult>> get resultsUpdates =>
@@ -170,8 +190,15 @@ class ExamProvider with ChangeNotifier {
   }
 
   Future<void> loadAvailableExams(
-      {int? courseId, bool forceRefresh = false}) async {
+      {int? courseId,
+      bool forceRefresh = false,
+      bool isManualRefresh = false}) async {
     if (_isLoading && !forceRefresh) return;
+
+    // If this is a manual refresh, ALWAYS force refresh
+    if (isManualRefresh) {
+      forceRefresh = true;
+    }
 
     _isLoading = true;
     _error = null;
@@ -181,7 +208,7 @@ class ExamProvider with ChangeNotifier {
       debugLog(
           'ExamProvider', '📥 Loading available exams for course: $courseId');
 
-      if (!forceRefresh) {
+      if (!forceRefresh && !_isOffline) {
         if (courseId == null) {
           final cachedExams = await deviceService
               .getCacheItem<List<Exam>>(AppConstants.availableExamsCacheKey);
@@ -193,7 +220,9 @@ class ExamProvider with ChangeNotifier {
             debugLog('ExamProvider',
                 '✅ Loaded ${_availableExams.length} exams from cache');
 
-            unawaited(_refreshAvailableExamsInBackground());
+            if (!_isOffline) {
+              unawaited(_refreshAvailableExamsInBackground());
+            }
             return;
           }
         } else {
@@ -209,10 +238,25 @@ class ExamProvider with ChangeNotifier {
             debugLog('ExamProvider',
                 '✅ Loaded ${cachedExams.length} exams for course $courseId from cache');
 
-            unawaited(_refreshCourseExamsInBackground(courseId));
+            if (!_isOffline) {
+              unawaited(_refreshCourseExamsInBackground(courseId));
+            }
             return;
           }
         }
+      }
+
+      if (_isOffline) {
+        _error = 'You are offline. Using cached data.';
+        _isLoading = false;
+        _notifySafely();
+
+        // THROW exception for manual refresh!
+        if (isManualRefresh) {
+          throw Exception(
+              'Network error. Please check your internet connection.');
+        }
+        return;
       }
 
       final response = await apiService.getAvailableExams(courseId: courseId);
@@ -248,6 +292,10 @@ class ExamProvider with ChangeNotifier {
           _examsByCourse[courseId] = [];
         }
         _error = response.message;
+
+        if (isManualRefresh) {
+          throw Exception(response.message);
+        }
       }
     } catch (e) {
       _error = 'Failed to load exams: ${e.toString()}';
@@ -258,6 +306,11 @@ class ExamProvider with ChangeNotifier {
       } else if (courseId != null && !_examsByCourse.containsKey(courseId)) {
         _examsByCourse[courseId] = [];
       }
+
+      // Re-throw for manual refresh
+      if (isManualRefresh) {
+        rethrow;
+      }
     } finally {
       _isLoading = false;
       _notifySafely();
@@ -265,6 +318,8 @@ class ExamProvider with ChangeNotifier {
   }
 
   Future<void> _refreshAvailableExamsInBackground() async {
+    if (_isOffline) return;
+
     try {
       debugLog('ExamProvider', '🔄 Background refresh for available exams');
 
@@ -290,6 +345,8 @@ class ExamProvider with ChangeNotifier {
   }
 
   Future<void> _refreshCourseExamsInBackground(int courseId) async {
+    if (_isOffline) return;
+
     try {
       debugLog(
           'ExamProvider', '🔄 Background refresh for course $courseId exams');
@@ -410,10 +467,16 @@ class ExamProvider with ChangeNotifier {
     }
   }
 
-  Future<void> loadMyExamResults({bool forceRefresh = false}) async {
+  Future<void> loadMyExamResults(
+      {bool forceRefresh = false, bool isManualRefresh = false}) async {
     if (_isLoading && !forceRefresh) {
       debugLog('ExamProvider', 'Already loading, skipping');
       return;
+    }
+
+    // If this is a manual refresh, ALWAYS force refresh
+    if (isManualRefresh) {
+      forceRefresh = true;
     }
 
     _isLoading = true;
@@ -423,7 +486,7 @@ class ExamProvider with ChangeNotifier {
     try {
       debugLog('ExamProvider', '📥 Loading my exam results');
 
-      if (!forceRefresh) {
+      if (!forceRefresh && !_isOffline) {
         final cachedResults = await deviceService
             .getCacheItem<List<ExamResult>>(AppConstants.myExamResultsCacheKey);
         if (cachedResults != null && cachedResults.isNotEmpty) {
@@ -434,9 +497,24 @@ class ExamProvider with ChangeNotifier {
           debugLog('ExamProvider',
               '✅ Loaded ${_myExamResults.length} exam results from cache');
 
-          unawaited(_refreshExamResultsInBackground());
+          if (!_isOffline) {
+            unawaited(_refreshExamResultsInBackground());
+          }
           return;
         }
+      }
+
+      if (_isOffline) {
+        _error = 'You are offline. Using cached data.';
+        _isLoading = false;
+        _notifySafely();
+
+        // THROW exception for manual refresh!
+        if (isManualRefresh) {
+          throw Exception(
+              'Network error. Please check your internet connection.');
+        }
+        return;
       }
 
       final response = await apiService.getMyExamResults();
@@ -471,6 +549,10 @@ class ExamProvider with ChangeNotifier {
       } else {
         _error = response.message;
         _myExamResults = [];
+
+        if (isManualRefresh) {
+          throw Exception(response.message);
+        }
       }
     } catch (e) {
       _error = 'Failed to load exam results: ${e.toString()}';
@@ -479,6 +561,11 @@ class ExamProvider with ChangeNotifier {
       if (_myExamResults.isEmpty) {
         _myExamResults = [];
       }
+
+      // Re-throw for manual refresh
+      if (isManualRefresh) {
+        rethrow;
+      }
     } finally {
       _isLoading = false;
       _notifySafely();
@@ -486,6 +573,8 @@ class ExamProvider with ChangeNotifier {
   }
 
   Future<void> _refreshExamResultsInBackground() async {
+    if (_isOffline) return;
+
     try {
       debugLog('ExamProvider', '🔄 Background refresh for exam results');
 
@@ -518,10 +607,15 @@ class ExamProvider with ChangeNotifier {
   }
 
   Future<void> loadExamsByCourse(int courseId,
-      {bool forceRefresh = false}) async {
+      {bool forceRefresh = false, bool isManualRefresh = false}) async {
     if (_isLoadingCourse[courseId] == true && !forceRefresh) return;
 
-    if (!forceRefresh) {
+    // If this is a manual refresh, ALWAYS force refresh
+    if (isManualRefresh) {
+      forceRefresh = true;
+    }
+
+    if (!forceRefresh && !_isOffline) {
       final cachedExams = await deviceService
           .getCacheItem<List<Exam>>(AppConstants.examsByCourseKey(courseId));
       if (cachedExams != null) {
@@ -534,7 +628,9 @@ class ExamProvider with ChangeNotifier {
         debugLog('ExamProvider',
             '✅ Loaded ${cachedExams.length} exams for course $courseId from cache');
 
-        unawaited(_refreshCourseExamsInBackground(courseId));
+        if (!_isOffline) {
+          unawaited(_refreshCourseExamsInBackground(courseId));
+        }
         return;
       }
     }
@@ -546,6 +642,21 @@ class ExamProvider with ChangeNotifier {
 
     try {
       debugLog('ExamProvider', '📥 Loading exams for course: $courseId');
+
+      if (_isOffline) {
+        _error = 'You are offline. Using cached data.';
+        _isLoadingCourse[courseId] = false;
+        _isLoading = false;
+        _notifySafely();
+
+        // THROW exception for manual refresh!
+        if (isManualRefresh) {
+          throw Exception(
+              'Network error. Please check your internet connection.');
+        }
+        return;
+      }
+
       final response = await apiService.getAvailableExams(courseId: courseId);
 
       if (response.success) {
@@ -565,6 +676,10 @@ class ExamProvider with ChangeNotifier {
       } else {
         _error = response.message;
         _examsByCourse[courseId] = [];
+
+        if (isManualRefresh) {
+          throw Exception(response.message);
+        }
       }
     } catch (e) {
       _error = 'Failed to load exams for course: ${e.toString()}';
@@ -572,6 +687,11 @@ class ExamProvider with ChangeNotifier {
 
       if (!_examsByCourse.containsKey(courseId)) {
         _examsByCourse[courseId] = [];
+      }
+
+      // Re-throw for manual refresh
+      if (isManualRefresh) {
+        rethrow;
       }
     } finally {
       _isLoadingCourse[courseId] = false;
