@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:familyacademyclient/services/refresh_service.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -19,21 +20,18 @@ import '../../services/device_service.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
 import '../../widgets/chapter/chapter_card.dart';
+import '../../widgets/common/access_banner.dart';
 import '../../widgets/exam/exam_card.dart';
-import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_shimmer.dart';
 import '../../widgets/common/app_empty_state.dart';
 import '../../widgets/common/app_dialog.dart';
+import '../../widgets/common/app_bar.dart';
 import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
-import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
 import '../../utils/helpers.dart';
-import '../../utils/ui_helpers.dart';
-import '../../utils/app_enums.dart';
-import '../../widgets/common/responsive_widgets.dart';
 
 class CourseDetailScreen extends StatefulWidget {
   final int courseId;
@@ -68,6 +66,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
   bool _isOffline = false;
   bool _isRefreshing = false;
   bool _isFirstLoad = true;
+  int _pendingCount = 0;
 
   StreamSubscription? _subscriptionListener;
   StreamSubscription? _connectivitySubscription;
@@ -91,7 +90,10 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     _connectivitySubscription =
         connectivityService.onConnectivityChanged.listen((isOnline) {
       if (mounted) {
-        setState(() => _isOffline = !isOnline);
+        setState(() {
+          _isOffline = !isOnline;
+          _pendingCount = connectivityService.pendingActionsCount;
+        });
         if (isOnline && !_isRefreshing && _course != null) {
           _refreshInBackground();
         }
@@ -110,7 +112,10 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
 
   Future<void> _checkConnectivity() async {
     final connectivityService = context.read<ConnectivityService>();
-    setState(() => _isOffline = !connectivityService.isOnline);
+    setState(() {
+      _isOffline = !connectivityService.isOnline;
+      _pendingCount = connectivityService.pendingActionsCount;
+    });
   }
 
   Future<void> _initializeScreen() async {
@@ -120,7 +125,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     if (_course != null && _hasCachedData) {
       setState(() => _isFirstLoad = false);
       if (!_isOffline) {
-        _refreshInBackground();
+        await _refreshInBackground();
       }
     } else {
       await _loadFreshData();
@@ -238,58 +243,47 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
   Future<void> _manualRefresh() async {
     if (_isRefreshing) return;
 
-    final connectivityService = context.read<ConnectivityService>();
-    if (!connectivityService.isOnline) {
-      if (mounted) {
-        setState(() {
-          _isOffline = true;
-          _isRefreshing = false;
-        });
-      }
+    final connectivity = ConnectivityService();
+    if (!connectivity.isOnline) {
+      SnackbarService().showOffline(context, action: 'refresh');
+      setState(() => _isOffline = true);
       _refreshController.refreshFailed();
-      SnackbarService().showOffline(context);
       return;
     }
 
-    if (!mounted) return;
     setState(() => _isRefreshing = true);
 
-    try {
-      final courseProvider = context.read<CourseProvider>();
-      if (_course != null && _category != null) {
-        await courseProvider.refreshCoursesWithAccessCheck(
-            _category!.id, _hasAccess);
-      }
+    await RefreshService().pullToRefresh(
+      context: context,
+      refreshFunction: () async {
+        final courseProvider = context.read<CourseProvider>();
+        if (_course != null && _category != null) {
+          await courseProvider.refreshCoursesWithAccessCheck(
+              _category!.id, _hasAccess);
+        }
 
-      if (!mounted) return;
+        if (!mounted) return;
 
-      await _checkAccessStatus(forceCheck: true);
-      if (!mounted) return;
+        await _checkAccessStatus(forceCheck: true);
+        if (!mounted) return;
 
-      await _loadPaymentInfo(forceRefresh: true);
-      if (!mounted) return;
+        await _loadPaymentInfo(forceRefresh: true);
+        if (!mounted) return;
 
-      await _loadChapters(forceRefresh: true);
-      if (!mounted) return;
+        await _loadChapters(forceRefresh: true);
+        if (!mounted) return;
 
-      await _loadExams(forceRefresh: true);
-      if (!mounted) return;
+        await _loadExams(forceRefresh: true);
+        if (!mounted) return;
 
-      await _saveToCache();
+        await _saveToCache();
+        setState(() => _isOffline = false);
+      },
+      successMessage: 'Course updated',
+    );
 
-      setState(() => _isOffline = false);
-      SnackbarService().showSuccess(context, 'Course updated');
-    } catch (e) {
-      if (!mounted) return;
-      debugLog('CourseDetailScreen', 'Manual refresh error: $e');
-      setState(() => _isOffline = true);
-      SnackbarService().showError(context, 'Refresh failed, using cached data');
-    } finally {
-      if (mounted) {
-        setState(() => _isRefreshing = false);
-      }
-      _refreshController.refreshCompleted();
-    }
+    _refreshController.refreshCompleted();
+    setState(() => _isRefreshing = false);
   }
 
   Future<void> _checkAccessStatus({bool forceCheck = false}) async {
@@ -423,7 +417,6 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
       title: 'Unlock Content',
       message: 'Purchase "${_category!.name}" to access all content',
       confirmText: 'Purchase Access',
-      cancelText: 'Cancel',
     ).then((confirmed) {
       if (confirmed == true) {
         context.push('/payment', extra: {
@@ -462,124 +455,41 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     if (_category == null) return const SizedBox.shrink();
 
     if (_category!.isFree) {
-      return _buildStatusBanner(
-        icon: Icons.lock_open_rounded,
-        color: AppColors.telegramGreen,
-        title: 'Free Category',
-        message: 'All content is free and accessible',
-      );
+      return AccessBanner.freeCategory();
     }
 
     if (_hasAccess) {
-      return _buildStatusBanner(
-        icon: Icons.check_circle_rounded,
-        color: AppColors.telegramGreen,
-        title: 'Full Access',
-        message: 'You have access to all content in this course',
-      );
+      return AccessBanner.fullAccess();
     }
 
     if (_hasPendingPayment) {
-      return _buildStatusBanner(
-        icon: Icons.schedule_rounded,
-        color: AppColors.pending,
-        title: 'Payment Pending',
-        message: 'Please wait for admin verification (1-3 working days)',
-      );
+      return AccessBanner.paymentPending();
     }
 
     if (_rejectionReason != null) {
-      return _buildStatusBanner(
-        icon: Icons.error_outline_rounded,
-        color: AppColors.telegramRed,
-        title: 'Payment Rejected',
-        message: 'Reason: $_rejectionReason',
-        actionText: 'Pay Now',
-        onAction: _showPaymentDialog,
+      return AccessBanner.paymentRejected(
+        reason: _rejectionReason!,
+        onPayNow: _showPaymentDialog,
       );
     }
 
-    return _buildStatusBanner(
-      icon: Icons.lock_rounded,
-      color: AppColors.telegramBlue,
-      title: 'Limited Access',
-      message: 'Free chapters only. Purchase to unlock all content.',
-      actionText: 'Purchase',
-      onAction: _showPaymentDialog,
-    );
-  }
-
-  Widget _buildStatusBanner({
-    required IconData icon,
-    required Color color,
-    required String title,
-    required String message,
-    String? actionText,
-    VoidCallback? onAction,
-  }) {
-    return Container(
-      margin: EdgeInsets.symmetric(
-        horizontal: ResponsiveValues.sectionPadding(context),
-        vertical: ResponsiveValues.spacingS(context),
-      ),
-      child: AppCard.glass(
-        child: Padding(
-          padding: EdgeInsets.all(ResponsiveValues.sectionPadding(context)),
-          child: Row(
-            children: [
-              Container(
-                padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(
-                      ResponsiveValues.radiusMedium(context)),
-                ),
-                child: Icon(icon,
-                    size: ResponsiveValues.iconSizeL(context), color: color),
-              ),
-              SizedBox(width: ResponsiveValues.spacingL(context)),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: AppTextStyles.titleSmall(context)
-                          .copyWith(color: color, fontWeight: FontWeight.w600),
-                    ),
-                    SizedBox(height: ResponsiveValues.spacingXS(context)),
-                    Text(
-                      message,
-                      style: AppTextStyles.bodySmall(context)
-                          .copyWith(color: AppColors.getTextSecondary(context)),
-                    ),
-                  ],
-                ),
-              ),
-              if (actionText != null && onAction != null) ...[
-                SizedBox(width: ResponsiveValues.spacingM(context)),
-                AppButton.glass(label: actionText, onPressed: onAction),
-              ],
-            ],
-          ),
-        ),
-      ),
+    return AccessBanner.limitedAccess(
+      onPurchase: _showPaymentDialog,
     );
   }
 
   Widget _buildSkeletonLoader() {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
-      appBar: AppBar(
-        backgroundColor: AppColors.getBackground(context),
-        elevation: 0,
+      appBar: CustomAppBar(
+        title: 'Course',
+        subtitle: 'Loading...',
         leading: AppButton.icon(
             icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
-        title: AppShimmer(type: ShimmerType.textLine, customWidth: 200),
-        bottom: PreferredSize(
-          preferredSize:
-              Size.fromHeight(ResponsiveValues.appBarHeight(context)),
-          child: Container(
+      ),
+      body: Column(
+        children: [
+          Container(
             decoration: BoxDecoration(
               border: Border(
                 bottom: BorderSide(
@@ -589,27 +499,35 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
             ),
             child: TabBar(
               controller: _tabController,
-              tabs: const [Tab(text: 'Chapters'), Tab(text: 'Exams')],
+              tabs: const [
+                Tab(icon: Icon(Icons.menu_book_rounded), text: 'Chapters'),
+                Tab(icon: Icon(Icons.quiz_rounded), text: 'Exams'),
+              ],
+              labelStyle: AppTextStyles.labelMedium(context),
+              unselectedLabelStyle: AppTextStyles.labelMedium(context),
               indicatorColor: AppColors.telegramBlue,
               indicatorWeight: 3,
               labelColor: AppColors.telegramBlue,
-              unselectedLabelColor: AppColors.telegramGray,
+              unselectedLabelColor: AppColors.getTextSecondary(context),
             ),
           ),
-        ),
-      ),
-      body: Padding(
-        padding: ResponsiveValues.screenPadding(context),
-        child: ListView.separated(
-          itemCount: 5,
-          separatorBuilder: (_, __) =>
-              SizedBox(height: ResponsiveValues.spacingL(context)),
-          itemBuilder: (context, index) => AppShimmer(
-            type:
-                index % 2 == 0 ? ShimmerType.chapterCard : ShimmerType.examCard,
-            index: index,
+          Expanded(
+            child: Padding(
+              padding: ResponsiveValues.screenPadding(context),
+              child: ListView.separated(
+                itemCount: 5,
+                separatorBuilder: (_, __) =>
+                    SizedBox(height: ResponsiveValues.spacingL(context)),
+                itemBuilder: (context, index) => AppShimmer(
+                  type: index % 2 == 0
+                      ? ShimmerType.chapterCard
+                      : ShimmerType.examCard,
+                  index: index,
+                ),
+              ),
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -669,6 +587,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
                     ? 'No cached chapters available. Connect to load chapters.'
                     : 'Chapters will appear here when available.',
                 onRefresh: _manualRefresh,
+                isOffline: _isOffline,
+                pendingCount: _pendingCount,
               ),
             ),
           );
@@ -719,6 +639,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
                     ? 'No cached exams available. Connect to load exams.'
                     : 'Exams will appear here when available.',
                 onRefresh: _manualRefresh,
+                isOffline: _isOffline,
+                pendingCount: _pendingCount,
               ),
             ),
           );
@@ -736,9 +658,9 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     if (_course == null) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
-        appBar: AppBar(
-          backgroundColor: AppColors.getBackground(context),
-          elevation: 0,
+        appBar: CustomAppBar(
+          title: 'Course',
+          subtitle: 'Not found',
           leading: AppButton.icon(
               icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
         ),
@@ -761,58 +683,13 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
 
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
-      appBar: AppBar(
-        title: Text(
-          _course!.name,
-          style:
-              AppTextStyles.titleMedium(context).copyWith(letterSpacing: -0.3),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        backgroundColor: AppColors.getBackground(context),
-        elevation: 0,
+      appBar: CustomAppBar(
+        title: _course!.name,
+        subtitle: _isRefreshing
+            ? 'Refreshing...'
+            : (_isOffline ? 'Offline mode' : 'Course content'),
         leading: AppButton.icon(
             icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
-        actions: [
-          if (_isRefreshing)
-            Padding(
-              padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
-              child: SizedBox(
-                width: ResponsiveValues.iconSizeS(context),
-                height: ResponsiveValues.iconSizeS(context),
-                child: const CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation(AppColors.telegramBlue),
-                ),
-              ),
-            ),
-        ],
-        bottom: PreferredSize(
-          preferredSize:
-              Size.fromHeight(ResponsiveValues.appBarHeight(context)),
-          child: Container(
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(
-                    color: AppColors.getDivider(context).withValues(alpha: 0.5),
-                    width: 0.5),
-              ),
-            ),
-            child: TabBar(
-              controller: _tabController,
-              tabs: const [
-                Tab(icon: Icon(Icons.menu_book_rounded), text: 'Chapters'),
-                Tab(icon: Icon(Icons.quiz_rounded), text: 'Exams'),
-              ],
-              labelStyle: AppTextStyles.labelMedium(context),
-              unselectedLabelStyle: AppTextStyles.labelMedium(context),
-              indicatorColor: AppColors.telegramBlue,
-              indicatorWeight: 3,
-              labelColor: AppColors.telegramBlue,
-              unselectedLabelColor: AppColors.getTextSecondary(context),
-            ),
-          ),
-        ),
       ),
       body: Container(
         decoration: BoxDecoration(
@@ -825,25 +702,48 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
             ],
           ),
         ),
-        child: SmartRefresher(
-          controller: _refreshController,
-          onRefresh: _manualRefresh,
-          header: WaterDropHeader(
-            waterDropColor: AppColors.telegramBlue,
-            refresh: SizedBox(
-              width: ResponsiveValues.iconSizeL(context),
-              height: ResponsiveValues.iconSizeL(context),
-              child: const CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation(AppColors.telegramBlue),
+        child: Column(
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(
+                      color:
+                          AppColors.getDivider(context).withValues(alpha: 0.5),
+                      width: 0.5),
+                ),
+              ),
+              child: TabBar(
+                controller: _tabController,
+                tabs: const [
+                  Tab(icon: Icon(Icons.menu_book_rounded), text: 'Chapters'),
+                  Tab(icon: Icon(Icons.quiz_rounded), text: 'Exams'),
+                ],
+                labelStyle: AppTextStyles.labelMedium(context),
+                unselectedLabelStyle: AppTextStyles.labelMedium(context),
+                indicatorColor: AppColors.telegramBlue,
+                indicatorWeight: 3,
+                labelColor: AppColors.telegramBlue,
+                unselectedLabelColor: AppColors.getTextSecondary(context),
               ),
             ),
-          ),
-          child: CustomScrollView(
-            physics: const BouncingScrollPhysics(),
-            slivers: [
-              SliverToBoxAdapter(child: _buildAccessBanner()),
-              SliverFillRemaining(
+            _buildAccessBanner(),
+            Expanded(
+              child: SmartRefresher(
+                controller: _refreshController,
+                onRefresh: _manualRefresh,
+                header: WaterDropHeader(
+                  waterDropColor: AppColors.telegramBlue,
+                  refresh: SizedBox(
+                    width: ResponsiveValues.iconSizeL(context),
+                    height: ResponsiveValues.iconSizeL(context),
+                    child: const CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor:
+                          AlwaysStoppedAnimation(AppColors.telegramBlue),
+                    ),
+                  ),
+                ),
                 child: TabBarView(
                   controller: _tabController,
                   children: [
@@ -852,8 +752,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
                   ],
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     ).animate().fadeIn(duration: AppThemes.animationMedium);
