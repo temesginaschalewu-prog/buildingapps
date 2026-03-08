@@ -19,7 +19,6 @@ import '../../utils/router.dart';
 import '../../utils/constants.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
-import '../../widgets/common/responsive_widgets.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -41,6 +40,7 @@ class _RegisterScreenState extends State<RegisterScreen>
   bool _isInitializing = false;
   String? _deviceId;
   String? _fcmToken;
+  int _pendingCount = 0;
 
   late AnimationController _logoAnimationController;
   late Animation<double> _logoScaleAnimation;
@@ -58,9 +58,15 @@ class _RegisterScreenState extends State<RegisterScreen>
         parent: _logoAnimationController, curve: Curves.elasticOut);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_mounted) _checkConnectivity();
-      if (_mounted) _initializeDeviceAndServices();
+      _checkConnectivity();
+      _checkPendingCount();
+      _initializeDeviceAndServices();
     });
+  }
+
+  Future<void> _checkPendingCount() async {
+    final connectivity = ConnectivityService();
+    setState(() => _pendingCount = connectivity.pendingActionsCount);
   }
 
   @override
@@ -75,9 +81,7 @@ class _RegisterScreenState extends State<RegisterScreen>
 
   Future<void> _checkConnectivity() async {
     final connectivityService = context.read<ConnectivityService>();
-    if (!connectivityService.isOnline) {
-      setState(() => _isOffline = true);
-    }
+    setState(() => _isOffline = !connectivityService.isOnline);
   }
 
   Future<void> _initializeDeviceAndServices() async {
@@ -131,10 +135,12 @@ class _RegisterScreenState extends State<RegisterScreen>
   }
 
   String? _validateConfirmPassword(String? value) {
-    if (value == null || value.isEmpty)
+    if (value == null || value.isEmpty) {
       return AppStrings.confirmPasswordRequired;
-    if (value != _passwordController.text)
+    }
+    if (value != _passwordController.text) {
       return AppStrings.passwordsDoNotMatch;
+    }
     return null;
   }
 
@@ -178,11 +184,9 @@ class _RegisterScreenState extends State<RegisterScreen>
         if (_mounted) {
           if (result['next_step'] == 'select_school') {
             appRouter.setNavigatingToSchoolSelection(true);
-            appRouter.setPendingDestination('/school-selection');
             context.go('/school-selection');
           } else {
             appRouter.setNavigatingToHome(true);
-            appRouter.setPendingDestination('/');
             context.go('/');
           }
         }
@@ -245,6 +249,35 @@ class _RegisterScreenState extends State<RegisterScreen>
           style: AppTextStyles.bodyLarge(context)
               .copyWith(color: AppColors.getTextSecondary(context)),
         ),
+        if (_pendingCount > 0) ...[
+          SizedBox(height: ResponsiveValues.spacingM(context)),
+          Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: ResponsiveValues.spacingM(context),
+              vertical: ResponsiveValues.spacingXS(context),
+            ),
+            decoration: BoxDecoration(
+              color: AppColors.info.withValues(alpha: 0.1),
+              borderRadius:
+                  BorderRadius.circular(ResponsiveValues.radiusFull(context)),
+              border: Border.all(color: AppColors.info.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.schedule_rounded,
+                    size: ResponsiveValues.iconSizeXS(context),
+                    color: AppColors.info),
+                SizedBox(width: ResponsiveValues.spacingXXS(context)),
+                Text(
+                  '$_pendingCount pending ${_pendingCount > 1 ? 'actions' : 'action'}',
+                  style: AppTextStyles.caption(context)
+                      .copyWith(color: AppColors.info),
+                ),
+              ],
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -298,6 +331,7 @@ class _RegisterScreenState extends State<RegisterScreen>
           setState(() => _isOffline = false);
           _checkConnectivity();
         },
+        pendingCount: _pendingCount,
       );
     }
 
