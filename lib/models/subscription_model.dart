@@ -31,8 +31,9 @@ class Subscription {
 
   factory Subscription.fromJson(Map<String, dynamic> json) {
     int getCategoryId(Map<String, dynamic> json) {
-      if (json['category_id'] != null)
+      if (json['category_id'] != null) {
         return Parsers.parseInt(json['category_id']);
+      }
 
       final categoryName = json['category_name']?.toString() ?? '';
       if (categoryName == 'grade 9') return 1;
