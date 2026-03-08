@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/responsive_values.dart';
-import '../../utils/app_enums.dart';
+import '../../services/connectivity_service.dart';
 
 class AppTextField extends StatefulWidget {
   final TextEditingController controller;
@@ -22,6 +22,7 @@ class AppTextField extends StatefulWidget {
   final Widget? suffixIcon;
   final void Function(String)? onChanged;
   final int? maxLength;
+  final bool requiresOnline; // NEW: Whether this field requires internet
 
   const AppTextField({
     super.key,
@@ -42,6 +43,7 @@ class AppTextField extends StatefulWidget {
     this.suffixIcon,
     this.onChanged,
     this.maxLength,
+    this.requiresOnline = false,
   });
 
   const AppTextField.password({
@@ -52,6 +54,7 @@ class AppTextField extends StatefulWidget {
     this.enabled = true,
     this.validator,
     this.onChanged,
+    this.requiresOnline = false,
   })  : prefixIcon = Icons.lock_outline_rounded,
         variant = TextFieldVariant.glass,
         keyboardType = TextInputType.text,
@@ -72,6 +75,7 @@ class AppTextField extends StatefulWidget {
     this.enabled = true,
     this.validator,
     this.onChanged,
+    this.requiresOnline = false,
   })  : prefixIcon = Icons.email_outlined,
         variant = TextFieldVariant.glass,
         keyboardType = TextInputType.emailAddress,
@@ -92,6 +96,7 @@ class AppTextField extends StatefulWidget {
     this.enabled = true,
     this.validator,
     this.onChanged,
+    this.requiresOnline = false,
   })  : prefixIcon = Icons.phone_outlined,
         variant = TextFieldVariant.glass,
         keyboardType = TextInputType.phone,
@@ -111,6 +116,7 @@ class AppTextField extends StatefulWidget {
     this.enabled = true,
     this.onChanged,
     this.onTap,
+    this.requiresOnline = false,
   })  : label = '',
         prefixIcon = Icons.search_rounded,
         variant = TextFieldVariant.glass,
@@ -162,23 +168,29 @@ class _AppTextFieldState extends State<AppTextField> {
 
   @override
   Widget build(BuildContext context) {
+    final connectivity = ConnectivityService();
+    final isOfflineDisabled = widget.requiresOnline && connectivity.isOffline;
+    final isEnabled = widget.enabled && !isOfflineDisabled;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
         if (widget.label.isNotEmpty) ...[
           Text(
-            widget.label,
+            isOfflineDisabled ? '${widget.label} (Offline)' : widget.label,
             style: AppTextStyles.labelLarge(context).copyWith(
-              color: _hasFocus
-                  ? AppColors.telegramBlue
-                  : AppColors.getTextSecondary(context),
+              color: isOfflineDisabled
+                  ? AppColors.warning
+                  : (_hasFocus
+                      ? AppColors.telegramBlue
+                      : AppColors.getTextSecondary(context)),
               fontWeight: FontWeight.w500,
             ),
           ),
           SizedBox(height: ResponsiveValues.spacingXS(context)),
         ],
-        _buildTextField(context),
+        _buildTextField(context, isEnabled, isOfflineDisabled),
         if (widget.maxLength != null)
           Padding(
             padding: EdgeInsets.only(
@@ -201,67 +213,85 @@ class _AppTextFieldState extends State<AppTextField> {
     );
   }
 
-  Widget _buildTextField(BuildContext context) {
-    return Container(
-      decoration: _getDecoration(context),
+  Widget _buildTextField(
+      BuildContext context, bool isEnabled, bool isOfflineDisabled) {
+    return DecoratedBox(
+      decoration: _getDecoration(context, isEnabled, isOfflineDisabled),
       child: TextFormField(
         key: ValueKey(widget.controller.hashCode),
         controller: widget.controller,
         focusNode: _focusNode,
         keyboardType: widget.keyboardType,
         obscureText: widget.obscureText && _obscureText,
-        enabled: widget.enabled,
+        enabled: isEnabled,
         validator: widget.validator,
         onTap: widget.onTap,
-        readOnly: widget.readOnly,
+        readOnly: widget.readOnly || isOfflineDisabled,
         maxLines: widget.maxLines,
         minLines: widget.minLines,
         autofocus: widget.autofocus,
         onChanged: widget.onChanged,
         maxLength: widget.maxLength,
         style: AppTextStyles.bodyMedium(context).copyWith(
-          color: widget.enabled
-              ? AppColors.getTextPrimary(context)
-              : AppColors.getTextSecondary(context),
+          color: isOfflineDisabled
+              ? AppColors.warning
+              : (isEnabled
+                  ? AppColors.getTextPrimary(context)
+                  : AppColors.getTextSecondary(context)),
         ),
         decoration: InputDecoration(
-          hintText: widget.hint,
+          hintText: isOfflineDisabled ? 'Internet required' : widget.hint,
           hintStyle: AppTextStyles.bodyMedium(context).copyWith(
-            color: AppColors.getTextSecondary(context).withValues(alpha: 0.5),
+            color: isOfflineDisabled
+                ? AppColors.warning.withValues(alpha: 0.5)
+                : AppColors.getTextSecondary(context).withValues(alpha: 0.5),
           ),
-          prefixIcon: _buildPrefixIcon(context),
-          suffixIcon: _buildSuffixIcon(context),
+          prefixIcon: _buildPrefixIcon(context, isEnabled, isOfflineDisabled),
+          suffixIcon: _buildSuffixIcon(context, isEnabled, isOfflineDisabled),
           border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          errorBorder: InputBorder.none,
+          focusedErrorBorder: InputBorder.none,
+          disabledBorder: InputBorder.none,
           contentPadding: EdgeInsets.symmetric(
             horizontal: ResponsiveValues.spacingL(context),
             vertical: ResponsiveValues.spacingM(context),
           ),
           counterText: '',
+          isDense: true,
+          filled: false,
         ),
       ),
     );
   }
 
-  Widget _buildPrefixIcon(BuildContext context) {
+  Widget _buildPrefixIcon(
+      BuildContext context, bool isEnabled, bool isOfflineDisabled) {
+    final iconColor = isOfflineDisabled
+        ? AppColors.warning
+        : (_hasFocus
+            ? AppColors.telegramBlue
+            : AppColors.getTextSecondary(context));
+
     return Padding(
       padding: EdgeInsets.only(
         left: ResponsiveValues.spacingM(context),
         right: ResponsiveValues.spacingS(context),
       ),
       child: Icon(
-        widget.prefixIcon,
+        isOfflineDisabled ? Icons.wifi_off_rounded : widget.prefixIcon,
         size: ResponsiveValues.iconSizeS(context),
-        color: _hasFocus
-            ? AppColors.telegramBlue
-            : AppColors.getTextSecondary(context),
+        color: iconColor,
       ),
     );
   }
 
-  Widget? _buildSuffixIcon(BuildContext context) {
+  Widget? _buildSuffixIcon(
+      BuildContext context, bool isEnabled, bool isOfflineDisabled) {
     if (widget.suffixIcon != null) return widget.suffixIcon;
 
-    if (widget.obscureText) {
+    if (widget.obscureText && !isOfflineDisabled) {
       return Padding(
         padding: EdgeInsets.only(right: ResponsiveValues.spacingS(context)),
         child: IconButton(
@@ -273,11 +303,14 @@ class _AppTextFieldState extends State<AppTextField> {
                 : AppColors.getTextSecondary(context),
           ),
           onPressed: () => setState(() => _obscureText = !_obscureText),
+          splashRadius: 20,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
         ),
       );
     }
 
-    if (widget.controller.text.isNotEmpty && widget.enabled) {
+    if (widget.controller.text.isNotEmpty && isEnabled && !isOfflineDisabled) {
       return Padding(
         padding: EdgeInsets.only(right: ResponsiveValues.spacingS(context)),
         child: IconButton(
@@ -290,6 +323,20 @@ class _AppTextFieldState extends State<AppTextField> {
             widget.controller.clear();
             widget.onChanged?.call('');
           },
+          splashRadius: 20,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+        ),
+      );
+    }
+
+    if (isOfflineDisabled) {
+      return Padding(
+        padding: EdgeInsets.only(right: ResponsiveValues.spacingS(context)),
+        child: Icon(
+          Icons.wifi_off_rounded,
+          size: ResponsiveValues.iconSizeS(context),
+          color: AppColors.warning,
         ),
       );
     }
@@ -297,34 +344,40 @@ class _AppTextFieldState extends State<AppTextField> {
     return null;
   }
 
-  BoxDecoration _getDecoration(BuildContext context) {
-    final baseDecoration = BoxDecoration(
-      borderRadius:
-          BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-    );
+  BoxDecoration _getDecoration(
+      BuildContext context, bool isEnabled, bool isOfflineDisabled) {
+    final borderRadius =
+        BorderRadius.circular(ResponsiveValues.radiusMedium(context));
+
+    final borderColor = isOfflineDisabled
+        ? AppColors.warning
+        : (_hasFocus ? AppColors.telegramBlue : AppColors.getDivider(context));
 
     switch (widget.variant) {
       case TextFieldVariant.glass:
-        return baseDecoration.copyWith(
+        return BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              AppColors.getCard(context).withValues(alpha: 0.4),
-              AppColors.getCard(context).withValues(alpha: 0.2),
+              AppColors.getCard(context)
+                  .withValues(alpha: isOfflineDisabled ? 0.3 : 0.4),
+              AppColors.getCard(context)
+                  .withValues(alpha: isOfflineDisabled ? 0.15 : 0.2),
             ],
           ),
+          borderRadius: borderRadius,
           border: Border.all(
-            color: _hasFocus
-                ? AppColors.telegramBlue
-                : AppColors.getDivider(context).withValues(alpha: 0.2),
+            color: borderColor.withValues(
+                alpha: isOfflineDisabled ? 0.5 : (_hasFocus ? 1.0 : 0.2)),
             width: _hasFocus ? 2 : 1,
           ),
         );
 
       case TextFieldVariant.filled:
-        return baseDecoration.copyWith(
+        return BoxDecoration(
           color: AppColors.getSurface(context),
+          borderRadius: borderRadius,
           border: Border.all(
             color: _hasFocus ? AppColors.telegramBlue : Colors.transparent,
             width: _hasFocus ? 2 : 0,
@@ -332,12 +385,11 @@ class _AppTextFieldState extends State<AppTextField> {
         );
 
       case TextFieldVariant.outline:
-        return baseDecoration.copyWith(
+        return BoxDecoration(
           color: Colors.transparent,
+          borderRadius: borderRadius,
           border: Border.all(
-            color: _hasFocus
-                ? AppColors.telegramBlue
-                : AppColors.getDivider(context),
+            color: borderColor,
             width: _hasFocus ? 2 : 1,
           ),
         );
