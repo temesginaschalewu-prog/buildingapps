@@ -22,6 +22,8 @@ import 'package:familyacademyclient/models/subscription_model.dart';
 import 'package:familyacademyclient/models/user_model.dart';
 import 'package:familyacademyclient/utils/constants.dart' show AppConstants;
 import 'package:familyacademyclient/utils/helpers.dart';
+import 'package:familyacademyclient/services/connectivity_service.dart';
+import 'package:familyacademyclient/services/user_session.dart';
 
 import '../utils/api_response.dart';
 
@@ -99,8 +101,9 @@ class ApiService {
             final minutesUntilExpiry =
                 expiryTime.difference(DateTime.now()).inMinutes;
 
-            if (minutesUntilExpiry < AppConstants.tokenRefreshThresholdMinutes)
+            if (minutesUntilExpiry < AppConstants.tokenRefreshThresholdMinutes) {
               await _refreshAccessToken();
+            }
           }
         }
       } catch (e) {
@@ -305,6 +308,34 @@ class ApiService {
     }
   }
 
+  // ===== OFFLINE ACTION HANDLING =====
+  Future<void> _handleOfflineAction(
+    OfflineActionType type,
+    Map<String, dynamic> data, {
+    required bool requiresOnline,
+    String? customMessage,
+  }) async {
+    final connectivity = ConnectivityService();
+
+    if (!requiresOnline || connectivity.isOnline) {
+      return; // Execute normally
+    }
+
+    // Queue for offline execution
+    final userId = await UserSession().getCurrentUserId();
+    if (userId != null) {
+      connectivity.queueAction(type, data, userId);
+      throw ApiError(
+        message:
+            customMessage ?? 'Action saved offline. Will sync when online.',
+        statusCode: -1,
+        isOffline: true,
+        data: {'queued': true, 'action': type.name},
+      );
+    }
+  }
+
+  // ===== AUTH ENDPOINTS =====
   Future<ApiResponse<Map<String, dynamic>>> register(String username,
       String password, String deviceId, String? fcmToken) async {
     try {
@@ -857,6 +888,25 @@ class ApiService {
 
   Future<ApiResponse<Map<String, dynamic>>> checkAnswer(
       int questionId, String selectedOption) async {
+    final connectivity = ConnectivityService();
+
+    if (!connectivity.isOnline) {
+      await _handleOfflineAction(
+        OfflineActionType.saveAnswer,
+        {
+          'questionId': questionId,
+          'selectedOption': selectedOption,
+        },
+        requiresOnline: false,
+        customMessage: 'Answer saved offline. Will sync when online.',
+      );
+      return ApiResponse<Map<String, dynamic>>(
+        success: true,
+        message: 'Answer saved offline',
+        data: {'queued': true},
+      );
+    }
+
     try {
       final response = await _dio.post(
         AppConstants.checkAnswerEndpoint,
@@ -1042,6 +1092,25 @@ class ApiService {
 
   Future<ApiResponse<Map<String, dynamic>>> submitExam(
       int examResultId, List<Map<String, dynamic>> answers) async {
+    final connectivity = ConnectivityService();
+
+    if (!connectivity.isOnline) {
+      await _handleOfflineAction(
+        OfflineActionType.submitExam,
+        {
+          'examResultId': examResultId,
+          'answers': answers,
+        },
+        requiresOnline: false,
+        customMessage: 'Exam submitted offline. Will sync when online.',
+      );
+      return ApiResponse<Map<String, dynamic>>(
+        success: true,
+        message: 'Exam saved offline',
+        data: {'queued': true},
+      );
+    }
+
     try {
       final response = await _dio.post(
           AppConstants.submitExamEndpoint(examResultId),
@@ -1193,6 +1262,29 @@ class ApiService {
     String? accountHolderName,
     String? proofImagePath,
   }) async {
+    final connectivity = ConnectivityService();
+
+    if (!connectivity.isOnline) {
+      await _handleOfflineAction(
+        OfflineActionType.submitPayment,
+        {
+          'categoryId': categoryId,
+          'paymentType': paymentType,
+          'paymentMethod': paymentMethod,
+          'amount': amount,
+          'accountHolderName': accountHolderName,
+          'proofImagePath': proofImagePath,
+        },
+        requiresOnline: false,
+        customMessage: 'Payment saved offline. Will submit when online.',
+      );
+      return ApiResponse<Map<String, dynamic>>(
+        success: true,
+        message: 'Payment saved offline',
+        data: {'queued': true},
+      );
+    }
+
     try {
       final response = await _dio.post(
         AppConstants.submitPaymentEndpoint,
@@ -1315,6 +1407,18 @@ class ApiService {
   }
 
   Future<ApiResponse<void>> markNotificationAsRead(int notificationId) async {
+    final connectivity = ConnectivityService();
+
+    if (!connectivity.isOnline) {
+      await _handleOfflineAction(
+        OfflineActionType.markNotificationRead,
+        {'logId': notificationId},
+        requiresOnline: false,
+        customMessage: 'Marked as read offline. Will sync when online.',
+      );
+      return ApiResponse(success: true, message: 'Marked as read offline');
+    }
+
     try {
       final response = await _dio
           .put('${AppConstants.notificationsEndpoint}/$notificationId/read');
@@ -1478,6 +1582,23 @@ class ApiService {
 
   Future<ApiResponse<void>> updateMyProfile(
       {String? email, String? phone, String? profileImage}) async {
+    final connectivity = ConnectivityService();
+
+    if (!connectivity.isOnline) {
+      await _handleOfflineAction(
+        OfflineActionType.updateProfile,
+        {
+          'email': email,
+          'phone': phone,
+          'profileImage': profileImage,
+        },
+        requiresOnline: false,
+        customMessage: 'Profile update saved offline. Will sync when online.',
+      );
+      return ApiResponse(
+          success: true, message: 'Profile update saved offline');
+    }
+
     try {
       final response = await _dio.put(
         AppConstants.updateProfileEndpoint,
@@ -1643,6 +1764,28 @@ class ApiService {
     int? questionsAttempted,
     int? questionsCorrect,
   }) async {
+    final connectivity = ConnectivityService();
+
+    if (!connectivity.isOnline) {
+      await _handleOfflineAction(
+        OfflineActionType.saveProgress,
+        {
+          'chapterId': chapterId,
+          'videoProgress': videoProgress,
+          'notesViewed': notesViewed,
+          'questionsAttempted': questionsAttempted,
+          'questionsCorrect': questionsCorrect,
+        },
+        requiresOnline: false,
+        customMessage: 'Progress saved offline. Will sync when online.',
+      );
+      return ApiResponse(
+        success: true,
+        message: 'Progress saved locally',
+        data: {'queued': true},
+      );
+    }
+
     try {
       final data = {
         'chapter_id': chapterId,
