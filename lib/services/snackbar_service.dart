@@ -10,6 +10,7 @@ class SnackbarService {
 
   OverlayEntry? _currentEntry;
   Timer? _timer;
+  bool _isShowing = false;
 
   void show({
     required BuildContext context,
@@ -17,6 +18,16 @@ class SnackbarService {
     SnackbarType type = SnackbarType.info,
     Duration duration = const Duration(seconds: 3),
   }) {
+    // Don't try to show if context isn't mounted or if we're already showing
+    if (!context.mounted || _isShowing) return;
+
+    // Make sure we have an overlay
+    final overlayState = Overlay.of(context, rootOverlay: true);
+    if (overlayState == null) {
+      debugPrint('SnackbarService: No overlay found, skipping: $message');
+      return;
+    }
+
     _currentEntry?.remove();
     _timer?.cancel();
 
@@ -87,11 +98,13 @@ class SnackbarService {
       ),
     );
 
-    Overlay.of(context).insert(_currentEntry!);
+    _isShowing = true;
+    overlayState.insert(_currentEntry!);
 
     _timer = Timer(duration, () {
       _currentEntry?.remove();
       _currentEntry = null;
+      _isShowing = false;
     });
   }
 
@@ -113,13 +126,42 @@ class SnackbarService {
 
   void showOffline(BuildContext context, {String? action}) {
     final message = action != null
-        ? 'Cannot $action while offline. Please check your connection.'
-        : 'You are offline. Using cached content.';
+        ? 'Cannot $action while offline. Your changes will sync when online.'
+        : 'You are offline. Showing cached content.';
 
     show(
       context: context,
       message: message,
       type: SnackbarType.offline,
+      duration: const Duration(seconds: 2),
+    );
+  }
+
+  void showQueued(BuildContext context, {String? action}) {
+    final message = action != null
+        ? '$action saved offline. Will sync when online.'
+        : 'Action saved offline. Will sync when online.';
+
+    show(
+      context: context,
+      message: message,
+      type: SnackbarType.queued,
+      duration: const Duration(seconds: 2),
+    );
+  }
+
+  void showSyncComplete(BuildContext context, {int count = 0}) {
+    // Don't show sync complete if we don't have a valid context
+    if (!context.mounted) return;
+
+    final message = count > 0
+        ? 'Sync complete. $count change${count > 1 ? 's' : ''} synced.'
+        : 'Sync complete. All changes synced.';
+
+    show(
+      context: context,
+      message: message,
+      type: SnackbarType.syncComplete,
       duration: const Duration(seconds: 2),
     );
   }
@@ -135,7 +177,11 @@ class SnackbarService {
       case SnackbarType.info:
         return AppColors.blueGradient;
       case SnackbarType.offline:
-        return [AppColors.telegramYellow, AppColors.telegramOrange];
+        return [AppColors.warning, AppColors.telegramOrange];
+      case SnackbarType.queued:
+        return [AppColors.info, AppColors.telegramBlue];
+      case SnackbarType.syncComplete:
+        return AppColors.greenGradient;
     }
   }
 
@@ -151,6 +197,10 @@ class SnackbarService {
         return Icons.info_outline_rounded;
       case SnackbarType.offline:
         return Icons.wifi_off_rounded;
+      case SnackbarType.queued:
+        return Icons.schedule_rounded;
+      case SnackbarType.syncComplete:
+        return Icons.sync_rounded;
     }
   }
 }
