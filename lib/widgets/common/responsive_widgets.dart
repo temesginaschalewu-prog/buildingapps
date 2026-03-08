@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
-import '../../utils/app_enums.dart';
 
 class ResponsiveInfo {
   final BuildContext context;
@@ -338,8 +337,6 @@ class ResponsiveRow extends StatelessWidget {
         return WrapAlignment.spaceAround;
       case MainAxisAlignment.spaceEvenly:
         return WrapAlignment.spaceEvenly;
-      default:
-        return WrapAlignment.start;
     }
   }
 
