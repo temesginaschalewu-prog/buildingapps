@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/responsive_values.dart';
-import '../../utils/app_enums.dart';
+import '../../services/connectivity_service.dart';
 
 class AppButton extends StatelessWidget {
   final String? label;
@@ -15,6 +15,8 @@ class AppButton extends StatelessWidget {
   final bool expanded;
   final EdgeInsetsGeometry? padding;
   final double? borderRadius;
+  final bool requiresOnline; // NEW: Whether this button requires internet
+  final String? offlineTooltip; // NEW: Tooltip to show when offline
 
   const AppButton({
     super.key,
@@ -28,6 +30,8 @@ class AppButton extends StatelessWidget {
     this.expanded = false,
     this.padding,
     this.borderRadius,
+    this.requiresOnline = false,
+    this.offlineTooltip,
   });
 
   const AppButton.primary({
@@ -37,6 +41,8 @@ class AppButton extends StatelessWidget {
     this.icon,
     this.isLoading = false,
     this.expanded = false,
+    this.requiresOnline = false,
+    this.offlineTooltip,
   })  : variant = ButtonVariant.primary,
         size = ButtonSize.medium,
         customIcon = null,
@@ -50,6 +56,8 @@ class AppButton extends StatelessWidget {
     this.icon,
     this.isLoading = false,
     this.expanded = false,
+    this.requiresOnline = false,
+    this.offlineTooltip,
   })  : variant = ButtonVariant.secondary,
         size = ButtonSize.medium,
         customIcon = null,
@@ -63,6 +71,8 @@ class AppButton extends StatelessWidget {
     this.icon,
     this.isLoading = false,
     this.expanded = false,
+    this.requiresOnline = false,
+    this.offlineTooltip,
   })  : variant = ButtonVariant.success,
         size = ButtonSize.medium,
         customIcon = null,
@@ -76,6 +86,8 @@ class AppButton extends StatelessWidget {
     this.icon,
     this.isLoading = false,
     this.expanded = false,
+    this.requiresOnline = false,
+    this.offlineTooltip,
   })  : variant = ButtonVariant.danger,
         size = ButtonSize.medium,
         customIcon = null,
@@ -89,6 +101,8 @@ class AppButton extends StatelessWidget {
     this.icon,
     this.isLoading = false,
     this.expanded = false,
+    this.requiresOnline = false,
+    this.offlineTooltip,
   })  : variant = ButtonVariant.outline,
         size = ButtonSize.medium,
         customIcon = null,
@@ -102,6 +116,8 @@ class AppButton extends StatelessWidget {
     this.icon,
     this.isLoading = false,
     this.expanded = false,
+    this.requiresOnline = false,
+    this.offlineTooltip,
   })  : variant = ButtonVariant.text,
         size = ButtonSize.medium,
         customIcon = null,
@@ -114,6 +130,8 @@ class AppButton extends StatelessWidget {
     this.onPressed,
     this.isLoading = false,
     this.customIcon,
+    this.requiresOnline = false,
+    this.offlineTooltip,
   })  : label = null,
         variant = ButtonVariant.icon,
         size = ButtonSize.medium,
@@ -123,23 +141,35 @@ class AppButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isEnabled = onPressed != null && !isLoading;
+    // Check if button should be disabled due to offline
+    final connectivity = ConnectivityService();
+    final isOfflineDisabled = requiresOnline && connectivity.isOffline;
+    final effectiveOnPressed =
+        (isOfflineDisabled || isLoading) ? null : onPressed;
+    final isEnabled = effectiveOnPressed != null && !isLoading;
+
     final borderRadiusValue =
         borderRadius ?? ResponsiveValues.radiusMedium(context);
 
-    Widget button = Container(
+    final Widget button = Container(
       width: expanded ? double.infinity : null,
-      decoration: _getDecoration(context, isEnabled, borderRadiusValue),
+      decoration: _getDecoration(
+          context, isEnabled, borderRadiusValue, isOfflineDisabled),
       child: Material(
         color: Colors.transparent,
-        child: InkWell(
-          onTap: isEnabled ? onPressed : null,
-          borderRadius: BorderRadius.circular(borderRadiusValue),
-          splashColor: _getSplashColor(context),
-          highlightColor: Colors.transparent,
-          child: Container(
-            padding: padding ?? _getDefaultPadding(context),
-            child: _buildContent(context, isEnabled),
+        child: Tooltip(
+          message: isOfflineDisabled
+              ? (offlineTooltip ?? 'Internet connection required')
+              : '',
+          child: InkWell(
+            onTap: isEnabled ? effectiveOnPressed : null,
+            borderRadius: BorderRadius.circular(borderRadiusValue),
+            splashColor: _getSplashColor(context),
+            highlightColor: Colors.transparent,
+            child: Container(
+              padding: padding ?? _getDefaultPadding(context),
+              child: _buildContent(context, isEnabled, isOfflineDisabled),
+            ),
           ),
         ),
       ),
@@ -148,14 +178,17 @@ class AppButton extends StatelessWidget {
     return button;
   }
 
-  Widget _buildContent(BuildContext context, bool isEnabled) {
-    if (variant == ButtonVariant.icon)
-      return _buildIconContent(context, isEnabled);
-    return _buildLabelContent(context, isEnabled);
+  Widget _buildContent(
+      BuildContext context, bool isEnabled, bool isOfflineDisabled) {
+    if (variant == ButtonVariant.icon) {
+      return _buildIconContent(context, isEnabled, isOfflineDisabled);
+    }
+    return _buildLabelContent(context, isEnabled, isOfflineDisabled);
   }
 
-  Widget _buildLabelContent(BuildContext context, bool isEnabled) {
-    final textColor = _getTextColor(context, isEnabled);
+  Widget _buildLabelContent(
+      BuildContext context, bool isEnabled, bool isOfflineDisabled) {
+    final textColor = _getTextColor(context, isEnabled, isOfflineDisabled);
 
     return Row(
       mainAxisSize: expanded ? MainAxisSize.max : MainAxisSize.min,
@@ -172,12 +205,16 @@ class AppButton extends StatelessWidget {
           )
         else ...[
           if (icon != null) ...[
-            Icon(icon, size: _getIconSize(context), color: textColor),
+            Icon(
+              isOfflineDisabled ? Icons.wifi_off_rounded : icon,
+              size: _getIconSize(context),
+              color: textColor,
+            ),
             SizedBox(width: _getSpacing(context)),
           ],
           if (label != null)
             Text(
-              label!,
+              isOfflineDisabled ? 'Offline' : label!,
               style: _getTextStyle(context, textColor),
               textAlign: TextAlign.center,
             ),
@@ -186,7 +223,8 @@ class AppButton extends StatelessWidget {
     );
   }
 
-  Widget _buildIconContent(BuildContext context, bool isEnabled) {
+  Widget _buildIconContent(
+      BuildContext context, bool isEnabled, bool isOfflineDisabled) {
     return Container(
       width: _getIconContainerSize(context),
       height: _getIconContainerSize(context),
@@ -207,7 +245,7 @@ class AppButton extends StatelessWidget {
               child: customIcon ??
                   (icon != null
                       ? Icon(
-                          icon,
+                          isOfflineDisabled ? Icons.wifi_off_rounded : icon,
                           size: _getIconSize(context),
                           color: isEnabled
                               ? AppColors.telegramBlue
@@ -221,18 +259,20 @@ class AppButton extends StatelessWidget {
     );
   }
 
-  BoxDecoration _getDecoration(
-      BuildContext context, bool isEnabled, double borderRadius) {
+  BoxDecoration _getDecoration(BuildContext context, bool isEnabled,
+      double borderRadius, bool isOfflineDisabled) {
+    final Color disabledColor = AppColors.telegramGray.withValues(alpha: 0.2);
+    AppColors.warning.withValues(alpha: 0.2);
+
     switch (variant) {
       case ButtonVariant.primary:
         return BoxDecoration(
-          gradient: isEnabled
+          gradient: isEnabled && !isOfflineDisabled
               ? const LinearGradient(colors: AppColors.blueGradient)
               : null,
-          color:
-              isEnabled ? null : AppColors.telegramGray.withValues(alpha: 0.2),
+          color: !isEnabled || isOfflineDisabled ? disabledColor : null,
           borderRadius: BorderRadius.circular(borderRadius),
-          boxShadow: isEnabled
+          boxShadow: isEnabled && !isOfflineDisabled
               ? [
                   BoxShadow(
                       color: AppColors.telegramBlue.withValues(alpha: 0.3),
@@ -244,7 +284,7 @@ class AppButton extends StatelessWidget {
 
       case ButtonVariant.secondary:
         return BoxDecoration(
-          gradient: isEnabled
+          gradient: isEnabled && !isOfflineDisabled
               ? LinearGradient(colors: [
                   AppColors.getCard(context).withValues(alpha: 0.4),
                   AppColors.getCard(context).withValues(alpha: 0.2)
@@ -252,11 +292,14 @@ class AppButton extends StatelessWidget {
               : null,
           borderRadius: BorderRadius.circular(borderRadius),
           border: Border.all(
-            color: isEnabled
-                ? AppColors.telegramBlue.withValues(alpha: 0.3)
-                : AppColors.getTextSecondary(context).withValues(alpha: 0.1),
+            color: isOfflineDisabled
+                ? AppColors.warning.withValues(alpha: 0.3)
+                : (isEnabled
+                    ? AppColors.telegramBlue.withValues(alpha: 0.3)
+                    : AppColors.getTextSecondary(context)
+                        .withValues(alpha: 0.1)),
           ),
-          boxShadow: isEnabled
+          boxShadow: isEnabled && !isOfflineDisabled
               ? [
                   BoxShadow(
                       color: AppColors.telegramBlue.withValues(alpha: 0.3),
@@ -268,13 +311,12 @@ class AppButton extends StatelessWidget {
 
       case ButtonVariant.success:
         return BoxDecoration(
-          gradient: isEnabled
+          gradient: isEnabled && !isOfflineDisabled
               ? const LinearGradient(colors: AppColors.greenGradient)
               : null,
-          color:
-              isEnabled ? null : AppColors.telegramGray.withValues(alpha: 0.2),
+          color: !isEnabled || isOfflineDisabled ? disabledColor : null,
           borderRadius: BorderRadius.circular(borderRadius),
-          boxShadow: isEnabled
+          boxShadow: isEnabled && !isOfflineDisabled
               ? [
                   BoxShadow(
                       color: AppColors.telegramGreen.withValues(alpha: 0.3),
@@ -286,13 +328,12 @@ class AppButton extends StatelessWidget {
 
       case ButtonVariant.danger:
         return BoxDecoration(
-          gradient: isEnabled
+          gradient: isEnabled && !isOfflineDisabled
               ? const LinearGradient(colors: AppColors.pinkGradient)
               : null,
-          color:
-              isEnabled ? null : AppColors.telegramGray.withValues(alpha: 0.2),
+          color: !isEnabled || isOfflineDisabled ? disabledColor : null,
           borderRadius: BorderRadius.circular(borderRadius),
-          boxShadow: isEnabled
+          boxShadow: isEnabled && !isOfflineDisabled
               ? [
                   BoxShadow(
                       color: AppColors.telegramRed.withValues(alpha: 0.3),
@@ -307,9 +348,12 @@ class AppButton extends StatelessWidget {
           color: Colors.transparent,
           borderRadius: BorderRadius.circular(borderRadius),
           border: Border.all(
-            color: isEnabled
-                ? AppColors.telegramBlue
-                : AppColors.getTextSecondary(context).withValues(alpha: 0.3),
+            color: isOfflineDisabled
+                ? AppColors.warning.withValues(alpha: 0.5)
+                : (isEnabled
+                    ? AppColors.telegramBlue
+                    : AppColors.getTextSecondary(context)
+                        .withValues(alpha: 0.3)),
             width: 1.5,
           ),
         );
@@ -334,8 +378,10 @@ class AppButton extends StatelessWidget {
     }
   }
 
-  Color _getTextColor(BuildContext context, bool isEnabled) {
+  Color _getTextColor(
+      BuildContext context, bool isEnabled, bool isOfflineDisabled) {
     if (!isEnabled) return AppColors.getTextSecondary(context);
+    if (isOfflineDisabled) return AppColors.warning;
 
     switch (variant) {
       case ButtonVariant.primary:
