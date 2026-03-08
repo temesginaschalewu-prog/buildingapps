@@ -1,16 +1,18 @@
 import 'dart:async';
+import 'package:familyacademyclient/utils/constants.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../services/user_session.dart';
+import '../services/connectivity_service.dart';
 import '../models/chapter_model.dart';
 import '../utils/helpers.dart';
-import '../utils/parsers.dart';
 
 class ChapterProvider with ChangeNotifier {
   final ApiService apiService;
   final DeviceService deviceService;
+  final ConnectivityService connectivityService;
 
   final List<Chapter> _chapters = [];
   final Map<int, List<Chapter>> _chaptersByCourse = {};
@@ -19,14 +21,29 @@ class ChapterProvider with ChangeNotifier {
   final Map<int, DateTime> _lastLoadedTime = {};
   bool _isLoading = false;
   String? _error;
+  bool _isOffline = false;
 
   StreamController<Map<int, List<Chapter>>> _chaptersUpdateController =
       StreamController<Map<int, List<Chapter>>>.broadcast();
 
-  static const Duration cacheDuration = Duration(hours: 24);
+  static const Duration cacheDuration = AppConstants.cacheTTLChapters;
 
-  ChapterProvider({required this.apiService, required this.deviceService}) {
+  ChapterProvider({
+    required this.apiService,
+    required this.deviceService,
+    required this.connectivityService,
+  }) {
     _preloadCommonCourses();
+    _setupConnectivityListener();
+  }
+
+  void _setupConnectivityListener() {
+    connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (_isOffline != !isOnline) {
+        _isOffline = !isOnline;
+        notifyListeners();
+      }
+    });
   }
 
   Future<void> _preloadCommonCourses() async {
@@ -41,6 +58,7 @@ class ChapterProvider with ChangeNotifier {
   List<Chapter> get chapters => _chapters;
   bool get isLoading => _isLoading;
   String? get error => _error;
+  bool get isOffline => _isOffline;
   Stream<Map<int, List<Chapter>>> get chaptersUpdates =>
       _chaptersUpdateController.stream;
 
@@ -72,25 +90,25 @@ class ChapterProvider with ChangeNotifier {
   }
 
   Future<void> loadChaptersByCourse(int courseId,
-      {bool forceRefresh = false}) async {
+      {bool forceRefresh = false, bool isManualRefresh = false}) async {
     if (_isLoadingForCourse[courseId] == true && !forceRefresh) {
       return;
     }
 
-    final lastLoaded = _lastLoadedTime[courseId];
-    final hasCache = _hasLoadedForCourse[courseId] == true;
-    final isCacheValid = lastLoaded != null &&
-        DateTime.now().difference(lastLoaded) < cacheDuration;
-
-    if (hasCache && !forceRefresh && isCacheValid) {
-      debugLog(
-          'ChapterProvider', '✅ Using cached chapters for course: $courseId');
-      return;
+    if (isManualRefresh) {
+      forceRefresh = true;
     }
 
+    _isLoadingForCourse[courseId] = true;
+    _isLoading = true;
+    _error = null;
+    _notifySafely();
+
+    // STEP 1: ALWAYS try cache first (EVEN WHEN OFFLINE)
     if (!forceRefresh) {
       final cachedChapters = await deviceService
           .getCacheItem<List<Chapter>>('chapters_course_$courseId');
+
       if (cachedChapters != null) {
         _chaptersByCourse[courseId] = cachedChapters;
         _hasLoadedForCourse[courseId] = true;
@@ -104,18 +122,31 @@ class ChapterProvider with ChangeNotifier {
         debugLog('ChapterProvider',
             '✅ Loaded ${cachedChapters.length} chapters from cache for course $courseId');
 
-        unawaited(_refreshInBackground(courseId));
+        // STEP 2: If online, refresh in background
+        if (!_isOffline) {
+          unawaited(_refreshInBackground(courseId));
+        }
         return;
       }
     }
 
-    _isLoadingForCourse[courseId] = true;
-    _isLoading = true;
-    _error = null;
-    _notifySafely();
+    // STEP 3: If offline and no cache, show error
+    if (_isOffline) {
+      _error = 'You are offline. No cached chapters available.';
+      _isLoadingForCourse[courseId] = false;
+      _isLoading = false;
+      _notifySafely();
+
+      if (isManualRefresh) {
+        throw Exception(
+            'Network error. Please check your internet connection.');
+      }
+      return;
+    }
+
+    debugLog('ChapterProvider', '📚 Loading chapters for course: $courseId');
 
     try {
-      debugLog('ChapterProvider', '📚 Loading chapters for course: $courseId');
       final response = await apiService.getChaptersByCourse(courseId);
 
       final responseData = response.data ?? {};
@@ -162,6 +193,10 @@ class ChapterProvider with ChangeNotifier {
 
       _chaptersUpdateController
           .add({courseId: _chaptersByCourse[courseId] ?? []});
+
+      if (isManualRefresh) {
+        rethrow;
+      }
     } finally {
       _isLoadingForCourse[courseId] = false;
       _isLoading = false;
@@ -170,6 +205,8 @@ class ChapterProvider with ChangeNotifier {
   }
 
   Future<void> _refreshInBackground(int courseId) async {
+    if (_isOffline) return;
+
     try {
       debugLog('ChapterProvider', '🔄 Background refresh for course $courseId');
 
@@ -256,7 +293,7 @@ class ChapterProvider with ChangeNotifier {
 
   Future<bool> _isLoggingOut() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool('is_logging_out') ?? false;
+    return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
   }
 
   Future<void> clearAllChapters() async {
