@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../services/user_session.dart';
+import '../services/connectivity_service.dart';
 import '../models/subscription_model.dart';
 import '../providers/category_provider.dart';
 import '../utils/constants.dart';
@@ -12,6 +13,7 @@ import '../utils/helpers.dart';
 class SubscriptionProvider with ChangeNotifier {
   final ApiService apiService;
   final DeviceService deviceService;
+  final ConnectivityService connectivityService;
 
   Map<int, Subscription> _subscriptionsByCategory = {};
   List<Subscription> _allSubscriptions = [];
@@ -22,10 +24,11 @@ class SubscriptionProvider with ChangeNotifier {
   bool _isLoading = false;
   bool _hasLoaded = false;
   String? _error;
+  bool _isOffline = false;
 
   Timer? _backgroundRefreshTimer;
   static const Duration _backgroundRefreshInterval = Duration(minutes: 5);
-  static const Duration _cacheDuration = Duration(minutes: 30);
+  static const Duration _cacheDuration = AppConstants.cacheTTLSubscriptions;
 
   DateTime? _lastBackgroundRefreshTime;
 
@@ -44,8 +47,22 @@ class SubscriptionProvider with ChangeNotifier {
   SubscriptionProvider({
     required this.apiService,
     required this.deviceService,
+    required this.connectivityService,
   }) {
     _initBackgroundRefresh();
+    _setupConnectivityListener();
+  }
+
+  void _setupConnectivityListener() {
+    connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (_isOffline != !isOnline) {
+        _isOffline = !isOnline;
+        if (!_isOffline && _hasLoaded) {
+          _performBackgroundRefresh();
+        }
+        notifyListeners();
+      }
+    });
   }
 
   void setCategoryProvider(CategoryProvider categoryProvider) {
@@ -60,6 +77,7 @@ class SubscriptionProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get hasLoaded => _hasLoaded;
   String? get error => _error;
+  bool get isOffline => _isOffline;
 
   List<Subscription> get activeSubscriptions {
     return _allSubscriptions.where((sub) => sub.isActive).toList();
@@ -107,7 +125,7 @@ class SubscriptionProvider with ChangeNotifier {
 
   void _initBackgroundRefresh() {
     _backgroundRefreshTimer = Timer.periodic(_backgroundRefreshInterval, (_) {
-      if (_hasLoaded && !_isLoading) {
+      if (_hasLoaded && !_isLoading && !_isOffline) {
         _performBackgroundRefresh();
       }
     });
@@ -181,12 +199,12 @@ class SubscriptionProvider with ChangeNotifier {
     return false;
   }
 
-  Future<void> loadSubscriptions({bool forceRefresh = false}) async {
+  Future<void> loadSubscriptions(
+      {bool forceRefresh = false, bool isManualRefresh = false}) async {
     if (_isLoading && !forceRefresh) return;
 
-    if (_hasLoaded && !forceRefresh && _allSubscriptions.isNotEmpty) {
-      debugLog('SubscriptionProvider', '📦 Using cached subscriptions');
-      return;
+    if (isManualRefresh) {
+      forceRefresh = true;
     }
 
     _isLoading = true;
@@ -196,11 +214,13 @@ class SubscriptionProvider with ChangeNotifier {
     try {
       debugLog('SubscriptionProvider', '📥 Loading subscriptions...');
 
+      // STEP 1: ALWAYS try cache first (EVEN WHEN OFFLINE)
       if (!forceRefresh) {
         final cachedSubscriptions =
             await deviceService.getCacheItem<List<Subscription>>(
-                AppConstants.subscriptionsCacheKey,
-                isUserSpecific: true);
+          AppConstants.subscriptionsCacheKey,
+          isUserSpecific: true,
+        );
 
         if (cachedSubscriptions != null && cachedSubscriptions.isNotEmpty) {
           _allSubscriptions = cachedSubscriptions;
@@ -221,8 +241,26 @@ class SubscriptionProvider with ChangeNotifier {
 
           debugLog('SubscriptionProvider',
               '✅ Loaded ${_allSubscriptions.length} subscriptions from cache');
+
+          // STEP 2: If online, refresh in background
+          if (!_isOffline) {
+            unawaited(_performBackgroundRefresh());
+          }
           return;
         }
+      }
+
+      // STEP 3: If offline and no cache, show error
+      if (_isOffline) {
+        _error = 'You are offline. No cached subscriptions available.';
+        _isLoading = false;
+        _notifySafely();
+
+        if (isManualRefresh) {
+          throw Exception(
+              'Network error. Please check your internet connection.');
+        }
+        return;
       }
 
       final response = await apiService.getMySubscriptions();
@@ -254,6 +292,10 @@ class SubscriptionProvider with ChangeNotifier {
         _error = response.message;
         debugLog('SubscriptionProvider',
             '❌ Failed to load subscriptions: ${response.message}');
+
+        if (isManualRefresh) {
+          throw Exception(response.message);
+        }
       }
     } catch (e) {
       _error = e.toString();
@@ -278,6 +320,10 @@ class SubscriptionProvider with ChangeNotifier {
       } else if (_allSubscriptions.isEmpty) {
         _allSubscriptions = [];
         _rebuildCacheFromSubscriptions();
+      }
+
+      if (isManualRefresh) {
+        rethrow;
       }
     } finally {
       _isLoading = false;
@@ -310,12 +356,11 @@ class SubscriptionProvider with ChangeNotifier {
   void _notifyChanges() {
     _subscriptionsUpdateController.add(_allSubscriptions);
     _subscriptionUpdateController.add(Map.from(_categoryAccessCache));
-    for (final categoryId in _categoryAccessCache.keys) {
-      _subscriptionStatusChangedController.add(categoryId);
-    }
+    _categoryAccessCache.keys.forEach(_subscriptionStatusChangedController.add);
   }
 
-  Future<bool> checkHasActiveSubscriptionForCategory(int categoryId) async {
+  Future<bool> checkHasActiveSubscriptionForCategory(int categoryId,
+      {bool isManualRefresh = false}) async {
     debugLog('SubscriptionProvider',
         '🔍 Checking subscription for category: $categoryId');
 
@@ -344,6 +389,15 @@ class SubscriptionProvider with ChangeNotifier {
     _categoryCheckCompleters[categoryId] = completer;
 
     try {
+      if (_isOffline) {
+        if (isManualRefresh) {
+          throw Exception(
+              'Network error. Please check your internet connection.');
+        }
+        completer.complete(false);
+        return false;
+      }
+
       final response = await apiService.checkSubscriptionStatus(categoryId);
 
       if (response.success && response.data != null) {
@@ -417,14 +471,18 @@ class SubscriptionProvider with ChangeNotifier {
       debugLog('SubscriptionProvider', '❌ Error checking subscription: $e');
 
       completer.complete(false);
+
+      if (isManualRefresh) {
+        rethrow;
+      }
       return false;
     } finally {
       _categoryCheckCompleters.remove(categoryId);
     }
   }
 
-  Future<Map<int, bool>> checkSubscriptionsForCategories(
-      List<int> categoryIds) async {
+  Future<Map<int, bool>> checkSubscriptionsForCategories(List<int> categoryIds,
+      {bool isManualRefresh = false}) async {
     final results = <int, bool>{};
     final updates = <int, bool>{};
 
@@ -441,14 +499,18 @@ class SubscriptionProvider with ChangeNotifier {
     final missingIds =
         categoryIds.where((id) => !results.containsKey(id)).toList();
 
-    if (missingIds.isNotEmpty) {
-      final futures = missingIds.map(checkHasActiveSubscriptionForCategory);
+    if (missingIds.isNotEmpty && !_isOffline) {
+      final futures = missingIds.map((id) =>
+          checkHasActiveSubscriptionForCategory(id,
+              isManualRefresh: isManualRefresh));
       final newResults = await Future.wait(futures);
 
       for (int i = 0; i < missingIds.length; i++) {
         results[missingIds[i]] = newResults[i];
         updates[missingIds[i]] = newResults[i];
       }
+    } else if (_isOffline && missingIds.isNotEmpty && isManualRefresh) {
+      throw Exception('Network error. Please check your internet connection.');
     }
 
     if (_categoryProvider != null && updates.isNotEmpty) {
@@ -470,7 +532,7 @@ class SubscriptionProvider with ChangeNotifier {
     final updates = <int, bool>{};
 
     for (final categoryId in categoryIds) {
-      if (!_categoryAccessCache.containsKey(categoryId)) {
+      if (!_categoryAccessCache.containsKey(categoryId) && !_isOffline) {
         futures.add(
             checkHasActiveSubscriptionForCategory(categoryId).then((result) {
           updates[categoryId] = result;
@@ -500,7 +562,7 @@ class SubscriptionProvider with ChangeNotifier {
     _lastCheckTime = {};
     _hasLoaded = false;
 
-    await loadSubscriptions(forceRefresh: true);
+    await loadSubscriptions(forceRefresh: true, isManualRefresh: true);
     debugLog('SubscriptionProvider', '✅ Subscriptions refreshed');
   }
 
@@ -514,7 +576,9 @@ class SubscriptionProvider with ChangeNotifier {
       _categoryCheckComplete.remove(categoryId);
       _lastCheckTime.remove(categoryId);
 
-      await checkHasActiveSubscriptionForCategory(categoryId);
+      if (!_isOffline) {
+        await checkHasActiveSubscriptionForCategory(categoryId);
+      }
       debugLog('SubscriptionProvider',
           '✅ Refreshed subscription for category: $categoryId');
     } catch (e) {
@@ -533,7 +597,7 @@ class SubscriptionProvider with ChangeNotifier {
     _categoryCheckCompleters.clear();
 
     await deviceService.clearCacheByPrefix('subscriptions');
-    await loadSubscriptions(forceRefresh: true);
+    await loadSubscriptions(forceRefresh: true, isManualRefresh: true);
 
     debugLog('SubscriptionProvider', '✅ All categories refreshed');
   }
