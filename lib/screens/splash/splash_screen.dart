@@ -1,19 +1,18 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/user_session.dart';
 import '../../services/connectivity_service.dart';
+import '../../services/platform_service.dart';
+import '../../utils/helpers.dart';
 import '../../widgets/common/app_card.dart';
 import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
-import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
-import '../../utils/app_enums.dart';
-import '../../widgets/common/responsive_widgets.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -40,14 +39,12 @@ class _SplashScreenState extends State<SplashScreen>
   bool _authCompleted = false;
   bool _hasError = false;
   bool _isOffline = false;
+  int _pendingCount = 0;
   String? _errorMessage;
   String _currentStatus = 'Initializing...';
   Timer? _statusTimer;
   Timer? _navigationTimer;
-  Timer? _retryTimer;
   bool _routerReady = false;
-  int _retryCount = 0;
-  final int _maxRetries = 3;
 
   @override
   void initState() {
@@ -94,12 +91,21 @@ class _SplashScreenState extends State<SplashScreen>
       _checkRouterReady();
       _startStatusUpdates();
       _checkConnectivity();
+      _checkPendingCount();
     });
+  }
+
+  Future<void> _checkPendingCount() async {
+    final connectivity = ConnectivityService();
+    setState(() => _pendingCount = connectivity.pendingActionsCount);
   }
 
   Future<void> _checkConnectivity() async {
     final connectivityService = context.read<ConnectivityService>();
-    setState(() => _isOffline = !connectivityService.isOnline);
+    setState(() {
+      _isOffline = !connectivityService.isOnline;
+      _pendingCount = connectivityService.pendingActionsCount;
+    });
   }
 
   void _checkRouterReady() {
@@ -110,22 +116,11 @@ class _SplashScreenState extends State<SplashScreen>
       setState(() => _routerReady = true);
       _initializeApp();
     } catch (e) {
-      if (_retryCount < _maxRetries && mounted) {
-        _retryCount++;
-        _retryTimer?.cancel();
-        _retryTimer = Timer(const Duration(milliseconds: 300), () {
-          if (mounted) _checkRouterReady();
-        });
-      } else {
-        if (mounted) _initializeAppWithFallback();
-      }
+      debugLog('SplashScreen', 'Router not ready, retrying...');
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (mounted) _checkRouterReady();
+      });
     }
-  }
-
-  void _initializeAppWithFallback() {
-    if (!mounted) return;
-    setState(() => _routerReady = false);
-    _initializeApp();
   }
 
   void _startStatusUpdates() {
@@ -140,6 +135,9 @@ class _SplashScreenState extends State<SplashScreen>
 
       if (_isOffline) {
         newStatus = 'Offline mode - using cached data';
+        if (_pendingCount > 0) {
+          newStatus = 'Offline - $_pendingCount pending changes';
+        }
       } else if (!_routerReady) {
         newStatus = 'Checking user status...';
       } else if (_authCompleted) {
@@ -156,40 +154,91 @@ class _SplashScreenState extends State<SplashScreen>
   Future<void> _initializeApp() async {
     if (!mounted) return;
 
+    debugLog('SplashScreen', 'initializeApp started');
+
     try {
       final authProvider = context.read<AuthProvider>();
       await UserSession().init();
+      if (!mounted) return;
 
-      if (authProvider.isAuthenticated && authProvider.isInitialized) {
+      // Check for existing user session
+      if (_isOffline) {
+        setState(() => _currentStatus = 'Checking cached user...');
+
         final user = authProvider.currentUser;
-        setState(() {
-          _authCompleted = true;
-          _currentStatus = 'Welcome back!';
-        });
-        await _checkmarkController.forward();
-        await Future.delayed(const Duration(milliseconds: 800));
+        if (user != null) {
+          debugLog('SplashScreen', 'Found cached user: ${user.username}');
+          setState(() {
+            _authCompleted = true;
+            _currentStatus = 'Welcome back! (Offline)';
+          });
+          await _checkmarkController.forward();
+          if (!mounted) return;
+          await Future.delayed(const Duration(milliseconds: 800));
+          if (!mounted) return;
 
-        if (!mounted) return;
-        if (user?.schoolId == null) {
-          context.go('/school-selection');
-        } else {
-          context.go('/');
+          if (user.schoolId == null) {
+            debugLog('SplashScreen',
+                'No school selected, going to school selection');
+            if (mounted) context.go('/school-selection');
+          } else {
+            debugLog('SplashScreen', 'Going to home');
+            if (mounted) context.go('/');
+          }
+          return;
         }
-        return;
       }
 
-      if (mounted)
-        setState(() => _currentStatus = 'Initializing authentication...');
+      // Wait for auth provider to fully initialize
+      if (mounted) {
+        setState(() => _currentStatus = 'Checking authentication...');
+      }
 
-      await authProvider.initialize();
+      // IMPORTANT: Wait for auth to initialize with timeout
+      debugLog('SplashScreen', 'Waiting for auth provider to initialize...');
 
-      if (mounted)
-        setState(() => _currentStatus = 'Authentication initialized');
+      // Start initialization if not already started
+      if (!authProvider.isInitialized && !authProvider.isInitializing) {
+        unawaited(authProvider.initialize());
+      }
+
+      // Wait for initialization with longer timeout (10 seconds instead of 3)
+      int attempts = 0;
+      const int maxAttempts = 100; // 10 seconds (100 * 100ms)
+      while (!authProvider.isInitialized && attempts < maxAttempts) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        attempts++;
+        if (attempts % 20 == 0) {
+          // Log every 2 seconds
+          debugLog('SplashScreen',
+              'Still waiting for auth... (${attempts * 100}ms)');
+        }
+      }
 
       if (!mounted) return;
 
+      if (authProvider.isInitialized) {
+        debugLog('SplashScreen',
+            'Auth provider initialization completed after ${attempts * 100}ms');
+      } else {
+        debugLog('SplashScreen',
+            'Auth provider initialization TIMEOUT after ${attempts * 100}ms');
+      }
+
+      if (mounted) {
+        setState(() => _currentStatus = 'Authentication initialized');
+      }
+
+      // Now check auth state AFTER initialization is complete
       final isAuthenticated = authProvider.isAuthenticated;
       final user = authProvider.currentUser;
+
+      debugLog('SplashScreen',
+          'Auth state after init: isAuthenticated=$isAuthenticated');
+      if (user != null) {
+        debugLog('SplashScreen',
+            'User: ${user.username}, schoolId: ${user.schoolId}');
+      }
 
       if (mounted) {
         setState(() {
@@ -197,22 +246,31 @@ class _SplashScreenState extends State<SplashScreen>
           _currentStatus = isAuthenticated ? 'Welcome back!' : 'Ready to start';
         });
         await _checkmarkController.forward();
+        if (!mounted) return;
       }
 
       await Future.delayed(const Duration(milliseconds: 800));
-
       if (!mounted) return;
 
+      // Navigate based on auth state
       if (isAuthenticated) {
         if (user?.schoolId == null) {
-          context.go('/school-selection');
+          debugLog('SplashScreen',
+              'Authenticated but no school, going to school selection');
+          if (mounted) context.go('/school-selection');
         } else {
-          context.go('/');
+          debugLog('SplashScreen', 'Authenticated with school, going to home');
+          if (mounted) context.go('/');
         }
       } else {
-        context.go('/auth/login');
+        debugLog('SplashScreen', 'Not authenticated, going to login');
+        if (mounted) context.go('/auth/login');
       }
+
+      debugLog('SplashScreen', 'initializeApp finished');
     } catch (e) {
+      debugLog('SplashScreen', 'Error in initializeApp: $e');
+
       if (mounted) {
         setState(() {
           _hasError = true;
@@ -223,24 +281,34 @@ class _SplashScreenState extends State<SplashScreen>
           _currentStatus = 'Error occurred';
         });
 
+        // If offline and we have a cached user, try to use it
         if (_isOffline) {
           final authProvider = context.read<AuthProvider>();
           final user = authProvider.currentUser;
           if (user != null) {
+            debugLog('SplashScreen', 'Using cached user despite error');
             await Future.delayed(const Duration(seconds: 1));
             if (!mounted) return;
+
             if (user.schoolId == null) {
-              context.go('/school-selection');
+              if (mounted) context.go('/school-selection');
             } else {
-              context.go('/');
+              if (mounted) context.go('/');
             }
             return;
           }
         }
 
         await _checkmarkController.forward();
+        if (!mounted) return;
         await Future.delayed(const Duration(seconds: 2));
-        if (mounted && !_isOffline) context.go('/auth/login');
+        if (!mounted) return;
+
+        // Fallback to login
+        if (mounted && !_isOffline) {
+          debugLog('SplashScreen', 'Falling back to login');
+          if (mounted) context.go('/auth/login');
+        }
       }
     } finally {
       if (mounted && !_hasError) setState(() => _isInitializing = false);
@@ -289,23 +357,53 @@ class _SplashScreenState extends State<SplashScreen>
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    AppColors.telegramYellow.withValues(alpha: 0.2),
-                    AppColors.telegramYellow.withValues(alpha: 0.1)
+                    AppColors.warning.withValues(alpha: 0.2),
+                    AppColors.warning.withValues(alpha: 0.1)
                   ],
                 ),
                 shape: BoxShape.circle,
               ),
               child: const Icon(Icons.wifi_off_rounded,
-                  size: 40, color: AppColors.telegramYellow),
+                  size: 40, color: AppColors.warning),
             ),
           ).animate().shake(duration: 600.ms),
           SizedBox(height: ResponsiveValues.spacingL(context)),
           Text(
             'Offline Mode',
             style: AppTextStyles.bodyMedium(context).copyWith(
-                color: AppColors.telegramYellow, fontWeight: FontWeight.w500),
+                color: AppColors.warning, fontWeight: FontWeight.w500),
             textAlign: TextAlign.center,
           ),
+          if (_pendingCount > 0) ...[
+            SizedBox(height: ResponsiveValues.spacingS(context)),
+            Container(
+              padding: EdgeInsets.symmetric(
+                horizontal: ResponsiveValues.spacingM(context),
+                vertical: ResponsiveValues.spacingXS(context),
+              ),
+              decoration: BoxDecoration(
+                color: AppColors.info.withValues(alpha: 0.1),
+                borderRadius:
+                    BorderRadius.circular(ResponsiveValues.radiusFull(context)),
+                border:
+                    Border.all(color: AppColors.info.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.schedule_rounded,
+                      size: ResponsiveValues.iconSizeXS(context),
+                      color: AppColors.info),
+                  SizedBox(width: ResponsiveValues.spacingXXS(context)),
+                  Text(
+                    '$_pendingCount pending',
+                    style: AppTextStyles.labelSmall(context)
+                        .copyWith(color: AppColors.info),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       );
     }
@@ -433,7 +531,7 @@ class _SplashScreenState extends State<SplashScreen>
                         _isOffline ? 'Offline Mode' : 'Empowering Education',
                         style: AppTextStyles.bodyLarge(context).copyWith(
                           color: _isOffline
-                              ? AppColors.telegramYellow
+                              ? AppColors.warning
                               : AppColors.getTextSecondary(context),
                         ),
                       ),
@@ -464,10 +562,9 @@ class _SplashScreenState extends State<SplashScreen>
                                   ]
                                 : (_isOffline
                                     ? [
-                                        AppColors.telegramYellow
+                                        AppColors.warning
                                             .withValues(alpha: 0.2),
-                                        AppColors.telegramYellow
-                                            .withValues(alpha: 0.1)
+                                        AppColors.warning.withValues(alpha: 0.1)
                                       ]
                                     : (_authCompleted
                                         ? [
@@ -492,7 +589,7 @@ class _SplashScreenState extends State<SplashScreen>
                             color: _hasError
                                 ? AppColors.telegramRed
                                 : (_isOffline
-                                    ? AppColors.telegramYellow
+                                    ? AppColors.warning
                                     : (_authCompleted
                                         ? AppColors.telegramGreen
                                         : AppColors.telegramBlue)),
@@ -518,7 +615,7 @@ class _SplashScreenState extends State<SplashScreen>
                       Text(
                         'Using cached data',
                         style: AppTextStyles.caption(context)
-                            .copyWith(color: AppColors.telegramYellow),
+                            .copyWith(color: AppColors.warning),
                       ),
                   ],
                 ),
@@ -534,7 +631,6 @@ class _SplashScreenState extends State<SplashScreen>
   void dispose() {
     _statusTimer?.cancel();
     _navigationTimer?.cancel();
-    _retryTimer?.cancel();
     _logoController.dispose();
     _textController.dispose();
     _checkmarkController.dispose();
