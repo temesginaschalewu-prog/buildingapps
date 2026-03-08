@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../themes/app_colors.dart';
-import '../services/snackbar_service.dart';
 
 void debugLog(String tag, String message) {
   if (const bool.fromEnvironment('PRODUCTION')) {
@@ -102,7 +101,7 @@ void showOfflineError(BuildContext context, {String? action}) {
   showTopSnackBar(
     context,
     action != null
-        ? 'Cannot $action while offline. Please check your connection.'
+        ? 'Cannot $action while offline. Your changes will sync when online.'
         : 'You are offline. Please check your internet connection.',
     isError: true,
   );
@@ -262,6 +261,9 @@ String formatErrorMessage(dynamic error) {
     if (error.containsKey('offline') && error['offline'] == true) {
       return 'You are offline. Showing cached data.';
     }
+    if (error.containsKey('queued') && error['queued'] == true) {
+      return 'Action saved offline. Will sync when online.';
+    }
     return error['message']?.toString() ?? 'An error occurred';
   }
 
@@ -285,6 +287,13 @@ bool isNetworkError(dynamic error) {
   return message.contains('Network error') ||
       message.contains('offline') ||
       message.contains('internet connection');
+}
+
+bool isOfflineQueuedError(dynamic error) {
+  if (error is Map<String, dynamic>) {
+    return error['queued'] == true;
+  }
+  return false;
 }
 
 Function debounce(Function func, [int delay = 500]) {
