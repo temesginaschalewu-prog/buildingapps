@@ -9,11 +9,22 @@ class UserSession {
 
   String? _cachedUserId;
   bool _isLoggingOut = false;
+  DateTime? _sessionStartTime;
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     _cachedUserId = prefs.getString(AppConstants.currentUserIdKey);
     _isLoggingOut = prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
+
+    final sessionStartStr = prefs.getString(AppConstants.sessionStartKey);
+    if (sessionStartStr != null) {
+      try {
+        _sessionStartTime = DateTime.parse(sessionStartStr);
+      } catch (e) {
+        debugLog('UserSession', 'Error parsing session start: $e');
+      }
+    }
+
     debugLog('UserSession', 'Initialized with user: $_cachedUserId');
   }
 
@@ -71,6 +82,7 @@ class UserSession {
     await prefs.remove(AppConstants.currentUserIdKey);
     await prefs.remove(AppConstants.sessionStartKey);
     _cachedUserId = null;
+    _sessionStartTime = null;
     debugLog('UserSession', '✅ Logout complete - cache preserved');
   }
 
@@ -106,6 +118,18 @@ class UserSession {
     await prefs.remove(AppConstants.isLoggingOutKey);
     _cachedUserId = null;
     _isLoggingOut = false;
+    _sessionStartTime = null;
     debugLog('UserSession', '🔄 Session reset');
+  }
+
+  Future<Duration> getSessionDuration() async {
+    if (_sessionStartTime == null) return Duration.zero;
+    return DateTime.now().difference(_sessionStartTime!);
+  }
+
+  Future<bool> isSessionExpired(Duration maxDuration) async {
+    if (_sessionStartTime == null) return true;
+    final duration = DateTime.now().difference(_sessionStartTime!);
+    return duration > maxDuration;
   }
 }
