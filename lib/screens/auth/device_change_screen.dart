@@ -22,13 +22,10 @@ import '../../providers/category_provider.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../themes/app_themes.dart';
-import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
 import '../../utils/helpers.dart';
 import '../../utils/api_response.dart';
 import '../../utils/router.dart';
-import '../../utils/app_enums.dart';
-import '../../widgets/common/responsive_widgets.dart';
 
 class DeviceChangeScreen extends StatefulWidget {
   const DeviceChangeScreen({super.key});
@@ -50,13 +47,12 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
   bool _isInitializing = true;
   bool _mounted = true;
   bool _isOffline = false;
+  int _pendingCount = 0;
 
   late String _username;
   late String _deviceId;
   late String _currentDeviceId;
-  late int _changeCount;
   late int _maxChanges;
-  late int _remainingChanges;
   late bool _canChangeDevice;
 
   late AnimationController _pulseAnimationController;
@@ -70,8 +66,9 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
           ..repeat(reverse: true);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_mounted) _checkConnectivity();
-      if (_mounted) _initializeArgs();
+      _checkConnectivity();
+      _checkPendingCount();
+      _initializeArgs();
     });
   }
 
@@ -85,7 +82,15 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
 
   Future<void> _checkConnectivity() async {
     final connectivityService = context.read<ConnectivityService>();
-    setState(() => _isOffline = !connectivityService.isOnline);
+    setState(() {
+      _isOffline = !connectivityService.isOnline;
+      _pendingCount = connectivityService.pendingActionsCount;
+    });
+  }
+
+  Future<void> _checkPendingCount() async {
+    final connectivity = ConnectivityService();
+    setState(() => _pendingCount = connectivity.pendingActionsCount);
   }
 
   Future<void> _saveDeviceChangeToCache() async {
@@ -124,9 +129,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
             _deviceId = cached['newDeviceId']?.toString() ??
                 cached['deviceId']?.toString() ??
                 '';
-            _changeCount = cached['changeCount'] as int? ?? 0;
             _maxChanges = cached['maxChanges'] as int? ?? 2;
-            _remainingChanges = cached['remainingChanges'] as int? ?? 2;
             _canChangeDevice = cached['canChangeDevice'] as bool? ?? true;
           });
         }
@@ -168,9 +171,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
       _deviceId = _args['newDeviceId']?.toString() ??
           _args['deviceId']?.toString() ??
           '';
-      _changeCount = _args['changeCount'] as int? ?? 0;
       _maxChanges = _args['maxChanges'] as int? ?? 2;
-      _remainingChanges = _args['remainingChanges'] as int? ?? 2;
       _canChangeDevice = _args['canChangeDevice'] as bool? ?? true;
       final password = _args['password']?.toString() ?? '';
 
@@ -218,8 +219,9 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
   }
 
   String? _validatePassword(String? value) {
-    if (value == null || value.isEmpty)
+    if (value == null || value.isEmpty) {
       return 'Password is required to confirm device change';
+    }
     return null;
   }
 
@@ -291,10 +293,8 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
 
         if (authProvider.currentUser?.schoolId == null) {
           appRouter.setNavigatingToSchoolSelection(true);
-          appRouter.setPendingDestination('/school-selection');
         } else {
           appRouter.setNavigatingToHome(true);
-          appRouter.setPendingDestination('/');
         }
 
         await Future.delayed(const Duration(milliseconds: 100));
@@ -548,7 +548,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
           child: _canChangeDevice
               ? AppButton.primary(
                   label: _isLoading ? 'Approving...' : 'Approve',
-                  onPressed: _isLoading || !_confirmChange
+                  onPressed: _isLoading || !_confirmChange || _isOffline
                       ? null
                       : _approveDeviceChange,
                   isLoading: _isLoading,
@@ -605,6 +605,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
             setState(() => _isOffline = false);
             _checkConnectivity();
           },
+          pendingCount: _pendingCount,
         ),
       );
     }
@@ -696,6 +697,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
                       label: 'Verify Password',
                       hint: 'Enter your password to confirm device change',
                       validator: _validatePassword,
+                      requiresOnline: true,
                     ),
                   ),
                 ),
