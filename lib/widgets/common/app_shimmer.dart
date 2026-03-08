@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../utils/responsive_values.dart';
-import '../../utils/app_enums.dart';
 
 class AppShimmer extends StatelessWidget {
   final ShimmerType type;
@@ -11,6 +10,7 @@ class AppShimmer extends StatelessWidget {
   final int index;
   final Color? baseColor;
   final Color? highlightColor;
+  final bool isOffline;
 
   const AppShimmer({
     super.key,
@@ -20,15 +20,24 @@ class AppShimmer extends StatelessWidget {
     this.index = 0,
     this.baseColor,
     this.highlightColor,
+    this.isOffline = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+
     final effectiveBaseColor = baseColor ??
-        (isDark ? Colors.grey[800]! : Colors.grey[300]!).withValues(alpha: 0.3);
+        (isDark
+                ? (isOffline ? Colors.grey[700]! : Colors.grey[800]!)
+                : (isOffline ? Colors.grey[200]! : Colors.grey[300]!))
+            .withValues(alpha: isOffline ? 0.2 : 0.3);
+
     final effectiveHighlightColor = highlightColor ??
-        (isDark ? Colors.grey[700]! : Colors.grey[100]!).withValues(alpha: 0.6);
+        (isDark
+                ? (isOffline ? Colors.grey[600]! : Colors.grey[700]!)
+                : (isOffline ? Colors.grey[100]! : Colors.grey[100]!))
+            .withValues(alpha: isOffline ? 0.4 : 0.6);
 
     return Animate(
       effects: [FadeEffect(duration: 400.ms, delay: (index * 50).ms)],
