@@ -1,19 +1,20 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:familyacademyclient/utils/helpers.dart';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
 import '../services/device_service.dart';
 import '../services/user_session.dart';
+import '../services/connectivity_service.dart';
 import '../models/user_model.dart';
 import '../utils/api_response.dart';
-import '../utils/helpers.dart';
-import '../utils/constants.dart';
 
 class AuthProvider with ChangeNotifier {
   final ApiService apiService;
   final StorageService storageService;
   final DeviceService deviceService;
+  final ConnectivityService connectivityService;
 
   User? _currentUser;
   bool _isAuthenticated = false;
@@ -23,6 +24,7 @@ class AuthProvider with ChangeNotifier {
   bool _requiresDeviceChange = false;
   String? _error;
   Map<String, dynamic>? _lastLoginResult;
+  bool _isOffline = false;
 
   Timer? _autoLogoutTimer;
   static const Duration _sessionDuration = Duration(days: 3);
@@ -42,13 +44,26 @@ class AuthProvider with ChangeNotifier {
   final List<VoidCallback> _onLogoutCallbacks = [];
   final List<VoidCallback> _onLoginCallbacks = [];
   StreamSubscription? _deviceDeactivationSubscription;
+  StreamSubscription? _connectivitySubscription;
 
   AuthProvider({
     required this.apiService,
     required this.storageService,
     required this.deviceService,
+    required this.connectivityService,
   }) {
     _listenToDeviceDeactivation();
+    _setupConnectivityListener();
+  }
+
+  void _setupConnectivityListener() {
+    _connectivitySubscription =
+        connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (_isOffline != !isOnline) {
+        _isOffline = !isOnline;
+        notifyListeners();
+      }
+    });
   }
 
   User? get currentUser => _currentUser;
@@ -59,9 +74,7 @@ class AuthProvider with ChangeNotifier {
   bool get requiresDeviceChange => _requiresDeviceChange;
   String? get error => _error;
   Map<String, dynamic>? get lastLoginResult => _lastLoginResult;
-  bool get isReadyForNavigation =>
-      _isInitialized &&
-      (!_isAuthenticated || (_isAuthenticated && _currentUser != null));
+  bool get isOffline => _isOffline;
 
   Stream<bool> get authStateChanges => _authStateController.stream;
   Stream<User?> get userChanges => _userController.stream;
@@ -70,7 +83,6 @@ class AuthProvider with ChangeNotifier {
 
   void registerOnLogoutCallback(VoidCallback callback) =>
       _onLogoutCallbacks.add(callback);
-
   void registerOnLoginCallback(VoidCallback callback) =>
       _onLoginCallbacks.add(callback);
 
@@ -79,9 +91,7 @@ class AuthProvider with ChangeNotifier {
         apiService.deviceDeactivationStream.listen(
       (event) => _handleDeviceDeactivation(
           event['message'] ?? 'Device has been deactivated'),
-      onError: (error) {
-        debugLog('AuthProvider', 'Device deactivation stream error: $error');
-      },
+      onError: (error) {},
     );
   }
 
@@ -111,39 +121,50 @@ class AuthProvider with ChangeNotifier {
   }
 
   Future<void> initialize() async {
-    if (_isInitializing || _isInitialized) return;
+    if (_isInitializing) {
+      debugLog('AuthProvider', '⏳ Already initializing, waiting...');
+      int waitCount = 0;
+      while (_isInitializing && waitCount < 50) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        waitCount++;
+      }
+      return;
+    }
+
+    if (_isInitialized) {
+      debugLog('AuthProvider', '✅ Already initialized');
+      return;
+    }
 
     _isInitializing = true;
     _error = null;
     notifyListeners();
 
     try {
-      await storageService.init();
-      await deviceService.init();
-      await UserSession().init();
+      debugLog('AuthProvider', '🔄 Starting initialization');
+
+      // Initialize services with timeout - FIXED ERROR HANDLING
+      try {
+        await Future.wait([
+          storageService.init().timeout(const Duration(seconds: 3)),
+          deviceService.init().timeout(const Duration(seconds: 3)),
+          UserSession().init().timeout(const Duration(seconds: 3)),
+        ]).catchError((e) {
+          debugLog('AuthProvider', '⚠️ Service initialization error: $e');
+          return null;
+        });
+      } catch (e) {
+        debugLog('AuthProvider', '⚠️ Service initialization failed: $e');
+        // Continue anyway - we might have cached data
+      }
 
       final token = await storageService.getToken();
-      if (token == null || token.isEmpty) {
-        _completeInitialization();
-        return;
-      }
 
-      if (_isOldFormatToken(token)) {
-        await logout(manual: false);
-        _completeInitialization();
-        return;
-      }
+      // Try to get user from DeviceService cache first (now integrated)
+      User? user = await storageService.getUser();
 
-      final sessionValid =
-          await storageService.isSessionValid(_sessionDuration);
-      if (!sessionValid) {
-        await logout(manual: false);
-        _completeInitialization();
-        return;
-      }
-
-      final user = await storageService.getUser();
       if (user != null) {
+        debugLog('AuthProvider', '✅ Found cached user: ${user.username}');
         _currentUser = user;
         _isAuthenticated = true;
         await deviceService.setCurrentUserId(user.id.toString());
@@ -155,22 +176,55 @@ class AuthProvider with ChangeNotifier {
         _authStateController.add(true);
         _userController.add(user);
         _executeLoginCallbacks();
+      } else if (token != null) {
+        debugLog('AuthProvider', '🔑 Found token, validating...');
+        if (_isOldFormatToken(token)) {
+          debugLog('AuthProvider', '⚠️ Old token format, logging out');
+          await logout(manual: false);
+        } else {
+          try {
+            final profileResponse = await apiService.getMyProfile();
+            if (profileResponse.success && profileResponse.data != null) {
+              final user = profileResponse.data!;
+              debugLog('AuthProvider', '✅ Valid token, user: ${user.username}');
+              await storageService.saveUser(user);
+              _currentUser = user;
+              _isAuthenticated = true;
 
-        final isTokenExpiring = await _isTokenExpiringSoon(token);
-        if (isTokenExpiring) unawaited(_validateTokenInBackground());
+              await deviceService.setCurrentUserId(user.id.toString());
+              await UserSession().setCurrentUser(user.id.toString());
+
+              _startAutoLogoutTimer();
+              _startTokenRefreshTimer();
+
+              _authStateController.add(true);
+              _userController.add(user);
+              _executeLoginCallbacks();
+            } else {
+              debugLog('AuthProvider', '❌ Token invalid, logging out');
+              await logout(manual: false);
+            }
+          } catch (e) {
+            debugLog('AuthProvider', '❌ Token validation error: $e');
+            await logout(manual: false);
+          }
+        }
       } else {
-        await logout(manual: false);
+        debugLog('AuthProvider', 'ℹ️ No user or token found');
       }
     } catch (e) {
       _error = e.toString();
-      debugLog('AuthProvider', 'Initialize error: $e');
-      await logout(manual: false);
-      _authStateController.add(false);
-      _userController.add(null);
+      debugLog('AuthProvider', '❌ Initialization error: $e');
     } finally {
-      await Future.delayed(const Duration(milliseconds: 500));
       _completeInitialization();
     }
+  }
+
+  void _completeInitialization() {
+    _isInitializing = false;
+    _isInitialized = true;
+    debugLog('AuthProvider', '✅ Initialization complete');
+    notifyListeners();
   }
 
   bool _isOldFormatToken(String token) {
@@ -183,42 +237,7 @@ class AuthProvider with ChangeNotifier {
       final jsonPayload = json.decode(decoded);
       return !jsonPayload.containsKey('iss') && !jsonPayload.containsKey('aud');
     } catch (e) {
-      debugLog('AuthProvider', 'Token format check error: $e');
       return false;
-    }
-  }
-
-  Future<bool> _isTokenExpiringSoon(String token) async {
-    try {
-      final parts = token.split('.');
-      if (parts.length != 3) return false;
-      final payload = parts[1];
-      final normalized = base64Url.normalize(payload);
-      final decoded = utf8.decode(base64Url.decode(normalized));
-      final jsonPayload = json.decode(decoded);
-      final exp = jsonPayload['exp'];
-      if (exp == null) return false;
-      final expiryTime = DateTime.fromMillisecondsSinceEpoch(exp * 1000);
-      final hoursUntilExpiry = expiryTime.difference(DateTime.now()).inHours;
-      return hoursUntilExpiry < 24;
-    } catch (e) {
-      debugLog('AuthProvider', 'Token expiry check error: $e');
-      return false;
-    }
-  }
-
-  void _completeInitialization() {
-    _isInitializing = false;
-    _isInitialized = true;
-    notifyListeners();
-  }
-
-  Future<void> _validateTokenInBackground() async {
-    try {
-      final isValid = await validateToken();
-      if (!isValid) await logout(manual: false);
-    } catch (e) {
-      debugLog('AuthProvider', 'Background token validation error: $e');
     }
   }
 
@@ -232,6 +251,14 @@ class AuthProvider with ChangeNotifier {
       return {
         'success': false,
         'message': 'Already processing',
+        'requiresDeviceChange': false
+      };
+    }
+
+    if (_isOffline) {
+      return {
+        'success': false,
+        'message': 'You are offline. Please connect to login.',
         'requiresDeviceChange': false
       };
     }
@@ -255,14 +282,10 @@ class AuthProvider with ChangeNotifier {
             await session.isDifferentUserLogin(user.id.toString());
 
         if (isDifferentUser) {
-          debugLog(
-              'AuthProvider', '🔄 Different user login - clearing old cache');
           final oldUserId = await session.getOldUserIdToClear();
           if (oldUserId != null) {
             await deviceService.clearOldUserCache(oldUserId);
           }
-        } else {
-          debugLog('AuthProvider', '✅ Same user login - preserving cache');
         }
 
         await session.setCurrentUser(user.id.toString());
@@ -335,7 +358,6 @@ class AuthProvider with ChangeNotifier {
       };
     } catch (e) {
       _error = e.toString();
-      debugLog('AuthProvider', 'Login error: $e');
       return {
         'success': false,
         'message': 'Login failed: ${e.toString()}',
@@ -354,6 +376,13 @@ class AuthProvider with ChangeNotifier {
     String? fcmToken,
   ) async {
     if (_isLoading) return {'success': false, 'message': 'Already processing'};
+
+    if (_isOffline) {
+      return {
+        'success': false,
+        'message': 'You are offline. Please connect to register.'
+      };
+    }
 
     _isLoading = true;
     _error = null;
@@ -419,11 +448,9 @@ class AuthProvider with ChangeNotifier {
       }
     } on ApiError catch (e) {
       _error = e.message;
-      debugLog('AuthProvider', 'Registration ApiError: $e');
       return {'success': false, 'message': e.message};
     } catch (e) {
       _error = e.toString();
-      debugLog('AuthProvider', 'Registration error: $e');
       return {
         'success': false,
         'message': 'Registration failed: ${e.toString()}'
@@ -466,7 +493,7 @@ class AuthProvider with ChangeNotifier {
       try {
         callback();
       } catch (e) {
-        debugLog('AuthProvider', 'Logout callback error: $e');
+        // Silent fail
       }
     }
   }
@@ -476,7 +503,7 @@ class AuthProvider with ChangeNotifier {
       try {
         callback();
       } catch (e) {
-        debugLog('AuthProvider', 'Login callback error: $e');
+        // Silent fail
       }
     }
   }
@@ -494,6 +521,8 @@ class AuthProvider with ChangeNotifier {
   }
 
   Future<void> refreshToken() async {
+    if (_isOffline) return;
+
     try {
       final refreshToken = await storageService.getRefreshToken();
       if (refreshToken == null) return;
@@ -509,7 +538,7 @@ class AuthProvider with ChangeNotifier {
         _startAutoLogoutTimer();
       }
     } catch (e) {
-      debugLog('AuthProvider', 'Token refresh error: $e');
+      // Silent fail
     }
   }
 
@@ -518,7 +547,6 @@ class AuthProvider with ChangeNotifier {
       final response = await apiService.validateStudentToken();
       return response.success;
     } catch (e) {
-      debugLog('AuthProvider', 'Token validation error: $e');
       return false;
     }
   }
@@ -533,7 +561,7 @@ class AuthProvider with ChangeNotifier {
         return user;
       }
     } catch (e) {
-      debugLog('AuthProvider', 'Load user error: $e');
+      return null;
     }
     return null;
   }
@@ -569,7 +597,7 @@ class AuthProvider with ChangeNotifier {
           await storageService.isSessionValid(_sessionDuration);
       if (!sessionValid) await logout(manual: false);
     } catch (e) {
-      debugLog('AuthProvider', 'Session check error: $e');
+      // Silent fail
     }
   }
 
@@ -581,6 +609,7 @@ class AuthProvider with ChangeNotifier {
     _deviceChangeController.close();
     _deviceDeactivatedController.close();
     _deviceDeactivationSubscription?.cancel();
+    _connectivitySubscription?.cancel();
     _onLogoutCallbacks.clear();
     _onLoginCallbacks.clear();
     super.dispose();
