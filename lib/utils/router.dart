@@ -27,12 +27,10 @@ import 'package:familyacademyclient/screens/settings/tv_pairing_screen.dart';
 
 class AppRouter {
   late final GoRouter router;
-  bool _isLoginInProgress = false;
   bool _isDeviceChangeInProgress = false;
   bool _isNavigatingToHome = false;
   bool _isNavigatingToSchoolSelection = false;
   bool _isNavigatingFromDeviceChange = false;
-  String? _pendingDestination;
   Map<String, dynamic>? _pendingDeviceChangeData;
 
   AppRouter() {
@@ -50,7 +48,6 @@ class AppRouter {
             _isNavigatingToHome = false;
             _isNavigatingToSchoolSelection = false;
             _isNavigatingFromDeviceChange = false;
-            _pendingDestination = null;
           });
           return null;
         }
@@ -448,9 +445,6 @@ class AppRouter {
       _isNavigatingToSchoolSelection = value;
   void setNavigatingFromDeviceChange(bool value) =>
       _isNavigatingFromDeviceChange = value;
-  void setPendingDestination(String? destination) =>
-      _pendingDestination = destination;
-  void markLoginInProgress(bool inProgress) => _isLoginInProgress = inProgress;
 }
 
 final appRouter = AppRouter();
