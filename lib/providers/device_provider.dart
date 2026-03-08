@@ -4,12 +4,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../services/user_session.dart';
+import '../services/connectivity_service.dart';
 import '../utils/constants.dart';
 import '../utils/helpers.dart';
 
 class DeviceProvider with ChangeNotifier {
   final ApiService apiService;
   final DeviceService deviceService;
+  final ConnectivityService connectivityService;
 
   String? _deviceId;
   String? _tvDeviceId;
@@ -19,11 +21,24 @@ class DeviceProvider with ChangeNotifier {
   bool _isLoading = false;
   bool _isInitialized = false;
   String? _error;
+  bool _isOffline = false;
 
-  DeviceProvider(
-      {required this.apiService, required DeviceService deviceService})
-      : deviceService = DeviceService() {
+  DeviceProvider({
+    required this.apiService,
+    required DeviceService deviceService,
+    required this.connectivityService,
+  }) : deviceService = DeviceService() {
     _initializeAsync();
+    _setupConnectivityListener();
+  }
+
+  void _setupConnectivityListener() {
+    connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (_isOffline != !isOnline) {
+        _isOffline = !isOnline;
+        notifyListeners();
+      }
+    });
   }
 
   String? get deviceId => _deviceId;
@@ -34,6 +49,7 @@ class DeviceProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get isInitialized => _isInitialized;
   String? get error => _error;
+  bool get isOffline => _isOffline;
   bool get hasTvDevice => _tvDeviceId != null && _tvDeviceId!.isNotEmpty;
   bool get isPairingExpired => _pairingExpiresAt == null
       ? true
@@ -67,7 +83,7 @@ class DeviceProvider with ChangeNotifier {
     }
   }
 
-  Future<void> initialize() async {
+  Future<void> initialize({bool isManualRefresh = false}) async {
     if (_isInitialized) return;
 
     _isLoading = true;
@@ -76,6 +92,10 @@ class DeviceProvider with ChangeNotifier {
 
     try {
       await _initializeAsync();
+    } catch (e) {
+      if (isManualRefresh) {
+        rethrow;
+      }
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -113,6 +133,12 @@ class DeviceProvider with ChangeNotifier {
   Future<void> pairTvDevice(String tvDeviceId) async {
     if (!_isInitialized) await initialize();
 
+    if (_isOffline) {
+      _error = 'You are offline. Please connect to pair device.';
+      notifyListeners();
+      return;
+    }
+
     _isLoading = true;
     _error = null;
     notifyListeners();
@@ -138,6 +164,12 @@ class DeviceProvider with ChangeNotifier {
 
   Future<void> verifyTvPairing(String code) async {
     if (!_isInitialized) await initialize();
+
+    if (_isOffline) {
+      _error = 'You are offline. Please connect to verify pairing.';
+      notifyListeners();
+      return;
+    }
 
     _isLoading = true;
     _error = null;
@@ -166,6 +198,12 @@ class DeviceProvider with ChangeNotifier {
 
   Future<void> unpairTvDevice() async {
     if (!_isInitialized) await initialize();
+
+    if (_isOffline) {
+      _error = 'You are offline. Please connect to unpair device.';
+      notifyListeners();
+      return;
+    }
 
     _isLoading = true;
     _error = null;
