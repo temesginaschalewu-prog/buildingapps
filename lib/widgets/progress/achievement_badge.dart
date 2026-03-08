@@ -4,9 +4,7 @@ import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../themes/app_themes.dart';
 import '../../utils/responsive_values.dart';
-import '../../utils/app_enums.dart';
 import '../common/app_card.dart';
-import '../common/responsive_widgets.dart';
 
 class AchievementBadge extends StatelessWidget {
   final String title;
