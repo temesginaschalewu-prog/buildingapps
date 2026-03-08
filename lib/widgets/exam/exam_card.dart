@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -8,8 +10,6 @@ import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../themes/app_themes.dart';
 import '../../utils/responsive_values.dart';
-import '../../utils/ui_helpers.dart';
-import '../common/app_card.dart';
 import '../common/app_dialog.dart';
 
 class ExamCard extends StatelessWidget {
@@ -150,190 +150,196 @@ class ExamCard extends StatelessWidget {
 
     final iconSize = ResponsiveValues.iconSizeXXL(context);
     final titleSize = ResponsiveValues.fontTitleMedium(context);
+    final badgeSize = ResponsiveValues.fontBodySmall(context);
     final padding = ResponsiveValues.cardPadding(context);
+    final iconSpacing = ResponsiveValues.spacingS(context);
 
     return Container(
       margin: EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
-      child: AppCard.exam(
-        statusColor: statusColor,
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () => _handleTap(context),
-            borderRadius:
-                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-            child: Padding(
-              padding: padding,
-              child: Row(
-                children: [
-                  Container(
-                    width: iconSize,
-                    height: iconSize,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          statusColor.withValues(alpha: 0.2),
-                          statusColor.withValues(alpha: 0.05)
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(
-                          ResponsiveValues.radiusLarge(context)),
-                      border: Border.all(
-                          color: statusColor.withValues(alpha: 0.3),
-                          width: 1.5),
-                    ),
-                    child: Icon(_getStatusIcon(),
-                        size: iconSize * 0.5, color: statusColor),
-                  ),
-                  SizedBox(width: ResponsiveValues.spacingL(context)),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          exam.title,
-                          style: AppTextStyles.titleMedium(context).copyWith(
-                            fontWeight: FontWeight.w600,
-                            fontSize: titleSize,
-                            letterSpacing: -0.3,
+      child: ClipRRect(
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  AppColors.getCard(context).withValues(alpha: 0.4),
+                  AppColors.getCard(context).withValues(alpha: 0.2),
+                ],
+              ),
+              borderRadius:
+                  BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
+              border: Border.all(
+                color: statusColor.withValues(alpha: 0.3),
+                width: 1.5,
+              ),
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () => _handleTap(context),
+                borderRadius: BorderRadius.circular(
+                    ResponsiveValues.radiusXLarge(context)),
+                splashColor: statusColor.withValues(alpha: 0.1),
+                highlightColor: Colors.transparent,
+                child: Padding(
+                  padding: padding,
+                  child: Row(
+                    children: [
+                      Container(
+                        width: iconSize,
+                        height: iconSize,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              statusColor.withValues(alpha: 0.2),
+                              statusColor.withValues(alpha: 0.05)
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
                           ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
+                          borderRadius: BorderRadius.circular(
+                              ResponsiveValues.radiusLarge(context)),
+                          border: Border.all(
+                              color: statusColor.withValues(alpha: 0.3),
+                              width: 1.5),
                         ),
-                        SizedBox(height: ResponsiveValues.spacingS(context)),
-                        Wrap(
-                          spacing: ResponsiveValues.spacingS(context),
-                          runSpacing: ResponsiveValues.spacingS(context),
+                        child: Icon(_getStatusIcon(),
+                            size: iconSize * 0.5, color: statusColor),
+                      ),
+                      SizedBox(width: iconSpacing),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            Container(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: ResponsiveValues.spacingS(context),
-                                vertical: ResponsiveValues.spacingXXS(context),
+                            Text(
+                              exam.title,
+                              style:
+                                  AppTextStyles.titleMedium(context).copyWith(
+                                fontWeight: FontWeight.w600,
+                                fontSize: titleSize,
+                                letterSpacing: -0.3,
                               ),
-                              decoration: BoxDecoration(
-                                color: statusBgColor,
-                                borderRadius: BorderRadius.circular(
-                                    ResponsiveValues.radiusFull(context)),
-                                border: Border.all(
-                                    color: statusColor.withValues(alpha: 0.3)),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(_getStatusIcon(),
-                                      size:
-                                          ResponsiveValues.iconSizeXXS(context),
-                                      color: statusColor),
-                                  SizedBox(
-                                      width:
-                                          ResponsiveValues.spacingXXS(context)),
-                                  Text(
-                                    _getStatusText(),
-                                    style:
-                                        AppTextStyles.caption(context).copyWith(
-                                      color: statusColor,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            Container(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: ResponsiveValues.spacingS(context),
-                                vertical: ResponsiveValues.spacingXXS(context),
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.grayFaded,
-                                borderRadius: BorderRadius.circular(
-                                    ResponsiveValues.radiusFull(context)),
-                                border: Border.all(
-                                    color: AppColors.telegramGray
-                                        .withValues(alpha: 0.2)),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.timer_rounded,
-                                      size:
-                                          ResponsiveValues.iconSizeXXS(context),
-                                      color:
-                                          AppColors.getTextSecondary(context)),
-                                  SizedBox(
-                                      width:
-                                          ResponsiveValues.spacingXXS(context)),
-                                  Text(
-                                    _getTimeInfo(),
-                                    style: AppTextStyles.caption(context)
-                                        .copyWith(
-                                            color: AppColors.getTextSecondary(
-                                                context)),
+                            SizedBox(
+                                height: ResponsiveValues.spacingS(context)),
+                            Wrap(
+                              spacing: iconSpacing,
+                              runSpacing: iconSpacing,
+                              children: [
+                                Container(
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: iconSpacing,
+                                    vertical: 2,
                                   ),
-                                ],
-                              ),
+                                  decoration: BoxDecoration(
+                                    color: statusBgColor,
+                                    borderRadius: BorderRadius.circular(
+                                        ResponsiveValues.radiusFull(context)),
+                                    border: Border.all(
+                                        color:
+                                            statusColor.withValues(alpha: 0.3)),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(_getStatusIcon(),
+                                          size: badgeSize * 1.2,
+                                          color: statusColor),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        _getStatusText(),
+                                        style: TextStyle(
+                                          fontSize: badgeSize,
+                                          color: statusColor,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Container(
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: iconSpacing,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.grayFaded,
+                                    borderRadius: BorderRadius.circular(
+                                        ResponsiveValues.radiusFull(context)),
+                                    border: Border.all(
+                                        color: AppColors.telegramGray
+                                            .withValues(alpha: 0.2)),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.timer_rounded,
+                                        size: badgeSize * 1.2,
+                                        color:
+                                            AppColors.getTextSecondary(context),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        _getTimeInfo(),
+                                        style: TextStyle(
+                                          fontSize: badgeSize,
+                                          color: AppColors.getTextSecondary(
+                                              context),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
+                            if (exam.attemptsTaken > 0)
+                              Padding(
+                                padding: EdgeInsets.only(
+                                    top: ResponsiveValues.spacingS(context)),
+                                child: Text(
+                                  'Attempts: ${exam.attemptsTaken}/${exam.maxAttempts}',
+                                  style: TextStyle(
+                                    fontSize: badgeSize * 0.9,
+                                    color: AppColors.getTextSecondary(context),
+                                  ),
+                                ),
+                              ),
                           ],
                         ),
-                        if (exam.attemptsTaken > 0)
-                          Padding(
-                            padding: EdgeInsets.only(
-                                top: ResponsiveValues.spacingS(context)),
-                            child: Text(
-                              'Attempts: ${exam.attemptsTaken}/${exam.maxAttempts}',
-                              style: AppTextStyles.caption(context).copyWith(
-                                  color: AppColors.getTextSecondary(context)),
-                            ),
+                      ),
+                      Padding(
+                        padding: EdgeInsets.only(left: iconSpacing),
+                        child: Container(
+                          padding: EdgeInsets.all(iconSpacing),
+                          decoration: BoxDecoration(
+                            color: exam.canTakeExam
+                                ? AppColors.telegramBlue.withValues(alpha: 0.1)
+                                : Colors.transparent,
+                            shape: BoxShape.circle,
                           ),
-                        if (exam.requiresPayment &&
-                            !exam.hasAccess &&
-                            !exam.isBlockedByPendingPayment)
-                          Padding(
-                            padding: EdgeInsets.only(
-                                top: ResponsiveValues.spacingS(context)),
-                            child: Text(
-                              'Purchase "${exam.categoryName}" to access',
-                              style: AppTextStyles.caption(context)
-                                  .copyWith(color: AppColors.telegramBlue),
-                            ),
+                          child: Icon(
+                            exam.canTakeExam
+                                ? Icons.chevron_right_rounded
+                                : Icons.lock_rounded,
+                            size: badgeSize * 1.5,
+                            color: exam.canTakeExam
+                                ? AppColors.telegramBlue
+                                : AppColors.getTextSecondary(context),
                           ),
-                        if (exam.isBlockedByPendingPayment)
-                          Padding(
-                            padding: EdgeInsets.only(
-                                top: ResponsiveValues.spacingS(context)),
-                            child: Text(
-                              'Payment pending verification',
-                              style: AppTextStyles.caption(context)
-                                  .copyWith(color: AppColors.pending),
-                            ),
-                          ),
-                      ],
-                    ),
+                        ),
+                      ),
+                    ],
                   ),
-                  Container(
-                    padding: EdgeInsets.all(ResponsiveValues.spacingS(context)),
-                    decoration: BoxDecoration(
-                      color: exam.canTakeExam
-                          ? AppColors.telegramBlue.withValues(alpha: 0.1)
-                          : Colors.transparent,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      exam.canTakeExam
-                          ? Icons.chevron_right_rounded
-                          : (exam.isBlockedByPendingPayment
-                              ? Icons.schedule_rounded
-                              : Icons.lock_rounded),
-                      size: ResponsiveValues.iconSizeL(context),
-                      color: exam.canTakeExam
-                          ? AppColors.telegramBlue
-                          : (exam.isBlockedByPendingPayment
-                              ? AppColors.pending
-                              : AppColors.getTextSecondary(context)),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
