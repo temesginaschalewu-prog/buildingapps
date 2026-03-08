@@ -18,11 +18,8 @@ import '../../widgets/common/app_bar.dart';
 import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
-import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
 import '../../utils/helpers.dart';
-import '../../utils/app_enums.dart';
-import '../../widgets/common/responsive_widgets.dart';
 
 class ParentLinkScreen extends StatefulWidget {
   const ParentLinkScreen({super.key});
@@ -37,7 +34,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
   bool _isRefreshing = false;
   bool _isInitialized = false;
   bool _isOffline = false;
-  String _refreshSubtitle = '';
+  int _pendingCount = 0;
   final RefreshController _refreshController = RefreshController();
   StreamSubscription? _connectivitySubscription;
 
@@ -62,7 +59,12 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
     final connectivityService = context.read<ConnectivityService>();
     _connectivitySubscription =
         connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (mounted) setState(() => _isOffline = !isOnline);
+      if (mounted) {
+        setState(() {
+          _isOffline = !isOnline;
+          _pendingCount = connectivityService.pendingActionsCount;
+        });
+      }
     });
   }
 
@@ -100,7 +102,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
   }
 
   Future<void> _refreshDataInBackground() async {
-    if (_isRefreshing) return;
+    if (_isRefreshing || _isOffline) return;
     _isRefreshing = true;
 
     try {
@@ -114,33 +116,31 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
   Future<void> _manualRefresh() async {
     if (_isRefreshing) return;
 
-    final connectivityService = context.read<ConnectivityService>();
-    if (!connectivityService.isOnline) {
-      setState(() => _isOffline = true);
-      _refreshController.refreshFailed();
-      SnackbarService().showOffline(context);
-      return;
-    }
-
     setState(() {
       _isRefreshing = true;
-      _refreshSubtitle = 'Refreshing...';
     });
+
+    final connectivity = ConnectivityService();
+    if (!connectivity.isOnline) {
+      setState(() {
+        _isRefreshing = false;
+      });
+      _refreshController.refreshFailed();
+      SnackbarService().showOffline(context, action: 'refresh');
+      return;
+    }
 
     try {
       final parentLinkProvider = context.read<ParentLinkProvider>();
       await parentLinkProvider.clearCache();
       await parentLinkProvider.getParentLinkStatus(forceRefresh: true);
-
       setState(() => _isOffline = false);
       SnackbarService().showSuccess(context, 'Status updated');
     } catch (e) {
-      setState(() => _isOffline = true);
-      SnackbarService().showError(context, 'Refresh failed, using cached data');
+      SnackbarService().showError(context, 'Failed to refresh');
     } finally {
       setState(() {
         _isRefreshing = false;
-        _refreshSubtitle = '';
       });
       _refreshController.refreshCompleted();
     }
@@ -158,8 +158,9 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
 
       _refreshController.refreshCompleted();
 
-      if (showLoading && mounted)
+      if (showLoading && mounted) {
         SnackbarService().showSuccess(context, 'Status updated');
+      }
     } catch (e) {
       _refreshController.refreshFailed();
     } finally {
@@ -168,6 +169,12 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
   }
 
   Future<void> _generateToken() async {
+    final connectivity = ConnectivityService();
+    if (!connectivity.isOnline) {
+      SnackbarService().showOffline(context, action: 'generate token');
+      return;
+    }
+
     final parentLinkProvider = context.read<ParentLinkProvider>();
 
     try {
@@ -186,6 +193,12 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
   }
 
   Future<void> _unlinkParent() async {
+    final connectivity = ConnectivityService();
+    if (!connectivity.isOnline) {
+      SnackbarService().showOffline(context, action: 'unlink parent');
+      return;
+    }
+
     final confirmed = await AppDialog.confirm(
       context: context,
       title: 'Unlink Parent',
@@ -200,13 +213,15 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
         await Future.delayed(const Duration(milliseconds: 500));
         await parentLinkProvider.getParentLinkStatus(forceRefresh: true);
 
-        if (mounted)
+        if (mounted) {
           SnackbarService()
               .showSuccess(context, 'Parent unlinked successfully');
+        }
       } catch (e) {
-        if (mounted)
+        if (mounted) {
           SnackbarService()
               .showError(context, 'Failed to unlink: ${formatErrorMessage(e)}');
+        }
       }
     }
   }
@@ -613,7 +628,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                     ),
                     SizedBox(height: ResponsiveValues.spacingS(context)),
                     GestureDetector(
-                      onTap: () => _openTelegramBot(telegramBotUrl!),
+                      onTap: () => _openTelegramBot(telegramBotUrl),
                       child: Container(
                         padding: ResponsiveValues.cardPadding(context),
                         decoration: BoxDecoration(
@@ -671,36 +686,6 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
     } else {
       SnackbarService().showError(context, 'Cannot open Telegram');
     }
-  }
-
-  Widget _buildInfoItem({required IconData icon, required String text}) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: ResponsiveValues.spacingM(context)),
-      child: Row(
-        children: [
-          Container(
-            width: ResponsiveValues.iconSizeL(context),
-            height: ResponsiveValues.iconSizeL(context),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  AppColors.telegramGreen.withValues(alpha: 0.2),
-                  AppColors.telegramGreen.withValues(alpha: 0.1)
-                ],
-              ),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon,
-                size: ResponsiveValues.iconSizeXS(context),
-                color: AppColors.telegramGreen),
-          ),
-          SizedBox(width: ResponsiveValues.spacingM(context)),
-          Expanded(
-            child: Text(text, style: AppTextStyles.bodyMedium(context)),
-          ),
-        ],
-      ),
-    );
   }
 
   Widget _buildUserInfo(AuthProvider authProvider) {
@@ -794,7 +779,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
               sliver: SliverToBoxAdapter(
                 child: Column(
                   children: [
-                    if (_isOffline)
+                    if (_pendingCount > 0)
                       Container(
                         margin: EdgeInsets.only(
                             bottom: ResponsiveValues.spacingL(context)),
@@ -802,26 +787,25 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
-                              AppColors.telegramYellow.withValues(alpha: 0.2),
-                              AppColors.telegramYellow.withValues(alpha: 0.1)
+                              AppColors.info.withValues(alpha: 0.2),
+                              AppColors.info.withValues(alpha: 0.1)
                             ],
                           ),
                           borderRadius: BorderRadius.circular(
                               ResponsiveValues.radiusMedium(context)),
                           border: Border.all(
-                              color: AppColors.telegramYellow
-                                  .withValues(alpha: 0.3)),
+                              color: AppColors.info.withValues(alpha: 0.3)),
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.wifi_off_rounded,
-                                color: AppColors.telegramYellow, size: 20),
+                            const Icon(Icons.schedule_rounded,
+                                color: AppColors.info, size: 20),
                             SizedBox(width: ResponsiveValues.spacingM(context)),
                             Expanded(
                               child: Text(
-                                'Offline mode - showing cached data',
+                                '$_pendingCount pending change${_pendingCount > 1 ? 's' : ''}',
                                 style: AppTextStyles.bodySmall(context)
-                                    .copyWith(color: AppColors.telegramYellow),
+                                    .copyWith(color: AppColors.info),
                               ),
                             ),
                           ],
