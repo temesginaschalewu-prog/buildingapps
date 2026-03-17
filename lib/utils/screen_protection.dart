@@ -1,20 +1,30 @@
+// lib/utils/screen_protection.dart
+// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import 'package:familyacademyclient/services/platform_service.dart';
+import 'platform_helper.dart'; // Changed from platform_service.dart
 import 'helpers.dart';
 
+/// PRODUCTION-READY Screen Protection Service
+/// Handles screen recording prevention, secure mode, and orientation locking
 class ScreenProtectionService {
   static bool _protectionEnabled = true;
   static bool _initialized = false;
   static const MethodChannel _channel =
       MethodChannel('com.familyacademy/screen_protection');
 
+  // Track current state to avoid redundant calls
+  static bool _isSecureModeEnabled = false;
+  static DeviceOrientation? _lastOrientation;
+
   static Future<void> initialize() async {
     if (_initialized) return;
 
-    if (!PlatformService.isMobile) {
+    if (!PlatformHelper.isMobile) {
+      // ✅ Using PlatformHelper
       debugLog('ScreenProtection', '🖥️ Skipping initialization on desktop');
       _initialized = true;
       return;
@@ -25,6 +35,7 @@ class ScreenProtectionService {
         DeviceOrientation.portraitUp,
         DeviceOrientation.portraitDown,
       ]);
+      _lastOrientation = DeviceOrientation.portraitUp;
 
       await enableSecureMode();
       _initialized = true;
@@ -36,7 +47,8 @@ class ScreenProtectionService {
   }
 
   static Future<void> enableSecureMode() async {
-    if (!PlatformService.isMobile) return;
+    if (!PlatformHelper.isMobile) return; // ✅ Using PlatformHelper
+    if (_isSecureModeEnabled) return;
 
     try {
       if (Platform.isAndroid) {
@@ -57,6 +69,8 @@ class ScreenProtectionService {
             statusBarBrightness: Brightness.dark,
           ),
         );
+
+        _isSecureModeEnabled = true;
       } else if (Platform.isIOS) {
         await _channel.invokeMethod('protectScreen');
 
@@ -64,6 +78,8 @@ class ScreenProtectionService {
           SystemUiMode.edgeToEdge,
           overlays: [],
         );
+
+        _isSecureModeEnabled = true;
       }
     } catch (e) {
       debugLog('ScreenProtection', 'Error enabling secure mode: $e');
@@ -72,7 +88,7 @@ class ScreenProtectionService {
   }
 
   static Future<void> _setSafeSystemUiFlags() async {
-    if (!PlatformService.isMobile) return;
+    if (!PlatformHelper.isMobile) return; // ✅ Using PlatformHelper
 
     try {
       if (Platform.isAndroid) {
@@ -81,12 +97,15 @@ class ScreenProtectionService {
           SystemUiMode.immersiveSticky,
           overlays: [],
         );
+        _isSecureModeEnabled = true;
       }
-    } catch (e) {}
+    } catch (e) {
+      debugLog('ScreenProtection', 'Error setting safe UI flags: $e');
+    }
   }
 
   static Future<void> disableSplitScreen() async {
-    if (!PlatformService.isMobile) return;
+    if (!PlatformHelper.isMobile) return; // ✅ Using PlatformHelper
 
     try {
       if (Platform.isAndroid) {
@@ -94,6 +113,7 @@ class ScreenProtectionService {
           DeviceOrientation.portraitUp,
           DeviceOrientation.portraitDown,
         ]);
+        _lastOrientation = DeviceOrientation.portraitUp;
 
         try {
           await SystemChrome.setEnabledSystemUIMode(
@@ -105,6 +125,7 @@ class ScreenProtectionService {
         }
 
         await _channel.invokeMethod('disableSplitScreen');
+        debugLog('ScreenProtection', '✅ Split screen disabled');
       }
     } catch (e) {
       debugLog('ScreenProtection', 'Error disabling split screen: $e');
@@ -112,26 +133,28 @@ class ScreenProtectionService {
   }
 
   static void enableOnResume() {
-    if (!PlatformService.isMobile) return;
+    if (!PlatformHelper.isMobile) return; // ✅ Using PlatformHelper
     if (!_protectionEnabled) return;
+
     _setSecureFlags(true);
 
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
     ]);
+    _lastOrientation = DeviceOrientation.portraitUp;
 
     debugLog('ScreenProtection', '🛡️ Protection enabled on resume');
   }
 
   static void disableOnPause() {
-    if (!PlatformService.isMobile) return;
+    if (!PlatformHelper.isMobile) return; // ✅ Using PlatformHelper
     _setSecureFlags(false);
     debugLog('ScreenProtection', '⚠️ Protection disabled on pause');
   }
 
   static void disable() {
-    if (!PlatformService.isMobile) return;
+    if (!PlatformHelper.isMobile) return; // ✅ Using PlatformHelper
     _protectionEnabled = false;
     _setSecureFlags(false);
 
@@ -141,11 +164,12 @@ class ScreenProtectionService {
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
+    _lastOrientation = null;
     debugLog('ScreenProtection', '🔓 Protection disabled');
   }
 
   static void enable() {
-    if (!PlatformService.isMobile) return;
+    if (!PlatformHelper.isMobile) return; // ✅ Using PlatformHelper
     _protectionEnabled = true;
     _setSecureFlags(true);
 
@@ -153,11 +177,12 @@ class ScreenProtectionService {
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
     ]);
+    _lastOrientation = DeviceOrientation.portraitUp;
     debugLog('ScreenProtection', '🔒 Protection enabled');
   }
 
   static void _setSecureFlags(bool secure) {
-    if (!PlatformService.isMobile) return;
+    if (!PlatformHelper.isMobile) return; // ✅ Using PlatformHelper
 
     try {
       if (Platform.isAndroid) {
@@ -173,12 +198,14 @@ class ScreenProtectionService {
   static bool isEnabled() => _protectionEnabled;
 
   static Widget protectWidget(Widget child, {bool enableProtection = true}) {
-    if (!PlatformService.isMobile) return child;
+    if (!PlatformHelper.isMobile) return child; // ✅ Using PlatformHelper
     if (!enableProtection || !_protectionEnabled) return child;
 
     return NotificationListener<UserScrollNotification>(
       onNotification: (notification) {
-        if (notification.direction != ScrollDirection.idle) enableOnResume();
+        if (notification.direction != ScrollDirection.idle) {
+          enableOnResume();
+        }
         return false;
       },
       child: RepaintBoundary(
@@ -188,7 +215,7 @@ class ScreenProtectionService {
   }
 
   static Widget preventScreenshot(Widget child) {
-    if (!PlatformService.isMobile) return child;
+    if (!PlatformHelper.isMobile) return child; // ✅ Using PlatformHelper
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
@@ -203,10 +230,12 @@ class ScreenProtectionService {
   }
 
   static Future<void> clear() async {
-    if (!PlatformService.isMobile) return;
+    if (!PlatformHelper.isMobile) return; // ✅ Using PlatformHelper
 
     _protectionEnabled = true;
     _initialized = false;
+    _isSecureModeEnabled = false;
+    _lastOrientation = null;
 
     await SystemChrome.setPreferredOrientations([]);
     try {
@@ -215,5 +244,37 @@ class ScreenProtectionService {
       await SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual);
     }
     debugLog('ScreenProtection', '🧹 Protection cleared');
+  }
+
+  // NEW: Get current protection status
+  static Map<String, dynamic> getStatus() {
+    return {
+      'isInitialized': _initialized,
+      'isProtectionEnabled': _protectionEnabled,
+      'isSecureModeEnabled': _isSecureModeEnabled,
+      'lastOrientation': _lastOrientation?.toString(),
+      'platform': PlatformHelper.platformName,
+    };
+  }
+
+  // NEW: Toggle protection on/off
+  static Future<void> toggleProtection() async {
+    if (_protectionEnabled) {
+      disable();
+    } else {
+      enable();
+    }
+  }
+
+  // NEW: Force reapply protection settings
+  static Future<void> reapplyProtection() async {
+    if (!PlatformHelper.isMobile) return;
+    if (!_protectionEnabled) return;
+
+    await enableSecureMode();
+    if (_lastOrientation != null) {
+      await SystemChrome.setPreferredOrientations([_lastOrientation!]);
+    }
+    debugLog('ScreenProtection', '🔄 Protection reapplied');
   }
 }

@@ -1,11 +1,26 @@
 import '../utils/parsers.dart';
+import 'package:hive/hive.dart'; // NEW
 
+part 'chapter_model.g.dart'; // NEW
+
+@HiveType(typeId: 3) // NEW
 class Chapter {
+  @HiveField(0)
   final int id;
+
+  @HiveField(1)
   final String name;
+
+  @HiveField(2)
   final String status;
+
+  @HiveField(3)
   final DateTime? releaseDate;
+
+  @HiveField(4)
   final DateTime createdAt;
+
+  @HiveField(5)
   final bool accessible;
 
   Chapter({

@@ -1,9 +1,15 @@
+// lib/utils/helpers.dart
+// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import '../themes/app_colors.dart';
 
+/// PRODUCTION-READY HELPER FUNCTIONS
+/// Clean, no deprecated methods, only what we actually use
+
+// ===== LOGGING =====
 void debugLog(String tag, String message) {
   if (const bool.fromEnvironment('PRODUCTION')) {
     return;
@@ -12,101 +18,7 @@ void debugLog(String tag, String message) {
       '[${DateTime.now().toIso8601String().substring(11, 19)}] [$tag] $message');
 }
 
-@Deprecated('Use SnackbarService instead')
-void showTopSnackBar(BuildContext context, String message,
-    {bool isError = false, int durationSeconds = 3}) {
-  if (!context.mounted) return;
-
-  final overlay = Overlay.of(context);
-  final overlayEntry = OverlayEntry(
-    builder: (context) => Positioned(
-      top: MediaQuery.of(context).padding.top + 10,
-      left: 16,
-      right: 16,
-      child: Material(
-        color: Colors.transparent,
-        child: AnimatedOpacity(
-          opacity: 1.0,
-          duration: const Duration(milliseconds: 300),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: isError ? AppColors.error : AppColors.success,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.2),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  isError
-                      ? Icons.error_outline_rounded
-                      : Icons.check_circle_rounded,
-                  color: Colors.white,
-                  size: 20,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    message,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
-
-  overlay.insert(overlayEntry);
-  Future.delayed(Duration(seconds: durationSeconds), overlayEntry.remove);
-}
-
-@Deprecated('Use SnackbarService instead')
-void showSnackBar(BuildContext context, String message,
-    {bool isError = false, int durationSeconds = 2}) {
-  showTopSnackBar(context, message,
-      isError: isError, durationSeconds: durationSeconds);
-}
-
-@Deprecated('Use SnackbarService instead')
-void showSimpleSnackBar(BuildContext context, String message,
-    {bool isError = false}) {
-  showTopSnackBar(context, message, isError: isError);
-}
-
-@Deprecated('Use SnackbarService instead')
-void showOfflineMessage(BuildContext context) {
-  showTopSnackBar(
-    context,
-    'You are offline. Showing cached content.',
-  );
-}
-
-@Deprecated('Use SnackbarService instead')
-void showOfflineError(BuildContext context, {String? action}) {
-  showTopSnackBar(
-    context,
-    action != null
-        ? 'Cannot $action while offline. Your changes will sync when online.'
-        : 'You are offline. Please check your internet connection.',
-    isError: true,
-  );
-}
-
+// ===== CONNECTIVITY =====
 Future<bool> hasInternetConnection() async {
   try {
     final connectivityResult = await Connectivity().checkConnectivity();
@@ -122,6 +34,53 @@ Stream<bool> connectivityStream() {
   });
 }
 
+// ===== ERROR HANDLING =====
+/// Check if error is a network error
+bool isNetworkError(dynamic error) {
+  if (error == null) return false;
+  final message = error.toString().toLowerCase();
+  return message.contains('network') ||
+      message.contains('socket') ||
+      message.contains('connection') ||
+      message.contains('timeout') ||
+      message.contains('offline') ||
+      message.contains('internet');
+}
+
+/// Get user-friendly error message
+String getUserFriendlyErrorMessage(dynamic error) {
+  if (error == null) return 'An unknown error occurred';
+
+  final message = error.toString();
+
+  if (message.contains('Network image load failed')) {
+    return 'Failed to load image. Please check your connection.';
+  }
+  if (message.contains('SocketException')) {
+    return 'Network error. Please check your internet connection.';
+  }
+  if (message.contains('Connection refused')) {
+    return 'Server is not responding. Please try again later.';
+  }
+  if (message.contains('Connection timeout')) {
+    return 'Connection timed out. Please try again.';
+  }
+  if (message.contains('Failed host lookup')) {
+    return 'Could not connect to server. Please check your internet.';
+  }
+  if (message.contains('Network error')) {
+    return 'Network error. Please check your internet connection.';
+  }
+
+  return message;
+}
+
+/// Format exception for logging
+String formatException(dynamic e, StackTrace stackTrace) {
+  return '${e.runtimeType}: $e\n$stackTrace';
+}
+
+// ===== FORMATTING =====
 double ensureDouble(dynamic value) {
   if (value is double) return value;
   if (value is int) return value.toDouble();
@@ -158,65 +117,9 @@ String formatFileSize(int bytes) {
   return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
 }
 
-bool validateEmail(String email) {
-  return RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email);
-}
-
-bool validatePhone(String phone) {
-  return RegExp(r'^\+?[0-9]{10,15}$').hasMatch(phone);
-}
-
 String capitalize(String text) {
   if (text.isEmpty) return text;
   return text[0].toUpperCase() + text.substring(1);
-}
-
-Future<void> showConfirmDialog(
-  BuildContext context,
-  String title,
-  String message,
-  Function() onConfirm,
-) async {
-  if (!context.mounted) return;
-
-  await showDialog(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: Text(title),
-      content: Text(message),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: () {
-            Navigator.of(context).pop();
-            onConfirm();
-          },
-          child: const Text('Confirm'),
-        ),
-      ],
-    ),
-  );
-}
-
-bool validatePassword(String password) {
-  if (password.length < 6) return false;
-  if (!password.contains(RegExp('[A-Z]'))) return false;
-  if (!password.contains(RegExp('[a-z]'))) return false;
-  if (!password.contains(RegExp('[0-9]'))) return false;
-  return true;
-}
-
-String? validateUsername(String username) {
-  if (username.isEmpty) return 'Username is required';
-  if (username.length < 3) return 'Username must be at least 3 characters';
-  if (username.length > 20) return 'Username must be less than 20 characters';
-  if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(username)) {
-    return 'Username can only contain letters, numbers, and underscores';
-  }
-  return null;
 }
 
 String formatSubscriptionDuration(Duration duration) {
@@ -245,57 +148,34 @@ String generateCacheKey(String base, List<String> parameters) {
   return '${base}_$params';
 }
 
-String formatErrorMessage(dynamic error) {
-  if (error is String) {
-    if (error.contains('Network') ||
-        error.contains('connection') ||
-        error.contains('Failed host lookup') ||
-        error.contains('SocketException') ||
-        error.contains('Connection refused')) {
-      return 'Network error. Please check your internet connection.';
-    }
-    return error;
-  }
-
-  if (error is Map<String, dynamic>) {
-    if (error.containsKey('offline') && error['offline'] == true) {
-      return 'You are offline. Showing cached data.';
-    }
-    if (error.containsKey('queued') && error['queued'] == true) {
-      return 'Action saved offline. Will sync when online.';
-    }
-    return error['message']?.toString() ?? 'An error occurred';
-  }
-
-  if (error is Exception) {
-    final message = error.toString();
-    if (message.contains('Network') ||
-        message.contains('connection') ||
-        message.contains('Failed host lookup') ||
-        message.contains('SocketException') ||
-        message.contains('Connection refused')) {
-      return 'Network error. Please check your internet connection.';
-    }
-    return message;
-  }
-
-  return error?.toString() ?? 'An unknown error occurred';
+// ===== VALIDATION =====
+bool validateEmail(String email) {
+  return RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email);
 }
 
-bool isNetworkError(dynamic error) {
-  final message = formatErrorMessage(error);
-  return message.contains('Network error') ||
-      message.contains('offline') ||
-      message.contains('internet connection');
+bool validatePhone(String phone) {
+  return RegExp(r'^\+?[0-9]{10,15}$').hasMatch(phone);
 }
 
-bool isOfflineQueuedError(dynamic error) {
-  if (error is Map<String, dynamic>) {
-    return error['queued'] == true;
+bool validatePassword(String password) {
+  if (password.length < 6) return false;
+  if (!password.contains(RegExp('[A-Z]'))) return false;
+  if (!password.contains(RegExp('[a-z]'))) return false;
+  if (!password.contains(RegExp('[0-9]'))) return false;
+  return true;
+}
+
+String? validateUsername(String username) {
+  if (username.isEmpty) return 'Username is required';
+  if (username.length < 3) return 'Username must be at least 3 characters';
+  if (username.length > 20) return 'Username must be less than 20 characters';
+  if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(username)) {
+    return 'Username can only contain letters, numbers, and underscores';
   }
-  return false;
+  return null;
 }
 
+// ===== PERFORMANCE UTILITIES =====
 Function debounce(Function func, [int delay = 500]) {
   Timer? timer;
   return () {
@@ -319,4 +199,36 @@ Function throttle(Function func, [int delay = 1000]) {
       });
     }
   };
+}
+
+// ===== DIALOG HELPERS (Use AppDialog instead) =====
+// Keeping only for backward compatibility - prefer AppDialog
+Future<void> showConfirmDialog(
+  BuildContext context,
+  String title,
+  String message,
+  Function() onConfirm,
+) async {
+  if (!context.mounted) return;
+
+  await showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(title),
+      content: Text(message),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () {
+            Navigator.of(context).pop();
+            onConfirm();
+          },
+          child: const Text('Confirm'),
+        ),
+      ],
+    ),
+  );
 }

@@ -1,30 +1,36 @@
+// lib/providers/auth_provider.dart
+// COMPLETE FIXED VERSION - Handle Hive errors properly
+
 import 'dart:async';
-import 'dart:convert';
-import 'package:familyacademyclient/utils/helpers.dart';
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
+import 'package:hive/hive.dart';
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
 import '../services/device_service.dart';
 import '../services/user_session.dart';
 import '../services/connectivity_service.dart';
+import '../services/hive_service.dart';
+import '../services/offline_queue_manager.dart';
 import '../models/user_model.dart';
-import '../utils/api_response.dart';
+import '../utils/constants.dart';
+import 'base_provider.dart';
 
-class AuthProvider with ChangeNotifier {
+class AuthProvider extends ChangeNotifier
+    with BaseProvider<AuthProvider>, OfflineAwareProvider<AuthProvider> {
+  @override
+  final ConnectivityService connectivityService;
+
   final ApiService apiService;
   final StorageService storageService;
   final DeviceService deviceService;
-  final ConnectivityService connectivityService;
+  final HiveService hiveService;
+  final OfflineQueueManager offlineQueueManager;
 
   User? _currentUser;
   bool _isAuthenticated = false;
-  bool _isLoading = false;
-  bool _isInitializing = false;
-  bool _isInitialized = false;
   bool _requiresDeviceChange = false;
-  String? _error;
   Map<String, dynamic>? _lastLoginResult;
-  bool _isOffline = false;
 
   Timer? _autoLogoutTimer;
   static const Duration _sessionDuration = Duration(days: 3);
@@ -46,45 +52,59 @@ class AuthProvider with ChangeNotifier {
   StreamSubscription? _deviceDeactivationSubscription;
   StreamSubscription? _connectivitySubscription;
 
-  AuthProvider({
-    required this.apiService,
-    required this.storageService,
-    required this.deviceService,
-    required this.connectivityService,
-  }) {
-    _listenToDeviceDeactivation();
-    _setupConnectivityListener();
-  }
+  static const int _maxRetries = 3;
+  static const Duration _retryDelay = Duration(seconds: 2);
 
-  void _setupConnectivityListener() {
-    _connectivitySubscription =
-        connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (_isOffline != !isOnline) {
-        _isOffline = !isOnline;
-        notifyListeners();
-      }
-    });
-  }
-
+  // ===== GETTERS =====
   User? get currentUser => _currentUser;
   bool get isAuthenticated => _isAuthenticated;
-  bool get isLoading => _isLoading;
-  bool get isInitializing => _isInitializing;
-  bool get isInitialized => _isInitialized;
   bool get requiresDeviceChange => _requiresDeviceChange;
-  String? get error => _error;
   Map<String, dynamic>? get lastLoginResult => _lastLoginResult;
-  bool get isOffline => _isOffline;
 
   Stream<bool> get authStateChanges => _authStateController.stream;
   Stream<User?> get userChanges => _userController.stream;
   Stream<bool> get deviceChangeRequired => _deviceChangeController.stream;
   Stream<String?> get deviceDeactivated => _deviceDeactivatedController.stream;
 
-  void registerOnLogoutCallback(VoidCallback callback) =>
-      _onLogoutCallbacks.add(callback);
-  void registerOnLoginCallback(VoidCallback callback) =>
-      _onLoginCallbacks.add(callback);
+  AuthProvider({
+    required this.apiService,
+    required this.storageService,
+    required this.deviceService,
+    required this.connectivityService,
+    required this.hiveService,
+    required this.offlineQueueManager,
+  }) {
+    log('AuthProvider constructor called');
+    initializeOfflineAware(
+      connectivity: connectivityService,
+      queue: offlineQueueManager,
+    );
+    _listenToDeviceDeactivation();
+    _registerQueueProcessors();
+  }
+
+  void _registerQueueProcessors() {
+    offlineQueueManager.registerProcessor(
+      AppConstants.queueActionUpdateProfile,
+      _processProfileUpdate,
+    );
+    log('✅ Registered queue processors');
+  }
+
+  Future<bool> _processProfileUpdate(Map<String, dynamic> data) async {
+    try {
+      log('Processing offline profile update');
+      final response = await apiService.updateMyProfile(
+        email: data['email'],
+        phone: data['phone'],
+        profileImage: data['profileImage'],
+      );
+      return response.success;
+    } catch (e) {
+      log('Error processing profile update: $e');
+      return false;
+    }
+  }
 
   void _listenToDeviceDeactivation() {
     _deviceDeactivationSubscription =
@@ -96,8 +116,14 @@ class AuthProvider with ChangeNotifier {
   }
 
   Future<void> _handleDeviceDeactivation(String message) async {
+    log('Device deactivated: $message');
     _stopTimers();
     _executeLogoutCallbacks();
+
+    final userId = await getCurrentUserId();
+    if (userId != null) {
+      await hiveService.clearUserData(userId);
+    }
 
     await deviceService.clearCurrentUserId();
     await storageService.clearTokens();
@@ -105,14 +131,14 @@ class AuthProvider with ChangeNotifier {
     _currentUser = null;
     _isAuthenticated = false;
     _requiresDeviceChange = false;
-    _error = message;
+    setError(message);
     _lastLoginResult = null;
 
     _deviceDeactivatedController.add(message);
     _authStateController.add(false);
     _userController.add(null);
     _deviceChangeController.add(false);
-    notifyListeners();
+    safeNotify();
   }
 
   void _stopTimers() {
@@ -120,134 +146,84 @@ class AuthProvider with ChangeNotifier {
     _tokenRefreshTimer?.cancel();
   }
 
+  Future<String?> getCurrentUserId() async {
+    if (_currentUser != null) return _currentUser!.id.toString();
+    return deviceService.getCurrentUserId();
+  }
+
+  // ===== INITIALIZE =====
   Future<void> initialize() async {
-    if (_isInitializing) {
-      debugLog('AuthProvider', '⏳ Already initializing, waiting...');
-      int waitCount = 0;
-      while (_isInitializing && waitCount < 50) {
+    if (isLoading) {
+      while (isLoading) {
         await Future.delayed(const Duration(milliseconds: 100));
-        waitCount++;
       }
       return;
     }
 
-    if (_isInitialized) {
-      debugLog('AuthProvider', '✅ Already initialized');
-      return;
-    }
+    if (isInitialized) return;
 
-    _isInitializing = true;
-    _error = null;
-    notifyListeners();
+    setLoading();
 
     try {
-      debugLog('AuthProvider', '🔄 Starting initialization');
+      await storageService.ensureInitialized();
 
-      // Initialize services with timeout - FIXED ERROR HANDLING
-      try {
-        await Future.wait([
-          storageService.init().timeout(const Duration(seconds: 3)),
-          deviceService.init().timeout(const Duration(seconds: 3)),
-          UserSession().init().timeout(const Duration(seconds: 3)),
-        ]).catchError((e) {
-          debugLog('AuthProvider', '⚠️ Service initialization error: $e');
-          return null;
-        });
-      } catch (e) {
-        debugLog('AuthProvider', '⚠️ Service initialization failed: $e');
-        // Continue anyway - we might have cached data
-      }
-
-      final token = await storageService.getToken();
-
-      // Try to get user from DeviceService cache first (now integrated)
-      User? user = await storageService.getUser();
-
-      if (user != null) {
-        debugLog('AuthProvider', '✅ Found cached user: ${user.username}');
-        _currentUser = user;
-        _isAuthenticated = true;
-        await deviceService.setCurrentUserId(user.id.toString());
-        await UserSession().setCurrentUser(user.id.toString());
-
-        _startAutoLogoutTimer();
-        _startTokenRefreshTimer();
-
-        _authStateController.add(true);
-        _userController.add(user);
-        _executeLoginCallbacks();
-      } else if (token != null) {
-        debugLog('AuthProvider', '🔑 Found token, validating...');
-        if (_isOldFormatToken(token)) {
-          debugLog('AuthProvider', '⚠️ Old token format, logging out');
-          await logout(manual: false);
-        } else {
-          try {
-            final profileResponse = await apiService.getMyProfile();
-            if (profileResponse.success && profileResponse.data != null) {
-              final user = profileResponse.data!;
-              debugLog('AuthProvider', '✅ Valid token, user: ${user.username}');
-              await storageService.saveUser(user);
-              _currentUser = user;
-              _isAuthenticated = true;
-
-              await deviceService.setCurrentUserId(user.id.toString());
-              await UserSession().setCurrentUser(user.id.toString());
-
-              _startAutoLogoutTimer();
-              _startTokenRefreshTimer();
-
-              _authStateController.add(true);
-              _userController.add(user);
-              _executeLoginCallbacks();
-            } else {
-              debugLog('AuthProvider', '❌ Token invalid, logging out');
-              await logout(manual: false);
+      final userId = await deviceService.getCurrentUserId();
+      if (userId != null) {
+        User? cachedUser;
+        try {
+          // Check if box is already open
+          if (Hive.isBoxOpen(AppConstants.hiveUserBox)) {
+            final userBox = Hive.box<dynamic>(AppConstants.hiveUserBox);
+            final data = userBox.get('user_${userId}_profile');
+            if (data != null && data is User) {
+              cachedUser = data;
             }
-          } catch (e) {
-            debugLog('AuthProvider', '❌ Token validation error: $e');
-            await logout(manual: false);
+          } else {
+            final userBox =
+                await Hive.openBox<dynamic>(AppConstants.hiveUserBox);
+            final data = userBox.get('user_${userId}_profile');
+            if (data != null && data is User) {
+              cachedUser = data;
+            }
           }
+        } catch (e) {
+          log('⚠️ Error reading user box: $e');
         }
-      } else {
-        debugLog('AuthProvider', 'ℹ️ No user or token found');
+
+        if (cachedUser != null) {
+          _currentUser = cachedUser;
+          _isAuthenticated = true;
+
+          await deviceService.setCurrentUserId(userId);
+          await UserSession().setCurrentUser(userId);
+          await deviceService.saveDeviceInfo();
+
+          _startAutoLogoutTimer();
+          _startTokenRefreshTimer();
+
+          _authStateController.add(true);
+          _userController.add(cachedUser);
+          _executeLoginCallbacks();
+          setLoaded();
+
+          log('✅ Restored from Hive cache');
+          markInitialized();
+          return;
+        }
       }
     } catch (e) {
-      _error = e.toString();
-      debugLog('AuthProvider', '❌ Initialization error: $e');
+      log('⚠️ Error during initialization: $e');
     } finally {
-      _completeInitialization();
+      setLoaded();
+      markInitialized();
     }
   }
 
-  void _completeInitialization() {
-    _isInitializing = false;
-    _isInitialized = true;
-    debugLog('AuthProvider', '✅ Initialization complete');
-    notifyListeners();
-  }
-
-  bool _isOldFormatToken(String token) {
-    try {
-      final parts = token.split('.');
-      if (parts.length != 3) return false;
-      final payload = parts[1];
-      final normalized = base64Url.normalize(payload);
-      final decoded = utf8.decode(base64Url.decode(normalized));
-      final jsonPayload = json.decode(decoded);
-      return !jsonPayload.containsKey('iss') && !jsonPayload.containsKey('aud');
-    } catch (e) {
-      return false;
-    }
-  }
-
+  // ===== LOGIN with retry mechanism =====
   Future<Map<String, dynamic>> login(
-    String username,
-    String password,
-    String deviceId,
-    String? fcmToken,
-  ) async {
-    if (_isLoading) {
+      String username, String password, String deviceId, String? fcmToken,
+      {int retryCount = 0}) async {
+    if (isLoading) {
       return {
         'success': false,
         'message': 'Already processing',
@@ -255,7 +231,7 @@ class AuthProvider with ChangeNotifier {
       };
     }
 
-    if (_isOffline) {
+    if (isOffline) {
       return {
         'success': false,
         'message': 'You are offline. Please connect to login.',
@@ -263,29 +239,24 @@ class AuthProvider with ChangeNotifier {
       };
     }
 
-    _isLoading = true;
-    _error = null;
-    _requiresDeviceChange = false;
-    notifyListeners();
+    setLoading();
 
     try {
-      final deviceId = await deviceService.getDeviceId();
       final response =
           await apiService.studentLogin(username, password, deviceId, fcmToken);
 
       if (response.success && response.data != null) {
         final userData = response.data!['user'];
-        final user = User.fromJson(userData);
+        final user = User.fromJson(userData as Map<String, dynamic>);
 
         final session = UserSession();
+        final currentUserId = await session.getCurrentUserId();
         final isDifferentUser =
-            await session.isDifferentUserLogin(user.id.toString());
+            currentUserId != null && currentUserId != user.id.toString();
 
         if (isDifferentUser) {
-          final oldUserId = await session.getOldUserIdToClear();
-          if (oldUserId != null) {
-            await deviceService.clearOldUserCache(oldUserId);
-          }
+          log('🔄 Different user login detected');
+          await hiveService.clearUserData(currentUserId);
         }
 
         await session.setCurrentUser(user.id.toString());
@@ -297,14 +268,32 @@ class AuthProvider with ChangeNotifier {
         }
         await storageService.saveSessionStart();
 
+        // Try to save to Hive but don't fail if it errors
+        try {
+          if (Hive.isBoxOpen(AppConstants.hiveUserBox)) {
+            final userBox = Hive.box<dynamic>(AppConstants.hiveUserBox);
+            await userBox.put('user_${user.id}_profile', user);
+            log('✅ Saved user to existing Hive box');
+          } else {
+            final userBox =
+                await Hive.openBox<dynamic>(AppConstants.hiveUserBox);
+            await userBox.put('user_${user.id}_profile', user);
+            log('✅ Saved user to new Hive box');
+          }
+        } catch (e) {
+          // Log but don't fail - user is still authenticated
+          log('⚠️ Hive save error (non-critical): $e');
+        }
+
         _currentUser = user;
         _isAuthenticated = true;
         _requiresDeviceChange = false;
         _lastLoginResult = null;
-        _isInitialized = true;
-        _isInitializing = false;
+        markInitialized();
+        setLoaded();
 
         await deviceService.setCurrentUserId(user.id.toString());
+        await deviceService.saveDeviceInfo();
 
         _startAutoLogoutTimer();
         _startTokenRefreshTimer();
@@ -322,95 +311,134 @@ class AuthProvider with ChangeNotifier {
           'next_step': user.schoolId == null ? 'select_school' : 'home',
         };
       } else {
-        _error = response.message;
+        String? responseAction;
+        if (response.error is Map) {
+          responseAction = (response.error as Map)['action']?.toString();
+        }
+        if (responseAction == null && response.data is Map) {
+          responseAction = (response.data as Map)['action']?.toString();
+        }
+
+        if (response.statusCode == 403 &&
+            responseAction == 'device_change_required') {
+          _requiresDeviceChange = true;
+          _deviceChangeController.add(true);
+          _lastLoginResult = {
+            'success': false,
+            'message': response.message,
+            'requiresDeviceChange': true,
+            'action': responseAction,
+            'data': response.data,
+            'username': username,
+            'password': password,
+            'deviceId': deviceId,
+            'fcmToken': fcmToken,
+          };
+          setLoaded();
+          return _lastLoginResult!;
+        }
+
+        if (response.isNetworkError) {
+          setError('Connection error. Please check your internet.');
+          return {
+            'success': false,
+            'message': 'Connection error. Please check your internet.',
+            'requiresDeviceChange': false
+          };
+        }
+
+        setError(response.message);
         return {
           'success': false,
           'message': response.message,
           'requiresDeviceChange': false
         };
       }
-    } on ApiError catch (e) {
-      _error = e.message;
-      _requiresDeviceChange = e.action == 'device_change_required';
+    } on DioException catch (e) {
+      if ((e.type == DioExceptionType.connectionTimeout ||
+              e.type == DioExceptionType.receiveTimeout ||
+              e.type == DioExceptionType.sendTimeout) &&
+          retryCount < _maxRetries) {
+        log('⏱️ Login timeout, retrying (${retryCount + 1}/$_maxRetries)');
+        await Future.delayed(_retryDelay * (retryCount + 1));
+        return login(username, password, deviceId, fcmToken,
+            retryCount: retryCount + 1);
+      }
+
+      setError(e.message ?? 'Login failed');
+      _requiresDeviceChange = e.response?.statusCode == 403 &&
+          (e.response?.data['action'] == 'device_change_required');
 
       if (_requiresDeviceChange) {
         _deviceChangeController.add(true);
         final deviceId = await deviceService.getDeviceId();
         _lastLoginResult = {
           'success': false,
-          'message': e.message,
+          'message': e.response?.data['message'] ?? 'Device change required',
           'requiresDeviceChange': true,
-          'action': e.action,
-          'data': e.data,
+          'action': 'device_change_required',
+          'data': e.response?.data['data'],
           'username': username,
           'password': password,
           'deviceId': deviceId,
           'fcmToken': fcmToken,
         };
+        setLoaded();
         return _lastLoginResult!;
       }
+
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.sendTimeout) {
+        return {
+          'success': false,
+          'message': 'Request timed out. Please try again.',
+          'requiresDeviceChange': false
+        };
+      }
+
       return {
         'success': false,
-        'message': e.message,
-        'requiresDeviceChange': false,
-        'action': e.action,
-        'data': e.data
+        'message': 'Login failed: ${e.message}',
+        'requiresDeviceChange': false
       };
     } catch (e) {
-      _error = e.toString();
+      setError(e.toString());
       return {
         'success': false,
         'message': 'Login failed: ${e.toString()}',
         'requiresDeviceChange': false
       };
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      setLoaded();
+      safeNotify();
     }
   }
 
+  // ===== REGISTER with retry mechanism =====
   Future<Map<String, dynamic>> register(
-    String username,
-    String password,
-    String deviceId,
-    String? fcmToken,
-  ) async {
-    if (_isLoading) return {'success': false, 'message': 'Already processing'};
+      String username, String password, String deviceId, String? fcmToken,
+      {int retryCount = 0}) async {
+    if (isLoading) return {'success': false, 'message': 'Already processing'};
 
-    if (_isOffline) {
+    if (isOffline) {
       return {
         'success': false,
         'message': 'You are offline. Please connect to register.'
       };
     }
 
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
+    setLoading();
 
     try {
-      final deviceId = await deviceService.getDeviceId();
       final response =
           await apiService.register(username, password, deviceId, fcmToken);
 
       if (response.success && response.data != null) {
-        final Map<String, dynamic> responseData = response.data!;
-        Map<String, dynamic> userData;
-        String token;
+        final userData = response.data!['user'];
+        final token = response.data!['token'];
 
-        if (responseData.containsKey('user') &&
-            responseData.containsKey('token')) {
-          userData = responseData['user'] as Map<String, dynamic>;
-          token = responseData['token'] as String;
-        } else if (responseData.containsKey('id') &&
-            responseData.containsKey('username')) {
-          userData = responseData;
-          token = responseData['token']?.toString() ?? '';
-        } else {
-          throw ApiError(message: 'Invalid response format');
-        }
-
-        final user = User.fromJson(userData);
+        final user = User.fromJson(userData as Map<String, dynamic>);
 
         final session = UserSession();
         await session.setCurrentUser(user.id.toString());
@@ -420,13 +448,29 @@ class AuthProvider with ChangeNotifier {
         await storageService.saveSessionStart();
         await storageService.markRegistrationComplete();
 
+        // Try to save to Hive but don't fail
+        try {
+          if (Hive.isBoxOpen(AppConstants.hiveUserBox)) {
+            final userBox = Hive.box<dynamic>(AppConstants.hiveUserBox);
+            await userBox.put('user_${user.id}_profile', user);
+          } else {
+            final userBox =
+                await Hive.openBox<dynamic>(AppConstants.hiveUserBox);
+            await userBox.put('user_${user.id}_profile', user);
+          }
+        } catch (e) {
+          log('⚠️ Hive save error (non-critical): $e');
+        }
+
         _currentUser = user;
         _isAuthenticated = true;
         _requiresDeviceChange = false;
         _lastLoginResult = null;
-        _isInitialized = true;
-        _isInitializing = false;
+        markInitialized();
+        setLoaded();
+
         await deviceService.setCurrentUserId(user.id.toString());
+        await deviceService.saveDeviceInfo();
 
         _startAutoLogoutTimer();
         _startTokenRefreshTimer();
@@ -443,58 +487,160 @@ class AuthProvider with ChangeNotifier {
           'next_step': user.schoolId == null ? 'select_school' : 'home',
         };
       } else {
-        _error = response.message;
+        setError(response.message);
         return {'success': false, 'message': response.message};
       }
-    } on ApiError catch (e) {
-      _error = e.message;
-      return {'success': false, 'message': e.message};
+    } on DioException catch (e) {
+      if ((e.type == DioExceptionType.connectionTimeout ||
+              e.type == DioExceptionType.receiveTimeout ||
+              e.type == DioExceptionType.sendTimeout) &&
+          retryCount < _maxRetries) {
+        log('⏱️ Registration timeout, retrying (${retryCount + 1}/$_maxRetries)');
+        await Future.delayed(_retryDelay * (retryCount + 1));
+        return register(username, password, deviceId, fcmToken,
+            retryCount: retryCount + 1);
+      }
+
+      setError(e.message ?? 'Registration failed');
+
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.sendTimeout) {
+        return {
+          'success': false,
+          'message': 'Request timed out. Please try again.',
+        };
+      }
+
+      return {
+        'success': false,
+        'message': e.message ?? 'Registration failed',
+      };
     } catch (e) {
-      _error = e.toString();
+      setError(e.toString());
       return {
         'success': false,
         'message': 'Registration failed: ${e.toString()}'
       };
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      setLoaded();
+      safeNotify();
     }
   }
 
+  // ===== APPROVE DEVICE CHANGE =====
+  Future<Map<String, dynamic>> approveDeviceChange({
+    required String username,
+    required String password,
+    required String deviceId,
+  }) async {
+    if (isLoading) {
+      return {
+        'success': false,
+        'message': 'Already processing',
+      };
+    }
+
+    if (isOffline) {
+      return {
+        'success': false,
+        'message': 'You are offline. Please connect to approve device change.',
+      };
+    }
+
+    setLoading();
+
+    try {
+      final response = await apiService.approveDeviceChange(
+        username: username,
+        password: password,
+        deviceId: deviceId,
+      );
+
+      if (response.success && response.data != null) {
+        setLoaded();
+        return {
+          'success': true,
+          'message': response.message,
+          'data': response.data,
+        };
+      } else {
+        setLoaded();
+        return {
+          'success': false,
+          'message': response.message,
+        };
+      }
+    } on DioException catch (e) {
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.sendTimeout) {
+        return {
+          'success': false,
+          'message': 'Request timed out. Please try again.',
+        };
+      }
+      return {
+        'success': false,
+        'message': e.message ?? 'Device change failed',
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'message': 'Device change failed: ${e.toString()}',
+      };
+    } finally {
+      setLoaded();
+      safeNotify();
+    }
+  }
+
+  // ===== LOGOUT =====
   Future<void> logout({bool manual = true}) async {
+    log('🔴 Logging out (manual: $manual)');
+
     _stopTimers();
+
+    final userId = await getCurrentUserId();
 
     await UserSession().prepareForLogout();
     _executeLogoutCallbacks();
 
+    if (userId != null) {
+      await hiveService.clearUserData(userId);
+    }
+
     await deviceService.clearCurrentUserId();
     await storageService.clearTokens();
+    await storageService.clearUser();
     await UserSession().completeLogout();
+
+    await connectivityService.clearUserQueue(userId ?? '');
 
     _currentUser = null;
     _isAuthenticated = false;
     _requiresDeviceChange = false;
-    _error = null;
+    clearError();
     _lastLoginResult = null;
 
     if (!manual) {
-      _isInitialized = false;
-      _isInitializing = false;
+      markInitialized();
     }
 
     _authStateController.add(false);
     _userController.add(null);
     _deviceChangeController.add(false);
-    notifyListeners();
+    setLoaded();
+    safeNotify();
+
+    log('✅ Logout complete');
   }
 
   void _executeLogoutCallbacks() {
     for (final callback in _onLogoutCallbacks) {
       try {
         callback();
-      } catch (e) {
-        // Silent fail
-      }
+      } catch (e) {}
     }
   }
 
@@ -502,11 +648,14 @@ class AuthProvider with ChangeNotifier {
     for (final callback in _onLoginCallbacks) {
       try {
         callback();
-      } catch (e) {
-        // Silent fail
-      }
+      } catch (e) {}
     }
   }
+
+  void registerOnLogoutCallback(VoidCallback callback) =>
+      _onLogoutCallbacks.add(callback);
+  void registerOnLoginCallback(VoidCallback callback) =>
+      _onLoginCallbacks.add(callback);
 
   void _startAutoLogoutTimer() {
     _autoLogoutTimer?.cancel();
@@ -521,7 +670,7 @@ class AuthProvider with ChangeNotifier {
   }
 
   Future<void> refreshToken() async {
-    if (_isOffline) return;
+    if (isOffline) return;
 
     try {
       final refreshToken = await storageService.getRefreshToken();
@@ -537,9 +686,7 @@ class AuthProvider with ChangeNotifier {
         await storageService.saveToken(newToken);
         _startAutoLogoutTimer();
       }
-    } catch (e) {
-      // Silent fail
-    }
+    } catch (e) {}
   }
 
   Future<bool> validateToken() async {
@@ -551,13 +698,31 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
+  // ===== LOAD USER =====
   Future<User?> loadUser() async {
     try {
+      final userId = await getCurrentUserId();
+      if (userId != null) {
+        if (Hive.isBoxOpen(AppConstants.hiveUserBox)) {
+          final userBox = Hive.box<dynamic>(AppConstants.hiveUserBox);
+          final cachedUser = userBox.get('user_${userId}_profile');
+          if (cachedUser != null && cachedUser is User) {
+            _currentUser = cachedUser;
+            _isAuthenticated = true;
+            await deviceService.setCurrentUserId(userId);
+            await deviceService.saveDeviceInfo();
+            return cachedUser;
+          }
+        }
+      }
+
       final user = await storageService.getUser();
       if (user != null) {
         _currentUser = user;
         _isAuthenticated = true;
         await deviceService.setCurrentUserId(user.id.toString());
+        await deviceService.saveDeviceInfo();
+
         return user;
       }
     } catch (e) {
@@ -570,25 +735,28 @@ class AuthProvider with ChangeNotifier {
     _currentUser = user;
     await storageService.saveUser(user);
     _userController.add(user);
-    notifyListeners();
+    safeNotify();
+  }
+
+  Future<void> updateSelectedSchool(int schoolId) async {
+    if (_currentUser == null) return;
+    _currentUser = _currentUser!.copyWith(schoolId: schoolId);
+    await storageService.saveUser(_currentUser!);
+    _userController.add(_currentUser);
+    safeNotify();
   }
 
   Future<void> updateDeviceChangeStatus(bool requiresChange) async {
     _requiresDeviceChange = requiresChange;
     _deviceChangeController.add(requiresChange);
-    notifyListeners();
+    safeNotify();
   }
 
   Future<void> clearDeviceChangeRequirement() async {
     _requiresDeviceChange = false;
     _lastLoginResult = null;
     _deviceChangeController.add(false);
-    notifyListeners();
-  }
-
-  void clearError() {
-    _error = null;
-    notifyListeners();
+    safeNotify();
   }
 
   Future<void> checkSession() async {
@@ -596,8 +764,14 @@ class AuthProvider with ChangeNotifier {
       final sessionValid =
           await storageService.isSessionValid(_sessionDuration);
       if (!sessionValid) await logout(manual: false);
-    } catch (e) {
-      // Silent fail
+    } catch (e) {}
+  }
+
+  @override
+  Future<void> onOnlineRefresh() async {
+    log('Online - refreshing auth state');
+    if (_isAuthenticated && _currentUser != null) {
+      await loadUser();
     }
   }
 
@@ -612,6 +786,7 @@ class AuthProvider with ChangeNotifier {
     _connectivitySubscription?.cancel();
     _onLogoutCallbacks.clear();
     _onLoginCallbacks.clear();
+    disposeSubscriptions();
     super.dispose();
   }
 }

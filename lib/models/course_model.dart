@@ -1,14 +1,35 @@
 import '../utils/parsers.dart';
+import 'package:hive/hive.dart'; // NEW
 
+part 'course_model.g.dart'; // NEW
+
+@HiveType(typeId: 2) // NEW
 class Course {
+  @HiveField(0)
   final int id;
+
+  @HiveField(1)
   final String name;
+
+  @HiveField(2)
   final int categoryId;
+
+  @HiveField(3)
   final String? description;
+
+  @HiveField(4)
   final int chapterCount;
+
+  @HiveField(5)
   final String? access;
+
+  @HiveField(6)
   final String? message;
+
+  @HiveField(7)
   final bool hasPendingPayment;
+
+  @HiveField(8)
   final bool requiresPayment;
 
   Course({

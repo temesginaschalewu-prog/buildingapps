@@ -120,6 +120,31 @@ class ResponsiveValues {
         context: context, base: 10, tablet: 10, desktop: 11, largeScreen: 12);
   }
 
+  static double fontNotificationBadge(BuildContext context) {
+    return ScreenSize.fontSize(
+        context: context, base: 9, tablet: 9, desktop: 10, largeScreen: 11);
+  }
+
+  static double fontBadgeSmall(BuildContext context) {
+    return ScreenSize.fontSize(
+        context: context, base: 8, tablet: 8, desktop: 9, largeScreen: 10);
+  }
+
+  static double fontErrorIcon(BuildContext context) {
+    return ScreenSize.fontSize(
+        context: context, base: 36, tablet: 40, desktop: 44, largeScreen: 48);
+  }
+
+  static double fontCategoryInitials(BuildContext context) {
+    return ScreenSize.fontSize(
+        context: context, base: 32, tablet: 36, desktop: 40, largeScreen: 44);
+  }
+
+  static double fontCategoryTitle(BuildContext context) {
+    return ScreenSize.fontSize(
+        context: context, base: 24, tablet: 26, desktop: 28, largeScreen: 30);
+  }
+
   static double iconSizeXXS(BuildContext context) {
     return ScreenSize.isMobile(context)
         ? 12
@@ -195,6 +220,28 @@ class ResponsiveValues {
             tablet: 34,
             desktop: 36,
             largeScreen: 38);
+  }
+
+  static double iconSizeXXXL(BuildContext context) {
+    return ScreenSize.isMobile(context)
+        ? 32
+        : ScreenSize.iconSize(
+            context: context,
+            base: 36,
+            tablet: 40,
+            desktop: 44,
+            largeScreen: 48);
+  }
+
+  static double iconSizeXXXXL(BuildContext context) {
+    return ScreenSize.isMobile(context)
+        ? 40
+        : ScreenSize.iconSize(
+            context: context,
+            base: 48,
+            tablet: 52,
+            desktop: 56,
+            largeScreen: 60);
   }
 
   static double spacingXXS(BuildContext context) =>
@@ -407,7 +454,7 @@ class ResponsiveValues {
   static double desktopSidebarWidth(BuildContext context) =>
       spacingXXXXL(context) * 8;
   static double tabletSidebarWidth(BuildContext context) =>
-      spacingXXXXL(context) * 5;
+      spacingXXXXL(context) * 6;
   static double mobileDrawerWidth(BuildContext context) =>
       ScreenSize.getScreenWidth(context) * 0.7;
 
@@ -437,7 +484,8 @@ class ResponsiveValues {
 
   static double appBarButtonSize(BuildContext context) =>
       iconSizeXL(context) * 1.5;
-  static double appBarIconSize(BuildContext context) => iconSizeM(context);
+  static double appBarIconSize(BuildContext context) =>
+      iconSizeM(context) * 1.3;
   static double appBarButtonSpacing(BuildContext context) {
     return isVerySmallScreen(context)
         ? spacingXXS(context)

@@ -1,244 +1,372 @@
+// lib/providers/exam_provider.dart
+// COMPLETE PRODUCTION-READY FINAL VERSION - FIXED INSTANT CACHE LOADING
+
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:hive/hive.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../services/user_session.dart';
 import '../services/connectivity_service.dart';
+import '../services/hive_service.dart';
+import '../services/offline_queue_manager.dart';
 import '../models/exam_model.dart';
 import '../models/exam_result_model.dart';
 import '../utils/constants.dart';
-import '../utils/helpers.dart';
+import '../utils/api_response.dart';
+import 'base_provider.dart';
 
-class ExamProvider with ChangeNotifier {
+/// PRODUCTION-READY Exam Provider with Full Offline Support
+class ExamProvider extends ChangeNotifier
+    with
+        BaseProvider<ExamProvider>,
+        OfflineAwareProvider<ExamProvider>,
+        BackgroundRefreshMixin<ExamProvider> {
+  @override
+  final ConnectivityService connectivityService;
+
   final ApiService apiService;
   final DeviceService deviceService;
-  final ConnectivityService connectivityService;
+  final HiveService hiveService;
+  final OfflineQueueManager offlineQueueManager;
 
   List<Exam> _availableExams = [];
   List<ExamResult> _myExamResults = [];
   Map<int, List<Exam>> _examsByCourse = {};
-  Map<int, DateTime> _lastLoadedTime = {};
-  Map<int, bool> _isLoadingCourse = {};
-  bool _isLoading = false;
-  String? _error;
-  bool _isOffline = false;
-  Timer? _cacheCleanupTimer;
+  final Map<int, bool> _isLoadingForCourse = {};
+  final Map<int, bool> _hasLoadedForCourse = {};
 
-  final Map<int, bool> _pendingPaymentsByCategory = {};
-
-  StreamController<List<Exam>> _examsUpdateController =
-      StreamController<List<Exam>>.broadcast();
-  StreamController<List<ExamResult>> _resultsUpdateController =
-      StreamController<List<ExamResult>>.broadcast();
+  bool _hasLoadedExams = false;
+  bool _hasLoadedResults = false;
 
   static const Duration _cacheDuration = AppConstants.cacheTTLExams;
-  static const Duration _cacheCleanupInterval = Duration(minutes: 30);
+  @override
+  Duration get refreshInterval => const Duration(minutes: 5);
+
+  Box? _examsBox;
+  Box? _resultsBox;
+
+  int _apiCallCount = 0;
+
+  final StreamController<List<Exam>> _examsUpdateController =
+      StreamController<List<Exam>>.broadcast();
+  final StreamController<List<ExamResult>> _resultsUpdateController =
+      StreamController<List<ExamResult>>.broadcast();
 
   ExamProvider({
     required this.apiService,
     required this.deviceService,
     required this.connectivityService,
+    required this.hiveService,
+    required this.offlineQueueManager,
   }) {
-    _setupConnectivityListener();
-    _cacheCleanupTimer = Timer.periodic(_cacheCleanupInterval, (_) {
-      _cleanupExpiredCache();
-    });
+    log('ExamProvider constructor called');
+    initializeOfflineAware(
+      connectivity: connectivityService,
+      queue: offlineQueueManager,
+    );
+    _registerQueueProcessors();
+    _init();
   }
 
-  void _setupConnectivityListener() {
-    connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (_isOffline != !isOnline) {
-        _isOffline = !isOnline;
-        if (!_isOffline && _availableExams.isNotEmpty) {
-          _refreshAvailableExamsInBackground();
-        }
-        notifyListeners();
+  void _registerQueueProcessors() {
+    offlineQueueManager.registerProcessor(
+      AppConstants.queueActionSubmitExam,
+      _processExamSubmission,
+    );
+    offlineQueueManager.registerProcessor(
+      AppConstants.queueActionSaveExamProgress,
+      _processExamProgressSave,
+    );
+    log('✅ Registered queue processors');
+  }
+
+  Future<bool> _processExamSubmission(Map<String, dynamic> data) async {
+    try {
+      log('Processing offline exam submission');
+      final examResultId = data['exam_result_id'];
+      final answers = data['answers'];
+      final response = await apiService.submitExam(examResultId, answers);
+      return response.success;
+    } catch (e) {
+      log('Error processing exam submission: $e');
+      return false;
+    }
+  }
+
+  Future<bool> _processExamProgressSave(Map<String, dynamic> data) async {
+    try {
+      log('Processing offline exam progress save');
+      final examResultId = data['exam_result_id'];
+      final answers = data['answers'];
+      final response = await apiService.saveExamProgress(examResultId, answers);
+      return response.success;
+    } catch (e) {
+      log('Error processing exam progress save: $e');
+      return false;
+    }
+  }
+
+  Future<void> _init() async {
+    log('_init() START');
+    await _openHiveBoxes();
+    await _loadCachedData();
+
+    if (_hasLoadedExams || _hasLoadedResults) {
+      startBackgroundRefresh();
+    }
+
+    log('_init() END');
+  }
+
+  Future<void> _openHiveBoxes() async {
+    try {
+      if (!Hive.isBoxOpen(AppConstants.hiveExamsBox)) {
+        _examsBox = await Hive.openBox<dynamic>(AppConstants.hiveExamsBox);
+      } else {
+        _examsBox = Hive.box<dynamic>(AppConstants.hiveExamsBox);
       }
-    });
+
+      if (!Hive.isBoxOpen(AppConstants.hiveExamResultsBox)) {
+        _resultsBox =
+            await Hive.openBox<dynamic>(AppConstants.hiveExamResultsBox);
+      } else {
+        _resultsBox = Hive.box<dynamic>(AppConstants.hiveExamResultsBox);
+      }
+
+      log('✅ Hive boxes opened');
+    } catch (e) {
+      log('⚠️ Error opening Hive boxes: $e');
+    }
   }
 
+  Future<void> _loadCachedData() async {
+    try {
+      final userId = await UserSession().getCurrentUserId();
+      if (userId == null) return;
+
+      if (_examsBox != null) {
+        final cachedExams = _examsBox!.get('user_${userId}_exams');
+        if (cachedExams != null && cachedExams is List) {
+          final List<Exam> exams = [];
+          for (final item in cachedExams) {
+            if (item is Exam) {
+              exams.add(item);
+            } else if (item is Map<String, dynamic>) {
+              exams.add(Exam.fromJson(item));
+            }
+          }
+          if (exams.isNotEmpty) {
+            _availableExams = exams;
+            _rebuildExamsByCourse();
+            _hasLoadedExams = true;
+            _examsUpdateController.add(_availableExams);
+            log('✅ Loaded ${_availableExams.length} exams from Hive');
+          }
+        }
+      }
+
+      if (_resultsBox != null) {
+        final cachedResults = _resultsBox!.get('user_${userId}_results');
+        if (cachedResults != null && cachedResults is List) {
+          final List<ExamResult> results = [];
+          for (final item in cachedResults) {
+            if (item is ExamResult) {
+              results.add(item);
+            } else if (item is Map<String, dynamic>) {
+              results.add(ExamResult.fromJson(item));
+            }
+          }
+          if (results.isNotEmpty) {
+            _myExamResults = results;
+            _hasLoadedResults = true;
+            _resultsUpdateController.add(_myExamResults);
+            log('✅ Loaded ${_myExamResults.length} results from Hive');
+          }
+        }
+      }
+    } catch (e) {
+      log('Error loading cached data: $e');
+    }
+  }
+
+  Future<void> _saveExamsToHive() async {
+    try {
+      final userId = await UserSession().getCurrentUserId();
+      if (userId != null && _examsBox != null) {
+        await _examsBox!.put('user_${userId}_exams', _availableExams);
+        log('💾 Saved ${_availableExams.length} exams to Hive');
+      }
+    } catch (e) {
+      log('Error saving exams to Hive: $e');
+    }
+  }
+
+  Future<void> _saveResultsToHive() async {
+    try {
+      final userId = await UserSession().getCurrentUserId();
+      if (userId != null && _resultsBox != null) {
+        await _resultsBox!.put('user_${userId}_results', _myExamResults);
+        log('💾 Saved ${_myExamResults.length} results to Hive');
+      }
+    } catch (e) {
+      log('Error saving results to Hive: $e');
+    }
+  }
+
+  void _rebuildExamsByCourse() {
+    _examsByCourse.clear();
+    for (final exam in _availableExams) {
+      if (!_examsByCourse.containsKey(exam.courseId)) {
+        _examsByCourse[exam.courseId] = [];
+      }
+      _examsByCourse[exam.courseId]!.add(exam);
+    }
+  }
+
+  // ===== GETTERS =====
   List<Exam> get availableExams => List.unmodifiable(_availableExams);
   List<ExamResult> get myExamResults => List.unmodifiable(_myExamResults);
-  bool get isLoading => _isLoading;
-  String? get error => _error;
-  bool get isOffline => _isOffline;
+
+  bool get hasLoadedExams => _hasLoadedExams;
+  bool get hasLoadedResults => _hasLoadedResults;
 
   Stream<List<Exam>> get examsUpdates => _examsUpdateController.stream;
   Stream<List<ExamResult>> get resultsUpdates =>
       _resultsUpdateController.stream;
 
   List<Exam> getExamsByCourse(int courseId) {
-    return List.unmodifiable(_examsByCourse[courseId] ?? []);
+    return _examsByCourse[courseId] ?? [];
   }
 
-  bool isLoadingCourse(int courseId) => _isLoadingCourse[courseId] ?? false;
+  bool isLoadingForCourse(int courseId) =>
+      _isLoadingForCourse[courseId] ?? false;
+  bool hasLoadedForCourse(int courseId) =>
+      _hasLoadedForCourse[courseId] ?? false;
 
-  bool canUserTakeExam(Exam exam) {
-    if (exam.maxAttemptsReached) return false;
-    if (exam.isBlockedByPendingPayment) return false;
-    if (exam.requiresPayment && !exam.hasAccess) return false;
-    return exam.canTakeExam;
+  Exam? getExamById(int id) {
+    try {
+      return _availableExams.firstWhere((exam) => exam.id == id);
+    } catch (e) {
+      return null;
+    }
   }
 
-  String getExamStatusMessage(Exam exam) {
-    if (exam.maxAttemptsReached) return 'Maximum attempts reached';
-    if (exam.isBlockedByPendingPayment) return 'Payment pending verification';
-    if (exam.requiresPayment && !exam.hasAccess) return 'Purchase required';
-    if (exam.isUpcoming) return 'Starts ${_formatDate(exam.startDate)}';
-    if (exam.isEnded) return 'Exam ended';
-    if (exam.isInProgress) return 'In progress';
-    return exam.message;
-  }
+  // ===== LOAD EXAMS BY COURSE - FIXED =====
+  Future<void> loadExamsByCourse(
+    int courseId, {
+    bool forceRefresh = false,
+    bool isManualRefresh = false,
+  }) async {
+    _apiCallCount++;
+    final callId = _apiCallCount;
 
-  String _formatDate(DateTime date) {
-    return '${date.day}/${date.month}/${date.year}';
-  }
+    log('loadExamsByCourse() CALL #$callId for course $courseId');
 
-  Future<void> updatePendingPayments(Map<int, bool> pendingStatus) async {
-    debugLog(
-        'ExamProvider', '🔄 Updating pending payments status: $pendingStatus');
-
-    _pendingPaymentsByCategory.addAll(pendingStatus);
-
-    bool hasChanges = false;
-
-    for (int i = 0; i < _availableExams.length; i++) {
-      final exam = _availableExams[i];
-      final hasPending = _pendingPaymentsByCategory[exam.categoryId] ?? false;
-
-      if (exam.hasPendingPayment != hasPending) {
-        _availableExams[i] = Exam(
-          id: exam.id,
-          title: exam.title,
-          examType: exam.examType,
-          startDate: exam.startDate,
-          endDate: exam.endDate,
-          duration: exam.duration,
-          userTimeLimit: exam.userTimeLimit,
-          passingScore: exam.passingScore,
-          maxAttempts: exam.maxAttempts,
-          autoSubmit: exam.autoSubmit,
-          showResultsImmediately: exam.showResultsImmediately,
-          courseName: exam.courseName,
-          courseId: exam.courseId,
-          categoryId: exam.categoryId,
-          categoryName: exam.categoryName,
-          categoryStatus: exam.categoryStatus,
-          attemptsTaken: exam.attemptsTaken,
-          lastAttemptStatus: exam.lastAttemptStatus,
-          questionCount: exam.questionCount,
-          status: exam.status,
-          message: exam.message,
-          canTakeExam: exam.canTakeExam,
-          requiresPayment: exam.requiresPayment,
-          hasAccess: exam.hasAccess,
-          actualDuration: exam.actualDuration,
-          timingType: exam.timingType,
-          hasPendingPayment: hasPending,
-        );
-        hasChanges = true;
-      }
+    if (isManualRefresh && isOffline) {
+      throw Exception('Network error. Please check your internet connection.');
     }
 
-    for (final courseId in _examsByCourse.keys) {
-      final courseExams = _examsByCourse[courseId]!;
-      for (int i = 0; i < courseExams.length; i++) {
-        final exam = courseExams[i];
-        final hasPending = _pendingPaymentsByCategory[exam.categoryId] ?? false;
-
-        if (exam.hasPendingPayment != hasPending) {
-          courseExams[i] = Exam(
-            id: exam.id,
-            title: exam.title,
-            examType: exam.examType,
-            startDate: exam.startDate,
-            endDate: exam.endDate,
-            duration: exam.duration,
-            userTimeLimit: exam.userTimeLimit,
-            passingScore: exam.passingScore,
-            maxAttempts: exam.maxAttempts,
-            autoSubmit: exam.autoSubmit,
-            showResultsImmediately: exam.showResultsImmediately,
-            courseName: exam.courseName,
-            courseId: exam.courseId,
-            categoryId: exam.categoryId,
-            categoryName: exam.categoryName,
-            categoryStatus: exam.categoryStatus,
-            attemptsTaken: exam.attemptsTaken,
-            lastAttemptStatus: exam.lastAttemptStatus,
-            questionCount: exam.questionCount,
-            status: exam.status,
-            message: exam.message,
-            canTakeExam: exam.canTakeExam,
-            requiresPayment: exam.requiresPayment,
-            hasAccess: exam.hasAccess,
-            actualDuration: exam.actualDuration,
-            timingType: exam.timingType,
-            hasPendingPayment: hasPending,
-          );
-          hasChanges = true;
-        }
-      }
-    }
-
-    if (hasChanges) {
+    // Return cached data immediately if available
+    if (_hasLoadedForCourse[courseId] == true && !forceRefresh) {
+      log('✅ Already have data for course $courseId, returning cached');
       _examsUpdateController.add(_availableExams);
-      _notifySafely();
-      debugLog('ExamProvider', '✅ Updated exams with pending payment status');
-    }
-  }
-
-  Future<void> loadAvailableExams(
-      {int? courseId,
-      bool forceRefresh = false,
-      bool isManualRefresh = false}) async {
-    if (_isLoading && !forceRefresh) return;
-
-    // If this is a manual refresh, ALWAYS force refresh
-    if (isManualRefresh) {
-      forceRefresh = true;
+      setLoaded();
+      return;
     }
 
-    _isLoading = true;
-    _error = null;
-    _notifySafely();
+    if (_isLoadingForCourse[courseId] == true && !forceRefresh) {
+      log('⏳ Already loading course $courseId, waiting...');
+      int attempts = 0;
+      while (_isLoadingForCourse[courseId] == true && attempts < 50) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        attempts++;
+      }
+      if (_hasLoadedForCourse[courseId] == true) {
+        log('✅ Got exams from existing load');
+        _examsUpdateController.add(_availableExams);
+        setLoaded();
+        return;
+      }
+    }
+
+    _isLoadingForCourse[courseId] = true;
+    setLoading();
+    safeNotify();
 
     try {
-      debugLog(
-          'ExamProvider', '📥 Loading available exams for course: $courseId');
+      // STEP 1: Check memory cache first
+      if (!forceRefresh && _examsByCourse.containsKey(courseId)) {
+        log('STEP 1: Using memory cache for course $courseId');
+        setLoaded();
+        _examsUpdateController.add(_availableExams);
+        return;
+      }
 
-      if (!forceRefresh && !_isOffline) {
-        if (courseId == null) {
-          final cachedExams = await deviceService
-              .getCacheItem<List<Exam>>(AppConstants.availableExamsCacheKey);
-          if (cachedExams != null) {
-            _availableExams = cachedExams;
-            _applyPendingPaymentStatus();
-            _isLoading = false;
-            _examsUpdateController.add(_availableExams);
-            debugLog('ExamProvider',
-                '✅ Loaded ${_availableExams.length} exams from cache');
-
-            if (!_isOffline) {
-              unawaited(_refreshAvailableExamsInBackground());
+      // STEP 2: Try Hive cache
+      if (!forceRefresh) {
+        log('STEP 2: Checking Hive cache');
+        final userId = await UserSession().getCurrentUserId();
+        if (userId != null && _examsBox != null) {
+          final cachedExams = _examsBox!.get('user_${userId}_exams');
+          if (cachedExams != null && cachedExams is List) {
+            final List<Exam> exams = [];
+            for (final item in cachedExams) {
+              if (item is Exam) {
+                exams.add(item);
+              } else if (item is Map<String, dynamic>) {
+                exams.add(Exam.fromJson(item));
+              }
             }
-            return;
-          }
-        } else {
-          final cachedExams = await deviceService.getCacheItem<List<Exam>>(
-              AppConstants.examsByCourseKey(courseId));
-          if (cachedExams != null) {
-            _examsByCourse[courseId] = cachedExams;
-            _updateGlobalExams(cachedExams);
-            _lastLoadedTime[courseId] = DateTime.now();
-            _applyPendingPaymentStatus();
-            _isLoading = false;
-            _examsUpdateController.add(_availableExams);
-            debugLog('ExamProvider',
-                '✅ Loaded ${cachedExams.length} exams for course $courseId from cache');
+            if (exams.isNotEmpty) {
+              _availableExams = exams;
+              _rebuildExamsByCourse();
+              _hasLoadedExams = true;
+              _hasLoadedForCourse[courseId] = true;
+              setLoaded();
+              _isLoadingForCourse[courseId] = false;
+              _examsUpdateController.add(_availableExams);
+              log('✅ Loaded ${exams.length} exams from Hive cache');
 
-            if (!_isOffline) {
+              if (!isOffline && !isManualRefresh) {
+                unawaited(_refreshCourseExamsInBackground(courseId));
+              }
+              return;
+            }
+          }
+        }
+      }
+
+      // STEP 3: Try DeviceService
+      if (!forceRefresh) {
+        log('STEP 3: Checking DeviceService cache');
+        final cachedExams = await deviceService.getCacheItem<List<dynamic>>(
+          'exams_course_$courseId',
+          isUserSpecific: true,
+        );
+
+        if (cachedExams != null && cachedExams.isNotEmpty) {
+          final List<Exam> exams = [];
+          for (final json in cachedExams) {
+            if (json is Map<String, dynamic>) {
+              exams.add(Exam.fromJson(json));
+            }
+          }
+
+          if (exams.isNotEmpty) {
+            _examsByCourse[courseId] = exams;
+            _updateGlobalExams(exams);
+            _hasLoadedForCourse[courseId] = true;
+            _hasLoadedExams = true;
+            setLoaded();
+            _isLoadingForCourse[courseId] = false;
+
+            await _saveExamsToHive();
+
+            _examsUpdateController.add(_availableExams);
+            log('✅ Loaded ${exams.length} exams from DeviceService for course $courseId');
+
+            if (!isOffline && !isManualRefresh) {
               unawaited(_refreshCourseExamsInBackground(courseId));
             }
             return;
@@ -246,12 +374,23 @@ class ExamProvider with ChangeNotifier {
         }
       }
 
-      if (_isOffline) {
-        _error = 'You are offline. Using cached data.';
-        _isLoading = false;
-        _notifySafely();
+      // STEP 4: Check offline status
+      if (isOffline) {
+        log('STEP 4: Offline mode');
+        if (_examsByCourse.containsKey(courseId)) {
+          _hasLoadedForCourse[courseId] = true;
+          setLoaded();
+          _isLoadingForCourse[courseId] = false;
+          _examsUpdateController.add(_availableExams);
+          log('✅ Showing cached exams offline for course $courseId');
+          return;
+        }
 
-        // THROW exception for manual refresh!
+        setError('You are offline. No cached exams available.');
+        _hasLoadedForCourse[courseId] = true;
+        setLoaded();
+        _isLoadingForCourse[courseId] = false;
+
         if (isManualRefresh) {
           throw Exception(
               'Network error. Please check your internet connection.');
@@ -259,200 +398,377 @@ class ExamProvider with ChangeNotifier {
         return;
       }
 
-      final response = await apiService.getAvailableExams(courseId: courseId);
+      // STEP 5: Fetch from API with timeout
+      log('STEP 5: Fetching from API for course $courseId');
+      final response =
+          await apiService.getAvailableExams(courseId: courseId).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          log('⏱️ API timeout for course $courseId');
+          if (_examsByCourse.containsKey(courseId)) {
+            log('✅ Using cached exams due to timeout');
+            _hasLoadedForCourse[courseId] = true;
+            _isLoadingForCourse[courseId] = false;
+            setLoaded();
+            _examsUpdateController.add(_availableExams);
+            return ApiResponse<List<Exam>>(
+              success: true,
+              message: 'Using cached data',
+              data: _examsByCourse[courseId],
+            );
+          }
+          return ApiResponse<List<Exam>>(
+            success: false,
+            message: 'Request timed out',
+            data: [],
+          );
+        },
+      );
 
-      if (response.success && response.data != null) {
-        final exams = response.data!;
+      if (response.success) {
+        final exams = response.data ?? [];
+        log('✅ Received ${exams.length} exams from API');
 
-        if (courseId == null) {
-          _availableExams = exams;
-          _applyPendingPaymentStatus();
-          await deviceService.saveCacheItem(
-              AppConstants.availableExamsCacheKey, exams,
-              ttl: _cacheDuration);
-        } else {
-          _examsByCourse[courseId] = exams;
-          _updateGlobalExams(exams);
-          _lastLoadedTime[courseId] = DateTime.now();
-          _applyPendingPaymentStatus();
-          await deviceService.saveCacheItem(
-              AppConstants.examsByCourseKey(courseId), exams,
-              ttl: _cacheDuration);
-        }
+        _examsByCourse[courseId] = exams;
+        _updateGlobalExams(exams);
+        _hasLoadedForCourse[courseId] = true;
+        _hasLoadedExams = true;
+        setLoaded();
+        _isLoadingForCourse[courseId] = false;
 
-        debugLog('ExamProvider', '✅ Loaded ${exams.length} exams from API');
-        _examsUpdateController.add(exams);
+        await _saveExamsToHive();
+
+        deviceService.saveCacheItem(
+          'exams_course_$courseId',
+          exams.map((e) => e.toJson()).toList(),
+          ttl: _cacheDuration,
+          isUserSpecific: true,
+        );
+
+        _examsUpdateController.add(_availableExams);
+        log('✅ Success! Exams loaded for course $courseId');
       } else {
-        debugLog(
-            'ExamProvider', '❌ No exams data received: ${response.message}');
-
-        if (courseId == null) {
-          _availableExams = [];
-        } else {
-          _examsByCourse[courseId] = [];
-        }
-        _error = response.message;
+        setError(response.message);
+        _examsByCourse[courseId] = _examsByCourse[courseId] ?? [];
+        _hasLoadedForCourse[courseId] = true;
+        setLoaded();
+        _isLoadingForCourse[courseId] = false;
+        _examsUpdateController.add(_availableExams);
 
         if (isManualRefresh) {
           throw Exception(response.message);
         }
       }
     } catch (e) {
-      _error = 'Failed to load exams: ${e.toString()}';
-      debugLog('ExamProvider', '❌ loadAvailableExams error: $e');
+      log('❌ Error loading exams: $e');
 
-      if (courseId == null && _availableExams.isEmpty) {
-        _availableExams = [];
-      } else if (courseId != null && !_examsByCourse.containsKey(courseId)) {
-        _examsByCourse[courseId] = [];
+      setError(e.toString());
+      _examsByCourse[courseId] = _examsByCourse[courseId] ?? [];
+      _hasLoadedForCourse[courseId] = true;
+      setLoaded();
+      _isLoadingForCourse[courseId] = false;
+
+      if (_availableExams.isEmpty) {
+        await _recoverExamsFromCache();
       }
 
-      // Re-throw for manual refresh
+      _examsUpdateController.add(_availableExams);
+
       if (isManualRefresh) {
         rethrow;
       }
     } finally {
-      _isLoading = false;
-      _notifySafely();
+      safeNotify();
     }
   }
 
-  Future<void> _refreshAvailableExamsInBackground() async {
-    if (_isOffline) return;
+  // ===== LOAD EXAM RESULTS - FIXED =====
+  Future<void> loadMyExamResults({
+    bool forceRefresh = false,
+    bool isManualRefresh = false,
+  }) async {
+    _apiCallCount++;
+    final callId = _apiCallCount;
+
+    log('loadMyExamResults() CALL #$callId');
+
+    if (isManualRefresh && isOffline) {
+      throw Exception('Network error. Please check your internet connection.');
+    }
+
+    // Return cached data immediately if available
+    if (_hasLoadedResults && !forceRefresh && _myExamResults.isNotEmpty) {
+      log('✅ Already have results, returning cached');
+      setLoaded();
+      _resultsUpdateController.add(_myExamResults);
+      return;
+    }
+
+    if (isLoading && !forceRefresh) {
+      log('⏳ Already loading, waiting...');
+      int attempts = 0;
+      while (isLoading && attempts < 50) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        attempts++;
+      }
+      if (_hasLoadedResults) {
+        log('✅ Got results from existing load');
+        setLoaded();
+        _resultsUpdateController.add(_myExamResults);
+        return;
+      }
+    }
+
+    setLoading();
 
     try {
-      debugLog('ExamProvider', '🔄 Background refresh for available exams');
+      // STEP 1: Try Hive first
+      if (!forceRefresh) {
+        log('STEP 1: Checking Hive cache');
+        final userId = await UserSession().getCurrentUserId();
+        if (userId != null && _resultsBox != null) {
+          final cachedResults = _resultsBox!.get('user_${userId}_results');
+          if (cachedResults != null && cachedResults is List) {
+            final List<ExamResult> results = [];
+            for (final item in cachedResults) {
+              if (item is ExamResult) {
+                results.add(item);
+              } else if (item is Map<String, dynamic>) {
+                results.add(ExamResult.fromJson(item));
+              }
+            }
+            if (results.isNotEmpty) {
+              _myExamResults = results;
+              _hasLoadedResults = true;
+              setLoaded();
+              _resultsUpdateController.add(_myExamResults);
+              log('✅ Loaded ${results.length} results from Hive cache');
 
-      final response = await apiService.getAvailableExams();
-
-      if (response.success && response.data != null) {
-        final exams = response.data!;
-
-        _availableExams = exams;
-        _applyPendingPaymentStatus();
-        await deviceService.saveCacheItem(
-            AppConstants.availableExamsCacheKey, exams,
-            ttl: _cacheDuration);
-
-        _examsUpdateController.add(_availableExams);
-        _notifySafely();
-
-        debugLog('ExamProvider', '✅ Background refresh completed');
-      }
-    } catch (e) {
-      debugLog('ExamProvider', '⚠️ Background refresh failed: $e');
-    }
-  }
-
-  Future<void> _refreshCourseExamsInBackground(int courseId) async {
-    if (_isOffline) return;
-
-    try {
-      debugLog(
-          'ExamProvider', '🔄 Background refresh for course $courseId exams');
-
-      final response = await apiService.getAvailableExams(courseId: courseId);
-
-      if (response.success && response.data != null) {
-        final exams = response.data!;
-
-        _examsByCourse[courseId] = exams;
-        _updateGlobalExams(exams);
-        _lastLoadedTime[courseId] = DateTime.now();
-        _applyPendingPaymentStatus();
-
-        await deviceService.saveCacheItem(
-            AppConstants.examsByCourseKey(courseId), exams,
-            ttl: _cacheDuration);
-
-        _examsUpdateController.add(_availableExams);
-        _notifySafely();
-
-        debugLog('ExamProvider',
-            '✅ Background refresh completed for course $courseId');
-      }
-    } catch (e) {
-      debugLog('ExamProvider',
-          '⚠️ Background refresh failed for course $courseId: $e');
-    }
-  }
-
-  void _applyPendingPaymentStatus() {
-    for (int i = 0; i < _availableExams.length; i++) {
-      final exam = _availableExams[i];
-      final hasPending = _pendingPaymentsByCategory[exam.categoryId] ?? false;
-
-      if (hasPending) {
-        _availableExams[i] = Exam(
-          id: exam.id,
-          title: exam.title,
-          examType: exam.examType,
-          startDate: exam.startDate,
-          endDate: exam.endDate,
-          duration: exam.duration,
-          userTimeLimit: exam.userTimeLimit,
-          passingScore: exam.passingScore,
-          maxAttempts: exam.maxAttempts,
-          autoSubmit: exam.autoSubmit,
-          showResultsImmediately: exam.showResultsImmediately,
-          courseName: exam.courseName,
-          courseId: exam.courseId,
-          categoryId: exam.categoryId,
-          categoryName: exam.categoryName,
-          categoryStatus: exam.categoryStatus,
-          attemptsTaken: exam.attemptsTaken,
-          lastAttemptStatus: exam.lastAttemptStatus,
-          questionCount: exam.questionCount,
-          status: exam.status,
-          message: exam.message,
-          canTakeExam: exam.canTakeExam,
-          requiresPayment: exam.requiresPayment,
-          hasAccess: exam.hasAccess,
-          actualDuration: exam.actualDuration,
-          timingType: exam.timingType,
-          hasPendingPayment: true,
-        );
-      }
-    }
-
-    for (final courseId in _examsByCourse.keys) {
-      final courseExams = _examsByCourse[courseId]!;
-      for (int i = 0; i < courseExams.length; i++) {
-        final exam = courseExams[i];
-        final hasPending = _pendingPaymentsByCategory[exam.categoryId] ?? false;
-
-        if (hasPending) {
-          courseExams[i] = Exam(
-            id: exam.id,
-            title: exam.title,
-            examType: exam.examType,
-            startDate: exam.startDate,
-            endDate: exam.endDate,
-            duration: exam.duration,
-            userTimeLimit: exam.userTimeLimit,
-            passingScore: exam.passingScore,
-            maxAttempts: exam.maxAttempts,
-            autoSubmit: exam.autoSubmit,
-            showResultsImmediately: exam.showResultsImmediately,
-            courseName: exam.courseName,
-            courseId: exam.courseId,
-            categoryId: exam.categoryId,
-            categoryName: exam.categoryName,
-            categoryStatus: exam.categoryStatus,
-            attemptsTaken: exam.attemptsTaken,
-            lastAttemptStatus: exam.lastAttemptStatus,
-            questionCount: exam.questionCount,
-            status: exam.status,
-            message: exam.message,
-            canTakeExam: exam.canTakeExam,
-            requiresPayment: exam.requiresPayment,
-            hasAccess: exam.hasAccess,
-            actualDuration: exam.actualDuration,
-            timingType: exam.timingType,
-            hasPendingPayment: true,
-          );
+              if (!isOffline && !isManualRefresh) {
+                unawaited(_refreshExamResultsInBackground());
+              }
+              return;
+            }
+          }
         }
       }
+
+      // STEP 2: Try DeviceService
+      if (!forceRefresh) {
+        log('STEP 2: Checking DeviceService cache');
+        final cachedResults = await deviceService.getCacheItem<List<dynamic>>(
+          'my_exam_results',
+          isUserSpecific: true,
+        );
+
+        if (cachedResults != null && cachedResults.isNotEmpty) {
+          final List<ExamResult> results = [];
+          for (final json in cachedResults) {
+            if (json is Map<String, dynamic>) {
+              results.add(ExamResult.fromJson(json));
+            }
+          }
+
+          if (results.isNotEmpty) {
+            _myExamResults = results;
+            _hasLoadedResults = true;
+            setLoaded();
+            _resultsUpdateController.add(_myExamResults);
+
+            await _saveResultsToHive();
+            log('✅ Loaded ${results.length} results from DeviceService cache');
+
+            if (!isOffline && !isManualRefresh) {
+              unawaited(_refreshExamResultsInBackground());
+            }
+            return;
+          }
+        }
+      }
+
+      // STEP 3: Check offline status
+      if (isOffline) {
+        log('STEP 3: Offline mode');
+        if (_myExamResults.isNotEmpty) {
+          _hasLoadedResults = true;
+          setLoaded();
+          _resultsUpdateController.add(_myExamResults);
+          log('✅ Showing cached exam results offline');
+          return;
+        }
+
+        _myExamResults = [];
+        _hasLoadedResults = true;
+        setLoaded();
+        _resultsUpdateController.add(_myExamResults);
+
+        if (isManualRefresh) {
+          throw Exception(
+              'Network error. Please check your internet connection.');
+        }
+        return;
+      }
+
+      // STEP 4: Fetch from API with timeout
+      log('STEP 4: Fetching from API');
+
+      final userId = await UserSession().getCurrentUserId();
+      if (userId == null) {
+        setLoaded();
+        return;
+      }
+
+      final response =
+          await apiService.getUserExamResults(int.parse(userId)).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          log('⏱️ API timeout for exam results');
+          if (_myExamResults.isNotEmpty) {
+            log('✅ Using cached results due to timeout');
+            _hasLoadedResults = true;
+            setLoaded();
+            _resultsUpdateController.add(_myExamResults);
+            return ApiResponse<List<ExamResult>>(
+              success: true,
+              message: 'Using cached data',
+              data: _myExamResults,
+            );
+          }
+          return ApiResponse<List<ExamResult>>(
+            success: false,
+            message: 'Request timed out',
+            data: [],
+          );
+        },
+      );
+
+      if (response.success) {
+        _myExamResults = response.data ?? [];
+        log('✅ Received ${_myExamResults.length} results from API');
+        _hasLoadedResults = true;
+        setLoaded();
+
+        await _saveResultsToHive();
+
+        deviceService.saveCacheItem(
+          'my_exam_results',
+          _myExamResults.map((r) => r.toJson()).toList(),
+          ttl: _cacheDuration,
+          isUserSpecific: true,
+        );
+
+        _resultsUpdateController.add(_myExamResults);
+        log('✅ Success! Exam results loaded');
+      } else {
+        setError(response.message);
+        _hasLoadedResults = true;
+        setLoaded();
+        _resultsUpdateController.add(_myExamResults);
+
+        if (isManualRefresh) {
+          throw Exception(response.message);
+        }
+      }
+    } catch (e) {
+      log('❌ Error loading exam results: $e');
+
+      setError(e.toString());
+      setLoaded();
+      _hasLoadedResults = true;
+
+      if (_myExamResults.isEmpty) {
+        await _recoverResultsFromCache();
+      }
+
+      _resultsUpdateController.add(_myExamResults);
+
+      if (isManualRefresh) {
+        rethrow;
+      }
+    } finally {
+      safeNotify();
+    }
+  }
+
+  // ===== EXAM SUBMISSION METHODS =====
+  Future<ApiResponse<Map<String, dynamic>>> startExam(int examId) async {
+    log('startExam() for exam $examId');
+    setLoading();
+    try {
+      if (isOffline) {
+        setLoaded();
+        return ApiResponse.offline(
+          message: 'You are offline. Please connect to start exam.',
+        );
+      }
+      final response = await apiService.startExam(examId);
+      setLoaded();
+      return response;
+    } catch (e) {
+      setLoaded();
+      setError(e.toString());
+      return ApiResponse.error(message: 'Failed to start exam: $e');
+    }
+  }
+
+  Future<ApiResponse<Map<String, dynamic>>> submitExam(
+      int examResultId, List<Map<String, dynamic>> answers) async {
+    log('submitExam() for result $examResultId');
+    setLoading();
+    try {
+      if (isOffline) {
+        offlineQueueManager.addItem(
+          type: AppConstants.queueActionSubmitExam,
+          data: {
+            'exam_result_id': examResultId,
+            'answers': answers,
+            'timestamp': DateTime.now().toIso8601String(),
+          },
+        );
+        setLoaded();
+        return ApiResponse.queued(
+          message: 'Exam saved offline. Will submit when online.',
+        );
+      }
+
+      final response = await apiService.submitExam(examResultId, answers);
+
+      if (response.success) {
+        unawaited(loadMyExamResults(forceRefresh: true));
+      }
+
+      setLoaded();
+      return response;
+    } catch (e) {
+      setLoaded();
+      setError(e.toString());
+      return ApiResponse.error(message: 'Failed to submit exam: $e');
+    }
+  }
+
+  Future<ApiResponse<Map<String, dynamic>>> saveExamProgress(
+      int examResultId, List<Map<String, dynamic>> answers) async {
+    log('saveExamProgress() for result $examResultId');
+    try {
+      if (isOffline) {
+        offlineQueueManager.addItem(
+          type: AppConstants.queueActionSaveExamProgress,
+          data: {
+            'exam_result_id': examResultId,
+            'answers': answers,
+            'timestamp': DateTime.now().toIso8601String(),
+          },
+        );
+        return ApiResponse.queued(
+          message: 'Progress saved offline.',
+        );
+      }
+
+      final response = await apiService.saveExamProgress(examResultId, answers);
+      return response;
+    } catch (e) {
+      log('Error saving exam progress: $e');
+      return ApiResponse.error(message: 'Failed to save progress: $e');
     }
   }
 
@@ -467,363 +783,211 @@ class ExamProvider with ChangeNotifier {
     }
   }
 
-  Future<void> loadMyExamResults(
-      {bool forceRefresh = false, bool isManualRefresh = false}) async {
-    if (_isLoading && !forceRefresh) {
-      debugLog('ExamProvider', 'Already loading, skipping');
-      return;
-    }
-
-    // If this is a manual refresh, ALWAYS force refresh
-    if (isManualRefresh) {
-      forceRefresh = true;
-    }
-
-    _isLoading = true;
-    _error = null;
-    _notifySafely();
+  Future<void> _refreshCourseExamsInBackground(int courseId) async {
+    if (isOffline) return;
 
     try {
-      debugLog('ExamProvider', '📥 Loading my exam results');
+      final response =
+          await apiService.getAvailableExams(courseId: courseId).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          log('⏱️ Background refresh timeout for course $courseId');
+          return ApiResponse<List<Exam>>(
+            success: false,
+            message: 'Timeout',
+          );
+        },
+      );
 
-      if (!forceRefresh && !_isOffline) {
-        final cachedResults = await deviceService
-            .getCacheItem<List<ExamResult>>(AppConstants.myExamResultsCacheKey);
-        if (cachedResults != null && cachedResults.isNotEmpty) {
-          _myExamResults = cachedResults;
-          _isLoading = false;
-          _resultsUpdateController.add(_myExamResults);
-          _notifySafely();
-          debugLog('ExamProvider',
-              '✅ Loaded ${_myExamResults.length} exam results from cache');
+      if (response.success && response.data != null) {
+        final exams = response.data!;
 
-          if (!_isOffline) {
-            unawaited(_refreshExamResultsInBackground());
-          }
-          return;
-        }
-      }
+        _examsByCourse[courseId] = exams;
+        _updateGlobalExams(exams);
 
-      if (_isOffline) {
-        _error = 'You are offline. Using cached data.';
-        _isLoading = false;
-        _notifySafely();
+        await _saveExamsToHive();
 
-        // THROW exception for manual refresh!
-        if (isManualRefresh) {
-          throw Exception(
-              'Network error. Please check your internet connection.');
-        }
-        return;
-      }
+        deviceService.saveCacheItem(
+          'exams_course_$courseId',
+          exams.map((e) => e.toJson()).toList(),
+          ttl: _cacheDuration,
+          isUserSpecific: true,
+        );
 
-      final response = await apiService.getMyExamResults();
-
-      if (response.success) {
-        if (response.data is List) {
-          _myExamResults = response.data as List<ExamResult>;
-          debugLog('ExamProvider',
-              '✅ Parsed ${_myExamResults.length} exam results from List');
-        } else if (response.data is Map &&
-            (response.data as Map).containsKey('data')) {
-          final dataList = (response.data as Map)['data'];
-          if (dataList is List) {
-            _myExamResults =
-                dataList.map((item) => ExamResult.fromJson(item)).toList();
-            debugLog('ExamProvider',
-                '✅ Parsed ${_myExamResults.length} exam results from data field');
-          }
-        } else {
-          _myExamResults = [];
-        }
-
-        await deviceService.saveCacheItem(
-            AppConstants.myExamResultsCacheKey, _myExamResults,
-            ttl: _cacheDuration);
-
-        _resultsUpdateController.add(_myExamResults);
-        _notifySafely();
-
-        debugLog('ExamProvider',
-            '✅ Final exam results count: ${_myExamResults.length}');
-      } else {
-        _error = response.message;
-        _myExamResults = [];
-
-        if (isManualRefresh) {
-          throw Exception(response.message);
-        }
+        _examsUpdateController.add(_availableExams);
+        log('🔄 Background refresh for course $courseId complete');
       }
     } catch (e) {
-      _error = 'Failed to load exam results: ${e.toString()}';
-      debugLog('ExamProvider', '❌ loadMyExamResults error: $e');
-
-      if (_myExamResults.isEmpty) {
-        _myExamResults = [];
-      }
-
-      // Re-throw for manual refresh
-      if (isManualRefresh) {
-        rethrow;
-      }
-    } finally {
-      _isLoading = false;
-      _notifySafely();
+      log('Background refresh failed: $e');
     }
   }
 
   Future<void> _refreshExamResultsInBackground() async {
-    if (_isOffline) return;
+    if (isOffline) return;
 
     try {
-      debugLog('ExamProvider', '🔄 Background refresh for exam results');
+      final userId = await UserSession().getCurrentUserId();
+      if (userId == null) return;
 
-      final response = await apiService.getMyExamResults();
+      final response =
+          await apiService.getUserExamResults(int.parse(userId)).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          log('⏱️ Background refresh timeout for results');
+          return ApiResponse<List<ExamResult>>(
+            success: false,
+            message: 'Timeout',
+          );
+        },
+      );
 
       if (response.success) {
-        if (response.data is List) {
-          _myExamResults = response.data as List<ExamResult>;
-        } else if (response.data is Map &&
-            (response.data as Map).containsKey('data')) {
-          final dataList = (response.data as Map)['data'];
-          if (dataList is List) {
-            _myExamResults =
-                dataList.map((item) => ExamResult.fromJson(item)).toList();
-          }
-        }
+        _myExamResults = response.data ?? [];
 
-        await deviceService.saveCacheItem(
-            AppConstants.myExamResultsCacheKey, _myExamResults,
-            ttl: _cacheDuration);
+        await _saveResultsToHive();
+
+        deviceService.saveCacheItem(
+          'my_exam_results',
+          _myExamResults.map((r) => r.toJson()).toList(),
+          ttl: _cacheDuration,
+          isUserSpecific: true,
+        );
 
         _resultsUpdateController.add(_myExamResults);
-        _notifySafely();
-
-        debugLog('ExamProvider', '✅ Background refresh completed');
+        log('🔄 Background refresh for results complete');
       }
     } catch (e) {
-      debugLog('ExamProvider', '⚠️ Background refresh failed: $e');
+      log('Background refresh failed: $e');
     }
   }
 
-  Future<void> loadExamsByCourse(int courseId,
-      {bool forceRefresh = false, bool isManualRefresh = false}) async {
-    if (_isLoadingCourse[courseId] == true && !forceRefresh) return;
+  Future<void> _recoverExamsFromCache() async {
+    final userId = await UserSession().getCurrentUserId();
+    if (userId == null) return;
 
-    // If this is a manual refresh, ALWAYS force refresh
-    if (isManualRefresh) {
-      forceRefresh = true;
-    }
-
-    if (!forceRefresh && !_isOffline) {
-      final cachedExams = await deviceService
-          .getCacheItem<List<Exam>>(AppConstants.examsByCourseKey(courseId));
-      if (cachedExams != null) {
-        _examsByCourse[courseId] = cachedExams;
-        _updateGlobalExams(cachedExams);
-        _lastLoadedTime[courseId] = DateTime.now();
-        _applyPendingPaymentStatus();
-        _examsUpdateController.add(_availableExams);
-        _notifySafely();
-        debugLog('ExamProvider',
-            '✅ Loaded ${cachedExams.length} exams for course $courseId from cache');
-
-        if (!_isOffline) {
-          unawaited(_refreshCourseExamsInBackground(courseId));
+    if (_examsBox != null) {
+      try {
+        final cachedExams = _examsBox!.get('user_${userId}_exams');
+        if (cachedExams != null && cachedExams is List) {
+          final List<Exam> exams = [];
+          for (final item in cachedExams) {
+            if (item is Exam) {
+              exams.add(item);
+            } else if (item is Map<String, dynamic>) {
+              exams.add(Exam.fromJson(item));
+            }
+          }
+          if (exams.isNotEmpty) {
+            _availableExams = exams;
+            _rebuildExamsByCourse();
+            _hasLoadedExams = true;
+            _examsUpdateController.add(_availableExams);
+            log('✅ Recovered ${exams.length} exams from Hive after error');
+          }
         }
-        return;
+      } catch (e) {
+        log('Error recovering from Hive: $e');
       }
     }
+  }
 
-    _isLoadingCourse[courseId] = true;
-    _isLoading = true;
-    _error = null;
-    _notifySafely();
+  Future<void> _recoverResultsFromCache() async {
+    final userId = await UserSession().getCurrentUserId();
+    if (userId == null) return;
 
-    try {
-      debugLog('ExamProvider', '📥 Loading exams for course: $courseId');
-
-      if (_isOffline) {
-        _error = 'You are offline. Using cached data.';
-        _isLoadingCourse[courseId] = false;
-        _isLoading = false;
-        _notifySafely();
-
-        // THROW exception for manual refresh!
-        if (isManualRefresh) {
-          throw Exception(
-              'Network error. Please check your internet connection.');
+    if (_resultsBox != null) {
+      try {
+        final cachedResults = _resultsBox!.get('user_${userId}_results');
+        if (cachedResults != null && cachedResults is List) {
+          final List<ExamResult> results = [];
+          for (final item in cachedResults) {
+            if (item is ExamResult) {
+              results.add(item);
+            } else if (item is Map<String, dynamic>) {
+              results.add(ExamResult.fromJson(item));
+            }
+          }
+          if (results.isNotEmpty) {
+            _myExamResults = results;
+            _hasLoadedResults = true;
+            _resultsUpdateController.add(_myExamResults);
+            log('✅ Recovered ${results.length} results from Hive after error');
+          }
         }
-        return;
+      } catch (e) {
+        log('Error recovering from Hive: $e');
       }
-
-      final response = await apiService.getAvailableExams(courseId: courseId);
-
-      if (response.success) {
-        final exams = response.data ?? [];
-        _examsByCourse[courseId] = exams;
-        _updateGlobalExams(exams);
-        _lastLoadedTime[courseId] = DateTime.now();
-        _applyPendingPaymentStatus();
-
-        await deviceService.saveCacheItem(
-            AppConstants.examsByCourseKey(courseId), exams,
-            ttl: _cacheDuration);
-
-        _examsUpdateController.add(_availableExams);
-        debugLog('ExamProvider',
-            '✅ Loaded ${exams.length} exams for course $courseId from API');
-      } else {
-        _error = response.message;
-        _examsByCourse[courseId] = [];
-
-        if (isManualRefresh) {
-          throw Exception(response.message);
-        }
-      }
-    } catch (e) {
-      _error = 'Failed to load exams for course: ${e.toString()}';
-      debugLog('ExamProvider', '❌ loadExamsByCourse error: $e');
-
-      if (!_examsByCourse.containsKey(courseId)) {
-        _examsByCourse[courseId] = [];
-      }
-
-      // Re-throw for manual refresh
-      if (isManualRefresh) {
-        rethrow;
-      }
-    } finally {
-      _isLoadingCourse[courseId] = false;
-      _isLoading = false;
-      _notifySafely();
     }
   }
 
-  Exam? getExamById(int id) {
-    try {
-      return _availableExams.firstWhere((exam) => exam.id == id);
-    } catch (e) {
-      return null;
+  @override
+  Future<void> onBackgroundRefresh() async {
+    log('Background refresh triggered');
+    if (isOffline) return;
+
+    if (_hasLoadedExams) {
+      unawaited(_refreshCourseExamsInBackground(0));
+    }
+    if (_hasLoadedResults) {
+      unawaited(_refreshExamResultsInBackground());
     }
   }
 
-  ExamResult? getExamResultById(int id) {
-    try {
-      return _myExamResults.firstWhere((result) => result.id == id);
-    } catch (e) {
-      return null;
+  @override
+  Future<void> onOnlineRefresh() async {
+    log('Online - refreshing exams');
+    if (_hasLoadedExams) {
+      await loadExamsByCourse(0, forceRefresh: true);
     }
-  }
-
-  Future<void> _cleanupExpiredCache() async {
-    debugLog('ExamProvider', '🔄 Cleaning up expired exam cache');
-    final now = DateTime.now();
-
-    final expiredCourses = <int>[];
-    for (final entry in _lastLoadedTime.entries) {
-      if (now.difference(entry.value) > _cacheDuration) {
-        expiredCourses.add(entry.key);
-      }
-    }
-
-    for (final courseId in expiredCourses) {
-      await deviceService
-          .removeCacheItem(AppConstants.examsByCourseKey(courseId));
-      _examsByCourse.remove(courseId);
-      _lastLoadedTime.remove(courseId);
-      _isLoadingCourse.remove(courseId);
-    }
-
-    if (expiredCourses.isNotEmpty) {
-      _examsUpdateController.add(_availableExams);
-      debugLog('ExamProvider',
-          ' Cleared cache for ${expiredCourses.length} expired courses');
+    if (_hasLoadedResults) {
+      await loadMyExamResults(forceRefresh: true);
     }
   }
 
   Future<void> clearUserData() async {
-    debugLog('ExamProvider', 'Clearing exam data');
-
     final session = UserSession();
-    final isDifferentUser = !await session.isSameUser();
-    final isLoggingOut = await _isLoggingOut();
+    if (!session.shouldClearCacheOnLogout()) return;
 
-    if (!isDifferentUser || !isLoggingOut) {
-      debugLog('ExamProvider', '✅ Same user - preserving exam cache');
-      return;
+    final userId = await session.getCurrentUserId();
+    if (userId != null) {
+      if (_examsBox != null) {
+        await _examsBox!.delete('user_${userId}_exams');
+      }
+      if (_resultsBox != null) {
+        await _resultsBox!.delete('user_${userId}_results');
+      }
     }
 
-    await deviceService.removeCacheItem(AppConstants.availableExamsCacheKey);
-    await deviceService.removeCacheItem(AppConstants.myExamResultsCacheKey);
-
-    final courseIds = _examsByCourse.keys.toList();
-    for (final courseId in courseIds) {
-      await deviceService
-          .removeCacheItem(AppConstants.examsByCourseKey(courseId));
-    }
+    await deviceService.clearCacheByPrefix('exams_');
+    await deviceService.clearCacheByPrefix('my_exam_results');
 
     _availableExams = [];
     _examsByCourse = {};
+    _isLoadingForCourse.clear();
+    _hasLoadedForCourse.clear();
     _myExamResults = [];
-    _lastLoadedTime = {};
-    _isLoadingCourse = {};
-    _pendingPaymentsByCategory.clear();
+    _hasLoadedExams = false;
+    _hasLoadedResults = false;
+    stopBackgroundRefresh();
 
-    await _examsUpdateController.close();
-    await _resultsUpdateController.close();
-
-    _examsUpdateController = StreamController<List<Exam>>.broadcast();
-    _resultsUpdateController = StreamController<List<ExamResult>>.broadcast();
-
-    _examsUpdateController.add(_availableExams);
-    _resultsUpdateController.add(_myExamResults);
-
-    _notifySafely();
+    _examsUpdateController.add([]);
+    _resultsUpdateController.add([]);
+    safeNotify();
   }
 
-  Future<bool> _isLoggingOut() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
-  }
-
-  Future<void> clearExamsForCourse(int courseId) async {
-    await deviceService
-        .removeCacheItem(AppConstants.examsByCourseKey(courseId));
-
-    final courseExams = _examsByCourse[courseId] ?? [];
-    _availableExams
-        .removeWhere((exam) => courseExams.any((e) => e.id == exam.id));
-
-    _examsByCourse.remove(courseId);
-    _lastLoadedTime.remove(courseId);
-    _isLoadingCourse.remove(courseId);
-
-    _examsUpdateController.add(_availableExams);
-
-    _notifySafely();
-  }
-
+  @override
   void clearError() {
-    _error = null;
-    _notifySafely();
+    clearError();
   }
 
   @override
   void dispose() {
-    _cacheCleanupTimer?.cancel();
+    stopBackgroundRefresh();
     _examsUpdateController.close();
     _resultsUpdateController.close();
+    _examsBox?.close();
+    _resultsBox?.close();
+    disposeSubscriptions();
     super.dispose();
-  }
-
-  void _notifySafely() {
-    if (hasListeners) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (hasListeners) {
-          notifyListeners();
-        }
-      });
-    }
   }
 }

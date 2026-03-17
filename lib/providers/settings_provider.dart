@@ -1,29 +1,52 @@
+// lib/providers/settings_provider.dart
+// COMPLETE PRODUCTION-READY FINAL VERSION - INSTANT CACHE + BACKGROUND REFRESH
+
 import 'dart:async';
+import 'package:familyacademyclient/services/offline_queue_manager.dart';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:hive/hive.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../services/user_session.dart';
 import '../services/connectivity_service.dart';
+import '../services/hive_service.dart';
 import '../models/setting_model.dart';
+import '../utils/api_response.dart';
 import '../utils/constants.dart';
-import '../utils/helpers.dart';
 import '../utils/app_enums.dart';
+import 'base_provider.dart';
 
-class SettingsProvider with ChangeNotifier {
+/// PRODUCTION-READY Settings Provider with Full Offline Support
+class SettingsProvider extends ChangeNotifier
+    with
+        BaseProvider<SettingsProvider>,
+        OfflineAwareProvider<SettingsProvider>,
+        BackgroundRefreshMixin<SettingsProvider> {
+  @override
+  final ConnectivityService connectivityService;
+
   final ApiService apiService;
   final DeviceService deviceService;
-  final ConnectivityService connectivityService;
+  final HiveService hiveService;
 
   List<Setting> _allSettings = [];
   final Map<String, Setting> _settingsMap = {};
   final Map<String, List<Setting>> _settingsByCategory = {};
-  bool _isLoading = false;
-  String? _error;
-  bool _isOffline = false;
 
   final Map<String, DateTime> _lastCategoryLoadTime = {};
   final Map<String, Completer<bool>> _ongoingLoads = {};
+
+  // Flag to prevent double initialization
+  bool _hasInitialized = false;
+  bool _isLoadingContactSettings = false;
+
+  @override
+  Duration get refreshInterval => const Duration(minutes: 30);
+
+  Box? _settingsBox;
+
+  int _apiCallCount = 0;
+
   StreamController<List<Setting>> _settingsUpdateController =
       StreamController<List<Setting>>.broadcast();
 
@@ -31,30 +54,165 @@ class SettingsProvider with ChangeNotifier {
     required this.apiService,
     required this.deviceService,
     required this.connectivityService,
+    required this.hiveService,
   }) {
-    _setupConnectivityListener();
+    log('SettingsProvider constructor called');
+    initializeOfflineAware(
+      connectivity: connectivityService,
+      queue: OfflineQueueManager(),
+    );
+    _init();
   }
 
-  void _setupConnectivityListener() {
-    connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (_isOffline != !isOnline) {
-        _isOffline = !isOnline;
-        notifyListeners();
+  Future<void> _init() async {
+    log('_init() START');
+    await _openHiveBoxes();
+    await _loadCachedSettings();
+
+    if (_allSettings.isNotEmpty) {
+      startBackgroundRefresh();
+      _hasInitialized = true;
+    }
+
+    log('_init() END');
+  }
+
+  Future<void> _openHiveBoxes() async {
+    try {
+      if (!Hive.isBoxOpen(AppConstants.hiveSettingsBox)) {
+        _settingsBox =
+            await Hive.openBox<dynamic>(AppConstants.hiveSettingsBox);
+      } else {
+        _settingsBox = Hive.box<dynamic>(AppConstants.hiveSettingsBox);
       }
-    });
+      log('✅ Hive box opened');
+    } catch (e) {
+      log('⚠️ Error opening Hive box: $e');
+    }
+  }
+
+  Future<void> _loadCachedSettings() async {
+    try {
+      if (_settingsBox != null) {
+        final cachedSettings = _settingsBox!.get('all_settings');
+        if (cachedSettings != null && cachedSettings is List) {
+          final List<Setting> settings = [];
+          for (final item in cachedSettings) {
+            if (item is Setting) {
+              settings.add(item);
+            } else if (item is Map<String, dynamic>) {
+              settings.add(Setting.fromJson(item));
+            }
+          }
+
+          if (settings.isNotEmpty) {
+            _allSettings = settings;
+            _rebuildMaps();
+            setLoaded();
+            log('✅ Loaded ${_allSettings.length} settings from Hive');
+          }
+        }
+      }
+    } catch (e) {
+      log('Error loading cached settings: $e');
+    }
+  }
+
+  Future<void> _saveToHive() async {
+    try {
+      if (_settingsBox != null) {
+        await _settingsBox!.put('all_settings', _allSettings);
+        log('💾 Saved ${_allSettings.length} settings to Hive');
+      }
+    } catch (e) {
+      log('Error saving to Hive: $e');
+    }
+  }
+
+  void _rebuildMaps() {
+    _settingsMap.clear();
+    _settingsByCategory.clear();
+
+    for (final setting in _allSettings) {
+      _settingsMap[setting.settingKey] = setting;
+      if (!_settingsByCategory.containsKey(setting.category)) {
+        _settingsByCategory[setting.category] = [];
+      }
+      _settingsByCategory[setting.category]!.add(setting);
+    }
+    log('Rebuilt maps: ${_settingsMap.length} keys, ${_settingsByCategory.length} categories');
+  }
+
+  bool _shouldLoadCategory(String category, {bool forceRefresh = false}) {
+    if (forceRefresh) return true;
+    final lastLoad = _lastCategoryLoadTime[category];
+    if (lastLoad == null) return true;
+    final minutesSinceLastLoad = DateTime.now().difference(lastLoad).inMinutes;
+    return minutesSinceLastLoad >= 5;
+  }
+
+  bool _isPhoneNumber(String value) {
+    final clean = value.replaceAll(RegExp(r'[\s\-\(\)\+]'), '');
+    if (RegExp(r'^\d{8,15}$').hasMatch(clean)) return true;
+    return false;
+  }
+
+  bool _isEmail(String value) {
+    return RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value);
+  }
+
+  bool _isUrl(String value) {
+    return value.startsWith('http://') ||
+        value.startsWith('https://') ||
+        value.startsWith('www.') ||
+        value.contains('.com') ||
+        value.contains('.org') ||
+        value.contains('.net') ||
+        value.contains('.io') ||
+        value.contains('t.me') ||
+        value.contains('wa.me');
+  }
+
+  IconData _getPaymentMethodIcon(String methodKey, String name, String number) {
+    final method = methodKey.toLowerCase();
+    final nameLower = name.toLowerCase();
+    final numberLower = number.toLowerCase();
+
+    if (method.contains('telebirr') ||
+        nameLower.contains('telebirr') ||
+        numberLower.contains('telebirr') ||
+        method.contains('birr')) {
+      return Icons.phone_android;
+    }
+    if (method.contains('mpesa') ||
+        nameLower.contains('mpesa') ||
+        method.contains('m-pesa')) {
+      return Icons.phone_android;
+    }
+    if (method.contains('bank') || nameLower.contains('bank')) {
+      return Icons.account_balance;
+    }
+    if (method.contains('paypal') || nameLower.contains('paypal')) {
+      return Icons.payments;
+    }
+    if (method.contains('card') ||
+        nameLower.contains('card') ||
+        nameLower.contains('credit') ||
+        nameLower.contains('debit')) {
+      return Icons.credit_card;
+    }
+    return Icons.payment;
   }
 
   // ===== GETTERS =====
   List<Setting> get allSettings => List.unmodifiable(_allSettings);
   Map<String, List<Setting>> get settingsByCategory =>
       Map.unmodifiable(_settingsByCategory);
-  bool get isLoading => _isLoading;
-  String? get error => _error;
-  bool get isOffline => _isOffline;
+
   Stream<List<Setting>> get settingsUpdates => _settingsUpdateController.stream;
 
   List<Setting> getSettingsByCategory(String category) {
-    return List.unmodifiable(_settingsByCategory[category] ?? []);
+    return _settingsByCategory[category] ?? [];
   }
 
   Setting? getSettingByKey(String key) {
@@ -69,7 +227,525 @@ class SettingsProvider with ChangeNotifier {
     return _settingsMap[key]?.displayName;
   }
 
-  // ===== CONTACT INFO =====
+  // ===== LOAD ALL SETTINGS - INSTANT CACHE + BACKGROUND REFRESH =====
+  Future<void> getAllSettings({
+    bool forceRefresh = false,
+    bool isManualRefresh = false,
+  }) async {
+    _apiCallCount++;
+    final callId = _apiCallCount;
+
+    log('getAllSettings() CALL #$callId');
+
+    // If we already have data and not forcing refresh, return cached immediately
+    if (_hasInitialized && _allSettings.isNotEmpty && !forceRefresh) {
+      log('✅ Returning cached settings INSTANTLY');
+      setLoaded();
+      _settingsUpdateController.add(_allSettings);
+
+      // If online and not manual refresh, do background refresh silently
+      if (!isOffline && !isManualRefresh) {
+        unawaited(_refreshInBackground());
+      }
+      return;
+    }
+
+    if (isManualRefresh && isOffline) {
+      throw Exception('Network error. Please check your internet connection.');
+    }
+
+    if (isLoading && !forceRefresh) {
+      log('⏳ Already loading, waiting...');
+      int attempts = 0;
+      while (isLoading && attempts < 50) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        attempts++;
+      }
+      if (_allSettings.isNotEmpty) {
+        log('✅ Got settings from existing load');
+        setLoaded();
+        _settingsUpdateController.add(_allSettings);
+        return;
+      }
+    }
+
+    setLoading();
+
+    try {
+      // STEP 1: Try Hive first (fast)
+      if (!forceRefresh && _allSettings.isEmpty) {
+        log('STEP 1: Checking Hive cache');
+        if (_settingsBox != null) {
+          final cachedSettings = _settingsBox!.get('all_settings');
+          if (cachedSettings != null && cachedSettings is List) {
+            final List<Setting> settings = [];
+            for (final item in cachedSettings) {
+              if (item is Setting) {
+                settings.add(item);
+              } else if (item is Map<String, dynamic>) {
+                settings.add(Setting.fromJson(item));
+              }
+            }
+            if (settings.isNotEmpty) {
+              _allSettings = settings;
+              _rebuildMaps();
+              _hasInitialized = true;
+              setLoaded();
+              _settingsUpdateController.add(_allSettings);
+              log('✅ Using cached settings from Hive');
+
+              // Background refresh if online
+              if (!isOffline && !isManualRefresh) {
+                unawaited(_refreshInBackground());
+              }
+              return;
+            }
+          }
+        }
+      }
+
+      // STEP 2: Try DeviceService
+      if (!forceRefresh && _allSettings.isEmpty) {
+        log('STEP 2: Checking DeviceService cache');
+        final cachedSettings = await deviceService.getCacheItem<List<dynamic>>(
+          AppConstants.allSettingsKey,
+        );
+        if (cachedSettings != null && cachedSettings.isNotEmpty) {
+          final List<Setting> settings = [];
+          for (final json in cachedSettings) {
+            if (json is Map<String, dynamic>) {
+              settings.add(Setting.fromJson(json));
+            }
+          }
+
+          if (settings.isNotEmpty) {
+            _allSettings = settings;
+            _rebuildMaps();
+            _hasInitialized = true;
+            setLoaded();
+            _settingsUpdateController.add(_allSettings);
+            log('✅ Using cached settings from DeviceService');
+
+            await _saveToHive();
+
+            if (!isOffline && !isManualRefresh) {
+              unawaited(_refreshInBackground());
+            }
+            return;
+          }
+        }
+      }
+
+      // STEP 3: Check offline status
+      if (isOffline) {
+        log('STEP 3: Offline mode');
+        if (_allSettings.isNotEmpty) {
+          setLoaded();
+          _settingsUpdateController.add(_allSettings);
+          log('✅ Showing cached settings offline');
+          return;
+        }
+
+        setError('You are offline. No cached settings available.');
+        setLoaded();
+        _settingsUpdateController.add(_allSettings);
+
+        if (isManualRefresh) {
+          throw Exception(
+              'Network error. Please check your internet connection.');
+        }
+        return;
+      }
+
+      // STEP 4: Fetch from API (only if online and we need fresh data)
+      log('STEP 4: Fetching from API');
+      final response = await apiService.getAllSettings().timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          log('⏱️ API timeout in getAllSettings - using cached if available');
+          if (_allSettings.isNotEmpty) {
+            return ApiResponse<List<Setting>>(
+              success: true,
+              message: 'Using cached settings (server timeout)',
+              data: _allSettings,
+            );
+          }
+          return ApiResponse<List<Setting>>(
+            success: false,
+            message: 'Request timed out. Please try again.',
+            data: [],
+          );
+        },
+      );
+
+      if (response.success &&
+          response.data != null &&
+          response.data!.isNotEmpty) {
+        _allSettings = response.data!;
+        log('✅ Received ${_allSettings.length} settings from API');
+
+        await _saveToHive();
+
+        deviceService.saveCacheItem(
+          AppConstants.allSettingsKey,
+          _allSettings.map((s) => s.toJson()).toList(),
+          ttl: AppConstants.cacheTTLSettings,
+        );
+
+        _rebuildMaps();
+        _hasInitialized = true;
+        _settingsUpdateController.add(_allSettings);
+        setLoaded();
+        log('✅ Success! Settings loaded');
+      } else {
+        log('⚠️ No settings from API, using empty list');
+        _allSettings = [];
+        _rebuildMaps();
+        _hasInitialized = true;
+        setLoaded();
+        _settingsUpdateController.add(_allSettings);
+
+        if (isManualRefresh) {
+          throw Exception(response.message);
+        }
+      }
+    } catch (e) {
+      setError(e.toString());
+      setLoaded();
+      log('❌ Error loading settings: $e');
+
+      if (_allSettings.isEmpty) {
+        await _recoverFromCache();
+      }
+
+      _settingsUpdateController.add(_allSettings);
+
+      if (isManualRefresh) {
+        rethrow;
+      }
+    } finally {
+      safeNotify();
+    }
+  }
+
+  Future<void> _refreshInBackground() async {
+    if (isOffline) return;
+
+    try {
+      final response = await apiService.getAllSettings().timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          log('⏱️ Background refresh timeout');
+          return ApiResponse<List<Setting>>(
+            success: false,
+            message: 'Timeout',
+          );
+        },
+      );
+
+      if (response.success &&
+          response.data != null &&
+          response.data!.isNotEmpty) {
+        _allSettings = response.data!;
+        _rebuildMaps();
+
+        await _saveToHive();
+
+        deviceService.saveCacheItem(
+          AppConstants.allSettingsKey,
+          _allSettings.map((s) => s.toJson()).toList(),
+          ttl: AppConstants.cacheTTLSettings,
+        );
+
+        _settingsUpdateController.add(_allSettings);
+        safeNotify();
+        log('🔄 Background refresh complete');
+      }
+    } catch (e) {
+      log('Background refresh error: $e');
+    }
+  }
+
+  Future<void> _recoverFromCache() async {
+    log('Attempting cache recovery');
+
+    if (_settingsBox != null) {
+      try {
+        final cachedSettings = _settingsBox!.get('all_settings');
+        if (cachedSettings != null && cachedSettings is List) {
+          final List<Setting> settings = [];
+          for (final item in cachedSettings) {
+            if (item is Setting) {
+              settings.add(item);
+            } else if (item is Map<String, dynamic>) {
+              settings.add(Setting.fromJson(item));
+            }
+          }
+          if (settings.isNotEmpty) {
+            _allSettings = settings;
+            _rebuildMaps();
+            log('✅ Recovered ${settings.length} settings from Hive after error');
+            return;
+          }
+        }
+      } catch (e) {
+        log('Error recovering from Hive: $e');
+      }
+    }
+
+    try {
+      final cachedSettings = await deviceService.getCacheItem<List<dynamic>>(
+        AppConstants.allSettingsKey,
+      );
+      if (cachedSettings != null && cachedSettings.isNotEmpty) {
+        final List<Setting> settings = [];
+        for (final json in cachedSettings) {
+          if (json is Map<String, dynamic>) {
+            settings.add(Setting.fromJson(json));
+          }
+        }
+
+        if (settings.isNotEmpty) {
+          _allSettings = settings;
+          _rebuildMaps();
+          log('✅ Recovered ${settings.length} settings from DeviceService after error');
+        }
+      }
+    } catch (e) {
+      log('Error recovering from DeviceService: $e');
+    }
+  }
+
+  // ===== LOAD CONTACT SETTINGS - FIXED WITH BACKGROUND REFRESH =====
+  Future<void> loadContactSettings({bool? forceRefresh}) async {
+    log('loadContactSettings()');
+
+    // Prevent double loading
+    if (_isLoadingContactSettings) {
+      log('Already loading contact settings, skipping');
+      return;
+    }
+
+    final shouldForce = forceRefresh ?? false;
+
+    // If we already have contact settings and not forcing refresh, return cached data
+    if (!shouldForce &&
+        _settingsByCategory.containsKey('contact') &&
+        _settingsByCategory['contact']!.isNotEmpty) {
+      log('Contact settings already loaded, returning cached');
+      return;
+    }
+
+    // If we have no settings at all, load them first (without force)
+    if (_allSettings.isEmpty) {
+      _isLoadingContactSettings = true;
+      await getAllSettings();
+      _isLoadingContactSettings = false;
+      return;
+    }
+
+    // If we're forcing refresh, do it in background (no spinner)
+    if (shouldForce && !isOffline) {
+      _isLoadingContactSettings = true;
+      unawaited(_refreshContactSettingsInBackground());
+      // Don't set loading to false immediately - let background task run
+      Future.delayed(const Duration(milliseconds: 100), () {
+        _isLoadingContactSettings = false;
+      });
+    }
+  }
+
+  Future<void> _refreshContactSettingsInBackground() async {
+    log('Refreshing contact settings in background');
+    try {
+      final response =
+          await apiService.getSettingsByCategory('contact').timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          log('⏱️ Background refresh timeout for contact settings');
+          return ApiResponse<List<Setting>>(
+            success: false,
+            message: 'Timeout',
+          );
+        },
+      );
+
+      if (response.success && response.data != null) {
+        final settings = response.data!;
+        _settingsByCategory['contact'] = settings;
+        for (final setting in settings) {
+          _settingsMap[setting.settingKey] = setting;
+        }
+
+        // Update Hive cache
+        if (_settingsBox != null) {
+          await _settingsBox!.put('category_contact', settings);
+        }
+
+        // Also update device service cache
+        deviceService.saveCacheItem(
+          'settings_category_contact',
+          settings.map((s) => s.toJson()).toList(),
+          ttl: const Duration(minutes: 30),
+        );
+
+        safeNotify();
+        log('✅ Contact settings refreshed in background');
+      }
+    } catch (e) {
+      log('Background refresh error for contact settings: $e');
+    }
+  }
+
+  // ===== LOAD SETTINGS BY CATEGORY =====
+  Future<void> loadSettingsByCategory(String category) async {
+    log('loadSettingsByCategory($category)');
+
+    if (isLoading) return;
+    if (!_shouldLoadCategory(category)) {
+      log('Category $category already loaded recently');
+      return;
+    }
+
+    if (_ongoingLoads.containsKey(category)) {
+      log('Waiting for existing load of category $category');
+      await _ongoingLoads[category]!.future;
+      return;
+    }
+
+    final completer = Completer<bool>();
+    _ongoingLoads[category] = completer;
+
+    setLoading();
+
+    try {
+      final cacheKey = AppConstants.settingsCategoryKey(category);
+
+      // STEP 1: Try memory cache first
+      if (_settingsByCategory.containsKey(category) &&
+          _settingsByCategory[category]!.isNotEmpty) {
+        log('Using memory cache for category $category');
+        setLoaded();
+        completer.complete(true);
+        return;
+      }
+
+      // STEP 2: Try Hive for category
+      if (_settingsBox != null) {
+        final categoryKey = 'category_$category';
+        final cachedCategory = _settingsBox!.get(categoryKey);
+        if (cachedCategory != null && cachedCategory is List) {
+          final List<Setting> settings = [];
+          for (final item in cachedCategory) {
+            if (item is Setting) {
+              settings.add(item);
+            } else if (item is Map<String, dynamic>) {
+              settings.add(Setting.fromJson(item));
+            }
+          }
+          if (settings.isNotEmpty) {
+            _settingsByCategory[category] = settings;
+            for (final setting in settings) {
+              _settingsMap[setting.settingKey] = setting;
+            }
+            setLoaded();
+            _lastCategoryLoadTime[category] = DateTime.now();
+            completer.complete(true);
+            log('✅ Loaded category $category from Hive');
+            return;
+          }
+        }
+      }
+
+      // STEP 3: Try DeviceService
+      final cachedSettings =
+          await deviceService.getCacheItem<List<Setting>>(cacheKey);
+      if (cachedSettings != null) {
+        log('Found category $category in DeviceService');
+        _settingsByCategory[category] = cachedSettings;
+        for (final setting in cachedSettings) {
+          _settingsMap[setting.settingKey] = setting;
+        }
+        setLoaded();
+        _lastCategoryLoadTime[category] = DateTime.now();
+
+        if (_settingsBox != null) {
+          final categoryKey = 'category_$category';
+          await _settingsBox!.put(categoryKey, cachedSettings);
+        }
+
+        completer.complete(true);
+        log('✅ Loaded category $category from DeviceService');
+        return;
+      }
+
+      // STEP 4: If offline and no cache - error
+      if (isOffline) {
+        log('Offline with no cache for category $category');
+        setLoaded();
+        completer.complete(false);
+        return;
+      }
+
+      // STEP 5: Only reach here if online
+      log('Fetching category $category from API');
+      final response = await apiService.getSettingsByCategory(category).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          log('⏱️ API timeout for category $category');
+          return ApiResponse<List<Setting>>(
+            success: false,
+            message: 'Request timed out',
+            data: [],
+          );
+        },
+      );
+
+      final categorySettings = response.data ?? [];
+
+      if (categorySettings.isNotEmpty) {
+        _settingsByCategory[category] = categorySettings;
+        for (final setting in categorySettings) {
+          _settingsMap[setting.settingKey] = setting;
+        }
+
+        deviceService.saveCacheItem(
+          cacheKey,
+          categorySettings,
+          ttl: const Duration(minutes: 30),
+        );
+
+        if (_settingsBox != null) {
+          final categoryKey = 'category_$category';
+          await _settingsBox!.put(categoryKey, categorySettings);
+        }
+
+        _lastCategoryLoadTime[category] = DateTime.now();
+        log('✅ Loaded category $category from API');
+      }
+
+      completer.complete(true);
+    } catch (e) {
+      setError(e.toString());
+      log('Error loading category $category: $e');
+      completer.complete(false);
+    } finally {
+      setLoaded();
+      _ongoingLoads.remove(category);
+      safeNotify();
+    }
+  }
+
+  // ===== LOAD SPECIFIC SETTINGS =====
+  Future<void> loadPaymentSettings() async {
+    await loadSettingsByCategory('payment');
+  }
+
+  Future<void> loadSystemSettings() async {
+    await loadSettingsByCategory('system');
+  }
+
+  // ===== CONTACT INFO METHODS =====
   List<ContactInfo> getContactInfoList() {
     final contacts = <ContactInfo>[];
     final contactSettings = _settingsByCategory['contact'] ?? [];
@@ -176,33 +852,8 @@ class SettingsProvider with ChangeNotifier {
       return a.title.compareTo(b.title);
     });
 
+    log('getContactInfoList: ${contacts.length} contacts');
     return contacts;
-  }
-
-  bool _isPhoneNumber(String value) {
-    final clean = value.replaceAll(RegExp(r'[\s\-\(\)\+]'), '');
-    if (RegExp(r'^\d{8,15}$').hasMatch(clean)) return true;
-    if (RegExp(r'^\+?\d{1,4}[\s\-]?\d{1,4}[\s\-]?\d{1,4}[\s\-]?\d{1,4}$')
-        .hasMatch(value)) {
-      return true;
-    }
-    return false;
-  }
-
-  bool _isEmail(String value) {
-    return RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value);
-  }
-
-  bool _isUrl(String value) {
-    return value.startsWith('http://') ||
-        value.startsWith('https://') ||
-        value.startsWith('www.') ||
-        value.contains('.com') ||
-        value.contains('.org') ||
-        value.contains('.net') ||
-        value.contains('.io') ||
-        value.contains('t.me') ||
-        value.contains('wa.me');
   }
 
   // ===== PAYMENT METHODS =====
@@ -210,11 +861,6 @@ class SettingsProvider with ChangeNotifier {
     final methods = <PaymentMethod>[];
 
     if (_allSettings.isEmpty) return methods;
-
-    final enabledValue = getSettingValue('payment_methods_enabled');
-    final bool methodsEnabled =
-        enabledValue == null || enabledValue.toString().toLowerCase() == 'true';
-    if (!methodsEnabled) return methods;
 
     final methodKeys = <String>{};
     for (final setting in _allSettings) {
@@ -250,76 +896,45 @@ class SettingsProvider with ChangeNotifier {
       }
     }
 
-    methods.sort((a, b) => a.name.compareTo(b.name));
+    log('getPaymentMethods: ${methods.length} methods');
     return methods;
   }
 
-  IconData _getPaymentMethodIcon(String methodKey, String name, String number) {
-    final method = methodKey.toLowerCase();
-    final nameLower = name.toLowerCase();
-    final numberLower = number.toLowerCase();
+  // ===== PAYMENT INSTRUCTIONS =====
+  String getPaymentInstructions() {
+    return getSettingValue('payment_instructions') ??
+        'Please follow these steps to complete your payment:\n'
+            '1. Select a payment method\n'
+            '2. Make the payment using the provided account details\n'
+            '3. Upload proof of payment\n'
+            '4. Wait for admin verification (usually within 24 hours)\n'
+            '5. Your access will be activated once verified';
+  }
 
-    if (method.contains('telebirr') ||
-        nameLower.contains('telebirr') ||
-        numberLower.contains('telebirr') ||
-        method.contains('birr')) {
-      return Icons.phone_android;
+  // ===== SUPPORT CONTACT METHODS =====
+  String getSupportPhone() {
+    final contactSettings = getContactInfoList();
+    for (final contact in contactSettings) {
+      if (contact.type == ContactType.phone) return contact.value;
     }
-    if (method.contains('mpesa') ||
-        nameLower.contains('mpesa') ||
-        method.contains('m-pesa')) {
-      return Icons.phone_android;
+    return '+251 911 223 344';
+  }
+
+  String getSupportEmail() {
+    final contactSettings = getContactInfoList();
+    for (final contact in contactSettings) {
+      if (contact.type == ContactType.email) return contact.value;
     }
-    if (method.contains('hellocash') || nameLower.contains('hellocash')) {
-      return Icons.phone_android;
+    return 'support@familyacademy.com';
+  }
+
+  // ===== OFFICE HOURS =====
+  String getOfficeHours() {
+    final contactSettings = getContactInfoList();
+    for (final contact in contactSettings) {
+      if (contact.type == ContactType.hours) return contact.value;
     }
-    if (method.contains('amole') || nameLower.contains('amole')) {
-      return Icons.phone_android;
-    }
-    if (method.contains('cbe') ||
-        nameLower.contains('cbe') ||
-        nameLower.contains('commercial')) {
-      return Icons.account_balance;
-    }
-    if (method.contains('awash') || nameLower.contains('awash')) {
-      return Icons.account_balance;
-    }
-    if (method.contains('dashen') || nameLower.contains('dashen')) {
-      return Icons.account_balance;
-    }
-    if (method.contains('abyssinia') || nameLower.contains('abyssinia')) {
-      return Icons.account_balance;
-    }
-    if (method.contains('nib') || nameLower.contains('nib')) {
-      return Icons.account_balance;
-    }
-    if (method.contains('zemen') || nameLower.contains('zemen')) {
-      return Icons.account_balance;
-    }
-    if (method.contains('bank') || nameLower.contains('bank')) {
-      return Icons.account_balance;
-    }
-    if (method.contains('paypal') || nameLower.contains('paypal')) {
-      return Icons.payments;
-    }
-    if (method.contains('bitcoin') ||
-        nameLower.contains('bitcoin') ||
-        nameLower.contains('crypto')) {
-      return Icons.currency_bitcoin;
-    }
-    if (method.contains('western') || nameLower.contains('western')) {
-      return Icons.send;
-    }
-    if (method.contains('card') ||
-        nameLower.contains('card') ||
-        nameLower.contains('credit') ||
-        nameLower.contains('debit')) {
-      return Icons.credit_card;
-    }
-    if (method.contains('cash') || nameLower.contains('cash')) {
-      return Icons.money;
-    }
-    return Icons.payment;
+    return 'Monday - Friday: 9:00 AM - 5:00 PM';
   }
 
   // ===== TELEGRAM BOT URL =====
@@ -342,337 +957,49 @@ class SettingsProvider with ChangeNotifier {
     return 'https://t.me/FamilyAcademy_notify_Bot';
   }
 
-  // ===== SUPPORT CONTACT METHODS =====
-  String getSupportPhone() {
-    final contactSettings = getContactInfoList();
-    for (final contact in contactSettings) {
-      if (contact.type == ContactType.phone) return contact.value;
-    }
-    return '+251 911 223 344';
-  }
-
-  String getSupportEmail() {
-    final contactSettings = getContactInfoList();
-    for (final contact in contactSettings) {
-      if (contact.type == ContactType.email) return contact.value;
-    }
-    return 'support@familyacademy.com';
-  }
-
-  String getOfficeAddress() {
-    final contactSettings = getContactInfoList();
-    for (final contact in contactSettings) {
-      if (contact.type == ContactType.address) return contact.value;
-    }
-    return 'Addis Ababa, Ethiopia';
-  }
-
-  String getOfficeHours() {
-    final contactSettings = getContactInfoList();
-    for (final contact in contactSettings) {
-      if (contact.type == ContactType.hours) return contact.value;
-    }
-    return 'Monday - Friday: 9:00 AM - 5:00 PM';
-  }
-
-  String getWhatsAppNumber() {
-    final contactSettings = getContactInfoList();
-    for (final contact in contactSettings) {
-      if (contact.type == ContactType.whatsapp) return contact.value;
-    }
-    return '';
-  }
-
-  String getWebsite() {
-    final contactSettings = getContactInfoList();
-    for (final contact in contactSettings) {
-      if (contact.type == ContactType.website) return contact.value;
-    }
-    return '';
-  }
-
-  // ===== PAYMENT INSTRUCTIONS =====
-  String getPaymentInstructions() {
-    return getSettingValue('payment_instructions') ??
-        'Please follow these steps to complete your payment:\n'
-            '1. Select a payment method\n'
-            '2. Make the payment using the provided account details\n'
-            '3. Upload proof of payment\n'
-            '4. Wait for admin verification (usually within 24 hours)\n'
-            '5. Your access will be activated once verified';
-  }
-
-  bool isPaymentMethodConfigured(String methodKey) {
-    final name = getSettingValue('payment_method_${methodKey}_name');
-    final number = getSettingValue('payment_method_${methodKey}_number');
-    return name != null &&
-        name.isNotEmpty &&
-        number != null &&
-        number.isNotEmpty;
-  }
-
-  List<String> getConfiguredPaymentMethods() {
-    final methods = <String>[];
-    for (final setting in _allSettings) {
-      final key = setting.settingKey;
-      if (key.startsWith('payment_method_') && key.endsWith('_name')) {
-        final methodName = key.substring(
-            'payment_method_'.length, key.length - '_name'.length);
-        if (isPaymentMethodConfigured(methodName)) methods.add(methodName);
-      }
-    }
-    return methods;
-  }
-
-  String getSystemVersion() {
-    return getSettingValue('system_version') ?? '1.0.0';
-  }
-
-  String getAdminEmail() {
-    return getSettingValue('admin_email') ?? 'admin@familyacademy.com';
-  }
-
-  // ===== LOADING UTILITIES =====
-  bool _shouldLoadCategory(String category, {bool forceRefresh = false}) {
-    if (forceRefresh) return true;
-    final lastLoad = _lastCategoryLoadTime[category];
-    if (lastLoad == null) return true;
-    final minutesSinceLastLoad = DateTime.now().difference(lastLoad).inMinutes;
-    return minutesSinceLastLoad >= 5;
-  }
-
-  // ===== GET ALL SETTINGS =====
-  Future<void> getAllSettings({bool isManualRefresh = false}) async {
-    if (_isLoading) return;
-
-    _isLoading = true;
-    _error = null;
-    _notifySafely();
-
-    try {
-      final cachedSettings = await deviceService
-          .getCacheItem<List<Setting>>(AppConstants.allSettingsKey);
-      if (cachedSettings != null && cachedSettings.isNotEmpty) {
-        _allSettings = cachedSettings;
-        _rebuildMaps();
-        _isLoading = false;
-        _settingsUpdateController.add(_allSettings);
-        _notifySafely();
-
-        if (!_isOffline) {
-          await _refreshSettingsInBackground();
-        }
-        return;
-      }
-
-      if (_isOffline) {
-        _error = 'You are offline. Using cached data.';
-        _isLoading = false;
-        _notifySafely();
-
-        if (isManualRefresh) {
-          throw Exception(
-              'Network error. Please check your internet connection.');
-        }
-        return;
-      }
-
-      final response = await apiService.getAllSettings();
-
-      if (response.success &&
-          response.data != null &&
-          response.data!.isNotEmpty) {
-        _allSettings = response.data!;
-        await deviceService.saveCacheItem(
-            AppConstants.allSettingsKey, _allSettings,
-            ttl: AppConstants.cacheTTLSettings);
-      } else {
-        if (isManualRefresh) {
-          throw Exception(response.message ?? 'Failed to load settings');
-        }
-      }
-
-      _rebuildMaps();
-      _settingsUpdateController.add(_allSettings);
-    } catch (e) {
-      _error = e.toString();
-      debugLog('SettingsProvider', 'Error getting all settings: $e');
-      _rebuildMaps();
-
-      if (isManualRefresh) {
-        rethrow;
-      }
-    } finally {
-      _isLoading = false;
-      _notifySafely();
+  @override
+  Future<void> onBackgroundRefresh() async {
+    log('Background refresh triggered');
+    if (!isOffline && _allSettings.isNotEmpty) {
+      await _refreshInBackground();
     }
   }
 
-  Future<void> _refreshSettingsInBackground() async {
-    if (_isOffline) return;
-
-    try {
-      final response = await apiService.getAllSettings();
-      if (response.success &&
-          response.data != null &&
-          response.data!.isNotEmpty) {
-        _allSettings = response.data!;
-        _rebuildMaps();
-        _settingsUpdateController.add(_allSettings);
-        await deviceService.saveCacheItem(
-            AppConstants.allSettingsKey, _allSettings,
-            ttl: AppConstants.cacheTTLSettings);
-      }
-    } catch (e) {
-      debugLog('SettingsProvider', 'Background refresh error: $e');
-    }
+  @override
+  Future<void> onOnlineRefresh() async {
+    log('Online - refreshing settings');
+    await getAllSettings(isManualRefresh: true);
   }
 
-  // ===== LOAD CONTACT SETTINGS =====
-  Future<void> loadContactSettings({bool? forceRefresh}) async {
-    final shouldForce = forceRefresh ?? false;
-
-    if (!shouldForce &&
-        _settingsByCategory.containsKey('contact') &&
-        _settingsByCategory['contact']!.isNotEmpty) {
-      return;
-    }
-
-    if (_allSettings.isEmpty || shouldForce) await getAllSettings();
-  }
-
-  // ===== LOAD SETTINGS BY CATEGORY =====
-  Future<void> loadSettingsByCategory(String category) async {
-    if (_isLoading) return;
-    if (!_shouldLoadCategory(category)) return;
-    if (_ongoingLoads.containsKey(category)) {
-      await _ongoingLoads[category]!.future;
-      return;
-    }
-
-    final completer = Completer<bool>();
-    _ongoingLoads[category] = completer;
-
-    _isLoading = true;
-    _error = null;
-    _notifySafely();
-
-    try {
-      final cacheKey = AppConstants.settingsCategoryKey(category);
-      final cachedSettings =
-          await deviceService.getCacheItem<List<Setting>>(cacheKey);
-      if (cachedSettings != null) {
-        _settingsByCategory[category] = cachedSettings;
-        for (final setting in cachedSettings) {
-          _settingsMap[setting.settingKey] = setting;
-        }
-        _isLoading = false;
-        _lastCategoryLoadTime[category] = DateTime.now();
-        completer.complete(true);
-        return;
-      }
-
-      if (_isOffline) {
-        _isLoading = false;
-        completer.complete(false);
-        return;
-      }
-
-      final response = await apiService.getSettingsByCategory(category);
-      final categorySettings = response.data ?? [];
-
-      _settingsByCategory[category] = categorySettings;
-      for (final setting in categorySettings) {
-        _settingsMap[setting.settingKey] = setting;
-      }
-
-      await deviceService.saveCacheItem(cacheKey, categorySettings,
-          ttl: const Duration(minutes: 30));
-      _lastCategoryLoadTime[category] = DateTime.now();
-      completer.complete(true);
-    } catch (e) {
-      _error = e.toString();
-      debugLog('SettingsProvider', 'Error loading category $category: $e');
-      completer.complete(false);
-    } finally {
-      _isLoading = false;
-      _ongoingLoads.remove(category);
-      _notifySafely();
-    }
-  }
-
-  // ===== LOAD SPECIFIC SETTINGS =====
-  Future<void> loadPaymentSettings() async {
-    await loadSettingsByCategory('payment');
-  }
-
-  Future<void> loadSystemSettings() async {
-    await loadSettingsByCategory('system');
-  }
-
-  // ===== REBUILD MAPS =====
-  void _rebuildMaps() {
-    _settingsMap.clear();
-    _settingsByCategory.clear();
-
-    for (final setting in _allSettings) {
-      _settingsMap[setting.settingKey] = setting;
-      if (!_settingsByCategory.containsKey(setting.category)) {
-        _settingsByCategory[setting.category] = [];
-      }
-      _settingsByCategory[setting.category]!.add(setting);
-    }
-  }
-
-  // ===== USER DATA CLEAR =====
   Future<void> clearUserData() async {
-    debugLog('SettingsProvider', 'Clearing settings data');
-
     final session = UserSession();
-    final isDifferentUser = !await session.isSameUser();
-    final isLoggingOut = await _isLoggingOut();
-
-    if (!isDifferentUser || !isLoggingOut) {
-      debugLog('SettingsProvider', '✅ Same user - preserving settings cache');
-      return;
-    }
+    if (!session.shouldClearCacheOnLogout()) return;
 
     await deviceService.clearCacheByPrefix('settings');
     await deviceService.clearCacheByPrefix('all_settings');
+    stopBackgroundRefresh();
 
     _allSettings.clear();
     _settingsMap.clear();
     _settingsByCategory.clear();
     _lastCategoryLoadTime.clear();
     _ongoingLoads.clear();
+    _hasInitialized = false;
 
     await _settingsUpdateController.close();
     _settingsUpdateController = StreamController<List<Setting>>.broadcast();
     _settingsUpdateController.add(_allSettings);
-    _notifySafely();
-  }
+    safeNotify();
 
-  Future<bool> _isLoggingOut() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
-  }
-
-  void clearError() {
-    _error = null;
-    _notifySafely();
-  }
-
-  void _notifySafely() {
-    if (hasListeners) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (hasListeners) notifyListeners();
-      });
-    }
+    log('🧹 Cleared settings data');
   }
 
   @override
   void dispose() {
+    stopBackgroundRefresh();
     _settingsUpdateController.close();
+    _settingsBox?.close();
+    disposeSubscriptions();
     super.dispose();
   }
 }

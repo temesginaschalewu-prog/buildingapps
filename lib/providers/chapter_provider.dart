@@ -1,342 +1,553 @@
+// lib/providers/chapter_provider.dart
+// COMPLETE PRODUCTION-READY FINAL VERSION - FIXED INSTANT CACHE LOADING
+
 import 'dart:async';
-import 'package:familyacademyclient/utils/constants.dart';
+import 'package:familyacademyclient/services/offline_queue_manager.dart';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:hive/hive.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../services/user_session.dart';
 import '../services/connectivity_service.dart';
+import '../services/hive_service.dart';
 import '../models/chapter_model.dart';
-import '../utils/helpers.dart';
+import '../utils/api_response.dart';
+import '../utils/constants.dart';
+import 'base_provider.dart';
 
-class ChapterProvider with ChangeNotifier {
-  final ApiService apiService;
-  final DeviceService deviceService;
+class ChapterProvider extends ChangeNotifier
+    with
+        BaseProvider<ChapterProvider>,
+        OfflineAwareProvider<ChapterProvider>,
+        BackgroundRefreshMixin<ChapterProvider> {
+  @override
   final ConnectivityService connectivityService;
 
-  final List<Chapter> _chapters = [];
+  final ApiService apiService;
+  final DeviceService deviceService;
+  final HiveService hiveService;
+
   final Map<int, List<Chapter>> _chaptersByCourse = {};
   final Map<int, bool> _hasLoadedForCourse = {};
   final Map<int, bool> _isLoadingForCourse = {};
-  final Map<int, DateTime> _lastLoadedTime = {};
-  bool _isLoading = false;
-  String? _error;
-  bool _isOffline = false;
-
-  StreamController<Map<int, List<Chapter>>> _chaptersUpdateController =
-      StreamController<Map<int, List<Chapter>>>.broadcast();
 
   static const Duration cacheDuration = AppConstants.cacheTTLChapters;
+  @override
+  Duration get refreshInterval => const Duration(minutes: 5);
+
+  Box? _chaptersBox;
+  int _apiCallCount = 0;
+
+  final StreamController<Map<int, List<Chapter>>> _chaptersUpdateController =
+      StreamController<Map<int, List<Chapter>>>.broadcast();
 
   ChapterProvider({
     required this.apiService,
     required this.deviceService,
     required this.connectivityService,
+    required this.hiveService,
   }) {
-    _preloadCommonCourses();
-    _setupConnectivityListener();
+    log('ChapterProvider constructor called');
+    initializeOfflineAware(
+      connectivity: connectivityService,
+      queue: OfflineQueueManager(),
+    );
+    _init();
   }
 
-  void _setupConnectivityListener() {
-    connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (_isOffline != !isOnline) {
-        _isOffline = !isOnline;
-        notifyListeners();
+  Future<void> _init() async {
+    log('_init() START');
+    await _openHiveBox();
+    await _loadCachedDataForAll();
+
+    if (_hasLoadedForCourse.isNotEmpty) {
+      startBackgroundRefresh();
+    }
+
+    log('_init() END');
+  }
+
+  Future<void> _openHiveBox() async {
+    try {
+      if (!Hive.isBoxOpen(AppConstants.hiveChaptersBox)) {
+        _chaptersBox =
+            await Hive.openBox<dynamic>(AppConstants.hiveChaptersBox);
+      } else {
+        _chaptersBox = Hive.box<dynamic>(AppConstants.hiveChaptersBox);
       }
-    });
+      log('✅ Hive box opened');
+    } catch (e) {
+      log('⚠️ Error opening Hive box: $e');
+    }
   }
 
-  Future<void> _preloadCommonCourses() async {
-    Future.delayed(Duration.zero, () async {
-      try {
-        final userId = await UserSession().getCurrentUserId();
-        if (userId != null) {}
-      } catch (e) {}
-    });
+  Future<void> _loadCachedDataForAll() async {
+    try {
+      final userId = await UserSession().getCurrentUserId();
+      if (userId == null || _chaptersBox == null) return;
+
+      final cachedData = _chaptersBox!.get('user_${userId}_all_chapters');
+      if (cachedData != null && cachedData is Map) {
+        final Map<int, List<Chapter>> convertedMap = {};
+
+        cachedData.forEach((key, value) {
+          final int courseId = int.tryParse(key.toString()) ?? 0;
+          if (courseId > 0 && value is List) {
+            final List<Chapter> chapters = [];
+            for (final item in value) {
+              if (item is Chapter) {
+                chapters.add(item);
+              } else if (item is Map<String, dynamic>) {
+                chapters.add(Chapter.fromJson(item));
+              }
+            }
+            if (chapters.isNotEmpty) {
+              convertedMap[courseId] = chapters;
+            }
+          }
+        });
+
+        _chaptersByCourse.addAll(convertedMap);
+        for (final courseId in _chaptersByCourse.keys) {
+          _hasLoadedForCourse[courseId] = true;
+        }
+        _chaptersUpdateController.add(_chaptersByCourse);
+        log('✅ Loaded ${_chaptersByCourse.length} courses from Hive');
+      }
+    } catch (e) {
+      log('Error loading cached data: $e');
+    }
   }
 
-  List<Chapter> get chapters => _chapters;
-  bool get isLoading => _isLoading;
-  String? get error => _error;
-  bool get isOffline => _isOffline;
+  Future<void> _saveToHive() async {
+    try {
+      final userId = await UserSession().getCurrentUserId();
+      if (userId != null && _chaptersBox != null) {
+        await _chaptersBox!
+            .put('user_${userId}_all_chapters', _chaptersByCourse);
+        log('💾 Saved chapters to Hive');
+      }
+    } catch (e) {
+      log('Error saving to Hive: $e');
+    }
+  }
+
+  Future<void> _saveCourseToHive(int courseId, List<Chapter> chapters) async {
+    try {
+      final userId = await UserSession().getCurrentUserId();
+      if (userId != null && _chaptersBox != null) {
+        await _chaptersBox!.put(
+            'user_${userId}_course_${courseId}_chapters', {courseId: chapters});
+        await _saveToHive();
+      }
+    } catch (e) {
+      log('Error saving course to Hive: $e');
+    }
+  }
+
+  // ===== GETTERS =====
   Stream<Map<int, List<Chapter>>> get chaptersUpdates =>
       _chaptersUpdateController.stream;
 
-  bool hasLoadedForCourse(int courseId) =>
-      _hasLoadedForCourse[courseId] ?? false;
-  bool isLoadingForCourse(int courseId) =>
-      _isLoadingForCourse[courseId] ?? false;
+  bool hasLoadedForCourse(int courseId) {
+    return _hasLoadedForCourse[courseId] ?? false;
+  }
+
+  bool isLoadingForCourse(int courseId) {
+    return _isLoadingForCourse[courseId] ?? false;
+  }
 
   List<Chapter> getChaptersByCourse(int courseId) {
     return _chaptersByCourse[courseId] ?? [];
   }
 
-  List<Chapter> getFreeChaptersByCourse(int courseId) {
-    final chapters = _chaptersByCourse[courseId] ?? [];
-    return chapters.where((c) => c.isFree).toList();
-  }
-
-  List<Chapter> getLockedChaptersByCourse(int courseId) {
-    final chapters = _chaptersByCourse[courseId] ?? [];
-    return chapters.where((c) => c.isLocked).toList();
-  }
-
   Chapter? getChapterById(int id) {
-    try {
-      return _chapters.firstWhere((c) => c.id == id);
-    } catch (e) {
-      return null;
+    for (final chapters in _chaptersByCourse.values) {
+      try {
+        return chapters.firstWhere((c) => c.id == id);
+      } catch (e) {
+        continue;
+      }
     }
+    return null;
   }
 
-  Future<void> loadChaptersByCourse(int courseId,
-      {bool forceRefresh = false, bool isManualRefresh = false}) async {
-    if (_isLoadingForCourse[courseId] == true && !forceRefresh) {
+  // ===== LOAD CHAPTERS - FIXED WITH INSTANT CACHE =====
+  Future<void> loadChaptersByCourse(
+    int courseId, {
+    bool forceRefresh = false,
+    bool isManualRefresh = false,
+  }) async {
+    _apiCallCount++;
+    final callId = _apiCallCount;
+
+    log('loadChaptersByCourse() CALL #$callId for course $courseId');
+
+    if (isManualRefresh && isOffline) {
+      throw Exception('Network error. Please check your internet connection.');
+    }
+
+    // Return cached data immediately if available
+    if (_hasLoadedForCourse[courseId] == true && !forceRefresh) {
+      log('✅ Already have data for course $courseId, returning cached');
+      _chaptersUpdateController.add({courseId: _chaptersByCourse[courseId]!});
+      setLoaded();
       return;
     }
 
-    if (isManualRefresh) {
-      forceRefresh = true;
-    }
-
-    _isLoadingForCourse[courseId] = true;
-    _isLoading = true;
-    _error = null;
-    _notifySafely();
-
-    // STEP 1: ALWAYS try cache first (EVEN WHEN OFFLINE)
-    if (!forceRefresh) {
-      final cachedChapters = await deviceService
-          .getCacheItem<List<Chapter>>('chapters_course_$courseId');
-
-      if (cachedChapters != null) {
-        _chaptersByCourse[courseId] = cachedChapters;
-        _hasLoadedForCourse[courseId] = true;
-        _lastLoadedTime[courseId] = DateTime.now();
-
-        _addToGlobalList(cachedChapters);
-
-        _chaptersUpdateController.add({courseId: cachedChapters});
-        _notifySafely();
-
-        debugLog('ChapterProvider',
-            '✅ Loaded ${cachedChapters.length} chapters from cache for course $courseId');
-
-        // STEP 2: If online, refresh in background
-        if (!_isOffline) {
-          unawaited(_refreshInBackground(courseId));
-        }
+    if (_isLoadingForCourse[courseId] == true && !forceRefresh) {
+      log('⏳ Already loading course $courseId, waiting...');
+      int attempts = 0;
+      while (_isLoadingForCourse[courseId] == true && attempts < 50) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        attempts++;
+      }
+      if (_hasLoadedForCourse[courseId] == true) {
+        log('✅ Got chapters from existing load');
+        _chaptersUpdateController.add({courseId: _chaptersByCourse[courseId]!});
+        setLoaded();
         return;
       }
     }
 
-    // STEP 3: If offline and no cache, show error
-    if (_isOffline) {
-      _error = 'You are offline. No cached chapters available.';
-      _isLoadingForCourse[courseId] = false;
-      _isLoading = false;
-      _notifySafely();
-
-      if (isManualRefresh) {
-        throw Exception(
-            'Network error. Please check your internet connection.');
-      }
-      return;
-    }
-
-    debugLog('ChapterProvider', '📚 Loading chapters for course: $courseId');
+    _isLoadingForCourse[courseId] = true;
+    safeNotify();
 
     try {
-      final response = await apiService.getChaptersByCourse(courseId);
-
-      final responseData = response.data ?? {};
-      final chaptersData =
-          responseData['chapters'] ?? responseData['data'] ?? [];
-
-      if (chaptersData is List) {
-        final loadedChapters =
-            List<Chapter>.from(chaptersData.map((x) => Chapter.fromJson(x)));
-
-        _chaptersByCourse[courseId] = loadedChapters;
+      // STEP 1: Check memory cache first
+      if (!forceRefresh && _chaptersByCourse.containsKey(courseId)) {
+        log('STEP 1: Using memory cache for course $courseId');
         _hasLoadedForCourse[courseId] = true;
-        _lastLoadedTime[courseId] = DateTime.now();
+        _isLoadingForCourse[courseId] = false;
+        setLoaded();
+        _chaptersUpdateController.add({courseId: _chaptersByCourse[courseId]!});
+        return;
+      }
 
-        await deviceService.saveCacheItem(
-            'chapters_course_$courseId', loadedChapters,
-            ttl: cacheDuration);
+      // STEP 2: Try Hive cache
+      if (!forceRefresh) {
+        log('STEP 2: Checking Hive cache for course $courseId');
+        final userId = await UserSession().getCurrentUserId();
+        if (userId != null && _chaptersBox != null) {
+          final cachedData =
+              _chaptersBox!.get('user_${userId}_course_${courseId}_chapters');
 
-        _addToGlobalList(loadedChapters);
+          if (cachedData != null &&
+              cachedData is Map &&
+              cachedData[courseId] != null) {
+            final dynamic chapterData = cachedData[courseId];
+            if (chapterData is List) {
+              final List<Chapter> chapters = [];
+              for (final item in chapterData) {
+                if (item is Chapter) {
+                  chapters.add(item);
+                } else if (item is Map<String, dynamic>) {
+                  chapters.add(Chapter.fromJson(item));
+                }
+              }
+              if (chapters.isNotEmpty) {
+                _chaptersByCourse[courseId] = chapters;
+                _hasLoadedForCourse[courseId] = true;
+                _isLoadingForCourse[courseId] = false;
+                setLoaded();
+                _chaptersUpdateController.add({courseId: chapters});
+                log('✅ Loaded ${chapters.length} chapters from Hive for course $courseId');
 
-        debugLog('ChapterProvider',
-            '✅ Loaded ${loadedChapters.length} chapters for course $courseId');
+                if (!isOffline && !isManualRefresh) {
+                  unawaited(_refreshInBackground(courseId));
+                }
+                return;
+              }
+            }
+          }
+        }
+      }
 
-        _chaptersUpdateController.add({courseId: loadedChapters});
-      } else {
+      // STEP 3: Try DeviceService cache
+      if (!forceRefresh) {
+        log('STEP 3: Checking DeviceService cache for course $courseId');
+        final cachedChapters = await deviceService.getCacheItem<List<dynamic>>(
+          'chapters_course_$courseId',
+          isUserSpecific: true,
+        );
+
+        if (cachedChapters != null && cachedChapters.isNotEmpty) {
+          final List<Chapter> chapters = [];
+          for (final json in cachedChapters) {
+            if (json is Map<String, dynamic>) {
+              chapters.add(Chapter.fromJson(json));
+            }
+          }
+
+          if (chapters.isNotEmpty) {
+            _chaptersByCourse[courseId] = chapters;
+            _hasLoadedForCourse[courseId] = true;
+            _isLoadingForCourse[courseId] = false;
+            setLoaded();
+            _chaptersUpdateController.add({courseId: chapters});
+
+            await _saveCourseToHive(courseId, chapters);
+            log('✅ Loaded ${chapters.length} chapters from DeviceService for course $courseId');
+
+            if (!isOffline && !isManualRefresh) {
+              unawaited(_refreshInBackground(courseId));
+            }
+            return;
+          }
+        }
+      }
+
+      // STEP 4: Check offline status
+      if (isOffline) {
+        log('STEP 4: Offline mode for course $courseId');
+        if (_chaptersByCourse.containsKey(courseId)) {
+          _hasLoadedForCourse[courseId] = true;
+          _isLoadingForCourse[courseId] = false;
+          setLoaded();
+          _chaptersUpdateController
+              .add({courseId: _chaptersByCourse[courseId]!});
+          log('✅ Showing cached chapters offline for course $courseId');
+          return;
+        }
+
         _chaptersByCourse[courseId] = [];
         _hasLoadedForCourse[courseId] = true;
-        _lastLoadedTime[courseId] = DateTime.now();
-
-        await deviceService.saveCacheItem('chapters_course_$courseId', [],
-            ttl: cacheDuration);
-
+        _isLoadingForCourse[courseId] = false;
+        setLoaded();
         _chaptersUpdateController.add({courseId: []});
+
+        if (isManualRefresh) {
+          throw Exception(
+              'Network error. Please check your internet connection.');
+        }
+        return;
       }
+
+      // STEP 5: Fetch from API with timeout
+      log('STEP 5: Fetching from API for course $courseId');
+      final response = await apiService.getChaptersByCourse(courseId).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          log('⏱️ API timeout for course $courseId');
+          if (_chaptersByCourse.containsKey(courseId)) {
+            log('✅ Using cached chapters due to timeout');
+            _hasLoadedForCourse[courseId] = true;
+            _isLoadingForCourse[courseId] = false;
+            setLoaded();
+            _chaptersUpdateController
+                .add({courseId: _chaptersByCourse[courseId]!});
+            return ApiResponse<List<Chapter>>(
+              success: true,
+              message: 'Using cached data',
+              data: _chaptersByCourse[courseId],
+            );
+          }
+          return ApiResponse<List<Chapter>>(
+            success: false,
+            message: 'Request timed out',
+            data: [],
+          );
+        },
+      );
+
+      if (!response.success) {
+        throw Exception(response.message);
+      }
+
+      final chapters = response.data ?? [];
+      log('✅ Received ${chapters.length} chapters from API');
+
+      _chaptersByCourse[courseId] = chapters;
+      _hasLoadedForCourse[courseId] = true;
+      _isLoadingForCourse[courseId] = false;
+      setLoaded();
+
+      await _saveCourseToHive(courseId, chapters);
+
+      deviceService.saveCacheItem(
+        'chapters_course_$courseId',
+        chapters.map((c) => c.toJson()).toList(),
+        ttl: cacheDuration,
+        isUserSpecific: true,
+      );
+
+      _chaptersUpdateController.add({courseId: chapters});
+      log('✅ Success! Chapters loaded for course $courseId');
     } catch (e) {
-      _error = e.toString();
-      debugLog('ChapterProvider', '❌ loadChaptersByCourse error: $e');
+      log('❌ Error loading chapters: $e');
 
-      if (!_hasLoadedForCourse.containsKey(courseId)) {
-        _chaptersByCourse[courseId] = [];
-        _hasLoadedForCourse[courseId] = true;
-        _lastLoadedTime[courseId] = DateTime.now();
+      if (!_chaptersByCourse.containsKey(courseId)) {
+        await _recoverFromCache(courseId);
       }
 
-      _chaptersUpdateController
-          .add({courseId: _chaptersByCourse[courseId] ?? []});
+      if (!_chaptersByCourse.containsKey(courseId)) {
+        _chaptersByCourse[courseId] = [];
+      }
+
+      _hasLoadedForCourse[courseId] = true;
+      _isLoadingForCourse[courseId] = false;
+      setLoaded();
+      _chaptersUpdateController.add({courseId: _chaptersByCourse[courseId]!});
 
       if (isManualRefresh) {
         rethrow;
       }
     } finally {
-      _isLoadingForCourse[courseId] = false;
-      _isLoading = false;
-      _notifySafely();
+      safeNotify();
     }
   }
 
   Future<void> _refreshInBackground(int courseId) async {
-    if (_isOffline) return;
+    if (isOffline) return;
 
     try {
-      debugLog('ChapterProvider', '🔄 Background refresh for course $courseId');
+      final response = await apiService.getChaptersByCourse(courseId).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          log('⏱️ Background refresh timeout for course $courseId');
+          return ApiResponse<List<Chapter>>(
+            success: false,
+            message: 'Timeout',
+          );
+        },
+      );
 
-      final response = await apiService.getChaptersByCourse(courseId);
-      final responseData = response.data ?? {};
-      final chaptersData =
-          responseData['chapters'] ?? responseData['data'] ?? [];
+      if (response.success && response.data != null) {
+        final chapters = response.data!;
 
-      if (chaptersData is List) {
-        final loadedChapters =
-            List<Chapter>.from(chaptersData.map((x) => Chapter.fromJson(x)));
+        _chaptersByCourse[courseId] = chapters;
 
-        _chaptersByCourse[courseId] = loadedChapters;
-        _lastLoadedTime[courseId] = DateTime.now();
+        await _saveCourseToHive(courseId, chapters);
 
-        await deviceService.saveCacheItem(
-            'chapters_course_$courseId', loadedChapters,
-            ttl: cacheDuration);
+        deviceService.saveCacheItem(
+          'chapters_course_$courseId',
+          chapters.map((c) => c.toJson()).toList(),
+          ttl: cacheDuration,
+          isUserSpecific: true,
+        );
 
-        _addToGlobalList(loadedChapters);
-
-        _chaptersUpdateController.add({courseId: loadedChapters});
-        _notifySafely();
-
-        debugLog('ChapterProvider',
-            '✅ Background refresh completed for course $courseId');
+        _chaptersUpdateController.add({courseId: chapters});
+        safeNotify();
+        log('🔄 Background refresh for course $courseId complete');
       }
     } catch (e) {
-      debugLog('ChapterProvider', '⚠️ Background refresh failed: $e');
+      log('Background refresh failed: $e');
     }
   }
 
-  void _addToGlobalList(List<Chapter> newChapters) {
-    for (final chapter in newChapters) {
-      if (!_chapters.any((c) => c.id == chapter.id)) {
-        _chapters.add(chapter);
+  Future<void> _recoverFromCache(int courseId) async {
+    log('Attempting cache recovery for course $courseId');
+    final userId = await UserSession().getCurrentUserId();
+    if (userId == null) return;
+
+    if (_chaptersBox != null) {
+      try {
+        final cachedData =
+            _chaptersBox!.get('user_${userId}_course_${courseId}_chapters');
+        if (cachedData != null &&
+            cachedData is Map &&
+            cachedData[courseId] != null) {
+          final dynamic chapterData = cachedData[courseId];
+          if (chapterData is List) {
+            final List<Chapter> chapters = [];
+            for (final item in chapterData) {
+              if (item is Chapter) {
+                chapters.add(item);
+              } else if (item is Map<String, dynamic>) {
+                chapters.add(Chapter.fromJson(item));
+              }
+            }
+            if (chapters.isNotEmpty) {
+              _chaptersByCourse[courseId] = chapters;
+              _hasLoadedForCourse[courseId] = true;
+              _chaptersUpdateController.add({courseId: chapters});
+              log('✅ Recovered ${chapters.length} chapters from Hive after error');
+              return;
+            }
+          }
+        }
+      } catch (e) {
+        log('Error recovering from Hive: $e');
+      }
+    }
+
+    try {
+      final cachedChapters = await deviceService.getCacheItem<List<dynamic>>(
+        'chapters_course_$courseId',
+        isUserSpecific: true,
+      );
+      if (cachedChapters != null && cachedChapters.isNotEmpty) {
+        final List<Chapter> chapters = [];
+        for (final json in cachedChapters) {
+          if (json is Map<String, dynamic>) {
+            chapters.add(Chapter.fromJson(json));
+          }
+        }
+
+        if (chapters.isNotEmpty) {
+          _chaptersByCourse[courseId] = chapters;
+          _hasLoadedForCourse[courseId] = true;
+          _chaptersUpdateController.add({courseId: chapters});
+          log('✅ Recovered ${chapters.length} chapters from DeviceService after error');
+        }
+      }
+    } catch (e) {
+      log('Error recovering from DeviceService: $e');
+    }
+  }
+
+  @override
+  Future<void> onBackgroundRefresh() async {
+    log('Background refresh triggered');
+    if (isOffline) return;
+
+    for (final courseId in _hasLoadedForCourse.keys) {
+      if (_hasLoadedForCourse[courseId] == true &&
+          !(_isLoadingForCourse[courseId] ?? false)) {
+        unawaited(_refreshInBackground(courseId));
       }
     }
   }
 
-  Future<void> clearChaptersForCourse(int courseId) async {
-    _hasLoadedForCourse.remove(courseId);
-    _lastLoadedTime.remove(courseId);
-
-    final courseChapters = _chaptersByCourse[courseId] ?? [];
-    _chapters.removeWhere(
-        (chapter) => courseChapters.any((c) => c.id == chapter.id));
-    _chaptersByCourse.remove(courseId);
-
-    await deviceService.removeCacheItem('chapters_course_$courseId');
-
-    _chaptersUpdateController.add({courseId: []});
-
-    _notifySafely();
+  @override
+  Future<void> onOnlineRefresh() async {
+    log('Online - refreshing chapters');
+    for (final courseId in _hasLoadedForCourse.keys) {
+      if (_hasLoadedForCourse[courseId] == true) {
+        await loadChaptersByCourse(courseId, forceRefresh: true);
+      }
+    }
   }
 
   Future<void> clearUserData() async {
-    debugLog('ChapterProvider', 'Clearing chapter data');
-
     final session = UserSession();
-    final isDifferentUser = !await session.isSameUser();
-    final isLoggingOut = await _isLoggingOut();
+    if (!session.shouldClearCacheOnLogout()) return;
 
-    if (!isDifferentUser || !isLoggingOut) {
-      debugLog('ChapterProvider', '✅ Same user - preserving chapter cache');
-      return;
+    final userId = await session.getCurrentUserId();
+    if (userId != null && _chaptersBox != null) {
+      final keysToDelete = _chaptersBox!.keys
+          .where((key) => key.toString().contains('user_${userId}_'))
+          .toList();
+      for (final key in keysToDelete) {
+        await _chaptersBox!.delete(key);
+      }
     }
 
     await deviceService.clearCacheByPrefix('chapters_course_');
-
-    _chapters.clear();
     _chaptersByCourse.clear();
     _hasLoadedForCourse.clear();
-    _lastLoadedTime.clear();
     _isLoadingForCourse.clear();
-
-    await _chaptersUpdateController.close();
-    _chaptersUpdateController =
-        StreamController<Map<int, List<Chapter>>>.broadcast();
-
+    stopBackgroundRefresh();
     _chaptersUpdateController.add({});
-    _notifySafely();
-  }
-
-  Future<bool> _isLoggingOut() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
-  }
-
-  Future<void> clearAllChapters() async {
-    debugLog(
-        'ChapterProvider', '⚠️ clearAllChapters called - check if intentional');
-
-    final isLoggingOut = await _isLoggingOut();
-    if (!isLoggingOut) {
-      debugLog(
-          'ChapterProvider', 'Skipping clearAllChapters - not logging out');
-      return;
-    }
-
-    await deviceService.clearCacheByPrefix('chapters_course_');
-
-    _chapters.clear();
-    _chaptersByCourse.clear();
-    _hasLoadedForCourse.clear();
-    _lastLoadedTime.clear();
-    _isLoadingForCourse.clear();
-
-    _chaptersUpdateController.add({});
-    _notifySafely();
-  }
-
-  Future<void> clearError() async {
-    _error = null;
-    _notifySafely();
+    safeNotify();
   }
 
   @override
   void dispose() {
+    stopBackgroundRefresh();
     _chaptersUpdateController.close();
+    _chaptersBox?.close();
+    disposeSubscriptions();
     super.dispose();
-  }
-
-  void _notifySafely() {
-    if (hasListeners) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (hasListeners) {
-          notifyListeners();
-        }
-      });
-    }
   }
 }

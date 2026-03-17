@@ -133,6 +133,9 @@ enum ShimmerType {
   statCircle,
 }
 
+// lib/utils/app_enums.dart
+// COMPLETE PRODUCTION-READY FILE - ENSURE THIS EXISTS
+
 enum VideoQualityLevel {
   low(360, '360p'),
   medium(480, '480p'),
@@ -142,6 +145,36 @@ enum VideoQualityLevel {
   final int height;
   final String label;
   const VideoQualityLevel(this.height, this.label);
+
+  static VideoQualityLevel fromHeight(int height) {
+    switch (height) {
+      case 360:
+        return VideoQualityLevel.low;
+      case 480:
+        return VideoQualityLevel.medium;
+      case 720:
+        return VideoQualityLevel.high;
+      case 1080:
+        return VideoQualityLevel.highest;
+      default:
+        return VideoQualityLevel.medium;
+    }
+  }
+
+  static VideoQualityLevel fromLabel(String label) {
+    switch (label) {
+      case '360p':
+        return VideoQualityLevel.low;
+      case '480p':
+        return VideoQualityLevel.medium;
+      case '720p':
+        return VideoQualityLevel.high;
+      case '1080p':
+        return VideoQualityLevel.highest;
+      default:
+        return VideoQualityLevel.medium;
+    }
+  }
 }
 
 enum ContactType {

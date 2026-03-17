@@ -1,5 +1,7 @@
+// lib/widgets/chapter/practice_question_card.dart
+// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import '../../models/question_model.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
@@ -7,7 +9,8 @@ import '../../utils/responsive_values.dart';
 import '../common/app_card.dart';
 import '../common/app_button.dart';
 
-class PracticeQuestionCard extends StatefulWidget {
+/// PRODUCTION-READY PRACTICE QUESTION CARD - Based on actual Question model
+class PracticeQuestionCard extends StatelessWidget {
   final Question question;
   final int index;
   final Map<int, String?> selectedAnswers;
@@ -30,10 +33,331 @@ class PracticeQuestionCard extends StatefulWidget {
   });
 
   @override
-  State<PracticeQuestionCard> createState() => _PracticeQuestionCardState();
-}
+  Widget build(BuildContext context) {
+    final questionId = question.id;
+    final selected = selectedAnswers[questionId];
+    final isAnswered = questionAnswered[questionId] ?? false;
+    final isCorrect = isQuestionCorrect[questionId] ?? false;
+    final showExp = showExplanation[questionId] ?? false;
 
-class _PracticeQuestionCardState extends State<PracticeQuestionCard> {
+    final List<Map<String, dynamic>> options = [
+      if (question.optionA != null && question.optionA!.isNotEmpty)
+        {'letter': 'A', 'text': question.optionA},
+      if (question.optionB != null && question.optionB!.isNotEmpty)
+        {'letter': 'B', 'text': question.optionB},
+      if (question.optionC != null && question.optionC!.isNotEmpty)
+        {'letter': 'C', 'text': question.optionC},
+      if (question.optionD != null && question.optionD!.isNotEmpty)
+        {'letter': 'D', 'text': question.optionD},
+      if (question.optionE != null && question.optionE!.isNotEmpty)
+        {'letter': 'E', 'text': question.optionE},
+      if (question.optionF != null && question.optionF!.isNotEmpty)
+        {'letter': 'F', 'text': question.optionF},
+    ];
+
+    return AppCard.glass(
+      child: Container(
+        margin: EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
+        child: Padding(
+          padding: ResponsiveValues.cardPadding(context),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(
+                children: [
+                  Container(
+                    width: ResponsiveValues.iconSizeXL(context),
+                    height: ResponsiveValues.iconSizeXL(context),
+                    decoration: BoxDecoration(
+                      gradient: isAnswered
+                          ? (isCorrect
+                              ? const LinearGradient(
+                                  colors: AppColors.greenGradient)
+                              : const LinearGradient(
+                                  colors: AppColors.pinkGradient))
+                          : LinearGradient(
+                              colors: [
+                                AppColors.telegramBlue.withValues(alpha: 0.2),
+                                AppColors.telegramPurple.withValues(alpha: 0.1)
+                              ],
+                            ),
+                      borderRadius: BorderRadius.circular(
+                          ResponsiveValues.radiusSmall(context)),
+                    ),
+                    child: Center(
+                      child: Text(
+                        '${index + 1}',
+                        style: AppTextStyles.titleSmall(context).copyWith(
+                          color: isAnswered
+                              ? Colors.white
+                              : AppColors.telegramBlue,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: ResponsiveValues.spacingM(context)),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Question ${index + 1}',
+                          style: AppTextStyles.titleSmall(context)
+                              .copyWith(fontWeight: FontWeight.w600),
+                        ),
+                        Container(
+                          margin: EdgeInsets.only(
+                              top: ResponsiveValues.spacingXXS(context)),
+                          padding: EdgeInsets.symmetric(
+                            horizontal: ResponsiveValues.spacingS(context),
+                            vertical: ResponsiveValues.spacingXXS(context),
+                          ),
+                          decoration: BoxDecoration(
+                            color: _getDifficultyColor(question.difficulty)
+                                .withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(
+                                ResponsiveValues.radiusSmall(context)),
+                          ),
+                          child: Text(
+                            question.difficulty.toUpperCase(),
+                            style:
+                                AppTextStyles.statusBadge(context).copyWith(
+                              color: _getDifficultyColor(question.difficulty),
+                              fontSize:
+                                  ResponsiveValues.fontStatusBadge(context) *
+                                      0.9,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Question type indicator
+                  Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: ResponsiveValues.spacingS(context),
+                      vertical: ResponsiveValues.spacingXXS(context),
+                    ),
+                    decoration: BoxDecoration(
+                      color: question.isPracticeQuestion
+                          ? AppColors.telegramBlue.withValues(alpha: 0.1)
+                          : AppColors.telegramPurple.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(
+                          ResponsiveValues.radiusSmall(context)),
+                    ),
+                    child: Text(
+                      question.isPracticeQuestion ? 'Practice' : 'Exam',
+                      style: AppTextStyles.statusBadge(context).copyWith(
+                        color: question.isPracticeQuestion
+                            ? AppColors.telegramBlue
+                            : AppColors.telegramPurple,
+                        fontSize:
+                            ResponsiveValues.fontStatusBadge(context) * 0.9,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: ResponsiveValues.spacingL(context)),
+              // Question text
+              Text(
+                question.questionText,
+                style: AppTextStyles.bodyLarge(context)
+                    .copyWith(fontWeight: FontWeight.w500, height: 1.5),
+              ),
+              SizedBox(height: ResponsiveValues.spacingXL(context)),
+              // Options
+              ...options.map((option) => _buildOption(
+                    context,
+                    option['letter'],
+                    option['text'],
+                    selected == option['letter'],
+                    isAnswered,
+                    isCorrect,
+                  )),
+              // Check button
+              if (!isAnswered)
+                Padding(
+                  padding:
+                      EdgeInsets.only(top: ResponsiveValues.spacingL(context)),
+                  child: AppButton.primary(
+                    label: 'Check Answer',
+                    onPressed: selected != null
+                        ? () => onCheckAnswer(
+                            question.id, selected) // ✅ FIXED: Use question.id
+                        : null,
+                    expanded: true,
+                  ),
+                ),
+              // Explanation
+              if (showExp && question.explanation != null)
+                Padding(
+                  padding:
+                      EdgeInsets.only(top: ResponsiveValues.spacingL(context)),
+                  child: AppCard.glass(
+                    child: Container(
+                      width: double.infinity,
+                      padding: ResponsiveValues.cardPadding(context),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: isCorrect
+                              ? [
+                                  AppColors.telegramGreen
+                                      .withValues(alpha: 0.1),
+                                  AppColors.telegramGreen
+                                      .withValues(alpha: 0.05)
+                                ]
+                              : [
+                                  AppColors.telegramRed.withValues(alpha: 0.1),
+                                  AppColors.telegramRed.withValues(alpha: 0.05)
+                                ],
+                        ),
+                        borderRadius: BorderRadius.circular(
+                            ResponsiveValues.radiusMedium(context)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                isCorrect
+                                    ? Icons.check_circle_rounded
+                                    : Icons.info_rounded,
+                                size: ResponsiveValues.iconSizeS(context),
+                                color: isCorrect
+                                    ? AppColors.telegramGreen
+                                    : AppColors.telegramRed,
+                              ),
+                              SizedBox(
+                                  width: ResponsiveValues.spacingS(context)),
+                              Text(
+                                isCorrect ? 'Correct!' : 'Explanation',
+                                style:
+                                    AppTextStyles.titleSmall(context).copyWith(
+                                  color: isCorrect
+                                      ? AppColors.telegramGreen
+                                      : AppColors.telegramRed,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: ResponsiveValues.spacingS(context)),
+                          Text(
+                            question.explanation!,
+                            style: AppTextStyles.bodyMedium(context).copyWith(
+                              color: AppColors.getTextSecondary(context),
+                              height: 1.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOption(
+    BuildContext context,
+    String letter,
+    String text,
+    bool isSelected,
+    bool isAnswered,
+    bool isCorrect,
+  ) {
+    Color borderColor = AppColors.getDivider(context);
+    Color bgColor = Colors.transparent;
+    Color textColor = AppColors.getTextPrimary(context);
+    IconData? icon;
+
+    if (isAnswered) {
+      if (isSelected) {
+        if (isCorrect) {
+          borderColor = AppColors.telegramGreen;
+          bgColor = AppColors.telegramGreen.withValues(alpha: 0.1);
+          icon = Icons.check_circle_rounded;
+          textColor = AppColors.telegramGreen;
+        } else {
+          borderColor = AppColors.telegramRed;
+          bgColor = AppColors.telegramRed.withValues(alpha: 0.1);
+          icon = Icons.cancel_rounded;
+          textColor = AppColors.telegramRed;
+        }
+      }
+    } else if (isSelected) {
+      borderColor = AppColors.telegramBlue;
+      bgColor = AppColors.telegramBlue.withValues(alpha: 0.1);
+      textColor = AppColors.telegramBlue;
+    }
+
+    return Container(
+      margin: EdgeInsets.only(bottom: ResponsiveValues.spacingS(context)),
+      decoration: BoxDecoration(
+        border: Border.all(color: borderColor, width: isSelected ? 2 : 1),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+        color: bgColor,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: isAnswered
+              ? null
+              : () => onSelectAnswer(
+                  question.id, letter), // ✅ FIXED: Use question.id
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+          child: Padding(
+            padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
+            child: Row(
+              children: [
+                Container(
+                  width: ResponsiveValues.iconSizeL(context),
+                  height: ResponsiveValues.iconSizeL(context),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: isSelected
+                        ? borderColor.withValues(alpha: 0.1)
+                        : AppColors.getSurface(context).withValues(alpha: 0.1),
+                  ),
+                  child: Center(
+                    child: Text(
+                      letter,
+                      style: AppTextStyles.bodyLarge(context).copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: isSelected ? borderColor : textColor,
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(width: ResponsiveValues.spacingM(context)),
+                Expanded(
+                  child: Text(
+                    text,
+                    style: AppTextStyles.bodyLarge(context)
+                        .copyWith(color: textColor),
+                  ),
+                ),
+                if (icon != null)
+                  Icon(icon,
+                      color: borderColor,
+                      size: ResponsiveValues.iconSizeS(context)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Color _getDifficultyColor(String difficulty) {
     switch (difficulty.toLowerCase()) {
       case 'easy':
@@ -45,502 +369,5 @@ class _PracticeQuestionCardState extends State<PracticeQuestionCard> {
       default:
         return AppColors.telegramBlue;
     }
-  }
-
-  Widget _buildDifficultyBadge(String difficulty) {
-    final color = _getDifficultyColor(difficulty);
-
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: ResponsiveValues.spacingM(context),
-        vertical: ResponsiveValues.spacingXXS(context),
-      ),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [color.withValues(alpha: 0.2), color.withValues(alpha: 0.05)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius:
-            BorderRadius.circular(ResponsiveValues.radiusXXLarge(context)),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: ResponsiveValues.spacingXS(context),
-            height: ResponsiveValues.spacingXS(context),
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                    color: color.withValues(alpha: 0.5),
-                    blurRadius: ResponsiveValues.spacingXS(context))
-              ],
-            ),
-          ),
-          SizedBox(width: ResponsiveValues.spacingS(context)),
-          Text(
-            difficulty.toUpperCase(),
-            style: AppTextStyles.labelSmall(context).copyWith(
-              color: color,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.5,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildQuestionNumberBadge() {
-    final questionId = widget.question.id;
-    final isAnswered = widget.questionAnswered[questionId] == true;
-    final isCorrect = widget.isQuestionCorrect[questionId] == true;
-
-    Color backgroundColor;
-    Color borderColor;
-    IconData? icon;
-
-    if (isAnswered) {
-      if (isCorrect) {
-        backgroundColor = AppColors.telegramGreen.withValues(alpha: 0.15);
-        borderColor = AppColors.telegramGreen.withValues(alpha: 0.3);
-        icon = Icons.check_circle_rounded;
-      } else {
-        backgroundColor = AppColors.telegramRed.withValues(alpha: 0.15);
-        borderColor = AppColors.telegramRed.withValues(alpha: 0.3);
-        icon = Icons.cancel_rounded;
-      }
-    } else {
-      backgroundColor = Colors.transparent;
-      borderColor = AppColors.getTextSecondary(context).withValues(alpha: 0.2);
-      icon = null;
-    }
-
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: ResponsiveValues.spacingM(context),
-        vertical: ResponsiveValues.spacingXXS(context),
-      ),
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        borderRadius:
-            BorderRadius.circular(ResponsiveValues.radiusXXLarge(context)),
-        border: Border.all(color: borderColor),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (icon != null) ...[
-            Icon(icon,
-                size: ResponsiveValues.iconSizeXXS(context),
-                color: isCorrect
-                    ? AppColors.telegramGreen
-                    : AppColors.telegramRed),
-            SizedBox(width: ResponsiveValues.spacingXS(context)),
-          ],
-          Text(
-            'Q${widget.index + 1}',
-            style: AppTextStyles.labelSmall(context).copyWith(
-              color: isAnswered
-                  ? (isCorrect
-                      ? AppColors.telegramGreen
-                      : AppColors.telegramRed)
-                  : AppColors.getTextSecondary(context),
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  List<Widget> _buildQuestionOptions() {
-    final question = widget.question;
-    final questionId = question.id;
-    final options = _getQuestionOptions(question);
-
-    return options.asMap().entries.map((entry) {
-      final optionIndex = entry.key;
-      final option = entry.value;
-      final optionLetter = String.fromCharCode(65 + optionIndex);
-
-      final isSelected = widget.selectedAnswers[questionId] == optionLetter;
-      final showExplanation = widget.showExplanation[questionId] == true;
-      final isCorrectAnswer = question.correctOption == optionLetter;
-      final isUserSelection =
-          optionLetter == widget.selectedAnswers[questionId];
-
-      Color optionColor;
-      Color borderColor;
-      IconData? icon;
-
-      if (showExplanation) {
-        if (isCorrectAnswer) {
-          optionColor = AppColors.telegramGreen.withValues(alpha: 0.1);
-          borderColor = AppColors.telegramGreen.withValues(alpha: 0.5);
-          icon = Icons.check_circle_rounded;
-        } else if (isUserSelection) {
-          optionColor = AppColors.telegramRed.withValues(alpha: 0.1);
-          borderColor = AppColors.telegramRed.withValues(alpha: 0.5);
-          icon = Icons.cancel_rounded;
-        } else {
-          optionColor = Colors.transparent;
-          borderColor =
-              AppColors.getTextSecondary(context).withValues(alpha: 0.1);
-          icon = null;
-        }
-      } else {
-        if (isSelected) {
-          optionColor = AppColors.telegramBlue.withValues(alpha: 0.1);
-          borderColor = AppColors.telegramBlue;
-          icon = null;
-        } else {
-          optionColor = Colors.transparent;
-          borderColor =
-              AppColors.getTextSecondary(context).withValues(alpha: 0.1);
-          icon = null;
-        }
-      }
-
-      return AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeInOut,
-        margin: const EdgeInsets.only(bottom: 12),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: showExplanation
-                ? null
-                : () => widget.onSelectAnswer(questionId, optionLetter),
-            borderRadius:
-                BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-            child: Container(
-              padding: ResponsiveValues.cardPadding(context),
-              decoration: BoxDecoration(
-                color: optionColor,
-                borderRadius: BorderRadius.circular(
-                    ResponsiveValues.radiusMedium(context)),
-                border:
-                    Border.all(color: borderColor, width: isSelected ? 2 : 1),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: ResponsiveValues.iconSizeL(context),
-                    height: ResponsiveValues.iconSizeL(context),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: isSelected && !showExplanation
-                          ? const LinearGradient(colors: AppColors.blueGradient)
-                          : null,
-                      color: isSelected && !showExplanation
-                          ? null
-                          : Colors.transparent,
-                      border: Border.all(
-                        color: isSelected && !showExplanation
-                            ? Colors.transparent
-                            : showExplanation && isCorrectAnswer
-                                ? AppColors.telegramGreen
-                                : showExplanation && isUserSelection
-                                    ? AppColors.telegramRed
-                                    : AppColors.getTextSecondary(context)
-                                        .withValues(alpha: 0.3),
-                        width: 2,
-                      ),
-                    ),
-                    child: Center(
-                      child: icon != null
-                          ? Icon(
-                              icon,
-                              size: ResponsiveValues.iconSizeXS(context),
-                              color: isCorrectAnswer
-                                  ? AppColors.telegramGreen
-                                  : AppColors.telegramRed,
-                            )
-                          : Text(
-                              optionLetter,
-                              style:
-                                  AppTextStyles.labelMedium(context).copyWith(
-                                color: isSelected && !showExplanation
-                                    ? Colors.white
-                                    : showExplanation && isCorrectAnswer
-                                        ? AppColors.telegramGreen
-                                        : showExplanation && isUserSelection
-                                            ? AppColors.telegramRed
-                                            : AppColors.getTextSecondary(
-                                                context),
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                    ),
-                  ),
-                  SizedBox(width: ResponsiveValues.spacingXL(context)),
-                  Expanded(
-                    child: Text(
-                      option,
-                      style: AppTextStyles.bodyMedium(context).copyWith(
-                        color: showExplanation && isCorrectAnswer
-                            ? AppColors.telegramGreen
-                            : showExplanation &&
-                                    isUserSelection &&
-                                    !isCorrectAnswer
-                                ? AppColors.telegramRed
-                                : AppColors.getTextPrimary(context),
-                        fontWeight:
-                            isSelected || (showExplanation && isCorrectAnswer)
-                                ? FontWeight.w600
-                                : FontWeight.normal,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }).toList();
-  }
-
-  List<String> _getQuestionOptions(Question question) {
-    final options = <String>[];
-    if (question.optionA?.isNotEmpty ?? false) options.add(question.optionA!);
-    if (question.optionB?.isNotEmpty ?? false) options.add(question.optionB!);
-    if (question.optionC?.isNotEmpty ?? false) options.add(question.optionC!);
-    if (question.optionD?.isNotEmpty ?? false) options.add(question.optionD!);
-    if (question.optionE?.isNotEmpty ?? false) options.add(question.optionE!);
-    if (question.optionF?.isNotEmpty ?? false) options.add(question.optionF!);
-    return options;
-  }
-
-  Widget _buildCheckAnswerButton() {
-    final questionId = widget.question.id;
-    final isSelected = widget.selectedAnswers[questionId] != null;
-    final showExplanation = widget.showExplanation[questionId] == true;
-    final isCorrect = widget.isQuestionCorrect[questionId] == true;
-
-    if (showExplanation) {
-      return Container(
-        padding: ResponsiveValues.cardPadding(context),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: isCorrect
-                ? [
-                    AppColors.telegramGreen.withValues(alpha: 0.1),
-                    AppColors.telegramGreen.withValues(alpha: 0.05)
-                  ]
-                : [
-                    AppColors.telegramRed.withValues(alpha: 0.1),
-                    AppColors.telegramRed.withValues(alpha: 0.05)
-                  ],
-          ),
-          borderRadius:
-              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-          border: Border.all(
-            color: isCorrect
-                ? AppColors.telegramGreen.withValues(alpha: 0.3)
-                : AppColors.telegramRed.withValues(alpha: 0.3),
-          ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: EdgeInsets.all(ResponsiveValues.spacingS(context)),
-              decoration: BoxDecoration(
-                color: isCorrect
-                    ? AppColors.telegramGreen.withValues(alpha: 0.2)
-                    : AppColors.telegramRed.withValues(alpha: 0.2),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                isCorrect ? Icons.check_rounded : Icons.close_rounded,
-                color:
-                    isCorrect ? AppColors.telegramGreen : AppColors.telegramRed,
-                size: ResponsiveValues.iconSizeS(context),
-              ),
-            ),
-            SizedBox(width: ResponsiveValues.spacingM(context)),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    isCorrect ? 'Correct Answer!' : 'Incorrect',
-                    style: AppTextStyles.titleSmall(context).copyWith(
-                      color: isCorrect
-                          ? AppColors.telegramGreen
-                          : AppColors.telegramRed,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  if (!isCorrect)
-                    Text(
-                      'The correct answer is option ${widget.question.correctOption.toUpperCase()}',
-                      style: AppTextStyles.caption(context)
-                          .copyWith(color: AppColors.getTextSecondary(context)),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      child: AppButton.primary(
-        label: 'Check Answer',
-        onPressed: isSelected
-            ? () => widget.onCheckAnswer(
-                questionId, widget.selectedAnswers[questionId]!)
-            : null,
-        expanded: true,
-      ),
-    );
-  }
-
-  Widget _buildExplanationSection() {
-    final questionId = widget.question.id;
-    final isCorrect = widget.isQuestionCorrect[questionId] == true;
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOutCubic,
-      margin: const EdgeInsets.only(top: 20),
-      child: AppCard.glass(
-        child: Padding(
-          padding: ResponsiveValues.cardPadding(context),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding:
-                        EdgeInsets.all(ResponsiveValues.spacingXS(context)),
-                    decoration: BoxDecoration(
-                      color: isCorrect
-                          ? AppColors.telegramGreen.withValues(alpha: 0.2)
-                          : AppColors.telegramBlue.withValues(alpha: 0.2),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      isCorrect ? Icons.lightbulb_rounded : Icons.info_rounded,
-                      color: isCorrect
-                          ? AppColors.telegramGreen
-                          : AppColors.telegramBlue,
-                      size: ResponsiveValues.iconSizeXS(context),
-                    ),
-                  ),
-                  SizedBox(width: ResponsiveValues.spacingS(context)),
-                  Text(
-                    'Explanation',
-                    style: AppTextStyles.titleSmall(context).copyWith(
-                        fontWeight: FontWeight.w700, letterSpacing: -0.3),
-                  ),
-                ],
-              ),
-              SizedBox(height: ResponsiveValues.spacingL(context)),
-              Text(
-                widget.question.explanation ?? 'No explanation provided.',
-                style: AppTextStyles.bodyMedium(context).copyWith(
-                  color: AppColors.getTextSecondary(context),
-                  height: 1.6,
-                ),
-              ),
-              if (!isCorrect) ...[
-                SizedBox(height: ResponsiveValues.spacingL(context)),
-                Container(
-                  padding: ResponsiveValues.cardPadding(context),
-                  decoration: BoxDecoration(
-                    color: AppColors.telegramGreen.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(
-                        ResponsiveValues.radiusMedium(context)),
-                    border: Border.all(
-                        color: AppColors.telegramGreen.withValues(alpha: 0.2)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.check_circle_rounded,
-                          color: AppColors.telegramGreen, size: 20),
-                      SizedBox(width: ResponsiveValues.spacingM(context)),
-                      Expanded(
-                        child: Text(
-                          'Correct answer: Option ${widget.question.correctOption.toUpperCase()}',
-                          style: AppTextStyles.bodyMedium(context).copyWith(
-                            color: AppColors.telegramGreen,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final questionId = widget.question.id;
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOutCubic,
-      child: AppCard.glass(
-        child: Padding(
-          padding: ResponsiveValues.cardPadding(context),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _buildDifficultyBadge(widget.question.difficulty),
-                  _buildQuestionNumberBadge(),
-                ],
-              ),
-              SizedBox(height: ResponsiveValues.spacingXL(context)),
-              Text(
-                widget.question.questionText,
-                style: AppTextStyles.titleMedium(context).copyWith(
-                  fontWeight: FontWeight.w600,
-                  height: 1.5,
-                  letterSpacing: -0.3,
-                ),
-              ),
-              SizedBox(height: ResponsiveValues.spacingXL(context)),
-              ..._buildQuestionOptions(),
-              SizedBox(height: ResponsiveValues.spacingXL(context)),
-              _buildCheckAnswerButton(),
-              if (widget.showExplanation[questionId] == true)
-                _buildExplanationSection(),
-            ],
-          ),
-        ),
-      ),
-    )
-        .animate()
-        .fadeIn(
-          duration: 400.ms,
-          delay: (widget.index * 100).ms,
-          curve: Curves.easeOutQuad,
-        )
-        .scale(
-          begin: const Offset(0.95, 0.95),
-          end: const Offset(1, 1),
-          duration: 400.ms,
-          delay: (widget.index * 100).ms,
-          curve: Curves.easeOutCubic,
-        );
   }
 }

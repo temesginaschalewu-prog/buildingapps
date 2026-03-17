@@ -1,20 +1,53 @@
 import '../utils/parsers.dart';
+import 'package:hive/hive.dart'; // NEW
 
+part 'question_model.g.dart'; // NEW
+
+@HiveType(typeId: 6) // NEW
 class Question {
+  @HiveField(0)
   final int id;
+
+  @HiveField(1)
   final String questionType;
+
+  @HiveField(2)
   final int? chapterId;
+
+  @HiveField(3)
   final int? examId;
+
+  @HiveField(4)
   final String questionText;
+
+  @HiveField(5)
   final String? optionA;
+
+  @HiveField(6)
   final String? optionB;
+
+  @HiveField(7)
   final String? optionC;
+
+  @HiveField(8)
   final String? optionD;
+
+  @HiveField(9)
   final String? optionE;
+
+  @HiveField(10)
   final String? optionF;
+
+  @HiveField(11)
   final String correctOption;
+
+  @HiveField(12)
   final String? explanation;
+
+  @HiveField(13)
   final String difficulty;
+
+  @HiveField(14)
   final bool hasAnswer;
 
   Question({

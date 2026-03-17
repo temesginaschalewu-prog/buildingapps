@@ -1,11 +1,16 @@
+// lib/screens/main/main_navigation.dart
+// FIXED - Updated for Profile Screen and proper state handling
+
 import 'dart:async';
 import 'dart:ui';
-import 'package:familyacademyclient/models/user_model.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+
+import '../../models/user_model.dart';
 import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
+import '../../utils/helpers.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/subscription_provider.dart';
@@ -13,8 +18,8 @@ import '../../providers/category_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../services/connectivity_service.dart';
 import '../../themes/app_colors.dart';
-// For offline indicator in app bar
 
+/// PRODUCTION-READY MAIN NAVIGATION
 class MainNavigation extends StatefulWidget {
   final Widget child;
 
@@ -25,11 +30,13 @@ class MainNavigation extends StatefulWidget {
 }
 
 class _MainNavigationState extends State<MainNavigation>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   int _currentIndex = 0;
   bool _isInitializing = false;
   bool _dataLoadedInBackground = false;
+  bool _isOffline = false;
   StreamSubscription? _authStateSubscription;
+  StreamSubscription? _connectivitySubscription;
   late NotificationProvider _notificationProvider;
   final List<int> _navigationHistory = [0];
   late AnimationController _tabAnimationController;
@@ -39,16 +46,14 @@ class _MainNavigationState extends State<MainNavigation>
   @override
   void initState() {
     super.initState();
+    _connectivitySubscription?.cancel();
+    WidgetsBinding.instance.addObserver(this);
 
     _tabAnimationController = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 300));
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkConnectivity();
-      _checkPendingCount();
-      _initializeUserDataInBackground();
-      _setupStreamListeners();
-      _updateCurrentIndexFromRoute();
+      _initialize();
     });
 
     _labelTimer = Timer(const Duration(seconds: 3), () {
@@ -56,31 +61,57 @@ class _MainNavigationState extends State<MainNavigation>
     });
   }
 
-  Future<void> _checkConnectivity() async {
-    context.read<ConnectivityService>();
-    setState(() {});
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _authStateSubscription?.cancel();
+    _connectivitySubscription?.cancel();
+    _notificationProvider.removeListener(_refreshUIOnNotificationChange);
+    _tabAnimationController.dispose();
+    _labelTimer?.cancel();
+    super.dispose();
   }
 
-  Future<void> _checkPendingCount() async {}
+  Future<void> _initialize() async {
+    await _checkConnectivity();
+    _setupConnectivityListener();
+    _initializeUserDataInBackground();
+    _setupStreamListeners();
+    _updateCurrentIndexFromRoute();
+  }
+
+  void _setupConnectivityListener() {
+    final connectivityService = context.read<ConnectivityService>();
+    _connectivitySubscription =
+        connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (!mounted) return;
+      setState(() {
+        _isOffline = !isOnline;
+      });
+    });
+  }
+
+  Future<void> _checkConnectivity() async {
+    final connectivityService = context.read<ConnectivityService>();
+    await connectivityService.checkConnectivity();
+    if (!mounted) return;
+    setState(() {
+      _isOffline = !connectivityService.isOnline;
+    });
+  }
 
   void _setupStreamListeners() {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final connectivityService = context.read<ConnectivityService>();
 
     _notificationProvider =
         Provider.of<NotificationProvider>(context, listen: false);
 
     _authStateSubscription = authProvider.authStateChanges.listen((isAuth) {
+      if (!mounted) return;
       if (isAuth) {
         _initializeUserDataInBackground();
       } else {
         setState(() => _dataLoadedInBackground = false);
-      }
-    });
-
-    connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (mounted) {
-        setState(() {});
       }
     });
 
@@ -107,17 +138,23 @@ class _MainNavigationState extends State<MainNavigation>
 
     if (authProvider.isAuthenticated && !_dataLoadedInBackground) {
       try {
+        // Load user profile first
         await userProvider.loadUserProfile();
-    if (!mounted) return;
+        if (!mounted) return;
+
+        // Load other data in parallel
         await Future.wait([
           subscriptionProvider.loadSubscriptions(),
-          categoryProvider.loadCategoriesWithSubscriptionCheck()
+          categoryProvider.loadCategories()
         ]);
+
+        // Load notifications in background
         unawaited(notificationProvider.loadNotifications());
-        unawaited(userProvider.loadPayments());
 
         _dataLoadedInBackground = true;
-      } catch (e) {}
+      } catch (e) {
+        debugLog('MainNavigation', 'Background data load error: $e');
+      }
     }
 
     _isInitializing = false;
@@ -155,6 +192,14 @@ class _MainNavigationState extends State<MainNavigation>
       _tabAnimationController.forward();
 
       setState(() => _currentIndex = newIndex);
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && !_isOffline) {
+      // Refresh data when app returns to foreground
+      _initializeUserDataInBackground();
     }
   }
 
@@ -397,9 +442,19 @@ class _MainNavigationState extends State<MainNavigation>
                               ResponsiveValues.radiusMedium(context)),
                         ),
                         child: Center(
-                          child: Icon(Icons.school_rounded,
-                              size: ResponsiveValues.iconSizeL(context),
-                              color: Colors.white),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(
+                                ResponsiveValues.radiusMedium(context)),
+                            child: Image.asset(
+                              'assets/images/logo_clean.png',
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Icon(Icons.school_rounded,
+                                    size: ResponsiveValues.iconSizeL(context),
+                                    color: Colors.white);
+                              },
+                            ),
+                          ),
                         ),
                       ),
                       _buildTabletNavItem(
@@ -624,9 +679,20 @@ class _MainNavigationState extends State<MainNavigation>
                                     ResponsiveValues.radiusSmall(context)),
                               ),
                               child: Center(
-                                child: Icon(Icons.school_rounded,
-                                    size: ResponsiveValues.iconSizeS(context),
-                                    color: Colors.white),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(
+                                      ResponsiveValues.radiusSmall(context)),
+                                  child: Image.asset(
+                                    'assets/images/logo_clean.png',
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Icon(Icons.school_rounded,
+                                          size: ResponsiveValues.iconSizeS(
+                                              context),
+                                          color: Colors.white);
+                                    },
+                                  ),
+                                ),
                               ),
                             ),
                             Column(
@@ -855,7 +921,7 @@ class _MainNavigationState extends State<MainNavigation>
                   Text(
                     label,
                     style: TextStyle(
-                      fontSize: 14,
+                      fontSize: ResponsiveValues.fontBodyMedium(context),
                       fontWeight:
                           isSelected ? FontWeight.w600 : FontWeight.w500,
                       color: isSelected
@@ -867,7 +933,7 @@ class _MainNavigationState extends State<MainNavigation>
                   Text(
                     description,
                     style: TextStyle(
-                      fontSize: 12,
+                      fontSize: ResponsiveValues.fontBodySmall(context),
                       color: isSelected
                           ? AppColors.telegramBlue.withValues(alpha: 0.8)
                           : AppColors.getTextSecondary(context),
@@ -912,26 +978,20 @@ class _MainNavigationState extends State<MainNavigation>
   }
 
   @override
-  void dispose() {
-    _authStateSubscription?.cancel();
-    _notificationProvider.removeListener(_refreshUIOnNotificationChange);
-    _tabAnimationController.dispose();
-    _labelTimer?.cancel();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
 
+    // Update current index when route changes
     WidgetsBinding.instance
         .addPostFrameCallback((_) => _updateCurrentIndexFromRoute());
 
-    if (authProvider.isAuthenticated && !authProvider.isInitializing) {
+    // Check session periodically
+    if (authProvider.isAuthenticated && authProvider.isInitialized) {
       WidgetsBinding.instance
           .addPostFrameCallback((_) => authProvider.checkSession());
     }
 
+    // Choose layout based on screen size
     if (ScreenSize.isMobile(context)) {
       return _buildMobileNavigation();
     } else if (ScreenSize.isTablet(context)) {

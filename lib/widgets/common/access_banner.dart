@@ -82,15 +82,22 @@ class AccessBanner extends StatelessWidget {
         horizontal: ResponsiveValues.sectionPadding(context),
         vertical: ResponsiveValues.spacingS(context),
       ),
+      // ✅ FIX: Use AppCard.glass for the same glass effect as AppDialog
       child: AppCard.glass(
         child: Padding(
           padding: EdgeInsets.all(ResponsiveValues.sectionPadding(context)),
           child: Row(
             children: [
+              // Icon container with glass effect
               Container(
                 padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
                 decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.1),
+                  gradient: LinearGradient(
+                    colors: [
+                      color.withValues(alpha: 0.2),
+                      color.withValues(alpha: 0.1)
+                    ],
+                  ),
                   borderRadius: BorderRadius.circular(
                       ResponsiveValues.radiusMedium(context)),
                 ),

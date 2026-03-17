@@ -1,13 +1,30 @@
 import '../utils/constants.dart';
 import '../utils/parsers.dart';
+import 'package:hive/hive.dart'; // NEW
 
+part 'note_model.g.dart'; // NEW
+
+@HiveType(typeId: 5) // NEW
 class Note {
+  @HiveField(0)
   final int id;
+
+  @HiveField(1)
   final String title;
+
+  @HiveField(2)
   final int chapterId;
+
+  @HiveField(3)
   final String content;
+
+  @HiveField(4)
   final String? filePath;
+
+  @HiveField(5)
   final DateTime? releaseDate;
+
+  @HiveField(6)
   final DateTime createdAt;
 
   Note({
@@ -47,7 +64,7 @@ class Note {
   String? get fullNoteFilePath => filePath != null
       ? (filePath!.startsWith('http')
           ? filePath
-          : '${AppConstants.baseUrl}$filePath')
+          : '${AppConstants.apiBaseUrl}$filePath') // FIXED: apiBaseUrl
       : null;
 
   bool get hasFile => filePath?.isNotEmpty ?? false;

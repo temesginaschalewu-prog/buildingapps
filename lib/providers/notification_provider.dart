@@ -1,174 +1,398 @@
+// lib/providers/notification_provider.dart
+// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:hive/hive.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../services/user_session.dart';
 import '../services/connectivity_service.dart';
+import '../services/hive_service.dart';
+import '../services/offline_queue_manager.dart';
 import '../models/notification_model.dart' as notification_model;
-import '../utils/constants.dart';
-import '../utils/helpers.dart';
 import '../utils/api_response.dart';
+import '../utils/constants.dart';
+import 'base_provider.dart';
 
-class NotificationProvider with ChangeNotifier {
-  final ApiService apiService;
-  final DeviceService deviceService;
+/// PRODUCTION-READY Notification Provider with Full Offline Support
+class NotificationProvider extends ChangeNotifier
+    with
+        BaseProvider<NotificationProvider>,
+        OfflineAwareProvider<NotificationProvider>,
+        BackgroundRefreshMixin<NotificationProvider> {
+  @override
   final ConnectivityService connectivityService;
 
+  final ApiService apiService;
+  final DeviceService deviceService;
+  final HiveService hiveService;
+  final OfflineQueueManager offlineQueueManager;
+
   List<notification_model.Notification> _notifications = [];
-  bool _isLoading = false;
-  String? _error;
   int _unreadCount = 0;
-  bool _hasLoaded = false;
+  // ignore: unused_field
   DateTime? _lastLoadTime;
-  Timer? _refreshTimer;
-  bool _isOffline = false;
+  DateTime? _lastUnreadRefreshAt;
+  Completer<void>? _unreadRefreshCompleter;
 
   static const Duration _cacheDuration = AppConstants.cacheTTLNotifications;
-  static const Duration _refreshInterval = Duration(minutes: 5);
+  static const Duration _minUnreadRefreshInterval = Duration(seconds: 20);
+  @override
+  Duration get refreshInterval => const Duration(minutes: 5);
+
+  Box? _notificationsBox;
+
+  int _apiCallCount = 0;
+
+  final StreamController<List<notification_model.Notification>>
+      _notificationsUpdateController =
+      StreamController<List<notification_model.Notification>>.broadcast();
 
   NotificationProvider({
     required this.apiService,
     required this.deviceService,
     required this.connectivityService,
+    required this.hiveService,
+    required this.offlineQueueManager,
   }) {
-    _setupConnectivityListener();
-    _refreshTimer = Timer.periodic(_refreshInterval, (_) {
-      if (_hasLoaded && !_isLoading && !_isOffline) {
-        unawaited(loadNotifications());
-      }
-    });
+    log('NotificationProvider constructor called');
+    initializeOfflineAware(
+      connectivity: connectivityService,
+      queue: offlineQueueManager,
+    );
+    _registerQueueProcessors();
+    _init();
   }
 
-  void _setupConnectivityListener() {
-    connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (_isOffline != !isOnline) {
-        _isOffline = !isOnline;
-        if (!_isOffline && _notifications.isNotEmpty) {
-          _refreshFromApi();
+  void _registerQueueProcessors() {
+    // Register processor for marking notifications as read
+    offlineQueueManager.registerProcessor(
+      AppConstants.queueActionMarkNotificationRead,
+      _processMarkAsRead,
+    );
+    log('✅ Registered queue processors');
+  }
+
+  Future<bool> _processMarkAsRead(Map<String, dynamic> data) async {
+    try {
+      log('Processing offline mark as read');
+      final logId = data['log_id'];
+      final response = await apiService.markNotificationAsRead(logId);
+      return response.success;
+    } catch (e) {
+      log('Error processing mark as read: $e');
+      return false;
+    }
+  }
+
+  Future<void> _init() async {
+    log('_init() START');
+    await _openHiveBoxes();
+    await _loadCachedNotifications();
+
+    if (_notifications.isNotEmpty) {
+      startBackgroundRefresh();
+    }
+
+    log('_init() END');
+  }
+
+  Future<void> _openHiveBoxes() async {
+    try {
+      if (!Hive.isBoxOpen(AppConstants.hiveNotificationsBox)) {
+        _notificationsBox =
+            await Hive.openBox(AppConstants.hiveNotificationsBox);
+      } else {
+        _notificationsBox = Hive.box(AppConstants.hiveNotificationsBox);
+      }
+      log('✅ Hive box opened');
+    } catch (e) {
+      log('⚠️ Error opening Hive box: $e');
+    }
+  }
+
+  Future<void> _loadCachedNotifications() async {
+    try {
+      final userId = await UserSession().getCurrentUserId();
+      if (userId == null || _notificationsBox == null) return;
+
+      final cachedKey = 'user_${userId}_notifications';
+      final cachedNotifications = _notificationsBox!.get(cachedKey);
+
+      if (cachedNotifications != null && cachedNotifications is List) {
+        final List<notification_model.Notification> notifications = [];
+        for (final item in cachedNotifications) {
+          if (item is notification_model.Notification) {
+            notifications.add(item);
+          } else if (item is Map<String, dynamic>) {
+            notifications.add(notification_model.Notification.fromJson(item));
+          }
         }
-        notifyListeners();
+
+        if (notifications.isNotEmpty) {
+          _notifications = notifications;
+          _unreadCount =
+              _notifications.where((n) => !n.isRead && n.isDelivered).length;
+          setLoaded();
+          _lastLoadTime = DateTime.now();
+          _notificationsUpdateController.add(_notifications);
+          log('✅ Loaded ${_notifications.length} notifications from Hive');
+
+          if (connectivityService.isOnline) {
+            unawaited(_refreshFromApi());
+          }
+        }
       }
-    });
+    } catch (e) {
+      log('Error loading cached notifications: $e');
+    }
   }
 
+  Future<void> _saveToHive() async {
+    try {
+      final userId = await UserSession().getCurrentUserId();
+      if (userId == null || _notificationsBox == null) return;
+
+      final cacheKey = 'user_${userId}_notifications';
+      await _notificationsBox!.put(cacheKey, _notifications);
+      log('💾 Saved ${_notifications.length} notifications to Hive');
+    } catch (e) {
+      log('Error saving to Hive: $e');
+    }
+  }
+
+  // ===== GETTERS =====
   List<notification_model.Notification> get notifications =>
       List.unmodifiable(_notifications);
-  bool get isLoading => _isLoading;
-  String? get error => _error;
+
   int get unreadCount => _unreadCount;
-  bool get isOffline => _isOffline;
+
+  Stream<List<notification_model.Notification>> get notificationsUpdates =>
+      _notificationsUpdateController.stream;
 
   List<notification_model.Notification> get unreadNotifications {
-    return _notifications.where((n) => !n.isRead && n.isDelivered).toList();
+    return _notifications.where((n) => !n.isRead).toList();
   }
 
   List<notification_model.Notification> get readNotifications {
-    return _notifications.where((n) => n.isRead && n.isDelivered).toList();
+    return _notifications.where((n) => n.isRead).toList();
   }
 
-  Future<void> loadNotifications(
-      {bool forceRefresh = false, bool isManualRefresh = false}) async {
-    if (_isLoading && !forceRefresh) return;
+  // ===== LOAD NOTIFICATIONS =====
+  Future<void> loadNotifications({
+    bool forceRefresh = false,
+    bool isManualRefresh = false,
+  }) async {
+    _apiCallCount++;
+    final callId = _apiCallCount;
 
-    // If this is a manual refresh, ALWAYS force refresh
-    if (isManualRefresh) {
-      forceRefresh = true;
+    log('loadNotifications() CALL #$callId');
+
+    if (isManualRefresh && isOffline) {
+      throw Exception('Network error. Please check your internet connection.');
     }
 
-    if (!forceRefresh && _hasLoaded) {
-      final now = DateTime.now();
-      if (_lastLoadTime != null &&
-          now.difference(_lastLoadTime!) < _cacheDuration) {
-        return;
-      }
+    // If already loaded and not forcing refresh, return cached data
+    if (_notifications.isNotEmpty && !forceRefresh) {
+      log('✅ Already have data, returning cached');
+      setLoaded();
+      _notificationsUpdateController.add(_notifications);
+      return;
     }
 
-    if (!forceRefresh && !_hasLoaded) {
-      final cachedNotifications = await deviceService
-          .getCacheItem<List<notification_model.Notification>>(
-              AppConstants.notificationsCacheKey,
-              isUserSpecific: true);
-      if (cachedNotifications != null) {
-        _notifications = cachedNotifications;
-        _unreadCount =
-            _notifications.where((n) => !n.isRead && n.isDelivered).length;
-        _hasLoaded = true;
-        _notifySafely();
-        if (!_isOffline) {
-          unawaited(_refreshFromApi());
-        }
-        return;
-      }
+    if (isLoading && !forceRefresh) {
+      log('⏳ Already loading, skipping');
+      return;
     }
 
-    _isLoading = true;
-    _error = null;
-    _notifySafely();
+    setLoading();
 
     try {
-      if (_isOffline) {
-        _error = 'You are offline. Using cached data.';
-        _isLoading = false;
-        _notifySafely();
+      // STEP 1: Try Hive first
+      if (!forceRefresh && _notifications.isEmpty) {
+        log('STEP 1: Checking Hive cache');
+        final userId = await UserSession().getCurrentUserId();
+        if (userId != null && _notificationsBox != null) {
+          final cachedKey = 'user_${userId}_notifications';
+          final cachedNotifications = _notificationsBox!.get(cachedKey);
 
-        // THROW exception for manual refresh!
+          if (cachedNotifications != null && cachedNotifications is List) {
+            final List<notification_model.Notification> notifications = [];
+            for (final item in cachedNotifications) {
+              if (item is notification_model.Notification) {
+                notifications.add(item);
+              } else if (item is Map<String, dynamic>) {
+                notifications
+                    .add(notification_model.Notification.fromJson(item));
+              }
+            }
+            if (notifications.isNotEmpty) {
+              _notifications = notifications;
+              _unreadCount = _notifications
+                  .where((n) => !n.isRead && n.isDelivered)
+                  .length;
+              setLoaded();
+              _notificationsUpdateController.add(_notifications);
+              log('✅ Using cached notifications from Hive');
+
+              if (connectivityService.isOnline && !isManualRefresh) {
+                unawaited(_refreshFromApi());
+              }
+              return;
+            }
+          }
+        }
+      }
+
+      // STEP 2: Try DeviceService
+      if (!forceRefresh) {
+        log('STEP 2: Checking DeviceService cache');
+        final cachedNotifications =
+            await deviceService.getCacheItem<List<dynamic>>(
+          AppConstants.notificationsCacheKey,
+          isUserSpecific: true,
+        );
+
+        if (cachedNotifications != null) {
+          final List<notification_model.Notification> notifications = [];
+          for (final json in cachedNotifications) {
+            if (json is Map<String, dynamic>) {
+              notifications.add(notification_model.Notification.fromJson(json));
+            }
+          }
+          if (notifications.isNotEmpty) {
+            _notifications = notifications;
+            _unreadCount =
+                _notifications.where((n) => !n.isRead && n.isDelivered).length;
+            setLoaded();
+            _notificationsUpdateController.add(_notifications);
+
+            await _saveToHive();
+            log('✅ Using cached notifications from DeviceService');
+
+            if (connectivityService.isOnline && !isManualRefresh) {
+              unawaited(_refreshFromApi());
+            }
+            return;
+          }
+        }
+      }
+
+      // STEP 3: Check offline status
+      if (!connectivityService.isOnline) {
+        log('STEP 3: Offline mode');
+        if (_notifications.isNotEmpty) {
+          setLoaded();
+          _notificationsUpdateController.add(_notifications);
+          log('✅ Showing cached notifications offline');
+          return;
+        }
+
+        // Even if offline with no cache, mark as loaded with empty list
+        _notifications = [];
+        _unreadCount = 0;
+        setLoaded();
+        _notificationsUpdateController.add(_notifications);
+
         if (isManualRefresh) {
           throw Exception(
               'Network error. Please check your internet connection.');
         }
+        log('ℹ️ Offline with no notifications, showing empty state');
         return;
       }
 
+      // STEP 4: Fetch from API
+      log('STEP 4: Fetching from API');
       final response = await apiService.getMyNotifications();
 
       if (response.success && response.data != null) {
         _notifications = response.data ?? [];
         _unreadCount =
             _notifications.where((n) => !n.isRead && n.isDelivered).length;
-        _hasLoaded = true;
         _lastLoadTime = DateTime.now();
+        setLoaded();
+        log('✅ Received ${_notifications.length} notifications from API');
 
-        await deviceService.saveCacheItem(
-            AppConstants.notificationsCacheKey, _notifications,
-            ttl: _cacheDuration, isUserSpecific: true);
+        await _saveToHive();
+
+        deviceService.saveCacheItem(
+          AppConstants.notificationsCacheKey,
+          _notifications.map((n) => n.toJson()).toList(),
+          ttl: _cacheDuration,
+          isUserSpecific: true,
+        );
+
+        _notificationsUpdateController.add(_notifications);
+        log('✅ Success! Notifications loaded');
       } else {
-        _error = response.message;
+        // Even if API fails, mark as loaded with existing data or empty
+        setError(response.message);
+        setLoaded();
+        log('❌ API error: ${response.message}');
+        _notificationsUpdateController.add(_notifications);
 
         if (isManualRefresh) {
           throw Exception(response.message);
         }
       }
     } catch (e) {
-      _error = e.toString();
-      if (!_hasLoaded) _error = 'No internet connection';
-      debugLog('NotificationProvider', 'Error loading notifications: $e');
+      log('❌ Error loading notifications: $e');
 
-      // Re-throw for manual refresh
+      setError(e.toString());
+      setLoaded();
+
+      if (_notifications.isEmpty) {
+        await _recoverFromCache();
+      }
+
+      _notificationsUpdateController.add(_notifications);
+
       if (isManualRefresh) {
         rethrow;
       }
     } finally {
-      _isLoading = false;
-      _notifySafely();
+      safeNotify();
     }
   }
 
   Future<void> _refreshFromApi() async {
-    if (_isOffline) return;
+    if (!connectivityService.isOnline) {
+      log('Offline, skipping background refresh');
+      return;
+    }
 
     try {
       final response = await apiService.getMyNotifications();
 
       if (response.success && response.data != null) {
         final newNotifications = response.data ?? [];
+
+        // Merge with existing notifications preserving read status
         final Map<int, notification_model.Notification> notificationMap = {};
         for (final notif in _notifications) {
           notificationMap[notif.logId] = notif;
         }
         for (final notif in newNotifications) {
-          notificationMap[notif.logId] = notif;
+          if (notificationMap.containsKey(notif.logId)) {
+            final existing = notificationMap[notif.logId]!;
+            notificationMap[notif.logId] = notification_model.Notification(
+              logId: notif.logId,
+              notificationId: notif.notificationId,
+              title: notif.title,
+              message: notif.message,
+              deliveryStatus: notif.deliveryStatus,
+              isRead: existing.isRead,
+              receivedAt: notif.receivedAt,
+              sentAt: notif.sentAt,
+              readAt: existing.readAt,
+              deliveredAt: notif.deliveredAt,
+              sentBy: notif.sentBy,
+            );
+          } else {
+            notificationMap[notif.logId] = notif;
+          }
         }
 
         _notifications = notificationMap.values.toList()
@@ -177,29 +401,83 @@ class NotificationProvider with ChangeNotifier {
             _notifications.where((n) => !n.isRead && n.isDelivered).length;
         _lastLoadTime = DateTime.now();
 
-        await deviceService.saveCacheItem(
-            AppConstants.notificationsCacheKey, _notifications,
-            ttl: _cacheDuration, isUserSpecific: true);
-        if (hasListeners) _notifySafely();
+        await _saveToHive();
+
+        deviceService.saveCacheItem(
+          AppConstants.notificationsCacheKey,
+          _notifications.map((n) => n.toJson()).toList(),
+          ttl: _cacheDuration,
+          isUserSpecific: true,
+        );
+
+        _notificationsUpdateController.add(_notifications);
+        log('🔄 Background refresh complete - ${_notifications.length} notifications');
       }
     } catch (e) {
-      debugLog('NotificationProvider', 'Error refreshing from API: $e');
+      log('Background refresh error: $e');
     }
   }
 
-  Future<void> refreshUnreadCount() async {
+  Future<void> _recoverFromCache() async {
+    log('Attempting cache recovery');
+    final userId = await UserSession().getCurrentUserId();
+    if (userId != null && _notificationsBox != null) {
+      try {
+        final cachedKey = 'user_${userId}_notifications';
+        final cachedNotifications = _notificationsBox!.get(cachedKey);
+        if (cachedNotifications != null && cachedNotifications is List) {
+          final List<notification_model.Notification> notifications = [];
+          for (final item in cachedNotifications) {
+            if (item is notification_model.Notification) {
+              notifications.add(item);
+            } else if (item is Map<String, dynamic>) {
+              notifications.add(notification_model.Notification.fromJson(item));
+            }
+          }
+          if (notifications.isNotEmpty) {
+            _notifications = notifications;
+            _unreadCount =
+                _notifications.where((n) => !n.isRead && n.isDelivered).length;
+            _notificationsUpdateController.add(_notifications);
+            log('✅ Recovered ${notifications.length} notifications from Hive after error');
+            return;
+          }
+        }
+      } catch (e) {
+        log('Error recovering from Hive: $e');
+      }
+    }
+
     try {
-      final response = await apiService.getUnreadCount();
-      if (response.success && response.data != null) {
-        _unreadCount = response.data!['unread_count'] ?? 0;
-        notifyListeners();
+      final cachedNotifications =
+          await deviceService.getCacheItem<List<dynamic>>(
+        AppConstants.notificationsCacheKey,
+        isUserSpecific: true,
+      );
+      if (cachedNotifications != null) {
+        final List<notification_model.Notification> notifications = [];
+        for (final json in cachedNotifications) {
+          if (json is Map<String, dynamic>) {
+            notifications.add(notification_model.Notification.fromJson(json));
+          }
+        }
+        if (notifications.isNotEmpty) {
+          _notifications = notifications;
+          _unreadCount =
+              _notifications.where((n) => !n.isRead && n.isDelivered).length;
+          _notificationsUpdateController.add(_notifications);
+          log('✅ Recovered ${notifications.length} notifications from DeviceService after error');
+        }
       }
     } catch (e) {
-      debugLog('NotificationProvider', 'Refresh unread count error: $e');
+      log('Error recovering from DeviceService: $e');
     }
   }
 
+  // ===== MARK AS READ =====
   Future<void> markAsRead(int logId) async {
+    log('markAsRead() for notification $logId');
+
     try {
       final index = _notifications.indexWhere((n) => n.logId == logId);
       if (index != -1) {
@@ -218,120 +496,59 @@ class NotificationProvider with ChangeNotifier {
         );
 
         _unreadCount = unreadNotifications.length;
-        await deviceService.saveCacheItem(
-            AppConstants.notificationsCacheKey, _notifications,
-            ttl: _cacheDuration, isUserSpecific: true);
-        _notifySafely();
 
-        if (!_isOffline) {
-          unawaited(apiService.markNotificationAsRead(logId));
+        await _saveToHive();
+
+        deviceService.saveCacheItem(
+          AppConstants.notificationsCacheKey,
+          _notifications.map((n) => n.toJson()).toList(),
+          ttl: _cacheDuration,
+          isUserSpecific: true,
+        );
+
+        _notificationsUpdateController.add(_notifications);
+        safeNotify();
+
+        if (connectivityService.isOnline) {
+          unawaited(apiService.markNotificationAsRead(logId).catchError((e) {
+            log('⚠️ Error marking as read online, queueing: $e');
+            unawaited(_queueMarkAsReadOffline(logId));
+            return ApiResponse<void>(success: false, message: e.toString());
+          }));
         } else {
-          // Queue for offline sync
           await _queueMarkAsReadOffline(logId);
         }
+        log('✅ Notification $logId marked as read');
       }
     } catch (e) {
-      debugLog('NotificationProvider', 'Error marking as read: $e');
+      log('Error marking as read: $e');
     }
   }
 
   Future<void> _queueMarkAsReadOffline(int logId) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
       final userId = await UserSession().getCurrentUserId();
-
       if (userId == null) return;
 
-      const pendingKey = 'pending_notification_reads';
-      final userPendingKey = '${pendingKey}_$userId';
-      final existingJson = prefs.getString(userPendingKey);
-      List<Map<String, dynamic>> pendingReads = [];
+      offlineQueueManager.addItem(
+        type: AppConstants.queueActionMarkNotificationRead,
+        data: {
+          'log_id': logId,
+          'timestamp': DateTime.now().toIso8601String(),
+          'userId': userId,
+        },
+      );
 
-      if (existingJson != null) {
-        try {
-          pendingReads =
-              List<Map<String, dynamic>>.from(jsonDecode(existingJson));
-        } catch (e) {
-          debugLog('NotificationProvider', 'Error parsing pending reads: $e');
-        }
-      }
-
-      pendingReads.add({
-        'log_id': logId,
-        'timestamp': DateTime.now().toIso8601String(),
-        'retry_count': 0,
-      });
-
-      await prefs.setString(userPendingKey, jsonEncode(pendingReads));
-      debugLog('NotificationProvider',
-          '📝 Queued mark as read for notification $logId');
+      log('📝 Queued mark as read for notification $logId');
     } catch (e) {
-      debugLog('NotificationProvider', 'Error queueing mark as read: $e');
+      log('Error queueing mark as read: $e');
     }
   }
 
-  Future<void> syncPendingReads() async {
-    if (_isOffline) return;
-
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final userId = await UserSession().getCurrentUserId();
-
-      if (userId == null) return;
-
-      const pendingKey = 'pending_notification_reads';
-      final userPendingKey = '${pendingKey}_$userId';
-      final existingJson = prefs.getString(userPendingKey);
-
-      if (existingJson == null) return;
-
-      List<Map<String, dynamic>> pendingReads = [];
-      try {
-        pendingReads =
-            List<Map<String, dynamic>>.from(jsonDecode(existingJson));
-      } catch (e) {
-        debugLog('NotificationProvider', 'Error parsing pending reads: $e');
-        await prefs.remove(userPendingKey);
-        return;
-      }
-
-      if (pendingReads.isEmpty) return;
-
-      debugLog('NotificationProvider',
-          '🔄 Syncing ${pendingReads.length} pending notification reads');
-
-      final List<Map<String, dynamic>> failedReads = [];
-
-      for (final read in pendingReads) {
-        try {
-          await apiService.markNotificationAsRead(read['log_id']);
-          debugLog('NotificationProvider',
-              '✅ Synced read for notification ${read['log_id']}');
-        } catch (e) {
-          debugLog('NotificationProvider', '❌ Failed to sync read: $e');
-
-          final retryCount = (read['retry_count'] ?? 0) + 1;
-          if (retryCount <= 3) {
-            read['retry_count'] = retryCount;
-            failedReads.add(read);
-          }
-        }
-      }
-
-      if (failedReads.isEmpty) {
-        await prefs.remove(userPendingKey);
-        debugLog('NotificationProvider', '✅ All pending reads synced');
-      } else {
-        await prefs.setString(userPendingKey, jsonEncode(failedReads));
-        debugLog('NotificationProvider',
-            '⚠️ ${failedReads.length} reads still pending');
-      }
-    } catch (e) {
-      debugLog('NotificationProvider', 'Error syncing pending reads: $e');
-    }
-  }
-
+  // ===== MARK ALL AS READ =====
   Future<void> markAllAsRead() async {
+    log('markAllAsRead()');
+
     try {
       _notifications = _notifications.map((notification) {
         return notification_model.Notification(
@@ -350,120 +567,173 @@ class NotificationProvider with ChangeNotifier {
       }).toList();
 
       _unreadCount = 0;
-      await deviceService.saveCacheItem(
-          AppConstants.notificationsCacheKey, _notifications,
-          ttl: _cacheDuration, isUserSpecific: true);
-      _notifySafely();
 
-      if (!_isOffline) {
+      await _saveToHive();
+
+      deviceService.saveCacheItem(
+        AppConstants.notificationsCacheKey,
+        _notifications.map((n) => n.toJson()).toList(),
+        ttl: _cacheDuration,
+        isUserSpecific: true,
+      );
+
+      _notificationsUpdateController.add(_notifications);
+      safeNotify();
+
+      if (connectivityService.isOnline) {
         unawaited(apiService.markAllNotificationsAsRead());
       }
+      log('✅ All notifications marked as read');
     } catch (e) {
-      debugLog('NotificationProvider', 'Error marking all as read: $e');
+      log('Error marking all as read: $e');
     }
   }
 
+  // ===== DELETE NOTIFICATION =====
   Future<void> deleteNotification(int logId) async {
+    log('deleteNotification() for notification $logId');
+
     try {
       _notifications.removeWhere((n) => n.logId == logId);
       _unreadCount = unreadNotifications.length;
 
-      await deviceService.saveCacheItem(
-          AppConstants.notificationsCacheKey, _notifications,
-          ttl: _cacheDuration, isUserSpecific: true);
-      _notifySafely();
+      await _saveToHive();
 
-      if (!_isOffline) {
+      deviceService.saveCacheItem(
+        AppConstants.notificationsCacheKey,
+        _notifications.map((n) => n.toJson()).toList(),
+        ttl: _cacheDuration,
+        isUserSpecific: true,
+      );
+
+      _notificationsUpdateController.add(_notifications);
+      safeNotify();
+
+      if (connectivityService.isOnline) {
         unawaited(apiService.deleteNotification(logId).catchError((e) {
-          debugLog('NotificationProvider',
-              ' Backend delete failed, but removed locally: $e');
+          log('⚠️ Error deleting online, will refresh: $e');
           unawaited(loadNotifications(forceRefresh: true));
-
-          return Future.value(ApiResponse<void>(
-            success: false,
-            message: 'Backend delete failed, but removed locally',
-          ));
+          return ApiResponse<void>(success: false, message: e.toString());
         }));
       }
+      log('✅ Notification $logId deleted');
     } catch (e) {
-      debugLog('NotificationProvider', '❌ Delete notification error: $e');
+      log('Delete notification error: $e');
     }
   }
 
-  void addNotification(notification_model.Notification notification) {
-    _notifications.insert(0, notification);
-    if (!notification.isRead && notification.isDelivered) _unreadCount++;
-    unawaited(deviceService.saveCacheItem(
-        AppConstants.notificationsCacheKey, _notifications,
-        ttl: _cacheDuration, isUserSpecific: true));
-    _notifySafely();
-  }
+  // ===== REFRESH UNREAD COUNT =====
+  Future<void> refreshUnreadCount({bool force = false}) async {
+    log('refreshUnreadCount()');
 
-  notification_model.Notification? getNotificationByLogId(int logId) {
-    try {
-      return _notifications.firstWhere((n) => n.logId == logId);
-    } catch (e) {
-      debugLog(
-          'NotificationProvider', 'Error finding notification by logId: $e');
-      return null;
-    }
-  }
-
-  void clearNotifications() {
-    _notifications.clear();
-    _unreadCount = 0;
-    _notifySafely();
-  }
-
-  void clearError() {
-    _error = null;
-    _notifySafely();
-  }
-
-  Future<void> clearUserData() async {
-    debugLog('NotificationProvider', 'Clearing notification data');
-
-    final session = UserSession();
-    final isDifferentUser = !await session.isSameUser();
-    final isLoggingOut = await _isLoggingOut();
-
-    if (!isDifferentUser || !isLoggingOut) {
-      debugLog('NotificationProvider',
-          '✅ Same user - preserving notification cache');
+    if (!connectivityService.isOnline) {
+      log('Offline - using cached unread count');
+      safeNotify();
       return;
     }
 
-    // Clear pending reads
-    final userId = await session.getCurrentUserId();
-    if (userId != null) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('pending_notification_reads_$userId');
+    if (!force && _lastUnreadRefreshAt != null) {
+      final elapsed = DateTime.now().difference(_lastUnreadRefreshAt!);
+      if (elapsed < _minUnreadRefreshInterval) {
+        log('Skipping refresh - too soon');
+        return;
+      }
     }
 
-    await deviceService.clearCacheByPrefix('notifications');
-    _notifications.clear();
-    _unreadCount = 0;
-    _hasLoaded = false;
-    _lastLoadTime = null;
-    _notifySafely();
+    if (_unreadRefreshCompleter != null) {
+      log('Waiting for existing refresh');
+      await _unreadRefreshCompleter!.future;
+      return;
+    }
+
+    _unreadRefreshCompleter = Completer<void>();
+    try {
+      final response = await apiService.getUnreadCount();
+      if (response.success && response.data != null) {
+        _unreadCount = response.data!['unread_count'] ?? 0;
+        _lastUnreadRefreshAt = DateTime.now();
+        safeNotify();
+        log('✅ Refreshed unread count: $_unreadCount');
+      }
+    } catch (e) {
+      log('Refresh unread count error: $e');
+    } finally {
+      _unreadRefreshCompleter?.complete();
+      _unreadRefreshCompleter = null;
+    }
   }
 
-  Future<bool> _isLoggingOut() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
+  // ===== ADD NOTIFICATION (for local updates) =====
+  void addNotification(notification_model.Notification notification) {
+    log('addNotification()');
+
+    _notifications.insert(0, notification);
+    if (!notification.isRead && notification.isDelivered) _unreadCount++;
+
+    unawaited(_saveToHive());
+
+    deviceService.saveCacheItem(
+      AppConstants.notificationsCacheKey,
+      _notifications.map((n) => n.toJson()).toList(),
+      ttl: _cacheDuration,
+      isUserSpecific: true,
+    );
+
+    _notificationsUpdateController.add(_notifications);
+    safeNotify();
+    log('✅ Notification added locally');
+  }
+
+  @override
+  Future<void> onBackgroundRefresh() async {
+    log('Background refresh triggered');
+    if (!isOffline && _notifications.isNotEmpty) {
+      await _refreshFromApi();
+    }
+  }
+
+  @override
+  Future<void> onOnlineRefresh() async {
+    log('Online - refreshing notifications');
+    await loadNotifications(forceRefresh: true);
+  }
+
+  Future<void> clearUserData() async {
+    final session = UserSession();
+    if (!session.shouldClearCacheOnLogout()) return;
+
+    final userId = await session.getCurrentUserId();
+    if (userId != null) {
+      if (_notificationsBox != null) {
+        final cacheKey = 'user_${userId}_notifications';
+        await _notificationsBox!.delete(cacheKey);
+      }
+
+      await deviceService.clearCacheByPrefix('notifications');
+    }
+
+    stopBackgroundRefresh();
+    _notifications.clear();
+    _unreadCount = 0;
+    _lastLoadTime = null;
+
+    _notificationsUpdateController.add(_notifications);
+    safeNotify();
+
+    log('🧹 Cleared user notification data');
+  }
+
+  @override
+  void clearError() {
+    clearError();
   }
 
   @override
   void dispose() {
-    _refreshTimer?.cancel();
+    stopBackgroundRefresh();
+    _notificationsUpdateController.close();
+    _notificationsBox?.close();
+    disposeSubscriptions();
     super.dispose();
-  }
-
-  void _notifySafely() {
-    if (hasListeners) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (hasListeners) notifyListeners();
-      });
-    }
   }
 }

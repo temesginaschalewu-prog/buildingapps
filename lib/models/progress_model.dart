@@ -1,12 +1,29 @@
 import '../utils/parsers.dart';
+import 'package:hive/hive.dart'; // NEW
 
+part 'progress_model.g.dart'; // NEW
+
+@HiveType(typeId: 12) // NEW
 class UserProgress {
+  @HiveField(0)
   final int chapterId;
+
+  @HiveField(1)
   final bool completed;
+
+  @HiveField(2)
   final int videoProgress;
+
+  @HiveField(3)
   final bool notesViewed;
+
+  @HiveField(4)
   final int questionsAttempted;
+
+  @HiveField(5)
   final int questionsCorrect;
+
+  @HiveField(6)
   final DateTime? lastAccessed;
 
   UserProgress({

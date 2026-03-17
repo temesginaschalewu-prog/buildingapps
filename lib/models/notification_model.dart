@@ -1,16 +1,41 @@
 import '../utils/parsers.dart';
+import 'package:hive/hive.dart'; // NEW
 
+part 'notification_model.g.dart'; // NEW
+
+@HiveType(typeId: 11) // NEW
 class Notification {
+  @HiveField(0)
   final int logId;
+
+  @HiveField(1)
   final int? notificationId;
+
+  @HiveField(2)
   final String title;
+
+  @HiveField(3)
   final String message;
+
+  @HiveField(4)
   final String deliveryStatus;
+
+  @HiveField(5)
   final bool isRead;
+
+  @HiveField(6)
   final DateTime receivedAt;
+
+  @HiveField(7)
   final DateTime? sentAt;
+
+  @HiveField(8)
   final DateTime? readAt;
+
+  @HiveField(9)
   final DateTime? deliveredAt;
+
+  @HiveField(10)
   final int? sentBy;
 
   Notification({

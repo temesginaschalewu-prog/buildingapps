@@ -1,11 +1,14 @@
+// lib/screens/category/category_detail_screen.dart
+// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+
 import 'dart:async';
-import 'package:familyacademyclient/services/refresh_service.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:pull_to_refresh/pull_to_refresh.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+
 import '../../models/category_model.dart';
 import '../../models/payment_model.dart';
 import '../../services/device_service.dart';
@@ -28,6 +31,7 @@ import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/helpers.dart';
+import '../../utils/constants.dart';
 
 class CategoryDetailScreen extends StatefulWidget {
   final int categoryId;
@@ -59,14 +63,38 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _initializeScreen());
-    _setupConnectivityListener();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _initialize());
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _setupListeners();
+  }
+
+  @override
+  void dispose() {
+    _subscriptionListener?.cancel();
+    _connectivitySubscription?.cancel();
+    _refreshController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _initialize() async {
+    await _checkConnectivity();
+    _setupConnectivityListener();
+    await _loadFromCache();
+
+    if (_category != null && _hasCachedData) {
+      await _loadCourses();
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      if (!_isOffline) {
+        unawaited(_refreshInBackground());
+      }
+    } else {
+      await _loadFreshData();
+    }
   }
 
   void _setupConnectivityListener() {
@@ -79,7 +107,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
           _pendingCount = connectivityService.pendingActionsCount;
         });
         if (isOnline && !_isRefreshing && _category != null) {
-          _refreshInBackground();
+          unawaited(_refreshInBackground());
         }
       }
     });
@@ -94,26 +122,61 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     });
   }
 
-  Future<void> _checkConnectivity() async {
-    final connectivityService = context.read<ConnectivityService>();
-    setState(() {
-      _isOffline = !connectivityService.isOnline;
-      _pendingCount = connectivityService.pendingActionsCount;
-    });
+  bool _looksLikeNetworkError(Object error) {
+    final message = error.toString().toLowerCase();
+    return message.contains('network error') ||
+        message.contains('socket') ||
+        message.contains('connection') ||
+        message.contains('offline');
   }
 
-  Future<void> _initializeScreen() async {
-    await _checkConnectivity();
-    await _loadFromCache();
+  Future<void> _checkConnectivity() async {
+    final connectivityService = context.read<ConnectivityService>();
+    await connectivityService.checkConnectivity();
+    if (mounted) {
+      setState(() {
+        _isOffline = !connectivityService.isOnline;
+        _pendingCount = connectivityService.pendingActionsCount;
+      });
+    }
+  }
 
-    if (_category != null && _hasCachedData) {
-      setState(() => _isLoading = false);
-      if (!_isOffline) {
-        await _refreshInBackground();
+  Future<void> _loadFreshData() async {
+    final connectivityService = context.read<ConnectivityService>();
+
+    if (!connectivityService.isOnline) {
+      setState(() {
+        _isOffline = true;
+        _isLoading = false;
+      });
+      return;
+    }
+
+    try {
+      final categoryProvider = context.read<CategoryProvider>();
+      if (categoryProvider.categories.isEmpty) {
+        await categoryProvider.loadCategories();
       }
-    } else {
-      setState(() => _isLoading = true);
-      await _loadFreshData();
+      if (categoryProvider.categories.isEmpty && !_isOffline) {
+        await categoryProvider.loadCategories(forceRefresh: true);
+      }
+
+      _category = categoryProvider.getCategoryById(widget.categoryId);
+      if (_category == null) throw Exception(AppStrings.categoryNotFound);
+
+      await _checkAccessStatus();
+      await _loadPaymentInfo();
+      await _loadCourses();
+
+      await Future.delayed(const Duration(milliseconds: 100));
+      await _saveToCache();
+
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    } catch (e) {
+      debugLog('CategoryDetail', 'Error loading fresh data: $e');
+      if (!mounted) return;
       setState(() => _isLoading = false);
     }
   }
@@ -133,6 +196,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
         _hasPendingPayment = cachedCategory['has_pending_payment'] ?? false;
         _rejectionReason = cachedCategory['rejection_reason'];
         _hasCachedData = true;
+        debugLog('CategoryDetail', '✅ Loaded from cache');
       } else {
         final categoryProvider = context.read<CategoryProvider>();
         if (categoryProvider.categories.isNotEmpty) {
@@ -145,35 +209,9 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     }
   }
 
-  Future<void> _loadFreshData() async {
-    final connectivityService = context.read<ConnectivityService>();
-    if (!connectivityService.isOnline) {
-      setState(() => _isOffline = true);
-      return;
-    }
-
-    try {
-      final categoryProvider = context.read<CategoryProvider>();
-      if (categoryProvider.categories.isEmpty) {
-        await categoryProvider.loadCategories(forceRefresh: true);
-      }
-
-      _category = categoryProvider.getCategoryById(widget.categoryId);
-      if (_category == null) throw Exception('Category not found');
-
-      await _checkAccessStatus();
-      await _loadPaymentInfo();
-      await _loadCourses();
-      await _saveToCache();
-    } catch (e) {
-      debugLog('CategoryDetail', 'Error loading fresh data: $e');
-      setState(() => _isOffline = true);
-    }
-  }
-
   Future<void> _refreshInBackground() async {
     if (_isRefreshing) return;
-    _isRefreshing = true;
+    if (mounted) setState(() => _isRefreshing = true);
 
     try {
       final categoryProvider = context.read<CategoryProvider>();
@@ -197,7 +235,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
 
       if (mounted) setState(() {});
     } finally {
-      if (mounted) _isRefreshing = false;
+      if (mounted) setState(() => _isRefreshing = false);
     }
   }
 
@@ -205,17 +243,15 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     if (_isRefreshing) return;
 
     final connectivityService = context.read<ConnectivityService>();
+
     if (!connectivityService.isOnline) {
-      setState(() {
-        _isOffline = true;
-        _isRefreshing = false;
-      });
       _refreshController.refreshFailed();
-      SnackbarService().showOffline(context, action: 'refresh');
+      SnackbarService().showOffline(context, action: AppStrings.refresh);
       return;
     }
 
     setState(() => _isRefreshing = true);
+    var didFail = false;
 
     try {
       final categoryProvider = context.read<CategoryProvider>();
@@ -233,20 +269,30 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
       await _loadPaymentInfo(forceRefresh: true, isManualRefresh: true);
       if (!mounted) return;
 
-      // FIXED: Remove && !_isOffline from forceRefresh parameter
       await _loadCourses(forceRefresh: true, isManualRefresh: true);
       if (!mounted) return;
 
       await _saveToCache();
 
       setState(() => _isOffline = false);
-      SnackbarService().showSuccess(context, 'Category updated');
+      SnackbarService().showSuccess(context, AppStrings.categoryUpdated);
     } catch (e) {
-      setState(() => _isOffline = true);
-      SnackbarService().showError(context, 'Failed to refresh');
+      if (!mounted) return;
+      if (_looksLikeNetworkError(e)) {
+        setState(() => _isOffline = true);
+        _refreshController.refreshFailed();
+        SnackbarService().showOffline(context, action: AppStrings.refresh);
+      } else {
+        setState(() => _isOffline = false);
+        _refreshController.refreshFailed();
+        SnackbarService().showError(context, AppStrings.refreshFailed);
+      }
+      didFail = true;
     } finally {
-      setState(() => _isRefreshing = false);
-      _refreshController.refreshCompleted();
+      if (mounted) setState(() => _isRefreshing = false);
+      if (!didFail) {
+        _refreshController.refreshCompleted();
+      }
     }
   }
 
@@ -270,7 +316,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
         .hasActiveSubscriptionForCategory(widget.categoryId);
     if (newAccess != _hasAccess && mounted) {
       setState(() => _hasAccess = newAccess);
-      await _saveToCache();
+      unawaited(_saveToCache());
     }
   }
 
@@ -308,14 +354,22 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     }
   }
 
-  // FIXED: This is the critical change - removed && !_isOffline
   Future<void> _loadCourses(
       {bool forceRefresh = false, bool isManualRefresh = false}) async {
     if (_category == null) return;
     final courseProvider = context.read<CourseProvider>();
+
+    if (_isOffline) {
+      await courseProvider.loadCoursesByCategory(
+        widget.categoryId,
+        hasAccess: _hasAccess,
+      );
+      return;
+    }
+
     await courseProvider.loadCoursesByCategory(
       widget.categoryId,
-      forceRefresh: forceRefresh, // ← REMOVED the && !_isOffline condition
+      forceRefresh: forceRefresh,
       hasAccess: _hasAccess,
       isManualRefresh: isManualRefresh,
     );
@@ -325,7 +379,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     if (_category == null) return;
     try {
       final deviceService = context.read<DeviceService>();
-      await deviceService.saveCacheItem(
+      deviceService.saveCacheItem(
         'category_${widget.categoryId}',
         {
           'category': _category!.toJson(),
@@ -344,6 +398,12 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
 
   void _handlePaymentAction() {
     if (_category == null) return;
+
+    if (_isOffline) {
+      SnackbarService().showOffline(context, action: AppStrings.makePayment);
+      return;
+    }
+
     if (_hasPendingPayment) {
       _showPendingPaymentDialog();
       return;
@@ -370,19 +430,19 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
   void _showPendingPaymentDialog() {
     AppDialog.info(
       context: context,
-      title: 'Payment Pending',
+      title: AppStrings.paymentPending,
       message:
-          'You have a pending payment for ${_category?.name}. Please wait for admin verification (1-3 working days).',
+          '${AppStrings.youHavePendingPayment} ${_category?.name}. ${AppStrings.pleaseWaitForVerification}',
     );
   }
 
   void _showRejectedPaymentDialog() {
     AppDialog.warning(
       context: context,
-      title: 'Payment Rejected',
+      title: AppStrings.paymentRejected,
       message: _rejectionReason != null
-          ? 'Reason: $_rejectionReason'
-          : 'Your previous payment was rejected.',
+          ? '${AppStrings.reason}: $_rejectionReason'
+          : AppStrings.yourPaymentWasRejected,
     ).then((_) {
       context.push('/payment', extra: {
         'category': _category,
@@ -433,8 +493,9 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
         SizedBox(
           height: headerHeight,
           width: double.infinity,
-          child:
-              (_category!.imageUrl != null && _category!.imageUrl!.isNotEmpty)
+          child: _isOffline
+              ? _buildLocalPlaceholder()
+              : (_category!.imageUrl != null && _category!.imageUrl!.isNotEmpty)
                   ? CachedNetworkImage(
                       imageUrl: _category!.imageUrl!,
                       fit: BoxFit.cover,
@@ -465,10 +526,26 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                _category!.name,
-                style: AppTextStyles.displaySmall(context)
-                    .copyWith(color: Colors.white, fontWeight: FontWeight.w700),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _category!.name,
+                      style: AppTextStyles.displaySmall(context).copyWith(
+                          color: Colors.white, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  if (_isOffline)
+                    Padding(
+                      padding: EdgeInsets.only(
+                          left: ResponsiveValues.spacingS(context)),
+                      child: Icon(
+                        Icons.wifi_off_rounded,
+                        size: ResponsiveValues.iconSizeS(context),
+                        color: AppColors.warning,
+                      ),
+                    ),
+                ],
               ),
               if (_category!.description != null &&
                   _category!.description!.isNotEmpty)
@@ -484,61 +561,33 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                   ),
                 ),
               SizedBox(height: ResponsiveValues.spacingM(context)),
-              Row(
-                children: [
-                  Container(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: ResponsiveValues.spacingM(context),
-                      vertical: ResponsiveValues.spacingXS(context),
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(
-                          ResponsiveValues.radiusFull(context)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.menu_book_rounded,
-                            size: 16, color: Colors.white),
-                        SizedBox(width: ResponsiveValues.spacingXS(context)),
-                        Text(
-                          '${_category!.courseCount} courses',
-                          style: AppTextStyles.labelSmall(context)
-                              .copyWith(color: Colors.white),
-                        ),
-                      ],
-                    ),
+              if (_category!.price != null &&
+                  _category!.price! > 0 &&
+                  !_isOffline) ...[
+                Container(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: ResponsiveValues.spacingM(context),
+                    vertical: ResponsiveValues.spacingXS(context),
                   ),
-                  if (_category!.price != null && _category!.price! > 0) ...[
-                    SizedBox(width: ResponsiveValues.spacingM(context)),
-                    Container(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: ResponsiveValues.spacingM(context),
-                        vertical: ResponsiveValues.spacingXS(context),
+                  decoration: BoxDecoration(
+                    color: AppColors.telegramBlue,
+                    borderRadius: BorderRadius.circular(
+                        ResponsiveValues.radiusFull(context)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.attach_money,
+                          size: 16, color: Colors.white),
+                      Text(
+                        _category!.priceDisplay,
+                        style: AppTextStyles.labelSmall(context).copyWith(
+                            color: Colors.white, fontWeight: FontWeight.w700),
                       ),
-                      decoration: BoxDecoration(
-                        color: AppColors.telegramBlue,
-                        borderRadius: BorderRadius.circular(
-                            ResponsiveValues.radiusFull(context)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.attach_money,
-                              size: 16, color: Colors.white),
-                          Text(
-                            _category!.priceDisplay,
-                            style: AppTextStyles.labelSmall(context).copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ],
-              ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -571,9 +620,9 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
               child: Center(
                 child: Text(
                   _category!.initials,
-                  style: const TextStyle(
+                  style: TextStyle(
                       color: Colors.white,
-                      fontSize: 32,
+                      fontSize: ResponsiveValues.fontCategoryInitials(context),
                       fontWeight: FontWeight.bold),
                 ),
               ),
@@ -581,9 +630,9 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
             SizedBox(height: ResponsiveValues.spacingL(context)),
             Text(
               _category!.name,
-              style: const TextStyle(
+              style: TextStyle(
                   color: Colors.white,
-                  fontSize: 24,
+                  fontSize: ResponsiveValues.fontCategoryTitle(context),
                   fontWeight: FontWeight.bold),
             ),
           ],
@@ -600,8 +649,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: CustomAppBar(
-        title: 'Category',
-        subtitle: 'Loading...',
+        title: AppStrings.category,
+        subtitle: AppStrings.loading,
         leading: AppButton.icon(
             icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
       ),
@@ -638,46 +687,59 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final courseProvider = context.watch<CourseProvider>();
+    final courses = courseProvider.getCoursesByCategory(widget.categoryId);
+    final isLoadingCourses =
+        courseProvider.isLoadingCategory(widget.categoryId);
+    final hasVisibleContent = courses.isNotEmpty || _hasCachedData;
+
+    // 1. LOADING STATE
     if (_isLoading && !_hasCachedData) {
       return _buildSkeletonLoader();
     }
 
+    // 2. NO CATEGORY STATE
     if (_category == null) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
         appBar: CustomAppBar(
-          title: 'Category',
-          subtitle: 'Not found',
+          title: AppStrings.category,
+          subtitle: AppStrings.notFound,
           leading: AppButton.icon(
               icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
+          showOfflineIndicator: _isOffline,
         ),
         body: Center(
           child: AppEmptyState.error(
-            title: 'Category not found',
+            title: AppStrings.categoryNotFound,
             message: _isOffline && !_hasCachedData
-                ? 'No cached data available. Please check your connection.'
-                : 'The category you\'re looking for doesn\'t exist.',
+                ? AppStrings.noCachedDataAvailable
+                : AppStrings.categoryDoesNotExist,
             onRetry: _manualRefresh,
           ),
         ),
       );
     }
 
-    final courseProvider = context.watch<CourseProvider>();
-    final courses = courseProvider.getCoursesByCategory(widget.categoryId);
-    final isLoadingCourses =
-        courseProvider.isLoadingCategory(widget.categoryId);
+    // 3. CHECK IF WE HAVE CACHED DATA BUT STILL LOADING
+    if (_hasCachedData && _isLoading) {
+      // We have cached data but still loading fresh data - show cached content
+      // This prevents shimmering when we have cached data available
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
 
+    // 3. MAIN CONTENT
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: CustomAppBar(
         title: _category!.name,
-        subtitle: _isRefreshing
-            ? 'Refreshing...'
-            : (_isOffline ? 'Offline mode' : 'Category details'),
+        subtitle:
+            _isOffline ? AppStrings.offlineMode : AppStrings.categoryDetails,
         leading: AppButton.icon(
             icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
-        customTrailing: _isRefreshing
+        customTrailing: (_isRefreshing && hasVisibleContent)
             ? Container(
                 width: ResponsiveValues.appBarButtonSize(context),
                 height: ResponsiveValues.appBarButtonSize(context),
@@ -698,6 +760,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                 ),
               )
             : null,
+        showOfflineIndicator: _isOffline,
       ),
       body: Container(
         decoration: BoxDecoration(
@@ -727,51 +790,68 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
           child: CustomScrollView(
             physics: const BouncingScrollPhysics(),
             slivers: [
+              // Header
               SliverToBoxAdapter(child: _buildHeader()),
+
+              // Access Banner
               SliverToBoxAdapter(child: _buildAccessBanner()),
+
+              // Pending count banner (if offline with pending actions)
+              if (_isOffline && _pendingCount > 0)
+                SliverToBoxAdapter(
+                  child: Container(
+                    margin: EdgeInsets.all(ResponsiveValues.spacingM(context)),
+                    padding: ResponsiveValues.cardPadding(context),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          AppColors.info.withValues(alpha: 0.2),
+                          AppColors.info.withValues(alpha: 0.1)
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(
+                          ResponsiveValues.radiusMedium(context)),
+                      border: Border.all(
+                          color: AppColors.info.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.schedule_rounded,
+                            color: AppColors.info,
+                            size: ResponsiveValues.iconSizeS(context)),
+                        SizedBox(width: ResponsiveValues.spacingM(context)),
+                        Expanded(
+                          child: Text(
+                            '$_pendingCount pending change${_pendingCount > 1 ? 's' : ''}',
+                            style: AppTextStyles.bodySmall(context)
+                                .copyWith(color: AppColors.info),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+              // Courses Title
               SliverPadding(
                 padding: ResponsiveValues.screenPadding(context),
                 sliver: SliverToBoxAdapter(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Courses',
-                        style: AppTextStyles.titleLarge(context)
-                            .copyWith(fontWeight: FontWeight.w700),
-                      ),
-                      if (!isLoadingCourses && courses.isNotEmpty)
-                        Container(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: ResponsiveValues.spacingM(context),
-                            vertical: ResponsiveValues.spacingXS(context),
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.blueFaded,
-                            borderRadius: BorderRadius.circular(
-                                ResponsiveValues.radiusFull(context)),
-                            border: Border.all(
-                                color: AppColors.telegramBlue
-                                    .withValues(alpha: 0.3)),
-                          ),
-                          child: Text(
-                            '${courses.length}',
-                            style: AppTextStyles.labelMedium(context).copyWith(
-                              color: AppColors.telegramBlue,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                    ],
+                  child: Text(
+                    AppStrings.courses,
+                    style: AppTextStyles.titleLarge(context)
+                        .copyWith(fontWeight: FontWeight.w700),
                   ),
                 ),
               ),
+
+              // Courses List
               SliverPadding(
                 padding: ResponsiveValues.screenPadding(context),
                 sliver: SliverList(
                   delegate: SliverChildBuilderDelegate(
                     (context, index) {
-                      if (_isLoading && courses.isEmpty) {
+                      // Loading shimmer
+                      if ((_isLoading || isLoadingCourses) && courses.isEmpty) {
                         return Padding(
                           padding: EdgeInsets.only(
                               bottom: ResponsiveValues.spacingL(context)),
@@ -780,6 +860,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                         );
                       }
 
+                      // Course card
                       if (index < courses.length) {
                         final course = courses[index];
                         return Padding(
@@ -799,8 +880,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                         );
                       }
 
-                      if (!_isLoading &&
-                          !isLoadingCourses &&
+                      // Empty state
+                      if (!(_isLoading || isLoadingCourses) &&
                           courses.isEmpty &&
                           index == 0) {
                         return Center(
@@ -808,10 +889,10 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                             padding: EdgeInsets.symmetric(
                                 vertical: ResponsiveValues.spacingXXL(context)),
                             child: AppEmptyState.noData(
-                              dataType: 'Courses',
+                              dataType: AppStrings.courses,
                               customMessage: _isOffline
-                                  ? 'No cached courses available. Connect to load courses.'
-                                  : 'Courses will appear here when available.',
+                                  ? AppStrings.noCachedCourses
+                                  : AppStrings.coursesWillAppearHere,
                               onRefresh: _manualRefresh,
                               isOffline: _isOffline,
                               pendingCount: _pendingCount,
@@ -835,13 +916,5 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
         ),
       ),
     ).animate().fadeIn(duration: AppThemes.animationMedium);
-  }
-
-  @override
-  void dispose() {
-    _subscriptionListener?.cancel();
-    _connectivitySubscription?.cancel();
-    _refreshController.dispose();
-    super.dispose();
   }
 }

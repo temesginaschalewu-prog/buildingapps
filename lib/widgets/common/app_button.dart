@@ -15,8 +15,8 @@ class AppButton extends StatelessWidget {
   final bool expanded;
   final EdgeInsetsGeometry? padding;
   final double? borderRadius;
-  final bool requiresOnline; // NEW: Whether this button requires internet
-  final String? offlineTooltip; // NEW: Tooltip to show when offline
+  final bool requiresOnline;
+  final String? offlineTooltip;
 
   const AppButton({
     super.key,
@@ -141,7 +141,6 @@ class AppButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Check if button should be disabled due to offline
     final connectivity = ConnectivityService();
     final isOfflineDisabled = requiresOnline && connectivity.isOffline;
     final effectiveOnPressed =

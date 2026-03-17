@@ -1,55 +1,68 @@
+// lib/providers/device_provider.dart
+// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+
 import 'dart:async';
+import 'package:familyacademyclient/services/offline_queue_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:hive/hive.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../services/user_session.dart';
 import '../services/connectivity_service.dart';
+import '../services/hive_service.dart';
 import '../utils/constants.dart';
-import '../utils/helpers.dart';
+import 'base_provider.dart';
 
-class DeviceProvider with ChangeNotifier {
+/// PRODUCTION-READY Device Provider with Full Offline Support
+class DeviceProvider extends ChangeNotifier
+    with BaseProvider<DeviceProvider>, OfflineAwareProvider<DeviceProvider> {
+  @override
+  final ConnectivityService connectivityService;
+
   final ApiService apiService;
   final DeviceService deviceService;
-  final ConnectivityService connectivityService;
+  final HiveService hiveService;
 
   String? _deviceId;
   String? _tvDeviceId;
   String? _pairingCode;
   DateTime? _pairingExpiresAt;
   bool _isPairing = false;
-  bool _isLoading = false;
-  bool _isInitialized = false;
-  String? _error;
-  bool _isOffline = false;
+
+  // Hive box
+  Box<Map<String, dynamic>>? _deviceBox;
 
   DeviceProvider({
     required this.apiService,
-    required DeviceService deviceService,
+    required this.deviceService,
     required this.connectivityService,
-  }) : deviceService = DeviceService() {
+    required this.hiveService,
+  }) {
+    log('DeviceProvider constructor called');
+    initializeOfflineAware(
+      connectivity: connectivityService,
+      queue: OfflineQueueManager(),
+    );
     _initializeAsync();
-    _setupConnectivityListener();
   }
 
-  void _setupConnectivityListener() {
-    connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (_isOffline != !isOnline) {
-        _isOffline = !isOnline;
-        notifyListeners();
-      }
-    });
+  // Open Hive box
+  Future<void> _openHiveBox() async {
+    try {
+      _deviceBox = await Hive.openBox<Map<String, dynamic>>('device_box');
+      log('✅ Hive box opened');
+    } catch (e) {
+      log('⚠️ Error opening Hive box: $e');
+    }
   }
 
+  // ===== GETTERS =====
   String? get deviceId => _deviceId;
   String? get tvDeviceId => _tvDeviceId;
   String? get pairingCode => _pairingCode;
   DateTime? get pairingExpiresAt => _pairingExpiresAt;
   bool get isPairing => _isPairing;
-  bool get isLoading => _isLoading;
-  bool get isInitialized => _isInitialized;
-  String? get error => _error;
-  bool get isOffline => _isOffline;
   bool get hasTvDevice => _tvDeviceId != null && _tvDeviceId!.isNotEmpty;
   bool get isPairingExpired => _pairingExpiresAt == null
       ? true
@@ -71,24 +84,55 @@ class DeviceProvider with ChangeNotifier {
     return '$minutes:${seconds.toString().padLeft(2, '0')}';
   }
 
+  // ===== INITIALIZATION =====
   Future<void> _initializeAsync() async {
     try {
-      await deviceService.init();
+      await _openHiveBox();
+
       _deviceId = await deviceService.getDeviceId();
       _tvDeviceId = await deviceService.getTvDeviceId();
       await _loadPairingCode();
-      _isInitialized = true;
+      await _loadCachedData();
+
+      setLoaded();
+      markInitialized();
+      log('✅ DeviceProvider initialized');
     } catch (e) {
-      _error = e.toString();
+      setError(e.toString());
+      log('❌ Initialization error: $e');
+    }
+  }
+
+  // Load cached data from Hive
+  Future<void> _loadCachedData() async {
+    try {
+      if (_deviceBox == null) return;
+
+      final cachedTvId = _deviceBox!.get('tv_device_id');
+      if (cachedTvId != null && _tvDeviceId == null) {
+        _tvDeviceId = cachedTvId['value']?.toString();
+      }
+
+      final cachedPairing = _deviceBox!.get('pairing_info');
+      if (cachedPairing != null && _pairingCode == null) {
+        _pairingCode = cachedPairing['code']?.toString();
+        final expiresAtStr = cachedPairing['expires_at']?.toString();
+        if (expiresAtStr != null) {
+          _pairingExpiresAt = DateTime.parse(expiresAtStr);
+        }
+        _isPairing = true;
+      }
+
+      log('✅ Loaded cached data from Hive');
+    } catch (e) {
+      log('Error loading cached data: $e');
     }
   }
 
   Future<void> initialize({bool isManualRefresh = false}) async {
-    if (_isInitialized) return;
+    if (isInitialized) return;
 
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
+    setLoading();
 
     try {
       await _initializeAsync();
@@ -97,12 +141,27 @@ class DeviceProvider with ChangeNotifier {
         rethrow;
       }
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      setLoaded();
+      safeNotify();
     }
   }
 
   Future<void> _loadPairingCode() async {
+    // Try Hive first
+    if (_deviceBox != null) {
+      final cachedPairing = _deviceBox!.get('pairing_info');
+      if (cachedPairing != null) {
+        _pairingCode = cachedPairing['code']?.toString();
+        final expiresAtStr = cachedPairing['expires_at']?.toString();
+        if (expiresAtStr != null) {
+          _pairingExpiresAt = DateTime.parse(expiresAtStr);
+        }
+        _isPairing = true;
+        return;
+      }
+    }
+
+    // Fall back to SharedPreferences
     final prefs = await SharedPreferences.getInstance();
     final code = prefs.getString(AppConstants.pairingCodeKey);
     final expiresAt = prefs.getInt(AppConstants.pairingExpiresAtKey);
@@ -111,37 +170,53 @@ class DeviceProvider with ChangeNotifier {
       _pairingCode = code;
       _pairingExpiresAt = DateTime.fromMillisecondsSinceEpoch(expiresAt);
       _isPairing = true;
+
+      // Save to Hive for next time
+      if (_deviceBox != null) {
+        await _deviceBox!.put('pairing_info', {
+          'code': code,
+          'expires_at': _pairingExpiresAt!.toIso8601String(),
+        });
+      }
     }
   }
 
   Future<void> _savePairingCode(String code, int expiresInSeconds) async {
+    final expiresAt = DateTime.now().add(Duration(seconds: expiresInSeconds));
+
+    // Save to Hive
+    if (_deviceBox != null) {
+      await _deviceBox!.put('pairing_info', {
+        'code': code,
+        'expires_at': expiresAt.toIso8601String(),
+      });
+    }
+
+    // Save to SharedPreferences as fallback
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(AppConstants.pairingCodeKey, code);
     await prefs.setInt(
       AppConstants.pairingExpiresAtKey,
-      DateTime.now()
-          .add(Duration(seconds: expiresInSeconds))
-          .millisecondsSinceEpoch,
+      expiresAt.millisecondsSinceEpoch,
     );
 
     _pairingCode = code;
-    _pairingExpiresAt = DateTime.now().add(Duration(seconds: expiresInSeconds));
+    _pairingExpiresAt = expiresAt;
     _isPairing = true;
-    notifyListeners();
+    safeNotify();
   }
 
+  // ===== PAIR TV DEVICE =====
   Future<void> pairTvDevice(String tvDeviceId) async {
-    if (!_isInitialized) await initialize();
+    if (!isInitialized) await initialize();
 
-    if (_isOffline) {
-      _error = 'You are offline. Please connect to pair device.';
-      notifyListeners();
+    if (isOffline) {
+      setError('You are offline. Please connect to pair device.');
+      safeNotify();
       return;
     }
 
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
+    setLoading();
 
     try {
       final response = await apiService.pairTvDevice(tvDeviceId);
@@ -151,29 +226,29 @@ class DeviceProvider with ChangeNotifier {
       final expiresIn = data['expires_in'] ?? 600;
 
       await _savePairingCode(code, expiresIn);
-      notifyListeners();
+      setLoaded();
+      safeNotify();
+
+      log('✅ Paired TV device, code: $code');
     } catch (e) {
-      _error = e.toString();
-      notifyListeners();
+      setError(e.toString());
+      setLoaded();
+      safeNotify();
       rethrow;
-    } finally {
-      _isLoading = false;
-      notifyListeners();
     }
   }
 
+  // ===== VERIFY TV PAIRING =====
   Future<void> verifyTvPairing(String code) async {
-    if (!_isInitialized) await initialize();
+    if (!isInitialized) await initialize();
 
-    if (_isOffline) {
-      _error = 'You are offline. Please connect to verify pairing.';
-      notifyListeners();
+    if (isOffline) {
+      setError('You are offline. Please connect to verify pairing.');
+      safeNotify();
       return;
     }
 
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
+    setLoading();
 
     try {
       final response = await apiService.verifyTvPairing(code);
@@ -182,50 +257,66 @@ class DeviceProvider with ChangeNotifier {
       await deviceService.saveTvDeviceId(data['tv_device_id']);
       _tvDeviceId = data['tv_device_id'];
 
+      // Save to Hive
+      if (_deviceBox != null) {
+        await _deviceBox!.put('tv_device_id', {'value': _tvDeviceId});
+      }
+
       await _clearPairingState();
       await apiService.updateDevice('tv', data['tv_device_id']);
 
-      notifyListeners();
+      setLoaded();
+      safeNotify();
+      log('✅ Verified TV pairing');
     } catch (e) {
-      _error = e.toString();
-      notifyListeners();
+      setError(e.toString());
+      setLoaded();
+      safeNotify();
       rethrow;
-    } finally {
-      _isLoading = false;
-      notifyListeners();
     }
   }
 
+  // ===== UNPAIR TV DEVICE =====
   Future<void> unpairTvDevice() async {
-    if (!_isInitialized) await initialize();
+    if (!isInitialized) await initialize();
 
-    if (_isOffline) {
-      _error = 'You are offline. Please connect to unpair device.';
-      notifyListeners();
+    if (isOffline) {
+      setError('You are offline. Please connect to unpair device.');
+      safeNotify();
       return;
     }
 
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
+    setLoading();
 
     try {
       await apiService.unpairTvDevice();
       await deviceService.clearTvDeviceId();
       _tvDeviceId = null;
+
+      // Clear from Hive
+      if (_deviceBox != null) {
+        await _deviceBox!.delete('tv_device_id');
+      }
+
       await apiService.updateDevice('tv', '');
-      notifyListeners();
+      setLoaded();
+      safeNotify();
+      log('✅ Unpaired TV device');
     } catch (e) {
-      _error = e.toString();
-      notifyListeners();
+      setError(e.toString());
+      setLoaded();
+      safeNotify();
       rethrow;
-    } finally {
-      _isLoading = false;
-      notifyListeners();
     }
   }
 
   Future<void> _clearPairingState() async {
+    // Clear from Hive
+    if (_deviceBox != null) {
+      await _deviceBox!.delete('pairing_info');
+    }
+
+    // Clear from SharedPreferences
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(AppConstants.pairingCodeKey);
     await prefs.remove(AppConstants.pairingExpiresAtKey);
@@ -233,54 +324,46 @@ class DeviceProvider with ChangeNotifier {
     _pairingCode = null;
     _pairingExpiresAt = null;
     _isPairing = false;
-    notifyListeners();
+    safeNotify();
   }
 
   Future<void> cancelPairing() async {
     await _clearPairingState();
   }
 
-  Future<Map<String, dynamic>> getDeviceInfo() async {
-    if (!_isInitialized) await initialize();
-    try {
-      return await deviceService.getDeviceInfo();
-    } catch (e) {
-      return {};
-    }
-  }
-
+  // ===== CLEAR USER DATA =====
   Future<void> clearUserData() async {
-    debugLog('DeviceProvider', 'Clearing device data');
-
     final session = UserSession();
-    final isDifferentUser = !await session.isSameUser();
-    final isLoggingOut = await _isLoggingOut();
+    if (!session.shouldClearCacheOnLogout()) return;
 
-    if (!isDifferentUser || !isLoggingOut) {
-      debugLog('DeviceProvider', '✅ Same user - preserving device cache');
-      return;
-    }
+    // Clear device-specific data (TV pairing is device-specific, not user-specific)
+    // But we'll clear TV device ID as it might be linked to user
 
     _tvDeviceId = null;
     _pairingCode = null;
     _pairingExpiresAt = null;
     _isPairing = false;
 
+    // Clear from Hive
+    if (_deviceBox != null) {
+      await _deviceBox!.delete('tv_device_id');
+      await _deviceBox!.delete('pairing_info');
+    }
+
+    // Clear from SharedPreferences
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(AppConstants.pairingCodeKey);
     await prefs.remove(AppConstants.pairingExpiresAtKey);
     await deviceService.clearTvDeviceId();
 
-    notifyListeners();
+    safeNotify();
+    log('🧹 Cleared device data');
   }
 
-  Future<bool> _isLoggingOut() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
-  }
-
-  void clearError() {
-    _error = null;
-    notifyListeners();
+  @override
+  void dispose() {
+    _deviceBox?.close();
+    disposeSubscriptions();
+    super.dispose();
   }
 }

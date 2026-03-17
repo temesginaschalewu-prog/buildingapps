@@ -1,70 +1,293 @@
+// lib/providers/chatbot_provider.dart
+// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:hive/hive.dart';
 import '../services/api_service.dart';
 import '../services/user_session.dart';
 import '../services/connectivity_service.dart';
+import '../services/hive_service.dart';
+import '../services/offline_queue_manager.dart';
 import '../models/chatbot_model.dart';
 import '../utils/constants.dart';
-import '../utils/helpers.dart';
 import '../utils/parsers.dart';
+import '../utils/api_response.dart';
+import 'base_provider.dart';
 
-class ChatbotProvider with ChangeNotifier {
-  final ApiService apiService;
+class ChatbotProvider extends ChangeNotifier
+    with BaseProvider<ChatbotProvider>, OfflineAwareProvider<ChatbotProvider> {
+  @override
   final ConnectivityService connectivityService;
+
+  final ApiService apiService;
+  final HiveService hiveService;
+  final OfflineQueueManager offlineQueueManager;
 
   List<ChatbotMessage> _messages = [];
   List<ChatbotConversation> _conversations = [];
   ChatbotConversation? _currentConversation;
 
-  bool _isLoading = false;
   bool _isLoadingMessages = false;
   bool _isLoadingConversations = false;
-  String? _error;
-  bool _isOffline = false;
 
-  int _remainingMessages = 30;
-  int _dailyLimit = 30;
+  // ✅ Following ProgressProvider pattern
+  bool _hasLoadedConversations = false;
+  bool _hasLoadedMessages = false;
+  bool _hasInitialData = false;
+
+  int _apiCallCount = 0; // ✅ ADDED: missing field
+
+  static const int _clientDailyLimit = 20;
+  static const Duration _usageFetchCooldown = Duration(seconds: 20);
+
+  int _remainingMessages = _clientDailyLimit;
+  int _dailyLimit = _clientDailyLimit;
   int _totalMessages = 0;
   int _totalConversations = 0;
+  String? _usageDayKey;
+  DateTime? _lastUsageFetchAt;
+  Completer<void>? _usageStatsCompleter;
 
   int _currentPage = 1;
   bool _hasMoreConversations = true;
   bool _isLoadingMore = false;
 
+  Box? _messagesBox;
+  Box? _conversationsBox;
+  Box? _usageBox;
+
   ChatbotProvider({
     required this.apiService,
     required this.connectivityService,
+    required this.hiveService,
+    required this.offlineQueueManager,
   }) {
-    _loadCachedData();
-    loadConversations();
-    loadUsageStats();
-    _setupConnectivityListener();
+    log('ChatbotProvider constructor called');
+    initializeOfflineAware(
+      connectivity: connectivityService,
+      queue: offlineQueueManager,
+    );
+    _registerQueueProcessors();
+    _init();
   }
 
-  void _setupConnectivityListener() {
-    connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (_isOffline != !isOnline) {
-        _isOffline = !isOnline;
-        if (!_isOffline) {
-          syncPendingMessages();
-        }
-        notifyListeners();
+  void _registerQueueProcessors() {
+    offlineQueueManager.registerProcessor(
+      AppConstants.queueActionSendChatMessage,
+      _processSendChatMessage,
+    );
+    log('✅ Registered queue processors');
+  }
+
+  Future<bool> _processSendChatMessage(Map<String, dynamic> data) async {
+    try {
+      log('Processing offline chat message');
+      final response = await apiService.sendChatbotMessage(
+        data['message'],
+        conversationId: data['conversation_id'],
+      );
+      return response.success;
+    } catch (e) {
+      log('Error processing chat message: $e');
+      return false;
+    }
+  }
+
+  Future<void> _init() async {
+    log('_init() START');
+    await _openHiveBoxes();
+    await _loadCachedData();
+
+    // ✅ Mark that we have initial data if anything is cached
+    _hasInitialData = _conversations.isNotEmpty || _messages.isNotEmpty;
+
+    log('_init() END');
+  }
+
+  Future<void> _openHiveBoxes() async {
+    try {
+      if (!Hive.isBoxOpen(AppConstants.hiveChatbotMessagesBox)) {
+        _messagesBox = await Hive.openBox(AppConstants.hiveChatbotMessagesBox);
+      } else {
+        _messagesBox = Hive.box(AppConstants.hiveChatbotMessagesBox);
       }
-    });
+
+      if (!Hive.isBoxOpen(AppConstants.hiveChatbotConversationsBox)) {
+        _conversationsBox =
+            await Hive.openBox(AppConstants.hiveChatbotConversationsBox);
+      } else {
+        _conversationsBox = Hive.box(AppConstants.hiveChatbotConversationsBox);
+      }
+
+      if (!Hive.isBoxOpen('chatbot_usage_box')) {
+        _usageBox = await Hive.openBox('chatbot_usage_box');
+      } else {
+        _usageBox = Hive.box('chatbot_usage_box');
+      }
+
+      log('✅ Hive boxes opened');
+    } catch (e) {
+      log('⚠️ Error opening Hive boxes: $e');
+    }
   }
 
+  String _todayKey() {
+    final now = DateTime.now().toLocal();
+    final month = now.month.toString().padLeft(2, '0');
+    final day = now.day.toString().padLeft(2, '0');
+    return '${now.year}-$month-$day';
+  }
+
+  Future<void> _loadCachedData() async {
+    try {
+      final userId = await UserSession().getCurrentUserId();
+      if (userId == null) return;
+
+      // Load conversations from Hive
+      if (_conversationsBox != null) {
+        final conversationsKey = 'user_${userId}_conversations';
+        final cachedConversations = _conversationsBox!.get(conversationsKey);
+        if (cachedConversations != null && cachedConversations is List) {
+          final List<ChatbotConversation> conversations = [];
+          for (final item in cachedConversations) {
+            if (item is ChatbotConversation) {
+              conversations.add(item);
+            } else if (item is Map<String, dynamic>) {
+              conversations.add(ChatbotConversation.fromJson(item));
+            }
+          }
+          if (conversations.isNotEmpty) {
+            _conversations = conversations;
+            _hasLoadedConversations = true;
+            log('✅ Loaded ${_conversations.length} conversations from Hive');
+          }
+        }
+      }
+
+      // Load current conversation from Hive
+      if (_conversationsBox != null) {
+        final currentKey = 'user_${userId}_current';
+        final currentConv = _conversationsBox!.get(currentKey);
+        if (currentConv != null &&
+            currentConv is List &&
+            currentConv.isNotEmpty) {
+          if (currentConv.first is ChatbotConversation) {
+            _currentConversation = currentConv.first;
+          } else if (currentConv.first is Map<String, dynamic>) {
+            _currentConversation =
+                ChatbotConversation.fromJson(currentConv.first);
+          }
+        }
+      }
+
+      // Load messages for current conversation
+      if (_currentConversation != null && _messagesBox != null) {
+        final messagesKey =
+            'user_${userId}_conv_${_currentConversation!.id}_messages';
+        final cachedMessages = _messagesBox!.get(messagesKey);
+        if (cachedMessages != null && cachedMessages is List) {
+          final List<ChatbotMessage> messages = [];
+          for (final item in cachedMessages) {
+            if (item is ChatbotMessage) {
+              messages.add(item);
+            } else if (item is Map<String, dynamic>) {
+              messages.add(ChatbotMessage.fromJson(item));
+            }
+          }
+          if (messages.isNotEmpty) {
+            _messages = messages;
+            _hasLoadedMessages = true;
+            log('✅ Loaded ${_messages.length} messages from Hive');
+          }
+        }
+      }
+
+      // Load usage stats from Hive
+      if (_usageBox != null) {
+        final usageKey = 'user_${userId}_usage';
+        final usageMap = _usageBox!.get(usageKey);
+        if (usageMap != null && usageMap is Map) {
+          final cachedDay = usageMap['day_key']?.toString();
+          final today = _todayKey();
+          _usageDayKey = cachedDay;
+          _dailyLimit = _clientDailyLimit;
+
+          if (cachedDay == today) {
+            final cachedRemaining = Parsers.parseInt(
+              usageMap['remaining'],
+              _clientDailyLimit,
+            );
+            _remainingMessages = cachedRemaining.clamp(0, _clientDailyLimit);
+          } else {
+            _remainingMessages = _clientDailyLimit;
+          }
+
+          _totalMessages = Parsers.parseInt(usageMap['total_messages']);
+          _totalConversations =
+              Parsers.parseInt(usageMap['total_conversations']);
+          log('✅ Loaded usage stats from Hive');
+        }
+      }
+    } catch (e) {
+      log('Error loading cache: $e');
+    }
+  }
+
+  Future<void> _saveToCache() async {
+    try {
+      final userId = await UserSession().getCurrentUserId();
+      if (userId == null) return;
+
+      if (_conversationsBox != null) {
+        final conversationsKey = 'user_${userId}_conversations';
+        await _conversationsBox!.put(conversationsKey, _conversations);
+        log('💾 Saved conversations to Hive');
+      }
+
+      if (_conversationsBox != null && _currentConversation != null) {
+        final currentKey = 'user_${userId}_current';
+        await _conversationsBox!.put(currentKey, [_currentConversation!]);
+        log('💾 Saved current conversation to Hive');
+      }
+
+      if (_currentConversation != null && _messagesBox != null) {
+        final messagesKey =
+            'user_${userId}_conv_${_currentConversation!.id}_messages';
+        await _messagesBox!.put(messagesKey, _messages);
+        log('💾 Saved messages to Hive');
+      }
+
+      if (_usageBox != null) {
+        final usageKey = 'user_${userId}_usage';
+        final usage = {
+          'remaining': _remainingMessages,
+          'daily_limit': _dailyLimit,
+          'day_key': _usageDayKey ?? _todayKey(),
+          'total_messages': _totalMessages,
+          'total_conversations': _totalConversations,
+        };
+        await _usageBox!.put(usageKey, usage);
+        log('💾 Saved usage stats to Hive');
+      }
+    } catch (e) {
+      log('Error saving to cache: $e');
+    }
+  }
+
+  // ===== GETTERS =====
   List<ChatbotMessage> get messages => List.unmodifiable(_messages);
   List<ChatbotConversation> get conversations =>
       List.unmodifiable(_conversations);
   ChatbotConversation? get currentConversation => _currentConversation;
 
-  bool get isLoading => _isLoading;
   bool get isLoadingMessages => _isLoadingMessages;
   bool get isLoadingConversations => _isLoadingConversations;
-  String? get error => _error;
-  bool get isOffline => _isOffline;
+
+  // ✅ Following ProgressProvider pattern
+  bool get hasLoadedConversations => _hasLoadedConversations;
+  bool get hasLoadedMessages => _hasLoadedMessages;
+  bool get hasInitialData => _hasInitialData;
 
   int get remainingMessages => _remainingMessages;
   int get dailyLimit => _dailyLimit;
@@ -75,134 +298,138 @@ class ChatbotProvider with ChangeNotifier {
   bool get hasMoreConversations => _hasMoreConversations;
   bool get isLoadingMore => _isLoadingMore;
 
-  Future<void> _loadCachedData() async {
+  // ===== LOAD USAGE STATS =====
+  Future<void> loadUsageStats({bool force = false}) async {
+    log('loadUsageStats()');
+
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final userId = await UserSession().getCurrentUserId();
-      if (userId == null) return;
-
-      final messagesKey = 'chatbot_messages_$userId';
-      final conversationsKey = 'chatbot_conversations_$userId';
-      final currentConvKey = 'chatbot_current_$userId';
-      final usageKey = 'chatbot_usage_$userId';
-
-      final messagesJson = prefs.getString(messagesKey);
-      if (messagesJson != null) {
-        final List<dynamic> messagesList =
-            jsonDecode(messagesJson) as List<dynamic>;
-        _messages = messagesList
-            .map((m) => ChatbotMessage.fromJson(m as Map<String, dynamic>))
-            .toList();
+      if (isOffline) {
+        log('Offline, using cached stats');
+        return;
       }
 
-      final conversationsJson = prefs.getString(conversationsKey);
-      if (conversationsJson != null) {
-        final List<dynamic> convList =
-            jsonDecode(conversationsJson) as List<dynamic>;
-        _conversations = convList
-            .map((c) => ChatbotConversation.fromJson(c as Map<String, dynamic>))
-            .toList();
+      if (!force && _lastUsageFetchAt != null) {
+        final elapsed = DateTime.now().difference(_lastUsageFetchAt!);
+        if (elapsed < _usageFetchCooldown) {
+          log('Skipping usage fetch - too soon');
+          return;
+        }
       }
 
-      final currentConvJson = prefs.getString(currentConvKey);
-      if (currentConvJson != null) {
-        final Map<String, dynamic> convMap =
-            jsonDecode(currentConvJson) as Map<String, dynamic>;
-        _currentConversation = ChatbotConversation.fromJson(convMap);
+      if (_usageStatsCompleter != null) {
+        log('Waiting for existing fetch');
+        await _usageStatsCompleter!.future;
+        return;
       }
 
-      final usageJson = prefs.getString(usageKey);
-      if (usageJson != null) {
-        final Map<String, dynamic> usageMap =
-            jsonDecode(usageJson) as Map<String, dynamic>;
-        _remainingMessages = Parsers.parseInt(usageMap['remaining'], 30);
-        _dailyLimit = Parsers.parseInt(usageMap['daily_limit'], 30);
-        _totalMessages = Parsers.parseInt(usageMap['total_messages']);
-        _totalConversations = Parsers.parseInt(usageMap['total_conversations']);
-      }
+      _usageStatsCompleter = Completer<void>();
 
-      debugLog('ChatbotProvider', '📦 Loaded cached data for user $userId');
-    } catch (e) {
-      debugLog('ChatbotProvider', 'Error loading cache: $e');
-    }
-  }
+      log('Fetching usage stats from API');
+      final response = await apiService.getChatbotUsage();
 
-  Future<void> _saveToCache() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final userId = await UserSession().getCurrentUserId();
-      if (userId == null) return;
+      if (response.success && response.data != null) {
+        final stats = ChatbotUsageStats.fromJson(response.data!);
+        final today = _todayKey();
 
-      final messagesKey = 'chatbot_messages_$userId';
-      final conversationsKey = 'chatbot_conversations_$userId';
-      final currentConvKey = 'chatbot_current_$userId';
-      final usageKey = 'chatbot_usage_$userId';
+        if (_usageDayKey != today) {
+          _usageDayKey = today;
+          _remainingMessages = _clientDailyLimit;
+        }
 
-      await prefs.setString(
-          messagesKey, jsonEncode(_messages.map((m) => m.toJson()).toList()));
-      await prefs.setString(conversationsKey,
-          jsonEncode(_conversations.map((c) => c.toJson()).toList()));
+        final fetched = stats.remaining.clamp(0, _clientDailyLimit);
+        if (fetched < _remainingMessages) {
+          log('Updating remaining messages from $_remainingMessages to $fetched via usage stats');
+          _remainingMessages = fetched;
+        }
 
-      if (_currentConversation != null) {
-        await prefs.setString(
-            currentConvKey, jsonEncode(_currentConversation!.toJson()));
-      }
-
-      final usage = {
-        'remaining': _remainingMessages,
-        'daily_limit': _dailyLimit,
-        'total_messages': _totalMessages,
-        'total_conversations': _totalConversations,
-      };
-      await prefs.setString(usageKey, jsonEncode(usage));
-
-      debugLog('ChatbotProvider', '💾 Saved chatbot data to cache');
-    } catch (e) {
-      debugLog('ChatbotProvider', 'Error saving to cache: $e');
-    }
-  }
-
-  Future<void> loadUsageStats() async {
-    try {
-      if (_isOffline) return;
-
-      final response = await apiService.dio.get('/chatbot/usage');
-      if (response.statusCode == 200 && response.data['success'] == true) {
-        final stats = ChatbotUsageStats.fromJson(
-            response.data['data'] as Map<String, dynamic>);
-        _remainingMessages = stats.remaining;
-        _dailyLimit = stats.limit;
+        _dailyLimit = _clientDailyLimit;
         _totalMessages = stats.totalMessages;
         _totalConversations = stats.totalConversations;
-        debugLog('ChatbotProvider',
-            '📊 Usage stats loaded: $_remainingMessages/$_dailyLimit');
-        notifyListeners();
+        _lastUsageFetchAt = DateTime.now();
+
         await _saveToCache();
+        log('✅ Loaded usage stats from API');
       }
     } catch (e) {
-      debugLog('ChatbotProvider', 'Error loading usage stats: $e');
+      log('Error loading usage stats: $e');
+    } finally {
+      _usageStatsCompleter?.complete();
+      _usageStatsCompleter = null;
+      safeNotify();
     }
   }
 
-  Future<void> loadConversations(
-      {bool forceRefresh = false, bool isManualRefresh = false}) async {
-    if (forceRefresh) {
-      _currentPage = 1;
-      _hasMoreConversations = true;
-      _conversations.clear();
+  // ===== LOAD CONVERSATIONS =====
+  Future<void> loadConversations({
+    bool forceRefresh = false,
+    bool isManualRefresh = false,
+  }) async {
+    _apiCallCount++;
+    final callId = _apiCallCount;
+
+    log('loadConversations() CALL #$callId');
+
+    if (isManualRefresh && isOffline) {
+      throw Exception('Network error. Please check your internet connection.');
     }
 
-    if (_isLoadingConversations || !_hasMoreConversations) return;
+    // ✅ Return cached data immediately if already loaded
+    if (_hasLoadedConversations && !forceRefresh && !isManualRefresh) {
+      log('✅ Already have conversations, returning cached');
+      safeNotify();
+      return;
+    }
+
+    if (_isLoadingConversations && !forceRefresh) {
+      log('⏳ Already loading, skipping');
+      return;
+    }
 
     _isLoadingConversations = true;
     _isLoadingMore = _currentPage > 1;
-    notifyListeners();
+    safeNotify();
 
     try {
-      if (_isOffline) {
+      // STEP 1: Try Hive for first page
+      if (!forceRefresh && _currentPage == 1 && _conversations.isEmpty) {
+        log('STEP 1: Checking Hive cache');
+        final userId = await UserSession().getCurrentUserId();
+        if (userId != null && _conversationsBox != null) {
+          final cachedConversations =
+              _conversationsBox!.get('user_${userId}_conversations');
+
+          if (cachedConversations != null && cachedConversations is List) {
+            final List<ChatbotConversation> conversations = [];
+            for (final item in cachedConversations) {
+              if (item is ChatbotConversation) {
+                conversations.add(item);
+              } else if (item is Map<String, dynamic>) {
+                conversations.add(ChatbotConversation.fromJson(item));
+              }
+            }
+            if (conversations.isNotEmpty) {
+              _conversations = conversations;
+              _hasLoadedConversations = true;
+              _hasInitialData = true;
+              _isLoadingConversations = false;
+              _isLoadingMore = false;
+              log('✅ Loaded ${_conversations.length} conversations from Hive');
+
+              if (!isOffline && !isManualRefresh) {
+                unawaited(_refreshConversationsInBackground());
+              }
+              return;
+            }
+          }
+        }
+      }
+
+      // STEP 2: Check offline status
+      if (isOffline) {
+        log('STEP 2: Offline mode');
+        _hasLoadedConversations = true;
         _isLoadingConversations = false;
         _isLoadingMore = false;
-        notifyListeners();
 
         if (isManualRefresh) {
           throw Exception(
@@ -211,45 +438,47 @@ class ChatbotProvider with ChangeNotifier {
         return;
       }
 
-      final response = await apiService.dio.get(
-        '/chatbot/conversations',
-        queryParameters: {'page': _currentPage, 'limit': 20},
+      // STEP 3: Fetch from API
+      log('STEP 3: Fetching from API');
+      final response = await apiService.getChatbotConversations(
+        page: _currentPage,
       );
 
-      if (response.statusCode == 200 && response.data['success'] == true) {
-        final List<dynamic> data = response.data['data'] as List<dynamic>;
-        final newConversations = data
-            .map((json) =>
-                ChatbotConversation.fromJson(json as Map<String, dynamic>))
-            .toList();
+      if (response.success) {
+        final newConversations = response.data ?? [];
 
         if (forceRefresh) {
           _conversations = newConversations;
         } else {
-          _conversations.addAll(newConversations);
+          final existingIds = _conversations.map((c) => c.id).toSet();
+          final uniqueNew = newConversations
+              .where((c) => !existingIds.contains(c.id))
+              .toList();
+          _conversations.addAll(uniqueNew);
         }
 
-        final pagination =
-            response.data['pagination'] as Map<String, dynamic>? ?? {};
-        final totalPages = Parsers.parseInt(pagination['pages'], 1);
-        _hasMoreConversations = _currentPage < totalPages;
+        _hasMoreConversations = newConversations.length == 20;
 
         if (_hasMoreConversations) {
           _currentPage++;
         }
 
-        debugLog('ChatbotProvider',
-            '📋 Loaded ${newConversations.length} conversations');
+        _hasLoadedConversations = true;
+        _hasInitialData = true;
+
         await _saveToCache();
+        log('✅ Loaded ${newConversations.length} conversations from API');
       } else {
         if (isManualRefresh) {
-          throw Exception(
-              response.data['message'] ?? 'Failed to load conversations');
+          throw Exception(response.message);
         }
       }
     } catch (e) {
-      _error = 'Failed to load conversations';
-      debugLog('ChatbotProvider', 'Error loading conversations: $e');
+      setError('Failed to load conversations');
+      log('Error loading conversations: $e');
+
+      // ✅ Always mark as loaded even on error
+      _hasLoadedConversations = true;
 
       if (isManualRefresh) {
         rethrow;
@@ -257,20 +486,118 @@ class ChatbotProvider with ChangeNotifier {
     } finally {
       _isLoadingConversations = false;
       _isLoadingMore = false;
-      notifyListeners();
+      safeNotify();
     }
   }
 
-  Future<void> loadMessages(int conversationId,
-      {bool forceRefresh = false, bool isManualRefresh = false}) async {
-    _isLoadingMessages = true;
-    _error = null;
-    notifyListeners();
+  Future<void> _refreshConversationsInBackground() async {
+    if (isOffline) return;
 
     try {
-      if (_isOffline) {
+      final response = await apiService.getChatbotConversations();
+      if (response.success) {
+        final freshConversations = response.data ?? [];
+
+        final existingIds = _conversations.map((c) => c.id).toSet();
+        for (final conv in freshConversations) {
+          if (!existingIds.contains(conv.id)) {
+            _conversations.insert(0, conv);
+          } else {
+            final index = _conversations.indexWhere((c) => c.id == conv.id);
+            if (index != -1) {
+              _conversations[index] = conv;
+            }
+          }
+        }
+
+        await _saveToCache();
+        safeNotify();
+        log('🔄 Background refresh for conversations complete');
+      }
+    } catch (e) {
+      log('Background refresh error: $e');
+    }
+  }
+
+  // ===== LOAD MESSAGES =====
+  Future<void> loadMessages(
+    int conversationId, {
+    bool forceRefresh = false,
+    bool isManualRefresh = false,
+  }) async {
+    _apiCallCount++;
+    final callId = _apiCallCount;
+
+    log('loadMessages() CALL #$callId for conversation $conversationId');
+
+    if (isManualRefresh && isOffline) {
+      throw Exception('Network error. Please check your internet connection.');
+    }
+
+    // ✅ Return cached data immediately if already loaded
+    if (_hasLoadedMessages &&
+        !forceRefresh &&
+        !isManualRefresh &&
+        _messages.isNotEmpty) {
+      log('✅ Already have messages, returning cached');
+      safeNotify();
+      return;
+    }
+
+    _isLoadingMessages = true;
+    safeNotify();
+
+    try {
+      // STEP 1: Try Hive first
+      if (!forceRefresh) {
+        log('STEP 1: Checking Hive cache');
+        final userId = await UserSession().getCurrentUserId();
+        if (userId != null && _messagesBox != null) {
+          final messagesKey = 'user_${userId}_conv_${conversationId}_messages';
+          final cachedMessages = _messagesBox!.get(messagesKey);
+
+          if (cachedMessages != null && cachedMessages is List) {
+            final List<ChatbotMessage> messages = [];
+            for (final item in cachedMessages) {
+              if (item is ChatbotMessage) {
+                messages.add(item);
+              } else if (item is Map<String, dynamic>) {
+                messages.add(ChatbotMessage.fromJson(item));
+              }
+            }
+            if (messages.isNotEmpty) {
+              _messages = messages;
+              _hasLoadedMessages = true;
+              _hasInitialData = true;
+              _isLoadingMessages = false;
+
+              _currentConversation = _conversations.firstWhere(
+                (c) => c.id == conversationId,
+                orElse: () => ChatbotConversation(
+                  id: conversationId,
+                  title: 'Conversation',
+                  createdAt: DateTime.now(),
+                  updatedAt: DateTime.now(),
+                  messageCount: _messages.length,
+                ),
+              );
+
+              log('✅ Loaded ${_messages.length} messages from Hive for conversation $conversationId');
+
+              if (!isOffline && !isManualRefresh) {
+                unawaited(_refreshMessagesInBackground(conversationId));
+              }
+              return;
+            }
+          }
+        }
+      }
+
+      // STEP 2: Check offline status
+      if (isOffline) {
+        log('STEP 2: Offline mode');
+        _hasLoadedMessages = true;
         _isLoadingMessages = false;
-        notifyListeners();
 
         if (isManualRefresh) {
           throw Exception(
@@ -279,16 +606,15 @@ class ChatbotProvider with ChangeNotifier {
         return;
       }
 
-      final response = await apiService.dio.get(
-        '/chatbot/conversations/$conversationId/messages',
-      );
+      // STEP 3: Fetch from API
+      log('STEP 3: Fetching from API');
+      final response =
+          await apiService.getChatbotConversationMessages(conversationId);
 
-      if (response.statusCode == 200 && response.data['success'] == true) {
-        final List<dynamic> data = response.data['data'] as List<dynamic>;
-        _messages = data
-            .map(
-                (json) => ChatbotMessage.fromJson(json as Map<String, dynamic>))
-            .toList();
+      if (response.success) {
+        _messages = response.data ?? [];
+        _hasLoadedMessages = true;
+        _hasInitialData = true;
 
         _currentConversation = _conversations.firstWhere(
           (c) => c.id == conversationId,
@@ -301,45 +627,84 @@ class ChatbotProvider with ChangeNotifier {
           ),
         );
 
-        debugLog('ChatbotProvider', '💬 Loaded ${_messages.length} messages');
+        final userId = await UserSession().getCurrentUserId();
+        if (userId != null && _messagesBox != null) {
+          final messagesKey = 'user_${userId}_conv_${conversationId}_messages';
+          await _messagesBox!.put(messagesKey, _messages);
+        }
+
         await _saveToCache();
+        log('✅ Loaded ${_messages.length} messages from API');
       } else {
         if (isManualRefresh) {
-          throw Exception(
-              response.data['message'] ?? 'Failed to load messages');
+          throw Exception(response.message);
         }
       }
     } catch (e) {
-      _error = 'Failed to load messages';
-      debugLog('ChatbotProvider', 'Error loading messages: $e');
+      setError('Failed to load messages');
+      log('Error loading messages: $e');
+
+      // ✅ Always mark as loaded even on error
+      _hasLoadedMessages = true;
 
       if (isManualRefresh) {
         rethrow;
       }
     } finally {
       _isLoadingMessages = false;
-      notifyListeners();
+      safeNotify();
     }
   }
 
-  Future<Map<String, dynamic>> sendMessage(
+  Future<void> _refreshMessagesInBackground(int conversationId) async {
+    if (isOffline) return;
+
+    try {
+      final response =
+          await apiService.getChatbotConversationMessages(conversationId);
+      if (response.success) {
+        final freshMessages = response.data ?? [];
+
+        if (freshMessages.length != _messages.length) {
+          _messages = freshMessages;
+
+          final userId = await UserSession().getCurrentUserId();
+          if (userId != null && _messagesBox != null) {
+            final messagesKey =
+                'user_${userId}_conv_${conversationId}_messages';
+            await _messagesBox!.put(messagesKey, _messages);
+          }
+
+          safeNotify();
+          log('🔄 Background refresh for messages complete');
+        }
+      }
+    } catch (e) {
+      log('Background refresh error: $e');
+    }
+  }
+
+  // ===== SEND MESSAGE =====
+  Future<ApiResponse<Map<String, dynamic>>> sendMessage(
     String message, {
     int? conversationId,
   }) async {
+    _apiCallCount++;
+    final callId = _apiCallCount;
+
+    log('sendMessage() CALL #$callId');
+
     if (message.trim().isEmpty) {
-      return {'success': false, 'error': 'Message cannot be empty'};
+      return ApiResponse.error(message: 'Message cannot be empty');
     }
 
-    if (!hasMessagesLeft) {
-      return {
-        'success': false,
-        'error': 'Daily message limit reached. Please try again tomorrow.',
-      };
+    if (!hasMessagesLeft && !isOffline) {
+      return ApiResponse.error(
+        message: 'Daily message limit reached. Please try again tomorrow.',
+      );
     }
 
-    _isLoading = true;
-    _error = null;
-
+    // Add user message immediately for better UX
     final tempUserMessage = ChatbotMessage(
       id: DateTime.now().millisecondsSinceEpoch,
       role: 'user',
@@ -347,19 +712,15 @@ class ChatbotProvider with ChangeNotifier {
       timestamp: DateTime.now(),
     );
     _messages.add(tempUserMessage);
-    notifyListeners();
+    safeNotify();
 
     try {
-      if (_isOffline) {
-        // Queue message for offline sync
+      if (isOffline) {
+        log('📝 Offline - queuing message');
         await _queueMessageOffline(message, conversationId);
-        _isLoading = false;
-        notifyListeners();
-        return {
-          'success': true,
-          'queued': true,
-          'message': 'Message saved offline. Will send when online.'
-        };
+        return ApiResponse.queued(
+          message: 'Message saved offline. Will send when online.',
+        );
       }
 
       final List<String> history = [];
@@ -369,180 +730,108 @@ class ChatbotProvider with ChangeNotifier {
             history.add(_messages[i].content);
           }
         }
-
         if (history.length > 10) {
           history.removeRange(0, history.length - 10);
         }
       }
 
-      final response = await apiService.dio.post(
-        '/chatbot/chat',
-        data: {
-          'message': message,
-          'conversation_id': conversationId,
-          'history': history,
-        },
+      final response = await apiService.sendChatbotMessage(
+        message,
+        conversationId: conversationId,
+        history: history,
       );
 
-      if (response.statusCode == 200 && response.data['success'] == true) {
-        final Map<String, dynamic> data =
-            response.data['data'] as Map<String, dynamic>;
-
+      if (response.success && response.data != null) {
         final aiMessage = ChatbotMessage(
           id: DateTime.now().millisecondsSinceEpoch + 1,
           role: 'assistant',
-          content: data['reply'] as String,
+          content: response.data!['reply'] as String,
           timestamp: DateTime.now(),
         );
         _messages.add(aiMessage);
 
-        if (data['remaining'] != null) {
-          _remainingMessages = Parsers.parseInt(data['remaining']);
-          debugLog(
-              'ChatbotProvider', ' Updated remaining: $_remainingMessages');
+        final userId = await UserSession().getCurrentUserId();
+        if (userId != null && _messagesBox != null) {
+          final convId = response.data!['conversation_id'] ?? conversationId;
+          if (convId != null) {
+            final messagesKey = 'user_${userId}_conv_${convId}_messages';
+            await _messagesBox!.put(messagesKey, _messages);
+          }
         }
 
-        await loadUsageStats();
+        final decremented = _remainingMessages > 0 ? _remainingMessages - 1 : 0;
+        if (response.data!.containsKey('remaining')) {
+          final int serverRemaining =
+              Parsers.parseInt(response.data!['remaining'])
+                  .clamp(0, _clientDailyLimit);
+          _remainingMessages =
+              serverRemaining < decremented ? serverRemaining : decremented;
+        } else {
+          _remainingMessages = decremented;
+        }
+        _dailyLimit = _clientDailyLimit;
+        _usageDayKey = _todayKey();
 
-        if (conversationId == null && data['conversation_id'] != null) {
-          await loadConversations(forceRefresh: true);
+        if (conversationId == null &&
+            response.data!['conversation_id'] != null) {
+          // Refresh conversations in background
+          unawaited(loadConversations(forceRefresh: true));
         }
 
         await _saveToCache();
-        notifyListeners();
+        log('✅ Message sent successfully');
 
-        return {
-          'success': true,
-          'reply': data['reply'],
-          'conversationId': data['conversation_id'],
-          'suggestedQuestions': data['suggested_questions'] ?? [],
-        };
+        return response;
       } else {
-        throw Exception(response.data['message'] ?? 'Failed to send message');
+        _messages.remove(tempUserMessage);
+        return ApiResponse.error(message: response.message);
       }
     } catch (e) {
       _messages.remove(tempUserMessage);
-      _error = 'Failed to send message: $e';
-      debugLog('ChatbotProvider', 'Error sending message: $e');
-      notifyListeners();
+      setError('Failed to send message: $e');
+      log('❌ Error sending message: $e');
 
-      return {'success': false, 'error': _error};
+      return ApiResponse.error(message: 'Failed to send message: $e');
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      safeNotify();
     }
   }
 
   Future<void> _queueMessageOffline(String message, int? conversationId) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
       final userId = await UserSession().getCurrentUserId();
-
       if (userId == null) return;
 
-      const pendingKey = 'pending_chat_messages';
-      final userPendingKey = '${pendingKey}_$userId';
-      final existingJson = prefs.getString(userPendingKey);
-      List<Map<String, dynamic>> pendingMessages = [];
+      offlineQueueManager.addItem(
+        type: AppConstants.queueActionSendChatMessage,
+        data: {
+          'message': message,
+          'conversation_id': conversationId,
+          'userId': userId,
+          'timestamp': DateTime.now().toIso8601String(),
+        },
+      );
 
-      if (existingJson != null) {
-        try {
-          pendingMessages =
-              List<Map<String, dynamic>>.from(jsonDecode(existingJson));
-        } catch (e) {
-          debugLog('ChatbotProvider', 'Error parsing pending messages: $e');
-        }
-      }
-
-      pendingMessages.add({
-        'message': message,
-        'conversation_id': conversationId,
-        'timestamp': DateTime.now().toIso8601String(),
-        'retry_count': 0,
-      });
-
-      await prefs.setString(userPendingKey, jsonEncode(pendingMessages));
-      debugLog('ChatbotProvider', '📝 Queued message for offline sync');
+      log('📝 Queued message for offline sync');
     } catch (e) {
-      debugLog('ChatbotProvider', 'Error queueing message: $e');
+      log('Error queueing message: $e');
     }
   }
 
-  Future<void> syncPendingMessages() async {
-    if (_isOffline) return;
-
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final userId = await UserSession().getCurrentUserId();
-
-      if (userId == null) return;
-
-      const pendingKey = 'pending_chat_messages';
-      final userPendingKey = '${pendingKey}_$userId';
-      final existingJson = prefs.getString(userPendingKey);
-
-      if (existingJson == null) return;
-
-      List<Map<String, dynamic>> pendingMessages = [];
-      try {
-        pendingMessages =
-            List<Map<String, dynamic>>.from(jsonDecode(existingJson));
-      } catch (e) {
-        debugLog('ChatbotProvider', 'Error parsing pending messages: $e');
-        await prefs.remove(userPendingKey);
-        return;
-      }
-
-      if (pendingMessages.isEmpty) return;
-
-      debugLog('ChatbotProvider',
-          '🔄 Syncing ${pendingMessages.length} pending messages');
-
-      final List<Map<String, dynamic>> failedMessages = [];
-
-      for (final msg in pendingMessages) {
-        try {
-          await sendMessage(
-            msg['message'],
-            conversationId: msg['conversation_id'],
-          );
-          debugLog('ChatbotProvider', '✅ Synced message');
-        } catch (e) {
-          debugLog('ChatbotProvider', '❌ Failed to sync message: $e');
-
-          final retryCount = (msg['retry_count'] ?? 0) + 1;
-          if (retryCount <= 3) {
-            msg['retry_count'] = retryCount;
-            failedMessages.add(msg);
-          }
-        }
-      }
-
-      if (failedMessages.isEmpty) {
-        await prefs.remove(userPendingKey);
-        debugLog('ChatbotProvider', '✅ All pending messages synced');
-      } else {
-        await prefs.setString(userPendingKey, jsonEncode(failedMessages));
-        debugLog('ChatbotProvider',
-            '⚠️ ${failedMessages.length} messages still pending');
-      }
-    } catch (e) {
-      debugLog('ChatbotProvider', 'Error syncing pending messages: $e');
-    }
-  }
-
+  // ===== RENAME CONVERSATION =====
   Future<bool> renameConversation(int conversationId, String title) async {
+    log('renameConversation($conversationId, $title)');
+
     try {
-      if (_isOffline) {
+      if (isOffline) {
+        log('❌ Offline - cannot rename');
         return false;
       }
 
-      final response = await apiService.dio.put(
-        '/chatbot/conversations/$conversationId',
-        data: {'title': title},
-      );
+      final response =
+          await apiService.renameChatbotConversation(conversationId, title);
 
-      if (response.statusCode == 200 && response.data['success'] == true) {
+      if (response.success) {
         final index = _conversations.indexWhere((c) => c.id == conversationId);
         if (index != -1) {
           _conversations[index] = ChatbotConversation(
@@ -569,49 +858,64 @@ class ChatbotProvider with ChangeNotifier {
         }
 
         await _saveToCache();
-        notifyListeners();
+        safeNotify();
+        log('✅ Conversation renamed successfully');
         return true;
       }
       return false;
     } catch (e) {
-      debugLog('ChatbotProvider', 'Error renaming conversation: $e');
+      log('Error renaming conversation: $e');
       return false;
     }
   }
 
+  // ===== DELETE CONVERSATION =====
   Future<bool> deleteConversation(int conversationId) async {
+    log('deleteConversation($conversationId)');
+
     try {
-      if (_isOffline) {
+      if (isOffline) {
+        log('❌ Offline - cannot delete');
         return false;
       }
 
-      final response = await apiService.dio.delete(
-        '/chatbot/conversations/$conversationId',
-      );
+      final response =
+          await apiService.deleteChatbotConversation(conversationId);
 
-      if (response.statusCode == 200 && response.data['success'] == true) {
+      if (response.success) {
         _conversations.removeWhere((c) => c.id == conversationId);
 
         if (_currentConversation?.id == conversationId) {
           _currentConversation = null;
           _messages.clear();
+          _hasLoadedMessages = false;
+
+          final userId = await UserSession().getCurrentUserId();
+          if (userId != null && _messagesBox != null) {
+            final messagesKey =
+                'user_${userId}_conv_${conversationId}_messages';
+            await _messagesBox!.delete(messagesKey);
+          }
         }
 
         await _saveToCache();
-        notifyListeners();
+        safeNotify();
+        log('✅ Conversation deleted successfully');
         return true;
       }
       return false;
     } catch (e) {
-      debugLog('ChatbotProvider', 'Error deleting conversation: $e');
+      log('Error deleting conversation: $e');
       return false;
     }
   }
 
   void clearCurrentConversation() {
+    log('clearCurrentConversation()');
     _messages.clear();
     _currentConversation = null;
-    notifyListeners();
+    _hasLoadedMessages = false;
+    safeNotify();
     _saveToCache();
   }
 
@@ -620,72 +924,21 @@ class ChatbotProvider with ChangeNotifier {
     await loadConversations();
   }
 
-  Future<void> clearUserData() async {
-    debugLog(
-        'ChatbotProvider', '🔍 Checking if chatbot data should be cleared');
-
-    final session = UserSession();
-    final currentUserId = await session.getCurrentUserId();
-    final lastUserId = await session.getLastUserId();
-    final isDifferentUser = currentUserId != lastUserId;
-    final isLoggingOut = await _isLoggingOut();
-
-    if (!isDifferentUser || !isLoggingOut) {
-      debugLog('ChatbotProvider', '✅ Same user - preserving chatbot cache');
-      return;
+  @override
+  Future<void> onOnlineRefresh() async {
+    log('Online - refreshing chatbot');
+    if (_hasLoadedConversations) {
+      await loadConversations(forceRefresh: true);
     }
-
-    debugLog(
-        'ChatbotProvider', '🔄 Different user logout - clearing chatbot data');
-
-    // Clear pending messages
-    if (lastUserId != null) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('pending_chat_messages_$lastUserId');
-    }
-
-    _messages.clear();
-    _conversations.clear();
-    _currentConversation = null;
-    _remainingMessages = 30;
-    _totalMessages = 0;
-    _totalConversations = 0;
-    _currentPage = 1;
-    _hasMoreConversations = true;
-
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      if (lastUserId != null) {
-        final keysToRemove = prefs
-            .getKeys()
-            .where(
-                (key) => key.startsWith('chatbot_') && key.contains(lastUserId))
-            .toList();
-
-        for (final key in keysToRemove) {
-          await prefs.remove(key);
-        }
-        debugLog(
-            'ChatbotProvider', '🧹 Cleared cache for old user $lastUserId');
-      }
-    } catch (e) {
-      debugLog('ChatbotProvider', 'Error clearing cache: $e');
-    }
-
-    notifyListeners();
+    await loadUsageStats();
   }
 
-  Future<bool> _isLoggingOut() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  void clearError() {
-    _error = null;
-    notifyListeners();
+  @override
+  void dispose() {
+    _messagesBox?.close();
+    _conversationsBox?.close();
+    _usageBox?.close();
+    disposeSubscriptions();
+    super.dispose();
   }
 }

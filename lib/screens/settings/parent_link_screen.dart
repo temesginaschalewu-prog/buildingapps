@@ -1,10 +1,15 @@
+// lib/screens/settings/parent_link_screen.dart
+// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:pull_to_refresh/pull_to_refresh.dart' hide RefreshIndicator;
 import 'package:url_launcher/url_launcher.dart';
+
 import '../../providers/parent_link_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/settings_provider.dart';
@@ -20,7 +25,9 @@ import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/responsive_values.dart';
 import '../../utils/helpers.dart';
+import '../../utils/constants.dart';
 
+/// PRODUCTION-READY PARENT LINK SCREEN with 3-Tier Caching
 class ParentLinkScreen extends StatefulWidget {
   const ParentLinkScreen({super.key});
 
@@ -30,13 +37,14 @@ class ParentLinkScreen extends StatefulWidget {
 
 class _ParentLinkScreenState extends State<ParentLinkScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
-  late Timer _refreshTimer;
+  Timer? _refreshTimer;
   bool _isRefreshing = false;
   bool _isInitialized = false;
   bool _isOffline = false;
   int _pendingCount = 0;
   final RefreshController _refreshController = RefreshController();
   StreamSubscription? _connectivitySubscription;
+  bool _dialogOpen = false;
 
   late AnimationController _pulseAnimationController;
 
@@ -50,9 +58,27 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
           ..repeat(reverse: true);
 
     WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initialize();
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    _pulseAnimationController.dispose();
+    _refreshController.dispose();
+    _connectivitySubscription?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  Future<void> _initialize() async {
+    await _checkConnectivity();
+    _setupConnectivityListener();
+    _checkPendingCount();
     _initializeData();
     _setupTimers();
-    _setupConnectivityListener();
   }
 
   void _setupConnectivityListener() {
@@ -68,65 +94,64 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
     });
   }
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _refreshData(showLoading: false);
+  Future<void> _checkConnectivity() async {
+    final connectivityService = context.read<ConnectivityService>();
+    await connectivityService.checkConnectivity();
+    if (mounted) {
+      setState(() {
+        _isOffline = !connectivityService.isOnline;
+        _pendingCount = connectivityService.pendingActionsCount;
+      });
+    }
   }
 
-  @override
-  void dispose() {
-    _refreshTimer.cancel();
-    _pulseAnimationController.dispose();
-    _refreshController.dispose();
-    _connectivitySubscription?.cancel();
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
+  Future<void> _checkPendingCount() async {
+    final connectivityService = context.read<ConnectivityService>();
+    if (mounted) {
+      setState(() => _pendingCount = connectivityService.pendingActionsCount);
+    }
   }
 
   void _setupTimers() {
-    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
-      if (mounted) _refreshDataInBackground();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
+        setState(() {}); // Update countdown every second
+      }
     });
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && !_isOffline) {
+      _refreshData(showLoading: false);
+    }
+  }
+
+  // TIER 1 & 2: Initialize from cache
   Future<void> _initializeData() async {
     final parentLinkProvider = context.read<ParentLinkProvider>();
 
-    _hasCachedData = parentLinkProvider.hasLoaded;
+    // ✅ FIXED: Changed hasLoaded to isLoaded (from BaseProvider)
+    _hasCachedData = parentLinkProvider.isLoaded;
 
     try {
-      await parentLinkProvider.getParentLinkStatus(forceRefresh: true);
+      await parentLinkProvider.getParentLinkStatus(); // TIER 1 & 2
     } finally {
       if (mounted) setState(() => _isInitialized = true);
     }
   }
 
-  Future<void> _refreshDataInBackground() async {
-    if (_isRefreshing || _isOffline) return;
-    _isRefreshing = true;
-
-    try {
-      final parentLinkProvider = context.read<ParentLinkProvider>();
-      await parentLinkProvider.getParentLinkStatus(forceRefresh: true);
-    } finally {
-      if (mounted) setState(() => _isRefreshing = false);
-    }
-  }
-
+  // Manual refresh with connectivity check
   Future<void> _manualRefresh() async {
     if (_isRefreshing) return;
 
-    setState(() {
-      _isRefreshing = true;
-    });
+    setState(() => _isRefreshing = true);
 
-    final connectivity = ConnectivityService();
-    if (!connectivity.isOnline) {
-      setState(() {
-        _isRefreshing = false;
-      });
+    final connectivityService = context.read<ConnectivityService>();
+    if (!connectivityService.isOnline) {
+      setState(() => _isRefreshing = false);
       _refreshController.refreshFailed();
-      SnackbarService().showOffline(context, action: 'refresh');
+      SnackbarService().showOffline(context, action: AppStrings.refresh);
       return;
     }
 
@@ -135,13 +160,11 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
       await parentLinkProvider.clearCache();
       await parentLinkProvider.getParentLinkStatus(forceRefresh: true);
       setState(() => _isOffline = false);
-      SnackbarService().showSuccess(context, 'Status updated');
+      SnackbarService().showSuccess(context, AppStrings.statusUpdated);
     } catch (e) {
-      SnackbarService().showError(context, 'Failed to refresh');
+      SnackbarService().showError(context, AppStrings.refreshFailed);
     } finally {
-      setState(() {
-        _isRefreshing = false;
-      });
+      setState(() => _isRefreshing = false);
       _refreshController.refreshCompleted();
     }
   }
@@ -159,7 +182,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
       _refreshController.refreshCompleted();
 
       if (showLoading && mounted) {
-        SnackbarService().showSuccess(context, 'Status updated');
+        SnackbarService().showSuccess(context, AppStrings.statusUpdated);
       }
     } catch (e) {
       _refreshController.refreshFailed();
@@ -168,10 +191,11 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
     }
   }
 
+  // Generate token (online only)
   Future<void> _generateToken() async {
-    final connectivity = ConnectivityService();
-    if (!connectivity.isOnline) {
-      SnackbarService().showOffline(context, action: 'generate token');
+    final connectivityService = context.read<ConnectivityService>();
+    if (!connectivityService.isOnline) {
+      SnackbarService().showOffline(context, action: AppStrings.generateToken);
       return;
     }
 
@@ -181,30 +205,28 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
       await parentLinkProvider.generateParentToken();
 
       final token = parentLinkProvider.parentToken;
-      final expiresAt = parentLinkProvider.tokenExpiresAt;
-
-      if (token != null && expiresAt != null) {
-        _showTokenDialog(token, expiresAt);
+      if (token != null) {
+        _showTokenDialog(token);
       }
     } catch (e) {
-      SnackbarService().showError(
-          context, 'Failed to generate token: ${formatErrorMessage(e)}');
+      SnackbarService().showError(context,
+          '${AppStrings.failedToGenerateToken}: ${getUserFriendlyErrorMessage(e)}');
     }
   }
 
+  // Unlink parent (online only)
   Future<void> _unlinkParent() async {
-    final connectivity = ConnectivityService();
-    if (!connectivity.isOnline) {
-      SnackbarService().showOffline(context, action: 'unlink parent');
+    final connectivityService = context.read<ConnectivityService>();
+    if (!connectivityService.isOnline) {
+      SnackbarService().showOffline(context, action: AppStrings.unlinkParent);
       return;
     }
 
     final confirmed = await AppDialog.confirm(
       context: context,
-      title: 'Unlink Parent',
-      message:
-          'Are you sure you want to unlink the parent? This will stop all progress updates.',
-      confirmText: 'Unlink',
+      title: AppStrings.unlinkParent,
+      message: AppStrings.unlinkParentConfirm,
+      confirmText: AppStrings.unlink,
     );
     if (confirmed == true) {
       final parentLinkProvider = context.read<ParentLinkProvider>();
@@ -214,13 +236,12 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
         await parentLinkProvider.getParentLinkStatus(forceRefresh: true);
 
         if (mounted) {
-          SnackbarService()
-              .showSuccess(context, 'Parent unlinked successfully');
+          SnackbarService().showSuccess(context, AppStrings.parentUnlinked);
         }
       } catch (e) {
         if (mounted) {
-          SnackbarService()
-              .showError(context, 'Failed to unlink: ${formatErrorMessage(e)}');
+          SnackbarService().showError(context,
+              '${AppStrings.failedToUnlink}: ${getUserFriendlyErrorMessage(e)}');
         }
       }
     }
@@ -246,20 +267,167 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
     );
   }
 
-  void _showTokenDialog(String token, DateTime expiresAt) {
-    AppDialog.showToken(
+  // Token dialog with proper copy functionality
+  void _showTokenDialog(String token) {
+    if (_dialogOpen) return;
+    _dialogOpen = true;
+
+    showDialog(
       context: context,
-      token: token,
-      expiresIn: _formatDuration(expiresAt.difference(DateTime.now())),
-    );
+      barrierDismissible: false,
+      builder: (dialogContext) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
+        child: AppCard.glass(
+          child: Padding(
+            padding: ResponsiveValues.dialogPadding(context),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Header
+                Row(
+                  children: [
+                    Container(
+                      padding:
+                          EdgeInsets.all(ResponsiveValues.spacingM(context)),
+                      decoration: const BoxDecoration(
+                        gradient:
+                            LinearGradient(colors: AppColors.blueGradient),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.link_rounded,
+                          color: Colors.white, size: 24),
+                    ),
+                    SizedBox(width: ResponsiveValues.spacingL(context)),
+                    Expanded(
+                      child: Text(
+                        AppStrings.linkToken,
+                        style: AppTextStyles.titleMedium(context)
+                            .copyWith(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: ResponsiveValues.spacingL(context)),
+
+                // Token display
+                Container(
+                  padding: ResponsiveValues.cardPadding(context),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        AppColors.telegramBlue.withValues(alpha: 0.1),
+                        AppColors.telegramPurple.withValues(alpha: 0.05)
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(
+                        ResponsiveValues.radiusMedium(context)),
+                    border: Border.all(
+                      color: AppColors.telegramBlue.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: SelectableText(
+                    token,
+                    style: TextStyle(
+                      fontSize: ResponsiveValues.fontTitleLarge(context),
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'monospace',
+                      letterSpacing: 2,
+                      color: AppColors.telegramBlue,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                SizedBox(height: ResponsiveValues.spacingM(context)),
+
+                // Expiry timer
+                Container(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: ResponsiveValues.spacingM(context),
+                    vertical: ResponsiveValues.spacingXS(context),
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.telegramYellow.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(
+                        ResponsiveValues.radiusFull(context)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.timer_rounded,
+                          size: ResponsiveValues.iconSizeXS(context),
+                          color: AppColors.telegramYellow),
+                      SizedBox(width: ResponsiveValues.spacingXS(context)),
+                      Consumer<ParentLinkProvider>(
+                        builder: (context, provider, _) {
+                          final remaining = provider.remainingTime;
+                          final isExpired = provider.isTokenExpired;
+
+                          return Text(
+                            isExpired
+                                ? AppStrings.expired
+                                : '${AppStrings.expiresIn}: ${_formatDuration(remaining)}',
+                            style: AppTextStyles.labelSmall(context).copyWith(
+                              color: isExpired
+                                  ? AppColors.telegramRed
+                                  : AppColors.telegramYellow,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: ResponsiveValues.spacingXL(context)),
+
+                // Action buttons
+                Row(
+                  children: [
+                    Expanded(
+                      child: AppButton.outline(
+                        label: AppStrings.close,
+                        onPressed: () {
+                          _dialogOpen = false;
+                          Navigator.pop(dialogContext);
+                        },
+                      ),
+                    ),
+                    SizedBox(width: ResponsiveValues.spacingM(context)),
+                    Expanded(
+                      child: AppButton.primary(
+                        label: AppStrings.copy,
+                        icon: Icons.copy_rounded,
+                        onPressed: () async {
+                          await Clipboard.setData(ClipboardData(text: token));
+                          if (context.mounted) {
+                            SnackbarService()
+                                .showSuccess(context, AppStrings.tokenCopied);
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ).then((_) {
+      _dialogOpen = false;
+    });
   }
 
   String _formatDuration(Duration duration) {
-    if (duration.inMinutes < 1) return 'Less than a minute';
-    if (duration.inMinutes < 60) {
-      return '${duration.inMinutes} minute${duration.inMinutes > 1 ? 's' : ''}';
+    if (duration.inSeconds < 0) return AppStrings.expired;
+    if (duration.inMinutes < 1) {
+      return '${duration.inSeconds} ${AppStrings.seconds}';
     }
-    return '${duration.inHours} hour${duration.inHours > 1 ? 's' : ''}';
+    if (duration.inMinutes < 60) {
+      return '${duration.inMinutes} ${duration.inMinutes > 1 ? AppStrings.minutes : AppStrings.minute}';
+    }
+    return '${duration.inHours} ${duration.inHours > 1 ? AppStrings.hours : AppStrings.hour}';
   }
 
   Widget _buildInstruction(String text, IconData icon) {
@@ -338,14 +506,15 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                       ),
                     ],
                   ),
-                  child: const Icon(Icons.check_rounded,
-                      size: 40, color: Colors.white),
+                  child: Icon(Icons.check_rounded,
+                      size: ResponsiveValues.iconSizeXXXL(context),
+                      color: Colors.white),
                 ),
               ],
             ),
             SizedBox(height: ResponsiveValues.spacingL(context)),
             Text(
-              'Parent Connected',
+              AppStrings.parentConnected,
               style: AppTextStyles.headlineSmall(context)
                   .copyWith(fontWeight: FontWeight.w600),
             ),
@@ -360,8 +529,9 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.telegram,
-                          size: 20, color: AppColors.telegramBlue),
+                      Icon(Icons.telegram,
+                          size: ResponsiveValues.iconSizeS(context),
+                          color: AppColors.telegramBlue),
                       SizedBox(width: ResponsiveValues.spacingS(context)),
                       Text(
                         '@${provider.parentTelegramUsername}',
@@ -376,7 +546,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
             SizedBox(
               width: double.infinity,
               child: AppButton.danger(
-                label: 'Disconnect Parent',
+                label: AppStrings.disconnectParent,
                 icon: Icons.link_off_rounded,
                 onPressed: _unlinkParent,
                 expanded: true,
@@ -393,9 +563,16 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
 
   Widget _buildTokenState(ParentLinkProvider provider) {
     final remainingTime = provider.remainingTime;
-    final isExpiringSoon = remainingTime.inMinutes < 5;
-    final statusColor =
-        isExpiringSoon ? AppColors.telegramRed : AppColors.telegramBlue;
+    final isExpired = provider.isTokenExpired;
+    final isExpiringSoon = remainingTime.inMinutes < 5 && !isExpired;
+    final statusColor = isExpired
+        ? AppColors.telegramRed
+        : (isExpiringSoon ? AppColors.telegramOrange : AppColors.telegramBlue);
+
+    // If token is expired, show not linked state
+    if (isExpired) {
+      return _buildNotLinkedState();
+    }
 
     return AppCard.glass(
       child: Padding(
@@ -432,7 +609,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: isExpiringSoon
-                          ? AppColors.dangerGradient
+                          ? AppColors.orangeGradient
                           : AppColors.telegramGradient,
                     ),
                     shape: BoxShape.circle,
@@ -451,7 +628,9 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
             ),
             SizedBox(height: ResponsiveValues.spacingL(context)),
             Text(
-              'Token Active',
+              isExpiringSoon
+                  ? AppStrings.tokenExpiringSoon
+                  : AppStrings.tokenActive,
               style: AppTextStyles.headlineSmall(context)
                   .copyWith(fontWeight: FontWeight.w600),
             ),
@@ -482,13 +661,12 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
             SizedBox(
               width: double.infinity,
               child: AppButton.primary(
-                label: 'Show Token',
+                label: AppStrings.showToken,
                 icon: Icons.visibility_rounded,
                 onPressed: () {
                   if (provider.parentToken != null &&
                       provider.tokenExpiresAt != null) {
-                    _showTokenDialog(
-                        provider.parentToken!, provider.tokenExpiresAt!);
+                    _showTokenDialog(provider.parentToken!);
                   }
                 },
                 expanded: true,
@@ -496,7 +674,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
             ),
             SizedBox(height: ResponsiveValues.spacingM(context)),
             AppButton.text(
-              label: 'Generate New Token',
+              label: AppStrings.generateNewToken,
               icon: Icons.refresh_rounded,
               onPressed: _generateToken,
             ),
@@ -532,13 +710,13 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
             ),
             SizedBox(height: ResponsiveValues.spacingL(context)),
             Text(
-              'Connect Parent',
+              AppStrings.connectParent,
               style: AppTextStyles.headlineSmall(context)
                   .copyWith(fontWeight: FontWeight.w600),
             ),
             SizedBox(height: ResponsiveValues.spacingM(context)),
             Text(
-              'Generate a token to link your parent\'s Telegram account and share your progress.',
+              AppStrings.connectParentDescription,
               textAlign: TextAlign.center,
               style: AppTextStyles.bodyLarge(context).copyWith(
                   color: AppColors.getTextSecondary(context), height: 1.5),
@@ -547,7 +725,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
             SizedBox(
               width: double.infinity,
               child: AppButton.primary(
-                label: 'Generate Token',
+                label: AppStrings.generateToken,
                 icon: Icons.add_link_rounded,
                 onPressed: _generateToken,
                 expanded: true,
@@ -591,7 +769,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                 ),
                 SizedBox(width: ResponsiveValues.spacingM(context)),
                 Text(
-                  'What parents can see',
+                  AppStrings.whatParentsCanSee,
                   style: AppTextStyles.titleMedium(context)
                       .copyWith(fontWeight: FontWeight.w600),
                 ),
@@ -599,12 +777,12 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
             ),
             SizedBox(height: ResponsiveValues.spacingL(context)),
             _buildInstruction(
-                'Study progress and completion', Icons.trending_up_rounded),
-            _buildInstruction('Exam scores and results', Icons.quiz_rounded),
+                AppStrings.parentSeeProgress, Icons.trending_up_rounded),
+            _buildInstruction(AppStrings.parentSeeExams, Icons.quiz_rounded),
             _buildInstruction(
-                'Subscription status', Icons.subscriptions_rounded),
-            _buildInstruction(
-                'Weekly progress summary', Icons.calendar_month_rounded),
+                AppStrings.parentSeeSubscriptions, Icons.subscriptions_rounded),
+            _buildInstruction(AppStrings.parentSeeWeeklySummary,
+                Icons.calendar_month_rounded),
             SizedBox(height: ResponsiveValues.spacingL(context)),
             AppCard.glass(
               child: Padding(
@@ -619,7 +797,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                         SizedBox(width: ResponsiveValues.spacingM(context)),
                         Expanded(
                           child: Text(
-                            'Parent Telegram Bot',
+                            AppStrings.parentTelegramBot,
                             style: AppTextStyles.titleSmall(context)
                                 .copyWith(fontWeight: FontWeight.w600),
                           ),
@@ -662,7 +840,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                     ),
                     SizedBox(height: ResponsiveValues.spacingS(context)),
                     Text(
-                      'Parents receive updates via Telegram. They cannot modify your account.',
+                      AppStrings.parentTelegramDescription,
                       style: AppTextStyles.bodySmall(context)
                           .copyWith(color: AppColors.getTextSecondary(context)),
                     ),
@@ -684,7 +862,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
-      SnackbarService().showError(context, 'Cannot open Telegram');
+      SnackbarService().showError(context, AppStrings.cannotOpenTelegram);
     }
   }
 
@@ -726,7 +904,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                   ),
                   SizedBox(height: ResponsiveValues.spacingXS(context)),
                   Text(
-                    'Student ID: ${authProvider.currentUser!.id}',
+                    '${AppStrings.studentId}: ${authProvider.currentUser!.id}',
                     style: AppTextStyles.bodySmall(context)
                         .copyWith(color: AppColors.getTextSecondary(context)),
                   ),
@@ -744,28 +922,34 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
     final parentLinkProvider = context.watch<ParentLinkProvider>();
     final authProvider = context.watch<AuthProvider>();
 
+    // 1. LOADING STATE
     if (!_isInitialized && !_hasCachedData) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
         appBar: CustomAppBar(
-          title: 'Parent Link',
-          subtitle: 'Loading...',
+          title: AppStrings.parentLink,
+          subtitle: AppStrings.loading,
           leading: AppButton.icon(
               icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
+          showOfflineIndicator: _isOffline,
         ),
         body: Center(child: _buildSkeletonLoader()),
       );
     }
 
+    // 2. MAIN CONTENT
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: CustomAppBar(
-        title: 'Parent Link',
+        title: AppStrings.parentLink,
         subtitle: _isRefreshing
-            ? 'Refreshing...'
-            : (_isOffline ? 'Offline mode' : 'Connect with parents'),
+            ? AppStrings.refreshing
+            : (_isOffline
+                ? AppStrings.offlineMode
+                : AppStrings.connectWithParents),
         leading: AppButton.icon(
             icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
+        showOfflineIndicator: _isOffline,
       ),
       body: RefreshIndicator(
         onRefresh: _manualRefresh,
@@ -779,7 +963,8 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
               sliver: SliverToBoxAdapter(
                 child: Column(
                   children: [
-                    if (_pendingCount > 0)
+                    // Pending count banner (if offline with pending actions)
+                    if (_isOffline && _pendingCount > 0)
                       Container(
                         margin: EdgeInsets.only(
                             bottom: ResponsiveValues.spacingL(context)),
@@ -798,12 +983,13 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.schedule_rounded,
-                                color: AppColors.info, size: 20),
+                            Icon(Icons.schedule_rounded,
+                                color: AppColors.info,
+                                size: ResponsiveValues.iconSizeS(context)),
                             SizedBox(width: ResponsiveValues.spacingM(context)),
                             Expanded(
                               child: Text(
-                                '$_pendingCount pending change${_pendingCount > 1 ? 's' : ''}',
+                                '$_pendingCount pending action${_pendingCount > 1 ? 's' : ''}',
                                 style: AppTextStyles.bodySmall(context)
                                     .copyWith(color: AppColors.info),
                               ),
@@ -811,6 +997,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                           ],
                         ),
                       ),
+
                     if (parentLinkProvider.isLinked)
                       _buildLinkedState(parentLinkProvider)
                     else if (parentLinkProvider.parentToken != null &&

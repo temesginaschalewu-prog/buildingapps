@@ -74,14 +74,17 @@ class AppColors {
   ];
 
   static const Color lightBackground = Color(0xFFF8FAFF);
-  static const Color lightSurface = Color(0xFFFFFFFF);
-  static const Color lightCard = Color(0xFFFFFFFF);
+  static const Color lightSurface =
+      Color(0xFFFEFEFE); // Slightly off-white for better contrast
+  static const Color lightCard =
+      Color(0xFFFCFCFC); // Very subtle off-white for cards
   static const Color lightCardAlt = Color(0xFFF1F5F9);
   static const Color lightDivider = Color(0xFFE2E8F0);
   static const Color lightTextPrimary = Color(0xFF0B1E33);
   static const Color lightTextSecondary = Color(0xFF475569);
   static const Color lightTextTertiary = Color(0xFF94A3B8);
-  static const Color lightBottomNavBar = Color(0xFFFFFFFF);
+  static const Color lightBottomNavBar =
+      Color(0xFFFEFEFE); // Match surface for consistency
   static const Color lightSearchBar = Color(0xFFF1F5F9);
 
   static const Color darkBackground = Color(0xFF0F172A);

@@ -18,7 +18,7 @@ class AppEmptyState extends StatelessWidget {
   final EmptyStateType type;
   final double? maxWidth;
   final bool isRefreshing;
-  final int? pendingCount; // NEW: For queued actions
+  final int? pendingCount;
 
   const AppEmptyState({
     super.key,
@@ -329,7 +329,6 @@ class AppEmptyState extends StatelessWidget {
     );
   }
 
-  // Find this method and update it:
   Widget _buildActionButton(BuildContext context) {
     if (isRefreshing) {
       return Container(

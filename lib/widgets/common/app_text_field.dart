@@ -215,53 +215,80 @@ class _AppTextFieldState extends State<AppTextField> {
 
   Widget _buildTextField(
       BuildContext context, bool isEnabled, bool isOfflineDisabled) {
-    return DecoratedBox(
-      decoration: _getDecoration(context, isEnabled, isOfflineDisabled),
-      child: TextFormField(
-        key: ValueKey(widget.controller.hashCode),
-        controller: widget.controller,
-        focusNode: _focusNode,
-        keyboardType: widget.keyboardType,
-        obscureText: widget.obscureText && _obscureText,
-        enabled: isEnabled,
-        validator: widget.validator,
-        onTap: widget.onTap,
-        readOnly: widget.readOnly || isOfflineDisabled,
-        maxLines: widget.maxLines,
-        minLines: widget.minLines,
-        autofocus: widget.autofocus,
-        onChanged: widget.onChanged,
-        maxLength: widget.maxLength,
-        style: AppTextStyles.bodyMedium(context).copyWith(
+    final borderRadius =
+        BorderRadius.circular(ResponsiveValues.radiusMedium(context));
+
+    final idleBorderColor = isOfflineDisabled
+        ? AppColors.warning.withValues(alpha: 0.6)
+        : AppColors.getDivider(context).withValues(alpha: 0.75);
+    final focusedBorderColor =
+        isOfflineDisabled ? AppColors.warning : AppColors.telegramBlue;
+
+    final outlineBorder = OutlineInputBorder(
+      borderRadius: borderRadius,
+      borderSide: BorderSide(color: idleBorderColor, width: 1.2),
+    );
+    final focusedBorder = OutlineInputBorder(
+      borderRadius: borderRadius,
+      borderSide: BorderSide(color: focusedBorderColor, width: 1.8),
+    );
+    final errorBorder = OutlineInputBorder(
+      borderRadius: borderRadius,
+      borderSide: const BorderSide(color: AppColors.telegramRed, width: 1.6),
+    );
+
+    return TextFormField(
+      key: ValueKey(widget.controller.hashCode),
+      controller: widget.controller,
+      focusNode: _focusNode,
+      keyboardType: widget.keyboardType,
+      obscureText: widget.obscureText && _obscureText,
+      enabled: isEnabled,
+      validator: widget.validator,
+      autovalidateMode: AutovalidateMode.onUserInteraction,
+      onTap: widget.onTap,
+      readOnly: widget.readOnly || isOfflineDisabled,
+      maxLines: widget.maxLines,
+      minLines: widget.minLines,
+      autofocus: widget.autofocus,
+      onChanged: widget.onChanged,
+      maxLength: widget.maxLength,
+      style: AppTextStyles.bodyMedium(context).copyWith(
+        color: isOfflineDisabled
+            ? AppColors.warning
+            : (isEnabled
+                ? AppColors.getTextPrimary(context)
+                : AppColors.getTextSecondary(context)),
+      ),
+      decoration: InputDecoration(
+        hintText: isOfflineDisabled ? 'Internet required' : widget.hint,
+        hintStyle: AppTextStyles.bodyMedium(context).copyWith(
           color: isOfflineDisabled
-              ? AppColors.warning
-              : (isEnabled
-                  ? AppColors.getTextPrimary(context)
-                  : AppColors.getTextSecondary(context)),
+              ? AppColors.warning.withValues(alpha: 0.5)
+              : AppColors.getTextSecondary(context).withValues(alpha: 0.6),
         ),
-        decoration: InputDecoration(
-          hintText: isOfflineDisabled ? 'Internet required' : widget.hint,
-          hintStyle: AppTextStyles.bodyMedium(context).copyWith(
-            color: isOfflineDisabled
-                ? AppColors.warning.withValues(alpha: 0.5)
-                : AppColors.getTextSecondary(context).withValues(alpha: 0.5),
-          ),
-          prefixIcon: _buildPrefixIcon(context, isEnabled, isOfflineDisabled),
-          suffixIcon: _buildSuffixIcon(context, isEnabled, isOfflineDisabled),
-          border: InputBorder.none,
-          enabledBorder: InputBorder.none,
-          focusedBorder: InputBorder.none,
-          errorBorder: InputBorder.none,
-          focusedErrorBorder: InputBorder.none,
-          disabledBorder: InputBorder.none,
-          contentPadding: EdgeInsets.symmetric(
-            horizontal: ResponsiveValues.spacingL(context),
-            vertical: ResponsiveValues.spacingM(context),
-          ),
-          counterText: '',
-          isDense: true,
-          filled: false,
+        errorStyle: AppTextStyles.bodySmall(context).copyWith(
+          color: AppColors.telegramRed,
+          height: 1.25,
+          fontWeight: FontWeight.w500,
         ),
+        errorMaxLines: 2,
+        prefixIcon: _buildPrefixIcon(context, isEnabled, isOfflineDisabled),
+        suffixIcon: _buildSuffixIcon(context, isEnabled, isOfflineDisabled),
+        enabledBorder: outlineBorder,
+        focusedBorder: focusedBorder,
+        border: outlineBorder,
+        errorBorder: errorBorder,
+        focusedErrorBorder: errorBorder,
+        disabledBorder: outlineBorder,
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: ResponsiveValues.spacingL(context),
+          vertical: ResponsiveValues.spacingM(context),
+        ),
+        counterText: '',
+        isDense: false,
+        filled: true,
+        fillColor: AppColors.getCard(context).withValues(alpha: 0.96),
       ),
     );
   }
@@ -342,57 +369,5 @@ class _AppTextFieldState extends State<AppTextField> {
     }
 
     return null;
-  }
-
-  BoxDecoration _getDecoration(
-      BuildContext context, bool isEnabled, bool isOfflineDisabled) {
-    final borderRadius =
-        BorderRadius.circular(ResponsiveValues.radiusMedium(context));
-
-    final borderColor = isOfflineDisabled
-        ? AppColors.warning
-        : (_hasFocus ? AppColors.telegramBlue : AppColors.getDivider(context));
-
-    switch (widget.variant) {
-      case TextFieldVariant.glass:
-        return BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              AppColors.getCard(context)
-                  .withValues(alpha: isOfflineDisabled ? 0.3 : 0.4),
-              AppColors.getCard(context)
-                  .withValues(alpha: isOfflineDisabled ? 0.15 : 0.2),
-            ],
-          ),
-          borderRadius: borderRadius,
-          border: Border.all(
-            color: borderColor.withValues(
-                alpha: isOfflineDisabled ? 0.5 : (_hasFocus ? 1.0 : 0.2)),
-            width: _hasFocus ? 2 : 1,
-          ),
-        );
-
-      case TextFieldVariant.filled:
-        return BoxDecoration(
-          color: AppColors.getSurface(context),
-          borderRadius: borderRadius,
-          border: Border.all(
-            color: _hasFocus ? AppColors.telegramBlue : Colors.transparent,
-            width: _hasFocus ? 2 : 0,
-          ),
-        );
-
-      case TextFieldVariant.outline:
-        return BoxDecoration(
-          color: Colors.transparent,
-          borderRadius: borderRadius,
-          border: Border.all(
-            color: borderColor,
-            width: _hasFocus ? 2 : 1,
-          ),
-        );
-    }
   }
 }

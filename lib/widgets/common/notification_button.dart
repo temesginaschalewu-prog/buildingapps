@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:badges/badges.dart' as badges;
 import '../../../providers/notification_provider.dart';
+import '../../../services/connectivity_service.dart';
 import '../../../themes/app_colors.dart';
 import '../../../utils/responsive_values.dart';
 
@@ -24,10 +25,23 @@ class NotificationButton extends StatefulWidget {
 }
 
 class _NotificationButtonState extends State<NotificationButton> {
+  StreamSubscription? _connectivitySubscription;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _refreshUnreadCount());
+    _setupConnectivityListener();
+  }
+
+  void _setupConnectivityListener() {
+    final connectivityService = context.read<ConnectivityService>();
+    _connectivitySubscription =
+        connectivityService.onConnectivityChanged.listen((_) {
+      if (mounted) {
+        setState(() {});
+      }
+    });
   }
 
   Future<void> _refreshUnreadCount() async {
@@ -38,10 +52,17 @@ class _NotificationButtonState extends State<NotificationButton> {
   }
 
   @override
+  void dispose() {
+    _connectivitySubscription?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Consumer<NotificationProvider>(
-      builder: (context, provider, child) {
+    return Consumer2<NotificationProvider, ConnectivityService>(
+      builder: (context, provider, connectivity, child) {
         final unreadCount = provider.unreadCount;
+        final isOffline = !connectivity.isOnline;
         final buttonSize =
             widget.size ?? ResponsiveValues.appBarButtonSize(context);
 
@@ -61,11 +82,12 @@ class _NotificationButtonState extends State<NotificationButton> {
               child: InkWell(
                 onTap: widget.onTap ??
                     () async {
+                      // Always load from cache first, refresh in background if online
                       await provider.loadNotifications();
-    if (!mounted) return;
+                      if (!mounted) return;
                       if (context.mounted) {
                         await GoRouter.of(context).push('/notifications');
-    if (!mounted) return;
+                        if (!mounted) return;
                       }
                     },
                 borderRadius: BorderRadius.circular(
@@ -89,7 +111,9 @@ class _NotificationButtonState extends State<NotificationButton> {
                             ),
                           ),
                           badgeStyle: badges.BadgeStyle(
-                            badgeColor: AppColors.telegramRed,
+                            badgeColor: isOffline
+                                ? AppColors.warning
+                                : AppColors.telegramRed,
                             padding: EdgeInsets.all(
                                 ResponsiveValues.spacingXXS(context)),
                           ),
@@ -97,14 +121,20 @@ class _NotificationButtonState extends State<NotificationButton> {
                             Icons.notifications_outlined,
                             size: ResponsiveValues.appBarIconSize(context),
                             color: widget.iconColor ??
-                                AppColors.getTextPrimary(context),
+                                (isOffline
+                                    ? AppColors.warning
+                                    : AppColors.getTextPrimary(context)),
                           ),
                         )
                       : Icon(
-                          Icons.notifications_outlined,
+                          isOffline
+                              ? Icons.wifi_off_rounded
+                              : Icons.notifications_outlined,
                           size: ResponsiveValues.appBarIconSize(context),
                           color: widget.iconColor ??
-                              AppColors.getTextPrimary(context),
+                              (isOffline
+                                  ? AppColors.warning
+                                  : AppColors.getTextPrimary(context)),
                         ),
                 ),
               ),

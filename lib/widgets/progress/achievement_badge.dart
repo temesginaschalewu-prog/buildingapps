@@ -2,16 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
-import '../../themes/app_themes.dart';
 import '../../utils/responsive_values.dart';
 import '../common/app_card.dart';
 
+/// PRODUCTION-READY ACHIEVEMENT BADGE
 class AchievementBadge extends StatelessWidget {
   final String title;
   final String description;
   final IconData icon;
   final Color color;
-  final double progress;
   final bool unlocked;
   final DateTime? earnedDate;
 
@@ -21,173 +20,93 @@ class AchievementBadge extends StatelessWidget {
     required this.description,
     required this.icon,
     required this.color,
-    this.progress = 1.0,
-    this.unlocked = false,
+    required this.unlocked,
     this.earnedDate,
   });
 
   @override
   Widget build(BuildContext context) {
-    final padding = ResponsiveValues.cardPadding(context);
-    final iconContainerSize = ResponsiveValues.iconSizeXXL(context) * 1.5;
-    final iconSize = ResponsiveValues.iconSizeXL(context);
-    final titleSize = ResponsiveValues.fontTitleSmall(context);
-    final descSize = ResponsiveValues.fontBodySmall(context);
-    final badgeSize = ResponsiveValues.fontLabelSmall(context);
-
     return AppCard.glass(
-      child: Padding(
-        padding: padding,
+      child: Container(
+        padding: EdgeInsets.all(ResponsiveValues.spacingS(context)),
         child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Stack(
-              alignment: Alignment.center,
-              children: [
-                Container(
-                  width: iconContainerSize,
-                  height: iconContainerSize,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      colors: [
-                        color.withValues(alpha: unlocked ? 0.2 : 0.1),
-                        color.withValues(alpha: unlocked ? 0.1 : 0.05),
-                      ],
-                    ),
-                    border: Border.all(
-                      color: unlocked ? color : color.withValues(alpha: 0.3),
-                      width: 3,
-                    ),
-                  ),
-                  child: Stack(
-                    children: [
-                      if (!unlocked && progress > 0)
-                        Positioned.fill(
-                          child: CircularProgressIndicator(
-                            value: progress,
-                            strokeWidth: 3,
-                            backgroundColor: AppColors.getSurface(context),
-                            valueColor: AlwaysStoppedAnimation<Color>(color),
-                          ),
-                        ),
-                      Center(
-                        child: Icon(
-                          icon,
-                          size: iconSize,
-                          color:
-                              unlocked ? color : color.withValues(alpha: 0.5),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (!unlocked)
-                  Positioned(
-                    bottom: 0,
-                    right: 0,
-                    child: Container(
-                      padding:
-                          EdgeInsets.all(ResponsiveValues.spacingXXS(context)),
-                      decoration: BoxDecoration(
-                        color: AppColors.getBackground(context),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: AppColors.getTextSecondary(context),
-                          width: 1.5,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.1),
-                            blurRadius: ResponsiveValues.spacingXS(context),
-                          ),
+            Container(
+              width: ResponsiveValues.iconSizeXL(context) * 1.5,
+              height: ResponsiveValues.iconSizeXL(context) * 1.5,
+              decoration: BoxDecoration(
+                gradient: unlocked
+                    ? LinearGradient(
+                        colors: [
+                          color.withValues(alpha: 0.2),
+                          color.withValues(alpha: 0.1)
+                        ],
+                      )
+                    : LinearGradient(
+                        colors: [
+                          AppColors.telegramGray.withValues(alpha: 0.1),
+                          AppColors.telegramGray.withValues(alpha: 0.05)
                         ],
                       ),
-                      child: Icon(
-                        Icons.lock_outline_rounded,
-                        size: ResponsiveValues.iconSizeXS(context),
-                        color: AppColors.getTextSecondary(context),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            SizedBox(height: ResponsiveValues.spacingM(context)),
-            Text(
-              title,
-              style: AppTextStyles.titleSmall(context).copyWith(
-                color: unlocked ? color : AppColors.getTextPrimary(context),
-                fontWeight: FontWeight.w600,
-                fontSize: titleSize,
+                shape: BoxShape.circle,
               ),
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+              child: Center(
+                child: Icon(
+                  unlocked ? icon : Icons.lock_rounded,
+                  size: ResponsiveValues.iconSizeL(context),
+                  color: unlocked ? color : AppColors.telegramGray,
+                ),
+              ),
             ),
             SizedBox(height: ResponsiveValues.spacingXS(context)),
             Text(
-              description,
-              style: AppTextStyles.bodySmall(context).copyWith(
-                color: AppColors.getTextSecondary(context),
-                fontSize: descSize,
+              title,
+              style: AppTextStyles.labelMedium(context).copyWith(
+                color: unlocked ? color : AppColors.getTextSecondary(context),
+                fontWeight: FontWeight.w600,
               ),
               textAlign: TextAlign.center,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
-            if (unlocked && earnedDate != null)
-              Padding(
-                padding:
-                    EdgeInsets.only(top: ResponsiveValues.spacingS(context)),
-                child: Text(
-                  _formatDate(earnedDate!),
-                  style: AppTextStyles.labelSmall(context).copyWith(
-                    color: color,
-                    fontSize: badgeSize,
-                    fontWeight: FontWeight.w600,
-                  ),
+            if (unlocked && earnedDate != null) ...[
+              SizedBox(height: ResponsiveValues.spacingXXS(context)),
+              Text(
+                _formatDate(earnedDate!),
+                style: AppTextStyles.caption(context).copyWith(
+                  color: AppColors.getTextSecondary(context),
                 ),
               ),
-            if (!unlocked && progress > 0)
-              Padding(
-                padding:
-                    EdgeInsets.only(top: ResponsiveValues.spacingS(context)),
-                child: Container(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: ResponsiveValues.spacingS(context),
-                    vertical: ResponsiveValues.spacingXXS(context),
-                  ),
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(
-                        ResponsiveValues.radiusFull(context)),
-                    border: Border.all(color: color),
-                  ),
-                  child: Text(
-                    '${(progress * 100).toInt()}%',
-                    style: AppTextStyles.labelSmall(context).copyWith(
-                      color: color,
-                      fontWeight: FontWeight.w600,
-                      fontSize: badgeSize,
-                    ),
-                  ),
-                ),
-              ),
+            ],
           ],
         ),
       ),
-    ).animate().scale(
-        duration: AppThemes.animationMedium,
-        begin: const Offset(0.95, 0.95),
-        end: const Offset(1, 1));
+    )
+        .animate()
+        .scale(
+          begin: const Offset(0.9, 0.9),
+          end: const Offset(1, 1),
+          duration: 300.ms,
+        )
+        .fadeIn(duration: 300.ms);
   }
 
   String _formatDate(DateTime date) {
     final now = DateTime.now();
     final difference = now.difference(date);
 
-    if (difference.inDays == 0) return 'Today';
-    if (difference.inDays == 1) return 'Yesterday';
-    if (difference.inDays < 7) return '${difference.inDays} days ago';
-    return '${date.day}/${date.month}/${date.year}';
+    if (difference.inDays == 0) {
+      return 'Today';
+    } else if (difference.inDays == 1) {
+      return 'Yesterday';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays} days ago';
+    } else if (difference.inDays < 30) {
+      final weeks = (difference.inDays / 7).floor();
+      return '$weeks week${weeks > 1 ? 's' : ''} ago';
+    } else {
+      return '${date.month}/${date.year}';
+    }
   }
 }

@@ -1,46 +1,58 @@
+// lib/providers/subscription_provider.dart
+// COMPLETE PRODUCTION-READY FINAL VERSION - FIXED PARALLEL API CALLS
+
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:hive/hive.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../services/user_session.dart';
 import '../services/connectivity_service.dart';
+import '../services/hive_service.dart';
+import '../services/offline_queue_manager.dart';
 import '../models/subscription_model.dart';
 import '../providers/category_provider.dart';
 import '../utils/constants.dart';
-import '../utils/helpers.dart';
+import '../utils/api_response.dart';
+import 'base_provider.dart';
 
-class SubscriptionProvider with ChangeNotifier {
+class SubscriptionProvider extends ChangeNotifier
+    with
+        BaseProvider<SubscriptionProvider>,
+        OfflineAwareProvider<SubscriptionProvider> {
+  @override
+  final ConnectivityService connectivityService;
+
   final ApiService apiService;
   final DeviceService deviceService;
-  final ConnectivityService connectivityService;
+  final HiveService hiveService;
+  final OfflineQueueManager offlineQueueManager;
 
   Map<int, Subscription> _subscriptionsByCategory = {};
   List<Subscription> _allSubscriptions = [];
   Map<int, bool> _categoryAccessCache = {};
   Map<int, bool> _categoryCheckComplete = {};
-  Map<int, DateTime> _lastCheckTime = {};
 
-  bool _isLoading = false;
   bool _hasLoaded = false;
-  String? _error;
-  bool _isOffline = false;
-
-  Timer? _backgroundRefreshTimer;
-  static const Duration _backgroundRefreshInterval = Duration(minutes: 5);
-  static const Duration _cacheDuration = AppConstants.cacheTTLSubscriptions;
+  bool _hasInitialData = false;
 
   DateTime? _lastBackgroundRefreshTime;
+  Box? _subscriptionsBox;
+
+  int _apiCallCount = 0;
 
   final StreamController<Map<int, bool>> _subscriptionUpdateController =
       StreamController<Map<int, bool>>.broadcast();
   final StreamController<List<Subscription>> _subscriptionsUpdateController =
       StreamController<List<Subscription>>.broadcast();
-  final StreamController<int> _subscriptionStatusChangedController =
-      StreamController<int>.broadcast();
 
   final Map<int, Completer<bool>> _categoryCheckCompleters = {};
   static const Duration _categoryCheckTimeout = Duration(seconds: 10);
+
+  // Add a semaphore to limit parallel requests
+  static const int _maxConcurrentRequests = 2;
+  int _activeRequests = 0;
+  final List<Map<String, dynamic>> _pendingRequests = [];
 
   CategoryProvider? _categoryProvider;
 
@@ -48,36 +60,160 @@ class SubscriptionProvider with ChangeNotifier {
     required this.apiService,
     required this.deviceService,
     required this.connectivityService,
+    required this.hiveService,
+    required this.offlineQueueManager,
   }) {
-    _initBackgroundRefresh();
-    _setupConnectivityListener();
+    log('SubscriptionProvider constructor called');
+    initializeOfflineAware(
+      connectivity: connectivityService,
+      queue: offlineQueueManager,
+    );
+    _init();
   }
 
-  void _setupConnectivityListener() {
-    connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (_isOffline != !isOnline) {
-        _isOffline = !isOnline;
-        if (!_isOffline && _hasLoaded) {
-          _performBackgroundRefresh();
-        }
-        notifyListeners();
+  Future<void> _init() async {
+    log('_init() START');
+    await _openHiveBox();
+    await _loadCachedData();
+
+    _hasInitialData = _allSubscriptions.isNotEmpty;
+    log('_init() END');
+  }
+
+  Future<void> _openHiveBox() async {
+    try {
+      if (!Hive.isBoxOpen(AppConstants.hiveSubscriptionsBox)) {
+        _subscriptionsBox =
+            await Hive.openBox<dynamic>(AppConstants.hiveSubscriptionsBox);
+      } else {
+        _subscriptionsBox =
+            Hive.box<dynamic>(AppConstants.hiveSubscriptionsBox);
       }
-    });
+      log('✅ Hive box opened');
+    } catch (e) {
+      log('⚠️ Error opening Hive box: $e');
+    }
   }
 
-  void setCategoryProvider(CategoryProvider categoryProvider) {
-    _categoryProvider = categoryProvider;
-    debugLog('SubscriptionProvider', '✅ CategoryProvider reference set');
+  Future<void> _loadCachedData() async {
+    try {
+      final userId = await UserSession().getCurrentUserId();
+      if (userId != null && _subscriptionsBox != null) {
+        final cachedSubscriptions =
+            _subscriptionsBox!.get('user_${userId}_subscriptions');
+
+        if (cachedSubscriptions != null && cachedSubscriptions is List) {
+          final List<Subscription> subscriptions = [];
+          for (final item in cachedSubscriptions) {
+            if (item is Subscription) {
+              subscriptions.add(item);
+            } else if (item is Map<String, dynamic>) {
+              subscriptions.add(Subscription.fromJson(item));
+            }
+          }
+
+          if (subscriptions.isNotEmpty) {
+            _allSubscriptions = subscriptions;
+            _rebuildCacheFromSubscriptions();
+            _hasLoaded = true;
+            _hasInitialData = true;
+            _subscriptionsUpdateController.add(_allSubscriptions);
+            _subscriptionUpdateController.add(_categoryAccessCache);
+            log('✅ Loaded ${_allSubscriptions.length} subscriptions from Hive');
+            return;
+          }
+        }
+      }
+
+      log('Trying DeviceService cache');
+      final cachedSubscriptions =
+          await deviceService.getCacheItem<List<dynamic>>(
+        AppConstants.subscriptionsCacheKey,
+        isUserSpecific: true,
+      );
+
+      if (cachedSubscriptions != null) {
+        final List<Subscription> subscriptions = [];
+        for (final json in cachedSubscriptions) {
+          if (json is Map<String, dynamic>) {
+            subscriptions.add(Subscription.fromJson(json));
+          }
+        }
+
+        if (subscriptions.isNotEmpty) {
+          _allSubscriptions = subscriptions;
+          _rebuildCacheFromSubscriptions();
+          _hasLoaded = true;
+          _hasInitialData = true;
+          _subscriptionsUpdateController.add(_allSubscriptions);
+          _subscriptionUpdateController.add(_categoryAccessCache);
+
+          await _saveToHive();
+          log('✅ Loaded ${_allSubscriptions.length} cached subscriptions from DeviceService');
+        }
+      }
+    } catch (e) {
+      log('Error loading cached subscriptions: $e');
+    }
   }
 
+  Future<void> _saveToHive() async {
+    try {
+      final userId = await UserSession().getCurrentUserId();
+      if (userId != null && _subscriptionsBox != null) {
+        await _subscriptionsBox!
+            .put('user_${userId}_subscriptions', _allSubscriptions);
+        log('💾 Saved ${_allSubscriptions.length} subscriptions to Hive');
+      }
+    } catch (e) {
+      log('Error saving to Hive: $e');
+    }
+  }
+
+  void _rebuildCacheFromSubscriptions() {
+    _subscriptionsByCategory = {};
+    _categoryAccessCache = {};
+    _categoryCheckComplete = {};
+
+    for (final sub in _allSubscriptions) {
+      final isActive = sub.isActive;
+      _subscriptionsByCategory[sub.categoryId] = sub;
+      _categoryAccessCache[sub.categoryId] = isActive;
+      _categoryCheckComplete[sub.categoryId] = true;
+    }
+  }
+
+  bool _hasSubscriptionChanges(List<Subscription> newSubscriptions) {
+    if (_allSubscriptions.length != newSubscriptions.length) return true;
+    for (int i = 0; i < newSubscriptions.length; i++) {
+      if (!_allSubscriptions.any((s) =>
+          s.id == newSubscriptions[i].id &&
+          s.isActive == newSubscriptions[i].isActive)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void _notifyChanges() {
+    _subscriptionsUpdateController.add(_allSubscriptions);
+    _subscriptionUpdateController.add(Map.from(_categoryAccessCache));
+    safeNotify();
+  }
+
+  // ===== GETTERS =====
   List<Subscription> get allSubscriptions =>
       List.unmodifiable(_allSubscriptions);
   Map<int, Subscription> get subscriptionsByCategory =>
       Map.unmodifiable(_subscriptionsByCategory);
-  bool get isLoading => _isLoading;
+
   bool get hasLoaded => _hasLoaded;
-  String? get error => _error;
-  bool get isOffline => _isOffline;
+  bool get hasInitialData => _hasInitialData;
+
+  Stream<Map<int, bool>> get subscriptionUpdates =>
+      _subscriptionUpdateController.stream;
+  Stream<List<Subscription>> get subscriptionsUpdates =>
+      _subscriptionsUpdateController.stream;
 
   List<Subscription> get activeSubscriptions {
     return _allSubscriptions.where((sub) => sub.isActive).toList();
@@ -91,27 +227,17 @@ class SubscriptionProvider with ChangeNotifier {
     return _allSubscriptions.where((sub) => sub.isExpiringSoon).toList();
   }
 
-  Stream<Map<int, bool>> get subscriptionUpdates =>
-      _subscriptionUpdateController.stream;
-  Stream<List<Subscription>> get subscriptionsUpdates =>
-      _subscriptionsUpdateController.stream;
-  Stream<int> get subscriptionStatusChanged =>
-      _subscriptionStatusChangedController.stream;
-
   bool hasActiveSubscriptionForCategory(int categoryId) {
     if (_categoryAccessCache.containsKey(categoryId)) {
       return _categoryAccessCache[categoryId]!;
     }
-
     final subscription = _subscriptionsByCategory[categoryId];
     if (subscription != null) {
       final isActive = subscription.isActive;
       _categoryAccessCache[categoryId] = isActive;
       _categoryCheckComplete[categoryId] = true;
-      _lastCheckTime[categoryId] = DateTime.now();
       return isActive;
     }
-
     return false;
   }
 
@@ -123,138 +249,151 @@ class SubscriptionProvider with ChangeNotifier {
     return result;
   }
 
-  void _initBackgroundRefresh() {
-    _backgroundRefreshTimer = Timer.periodic(_backgroundRefreshInterval, (_) {
-      if (_hasLoaded && !_isLoading && !_isOffline) {
-        _performBackgroundRefresh();
-      }
-    });
+  void setCategoryProvider(CategoryProvider categoryProvider) {
+    _categoryProvider = categoryProvider;
+    log('CategoryProvider set');
   }
 
-  Future<void> _performBackgroundRefresh() async {
-    if (_lastBackgroundRefreshTime != null) {
-      final minutesSinceLastRefresh =
-          DateTime.now().difference(_lastBackgroundRefreshTime!).inMinutes;
-      if (minutesSinceLastRefresh < 2) {
-        debugLog('SubscriptionProvider',
-            '⏰ Skipping background refresh - only $minutesSinceLastRefresh minutes since last refresh');
+  // ===== LOAD SUBSCRIPTIONS =====
+  Future<void> loadSubscriptions({
+    bool forceRefresh = false,
+    bool isManualRefresh = false,
+  }) async {
+    _apiCallCount++;
+    final callId = _apiCallCount;
+
+    log('loadSubscriptions() CALL #$callId');
+
+    if (isManualRefresh && isOffline) {
+      throw Exception('Network error. Please check your internet connection.');
+    }
+
+    if (_hasLoaded && !forceRefresh && !isManualRefresh) {
+      log('✅ Already have data, returning cached');
+      _notifyChanges();
+      setLoaded();
+      return;
+    }
+
+    if (isLoading && !forceRefresh) {
+      log('⏳ Already loading, waiting...');
+      int attempts = 0;
+      while (isLoading && attempts < 50) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        attempts++;
+      }
+      if (_hasLoaded) {
+        log('✅ Load completed while waiting');
         return;
       }
     }
 
-    _lastBackgroundRefreshTime = DateTime.now();
-    await _refreshInBackground();
-  }
-
-  Future<void> _refreshInBackground() async {
-    debugLog('SubscriptionProvider', '🔄 Background refresh started');
+    setLoading();
 
     try {
-      final response = await apiService.getMySubscriptions();
-
-      if (response.success && response.data != null) {
-        final newSubscriptions = response.data!;
-
-        final bool hasChanges = _hasSubscriptionChanges(newSubscriptions);
-
-        if (hasChanges) {
-          debugLog(
-              'SubscriptionProvider', '📦 Changes detected, updating cache');
-          _allSubscriptions = newSubscriptions;
-          await deviceService.saveCacheItem(
-              AppConstants.subscriptionsCacheKey, _allSubscriptions,
-              ttl: _cacheDuration, isUserSpecific: true);
-
-          _rebuildCacheFromSubscriptions();
-          _notifyChanges();
-        } else {
-          debugLog('SubscriptionProvider', '✅ No changes detected');
-        }
-      } else {
-        debugLog(
-            'SubscriptionProvider', '⚠️ Background refresh returned no data');
-      }
-    } catch (e) {
-      if (e.toString().contains('429') ||
-          e.toString().contains('Too many requests')) {
-        debugLog('SubscriptionProvider',
-            '⚠️ Rate limited in background, will retry later');
-      } else {
-        debugLog('SubscriptionProvider', '⚠️ Background refresh failed: $e');
-      }
-    }
-  }
-
-  bool _hasSubscriptionChanges(List<Subscription> newSubscriptions) {
-    if (_allSubscriptions.length != newSubscriptions.length) return true;
-
-    for (int i = 0; i < newSubscriptions.length; i++) {
-      if (!_allSubscriptions.any((s) =>
-          s.id == newSubscriptions[i].id &&
-          s.isActive == newSubscriptions[i].isActive)) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  Future<void> loadSubscriptions(
-      {bool forceRefresh = false, bool isManualRefresh = false}) async {
-    if (_isLoading && !forceRefresh) return;
-
-    if (isManualRefresh) {
-      forceRefresh = true;
-    }
-
-    _isLoading = true;
-    _error = null;
-    _notifySafely();
-
-    try {
-      debugLog('SubscriptionProvider', '📥 Loading subscriptions...');
-
-      // STEP 1: ALWAYS try cache first (EVEN WHEN OFFLINE)
+      // STEP 1: Try Hive first
       if (!forceRefresh) {
+        log('STEP 1: Checking Hive cache');
+        final userId = await UserSession().getCurrentUserId();
+        if (userId != null && _subscriptionsBox != null) {
+          final cachedSubscriptions =
+              _subscriptionsBox!.get('user_${userId}_subscriptions');
+
+          if (cachedSubscriptions != null && cachedSubscriptions is List) {
+            final List<Subscription> subscriptions = [];
+            for (final item in cachedSubscriptions) {
+              if (item is Subscription) {
+                subscriptions.add(item);
+              } else if (item is Map<String, dynamic>) {
+                subscriptions.add(Subscription.fromJson(item));
+              }
+            }
+
+            if (subscriptions.isNotEmpty) {
+              _allSubscriptions = subscriptions;
+              _rebuildCacheFromSubscriptions();
+              _hasLoaded = true;
+              _hasInitialData = true;
+              setLoaded();
+              _notifyChanges();
+              log('✅ Loaded ${subscriptions.length} subscriptions from Hive cache');
+
+              if (_categoryProvider != null) {
+                final statusMap = <int, bool>{};
+                for (final sub in _allSubscriptions) {
+                  statusMap[sub.categoryId] = sub.isActive;
+                }
+                unawaited(_categoryProvider!
+                    .batchUpdateSubscriptionStatus(statusMap));
+              }
+
+              if (!isOffline && !isManualRefresh) {
+                unawaited(_refreshInBackground());
+              }
+              return;
+            }
+          }
+        }
+      }
+
+      // STEP 2: Try DeviceService
+      if (!forceRefresh) {
+        log('STEP 2: Checking DeviceService cache');
         final cachedSubscriptions =
-            await deviceService.getCacheItem<List<Subscription>>(
+            await deviceService.getCacheItem<List<dynamic>>(
           AppConstants.subscriptionsCacheKey,
           isUserSpecific: true,
         );
 
-        if (cachedSubscriptions != null && cachedSubscriptions.isNotEmpty) {
-          _allSubscriptions = cachedSubscriptions;
-          _rebuildCacheFromSubscriptions();
-          _hasLoaded = true;
-          _isLoading = false;
-          _notifySafely();
-          _subscriptionsUpdateController.add(_allSubscriptions);
-
-          if (_categoryProvider != null) {
-            final statusMap = <int, bool>{};
-            for (final sub in _allSubscriptions) {
-              statusMap[sub.categoryId] = sub.isActive;
+        if (cachedSubscriptions != null) {
+          final List<Subscription> subscriptions = [];
+          for (final json in cachedSubscriptions) {
+            if (json is Map<String, dynamic>) {
+              subscriptions.add(Subscription.fromJson(json));
             }
-            unawaited(
-                _categoryProvider!.batchUpdateSubscriptionStatus(statusMap));
           }
 
-          debugLog('SubscriptionProvider',
-              '✅ Loaded ${_allSubscriptions.length} subscriptions from cache');
+          if (subscriptions.isNotEmpty) {
+            _allSubscriptions = subscriptions;
+            _rebuildCacheFromSubscriptions();
+            _hasLoaded = true;
+            _hasInitialData = true;
+            setLoaded();
+            _notifyChanges();
+            log('✅ Loaded ${subscriptions.length} subscriptions from DeviceService cache');
 
-          // STEP 2: If online, refresh in background
-          if (!_isOffline) {
-            unawaited(_performBackgroundRefresh());
+            await _saveToHive();
+
+            if (_categoryProvider != null) {
+              final statusMap = <int, bool>{};
+              for (final sub in _allSubscriptions) {
+                statusMap[sub.categoryId] = sub.isActive;
+              }
+              unawaited(
+                  _categoryProvider!.batchUpdateSubscriptionStatus(statusMap));
+            }
+
+            if (!isOffline && !isManualRefresh) {
+              unawaited(_refreshInBackground());
+            }
+            return;
           }
-          return;
         }
       }
 
-      // STEP 3: If offline and no cache, show error
-      if (_isOffline) {
-        _error = 'You are offline. No cached subscriptions available.';
-        _isLoading = false;
-        _notifySafely();
+      // STEP 3: Check offline status
+      if (isOffline) {
+        log('STEP 3: Offline mode');
+        if (_hasInitialData) {
+          _hasLoaded = true;
+          setLoaded();
+          _notifyChanges();
+          log('✅ Showing cached subscriptions offline');
+          return;
+        }
+
+        setLoaded();
+        _notifyChanges();
 
         if (isManualRefresh) {
           throw Exception(
@@ -263,24 +402,56 @@ class SubscriptionProvider with ChangeNotifier {
         return;
       }
 
-      final response = await apiService.getMySubscriptions();
+      // STEP 4: Fetch from API
+      log('STEP 4: Fetching from API');
+      try {
+        final response = await apiService.getMySubscriptions().timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            log('⏱️ API timeout in loadSubscriptions - using cached data');
+            if (_hasInitialData) {
+              _hasLoaded = true;
+              setLoaded();
+              _notifyChanges();
+              return ApiResponse<List<Subscription>>(
+                success: true,
+                message: 'Using cached data (server timeout)',
+                data: _allSubscriptions,
+              );
+            }
+            return ApiResponse<List<Subscription>>(
+              success: false,
+              message: 'Request timed out. Please try again.',
+              data: [],
+            );
+          },
+        );
 
-      if (response.success && response.data != null) {
-        _allSubscriptions = response.data!;
+        if (response.success) {
+          _allSubscriptions = response.data ?? [];
+          log('✅ Received ${_allSubscriptions.length} subscriptions from API');
+        } else {
+          _allSubscriptions = [];
+          setError(response.message);
+          log('ℹ️ No subscriptions found from API');
+        }
 
-        await deviceService.saveCacheItem(
-            AppConstants.subscriptionsCacheKey, _allSubscriptions,
-            ttl: _cacheDuration, isUserSpecific: true);
+        _hasLoaded = true;
+        _hasInitialData = _allSubscriptions.isNotEmpty;
+        setLoaded();
+
+        await _saveToHive();
+
+        deviceService.saveCacheItem(
+          AppConstants.subscriptionsCacheKey,
+          _allSubscriptions.map((s) => s.toJson()).toList(),
+          isUserSpecific: true,
+        );
 
         _rebuildCacheFromSubscriptions();
-        _hasLoaded = true;
-
-        debugLog('SubscriptionProvider',
-            '✅ Loaded ${_allSubscriptions.length} subscriptions, ${activeSubscriptions.length} active');
-
         _notifyChanges();
 
-        if (_categoryProvider != null) {
+        if (_categoryProvider != null && _allSubscriptions.isNotEmpty) {
           final statusMap = <int, bool>{};
           for (final sub in _allSubscriptions) {
             statusMap[sub.categoryId] = sub.isActive;
@@ -288,125 +459,127 @@ class SubscriptionProvider with ChangeNotifier {
           unawaited(
               _categoryProvider!.batchUpdateSubscriptionStatus(statusMap));
         }
-      } else {
-        _error = response.message;
-        debugLog('SubscriptionProvider',
-            '❌ Failed to load subscriptions: ${response.message}');
+        log('✅ Success! Subscriptions loaded');
+      } catch (e) {
+        log('❌ Error loading subscriptions: $e');
+        setError(e.toString());
+        _hasLoaded = true;
+        setLoaded();
+        _notifyChanges();
 
         if (isManualRefresh) {
-          throw Exception(response.message);
+          rethrow;
         }
       }
     } catch (e) {
-      _error = e.toString();
-      debugLog('SubscriptionProvider', '❌ Error loading subscriptions: $e');
+      log('❌ Error loading subscriptions: $e');
 
-      if (e.toString().contains('429') ||
-          e.toString().contains('Too many requests')) {
-        debugLog('SubscriptionProvider', '⚠️ Rate limited, using cached data');
-        if (_allSubscriptions.isEmpty) {
-          final cachedSubscriptions =
-              await deviceService.getCacheItem<List<Subscription>>(
-                  AppConstants.subscriptionsCacheKey,
-                  isUserSpecific: true);
-          if (cachedSubscriptions != null && cachedSubscriptions.isNotEmpty) {
-            _allSubscriptions = cachedSubscriptions;
-            _rebuildCacheFromSubscriptions();
-            _hasLoaded = true;
-            debugLog('SubscriptionProvider',
-                '✅ Recovered from cache after rate limit');
-          }
-        }
-      } else if (_allSubscriptions.isEmpty) {
-        _allSubscriptions = [];
-        _rebuildCacheFromSubscriptions();
-      }
+      setError(e.toString());
+
+      _hasLoaded = true;
+      setLoaded();
+      _notifyChanges();
 
       if (isManualRefresh) {
         rethrow;
       }
     } finally {
-      _isLoading = false;
-      _notifySafely();
+      safeNotify();
     }
   }
 
-  void _rebuildCacheFromSubscriptions() {
-    debugLog('SubscriptionProvider',
-        '🔄 Rebuilding cache from ${_allSubscriptions.length} subscriptions');
+  // ===== CHECK SUBSCRIPTION FOR CATEGORY - FIXED WITH QUEUE =====
+  Future<bool> checkHasActiveSubscriptionForCategory(
+    int categoryId, {
+    bool isManualRefresh = false,
+  }) async {
+    _apiCallCount++;
+    final callId = _apiCallCount;
 
-    _subscriptionsByCategory = {};
-    _categoryAccessCache = {};
-    _categoryCheckComplete = {};
-    _lastCheckTime = {};
+    log('checkHasActiveSubscriptionForCategory() CALL #$callId for category $categoryId');
 
-    for (final sub in _allSubscriptions) {
-      final isActive = sub.isActive;
-
-      _subscriptionsByCategory[sub.categoryId] = sub;
-      _categoryAccessCache[sub.categoryId] = isActive;
-      _categoryCheckComplete[sub.categoryId] = true;
-      _lastCheckTime[sub.categoryId] = DateTime.now();
-
-      debugLog('SubscriptionProvider',
-          '✅ Category ${sub.categoryId} access set to: $isActive');
+    if (isManualRefresh && isOffline) {
+      throw Exception('Network error. Please check your internet connection.');
     }
-  }
 
-  void _notifyChanges() {
-    _subscriptionsUpdateController.add(_allSubscriptions);
-    _subscriptionUpdateController.add(Map.from(_categoryAccessCache));
-    _categoryAccessCache.keys.forEach(_subscriptionStatusChangedController.add);
-  }
-
-  Future<bool> checkHasActiveSubscriptionForCategory(int categoryId,
-      {bool isManualRefresh = false}) async {
-    debugLog('SubscriptionProvider',
-        '🔍 Checking subscription for category: $categoryId');
-
+    // Check cache first
     if (_categoryAccessCache.containsKey(categoryId)) {
-      final result = _categoryAccessCache[categoryId]!;
-      debugLog('SubscriptionProvider',
-          '✅ Cache hit - category $categoryId: $result');
-      return result;
+      final cached = _categoryAccessCache[categoryId]!;
+      log('Using cached access for category $categoryId: $cached');
+      return cached;
     }
 
+    if (isOffline) {
+      log('Offline, returning false for category $categoryId');
+      return false;
+    }
+
+    // If already checking, wait for result
     if (_categoryCheckCompleters.containsKey(categoryId)) {
-      debugLog('SubscriptionProvider',
-          '⏳ Waiting for existing check for category: $categoryId');
+      log('Waiting for existing check for category $categoryId');
       try {
         return await _categoryCheckCompleters[categoryId]!
             .future
             .timeout(_categoryCheckTimeout);
       } on TimeoutException {
-        debugLog(
-            'SubscriptionProvider', '⏰ Category check timeout for $categoryId');
+        log('Timeout waiting for category $categoryId');
         return false;
       }
     }
 
+    // Create completer for this request
     final completer = Completer<bool>();
     _categoryCheckCompleters[categoryId] = completer;
 
-    try {
-      if (_isOffline) {
-        if (isManualRefresh) {
-          throw Exception(
-              'Network error. Please check your internet connection.');
-        }
-        completer.complete(false);
-        return false;
-      }
+    // Queue the request instead of executing immediately
+    _queueCategoryCheck(categoryId, completer);
 
-      final response = await apiService.checkSubscriptionStatus(categoryId);
+    return completer.future;
+  }
+
+  void _queueCategoryCheck(int categoryId, Completer<bool> completer) {
+    _pendingRequests.add({
+      'categoryId': categoryId,
+      'completer': completer,
+      'timestamp': DateTime.now(),
+    });
+
+    _processNextRequest();
+  }
+
+  Future<void> _processNextRequest() async {
+    if (_pendingRequests.isEmpty || _activeRequests >= _maxConcurrentRequests) {
+      return;
+    }
+
+    _activeRequests++;
+    final request = _pendingRequests.removeAt(0);
+    final categoryId = request['categoryId'];
+    final completer = request['completer'];
+
+    try {
+      log('Processing queued request for category $categoryId (active: $_activeRequests)');
+
+      final response =
+          await apiService.checkSubscriptionStatus(categoryId).timeout(
+        const Duration(seconds: 8),
+        onTimeout: () {
+          log('⏱️ API timeout for category $categoryId');
+          return ApiResponse<Map<String, dynamic>>(
+            success: false,
+            message: 'Request timed out',
+            data: {'has_subscription': false},
+          );
+        },
+      );
 
       if (response.success && response.data != null) {
-        final data = response.data as Map<String, dynamic>;
+        final data = response.data!;
         final hasSubscription = data['has_subscription'] == true;
+        log('API response for category $categoryId: hasSubscription=$hasSubscription');
 
         _categoryAccessCache[categoryId] = hasSubscription;
         _categoryCheckComplete[categoryId] = true;
-        _lastCheckTime[categoryId] = DateTime.now();
 
         if (hasSubscription && data['id'] != null) {
           final subscription = Subscription(
@@ -433,62 +606,54 @@ class SubscriptionProvider with ChangeNotifier {
           _subscriptionsByCategory[categoryId] = subscription;
           if (!_allSubscriptions.any((s) => s.id == subscription.id)) {
             _allSubscriptions.add(subscription);
-            unawaited(deviceService.saveCacheItem(
-                AppConstants.subscriptionsCacheKey, _allSubscriptions,
-                ttl: _cacheDuration, isUserSpecific: true));
+            _hasInitialData = true;
+            unawaited(_saveToHive());
           }
         }
 
         _subscriptionUpdateController.add({categoryId: hasSubscription});
-        _subscriptionStatusChangedController.add(categoryId);
 
         if (_categoryProvider != null) {
           unawaited(_categoryProvider!
               .updateCategorySubscriptionStatus(categoryId, hasSubscription));
         }
 
-        debugLog('SubscriptionProvider',
-            '✅ API check - category $categoryId: $hasSubscription');
         completer.complete(hasSubscription);
-        return hasSubscription;
+      } else {
+        log('API returned no subscription for category $categoryId');
+        _categoryAccessCache[categoryId] = false;
+        _categoryCheckComplete[categoryId] = true;
+        _subscriptionUpdateController.add({categoryId: false});
+
+        if (_categoryProvider != null) {
+          unawaited(_categoryProvider!
+              .updateCategorySubscriptionStatus(categoryId, false));
+        }
+
+        completer.complete(false);
       }
-
-      _categoryAccessCache[categoryId] = false;
-      _categoryCheckComplete[categoryId] = true;
-      _lastCheckTime[categoryId] = DateTime.now();
-
-      _subscriptionUpdateController.add({categoryId: false});
-      _subscriptionStatusChangedController.add(categoryId);
-
-      if (_categoryProvider != null) {
-        unawaited(_categoryProvider!
-            .updateCategorySubscriptionStatus(categoryId, false));
-      }
-
-      completer.complete(false);
-      return false;
     } catch (e) {
-      debugLog('SubscriptionProvider', '❌ Error checking subscription: $e');
-
+      log('Error checking subscription for category $categoryId: $e');
       completer.complete(false);
-
-      if (isManualRefresh) {
-        rethrow;
-      }
-      return false;
     } finally {
+      _activeRequests--;
       _categoryCheckCompleters.remove(categoryId);
+      // Process next request
+      _processNextRequest();
     }
   }
 
-  Future<Map<int, bool>> checkSubscriptionsForCategories(List<int> categoryIds,
-      {bool isManualRefresh = false}) async {
+  // ===== CHECK MULTIPLE CATEGORIES - FIXED =====
+  Future<Map<int, bool>> checkSubscriptionsForCategories(
+    List<int> categoryIds, {
+    bool isManualRefresh = false,
+  }) async {
+    log('checkSubscriptionsForCategories() for ${categoryIds.length} categories');
+
     final results = <int, bool>{};
     final updates = <int, bool>{};
 
-    debugLog('SubscriptionProvider',
-        '🔄 Checking subscriptions for categories: $categoryIds');
-
+    // Get cached results first
     for (final categoryId in categoryIds) {
       if (_categoryAccessCache.containsKey(categoryId)) {
         results[categoryId] = _categoryAccessCache[categoryId]!;
@@ -499,17 +664,23 @@ class SubscriptionProvider with ChangeNotifier {
     final missingIds =
         categoryIds.where((id) => !results.containsKey(id)).toList();
 
-    if (missingIds.isNotEmpty && !_isOffline) {
+    if (missingIds.isNotEmpty && !isOffline) {
+      log('Checking ${missingIds.length} missing categories (will be queued)');
+
+      // Create futures for all missing categories
       final futures = missingIds.map((id) =>
           checkHasActiveSubscriptionForCategory(id,
               isManualRefresh: isManualRefresh));
+
+      // Wait for all to complete (they will be queued and processed sequentially)
       final newResults = await Future.wait(futures);
 
       for (int i = 0; i < missingIds.length; i++) {
         results[missingIds[i]] = newResults[i];
         updates[missingIds[i]] = newResults[i];
       }
-    } else if (_isOffline && missingIds.isNotEmpty && isManualRefresh) {
+    } else if (isOffline && missingIds.isNotEmpty && isManualRefresh) {
+      log('❌ Offline with missing categories during manual refresh');
       throw Exception('Network error. Please check your internet connection.');
     }
 
@@ -517,102 +688,128 @@ class SubscriptionProvider with ChangeNotifier {
       unawaited(_categoryProvider!.batchUpdateSubscriptionStatus(updates));
     }
 
-    debugLog(
-        'SubscriptionProvider', '✅ Final subscription check results: $results');
+    log('Returning results for ${results.length} categories');
     return results;
   }
 
-  Future<void> preCheckActiveCategories(List<int> categoryIds) async {
-    if (categoryIds.isEmpty) return;
+  Future<void> _refreshInBackground() async {
+    if (isOffline) return;
 
-    debugLog('SubscriptionProvider',
-        '🔍 Pre-checking ${categoryIds.length} categories');
-
-    final futures = <Future>[];
-    final updates = <int, bool>{};
-
-    for (final categoryId in categoryIds) {
-      if (!_categoryAccessCache.containsKey(categoryId) && !_isOffline) {
-        futures.add(
-            checkHasActiveSubscriptionForCategory(categoryId).then((result) {
-          updates[categoryId] = result;
-        }));
+    if (_lastBackgroundRefreshTime != null) {
+      final minutesSinceLastRefresh =
+          DateTime.now().difference(_lastBackgroundRefreshTime!).inMinutes;
+      if (minutesSinceLastRefresh < 2) {
+        log('Skipping background refresh - too soon');
+        return;
       }
     }
+    _lastBackgroundRefreshTime = DateTime.now();
 
-    if (futures.isNotEmpty) {
-      await Future.wait(futures);
+    try {
+      final response = await apiService.getMySubscriptions().timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          log('⏱️ API timeout in background refresh');
+          return ApiResponse<List<Subscription>>(
+            success: false,
+            message: 'Request timed out',
+            data: [],
+          );
+        },
+      );
 
-      if (_categoryProvider != null && updates.isNotEmpty) {
-        unawaited(_categoryProvider!.batchUpdateSubscriptionStatus(updates));
+      if (response.success && response.data != null) {
+        final newSubscriptions = response.data!;
+
+        if (_hasSubscriptionChanges(newSubscriptions)) {
+          log('Changes detected in background refresh');
+          _allSubscriptions = newSubscriptions;
+
+          await _saveToHive();
+          deviceService.saveCacheItem(
+            AppConstants.subscriptionsCacheKey,
+            _allSubscriptions.map((s) => s.toJson()).toList(),
+            isUserSpecific: true,
+          );
+
+          _rebuildCacheFromSubscriptions();
+          _notifyChanges();
+          log('🔄 Background refresh complete with changes');
+        }
       }
+    } catch (e) {
+      log('⚠️ Background refresh failed: $e');
     }
   }
 
+  // ===== REFRESH METHODS =====
   Future<void> refreshAfterPaymentVerification() async {
-    debugLog(
-        'SubscriptionProvider', '🔄 Refreshing after payment verification');
+    log('refreshAfterPaymentVerification()');
 
     await deviceService.clearCacheByPrefix('subscriptions');
+
+    final userId = await UserSession().getCurrentUserId();
+    if (userId != null && _subscriptionsBox != null) {
+      await _subscriptionsBox!.delete('user_${userId}_subscriptions');
+    }
 
     _allSubscriptions = [];
     _subscriptionsByCategory = {};
     _categoryAccessCache = {};
     _categoryCheckComplete = {};
-    _lastCheckTime = {};
     _hasLoaded = false;
+    _hasInitialData = false;
 
     await loadSubscriptions(forceRefresh: true, isManualRefresh: true);
-    debugLog('SubscriptionProvider', '✅ Subscriptions refreshed');
+    log('refreshAfterPaymentVerification() complete');
   }
 
   Future<void> refreshCategorySubscription(int categoryId) async {
-    try {
-      await deviceService.removeCacheItem(
-          AppConstants.categoryAccessKey(categoryId),
-          isUserSpecific: true);
+    log('refreshCategorySubscription() for category $categoryId');
 
-      _categoryAccessCache.remove(categoryId);
-      _categoryCheckComplete.remove(categoryId);
-      _lastCheckTime.remove(categoryId);
+    await deviceService.removeCacheItem(
+      AppConstants.categoryAccessKey(categoryId),
+      isUserSpecific: true,
+    );
+    _categoryAccessCache.remove(categoryId);
+    _categoryCheckComplete.remove(categoryId);
 
-      if (!_isOffline) {
-        await checkHasActiveSubscriptionForCategory(categoryId);
-      }
-      debugLog('SubscriptionProvider',
-          '✅ Refreshed subscription for category: $categoryId');
-    } catch (e) {
-      debugLog('SubscriptionProvider',
-          '❌ Error refreshing category subscription: $e');
+    if (!isOffline) {
+      await checkHasActiveSubscriptionForCategory(categoryId);
     }
   }
 
   Future<void> forceRefreshAllCategories() async {
-    debugLog('SubscriptionProvider',
-        '🔄 Force refreshing all category subscriptions');
+    log('forceRefreshAllCategories()');
 
     _categoryAccessCache.clear();
     _categoryCheckComplete.clear();
-    _lastCheckTime.clear();
     _categoryCheckCompleters.clear();
 
     await deviceService.clearCacheByPrefix('subscriptions');
-    await loadSubscriptions(forceRefresh: true, isManualRefresh: true);
 
-    debugLog('SubscriptionProvider', '✅ All categories refreshed');
+    final userId = await UserSession().getCurrentUserId();
+    if (userId != null && _subscriptionsBox != null) {
+      await _subscriptionsBox!.delete('user_${userId}_subscriptions');
+    }
+
+    await loadSubscriptions(forceRefresh: true, isManualRefresh: true);
+    log('forceRefreshAllCategories() complete');
+  }
+
+  @override
+  Future<void> onOnlineRefresh() async {
+    log('Online - refreshing subscriptions');
+    await loadSubscriptions(forceRefresh: true);
   }
 
   Future<void> clearUserData() async {
-    debugLog('SubscriptionProvider', ' Clearing subscription data');
-
     final session = UserSession();
-    final isDifferentUser = !await session.isSameUser();
-    final isLoggingOut = await _isLoggingOut();
+    if (!session.shouldClearCacheOnLogout()) return;
 
-    if (!isDifferentUser || !isLoggingOut) {
-      debugLog('SubscriptionProvider',
-          '✅ Same user - preserving subscription cache');
-      return;
+    final userId = await session.getCurrentUserId();
+    if (userId != null && _subscriptionsBox != null) {
+      await _subscriptionsBox!.delete('user_${userId}_subscriptions');
     }
 
     await deviceService.clearCacheByPrefix('subscriptions');
@@ -621,43 +818,28 @@ class SubscriptionProvider with ChangeNotifier {
     _subscriptionsByCategory = {};
     _categoryAccessCache = {};
     _categoryCheckComplete = {};
-    _lastCheckTime = {};
     _hasLoaded = false;
+    _hasInitialData = false;
     _categoryCheckCompleters.clear();
 
     _subscriptionUpdateController.add({});
     _subscriptionsUpdateController.add([]);
-
-    _notifySafely();
+    safeNotify();
   }
 
-  Future<bool> _isLoggingOut() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
-  }
-
+  @override
   void clearError() {
-    _error = null;
-    _notifySafely();
+    clearError();
   }
 
   @override
   void dispose() {
-    _backgroundRefreshTimer?.cancel();
     _subscriptionUpdateController.close();
     _subscriptionsUpdateController.close();
-    _subscriptionStatusChangedController.close();
+    _subscriptionsBox?.close();
     _categoryCheckCompleters.clear();
+    _pendingRequests.clear();
+    disposeSubscriptions();
     super.dispose();
-  }
-
-  void _notifySafely() {
-    if (hasListeners) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (hasListeners) {
-          notifyListeners();
-        }
-      });
-    }
   }
 }

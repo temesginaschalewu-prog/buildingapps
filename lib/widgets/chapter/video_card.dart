@@ -1,24 +1,25 @@
+// lib/widgets/chapter/video_card.dart
+// COMPLETE PRODUCTION-READY FINAL VERSION - FIXED BUTTONS & DOWNLOAD
+
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import '../../models/video_model.dart';
 import '../../providers/video_provider.dart';
+import '../../services/connectivity_service.dart';
+import '../../services/snackbar_service.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
-import '../../utils/responsive_values.dart';
 import '../common/app_card.dart';
-import '../common/app_button.dart';
 import '../common/app_dialog.dart';
-import '../../services/snackbar_service.dart';
 
 class VideoCard extends StatefulWidget {
   final Video video;
   final int chapterId;
   final int index;
-  final VoidCallback? onPlay;
-  final Future<void> Function(VideoQuality? quality)? onDownload;
-  final Future<VideoQuality?> Function(Video video, {bool forPlayback})?
+  final VoidCallback onPlay;
+  final Function(VideoQuality) onDownload;
+  final Future<VideoQuality?> Function(Video, {bool forPlayback})
       onShowQualitySelector;
 
   const VideoCard({
@@ -26,38 +27,50 @@ class VideoCard extends StatefulWidget {
     required this.video,
     required this.chapterId,
     required this.index,
-    this.onPlay,
-    this.onDownload,
-    this.onShowQualitySelector,
+    required this.onPlay,
+    required this.onDownload,
+    required this.onShowQualitySelector,
   });
 
   @override
   State<VideoCard> createState() => _VideoCardState();
 }
 
-class _VideoCardState extends State<VideoCard> {
+class _VideoCardState extends State<VideoCard>
+    with SingleTickerProviderStateMixin {
   late VideoProvider _videoProvider;
+  late AnimationController _pulseController;
+
   bool _isDownloaded = false;
   bool _isDownloading = false;
   double _downloadProgress = 0.0;
+  StreamSubscription? _updateSubscription;
 
   @override
   void initState() {
     super.initState();
+
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat(reverse: true);
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initProviders();
+      _videoProvider = context.read<VideoProvider>();
       _updateDownloadState();
-    });
-  }
 
-  void _initProviders() {
-    _videoProvider = context.read<VideoProvider>();
+      _updateSubscription = _videoProvider.videoUpdates.listen((update) {
+        if (!mounted) return;
+        if (update['video_id'] == widget.video.id) {
+          _updateDownloadState();
 
-    _videoProvider.videoUpdates.listen((update) {
-      if (!mounted) return;
-      if (update['video_id'] == widget.video.id) {
-        _updateDownloadState();
-      }
+          if (update['type'] == 'download_progress') {
+            setState(() {
+              _downloadProgress = update['progress'] ?? 0.0;
+            });
+          }
+        }
+      });
     });
   }
 
@@ -71,444 +84,466 @@ class _VideoCardState extends State<VideoCard> {
     }
   }
 
-  Widget _buildMetadataChip({
-    required IconData icon,
-    required String label,
-    Color? color,
-  }) {
-    final effectiveColor = color ?? AppColors.getTextSecondary(context);
-
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: ResponsiveValues.spacingS(context),
-        vertical: ResponsiveValues.spacingXXS(context),
-      ),
-      decoration: BoxDecoration(
-        color: effectiveColor.withValues(alpha: 0.1),
-        borderRadius:
-            BorderRadius.circular(ResponsiveValues.radiusFull(context)),
-        border: Border.all(color: effectiveColor.withValues(alpha: 0.2)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon,
-              size: ResponsiveValues.iconSizeXXS(context),
-              color: effectiveColor),
-          SizedBox(width: ResponsiveValues.spacingXXS(context)),
-          Text(
-            label,
-            style: AppTextStyles.caption(context)
-                .copyWith(color: effectiveColor, fontWeight: FontWeight.w500),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDownloadProgress() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'Downloading...',
-              style: AppTextStyles.caption(context).copyWith(
-                color: AppColors.telegramBlue,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            Text(
-              '${(_downloadProgress * 100).toInt()}%',
-              style: AppTextStyles.caption(context).copyWith(
-                color: AppColors.getTextSecondary(context),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-        SizedBox(height: ResponsiveValues.spacingXS(context)),
-        ClipRRect(
-          borderRadius:
-              BorderRadius.circular(ResponsiveValues.radiusSmall(context)),
-          child: Stack(
-            children: [
-              Container(
-                height: ResponsiveValues.progressBarHeight(context),
-                decoration: BoxDecoration(
-                  color: AppColors.getSurface(context).withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(
-                      ResponsiveValues.radiusSmall(context)),
-                ),
-              ),
-              FractionallySizedBox(
-                widthFactor: _downloadProgress,
-                child: Container(
-                  height: ResponsiveValues.progressBarHeight(context),
-                  decoration: BoxDecoration(
-                    gradient:
-                        const LinearGradient(colors: AppColors.blueGradient),
-                    borderRadius: BorderRadius.circular(
-                        ResponsiveValues.radiusSmall(context)),
-                    boxShadow: [
-                      BoxShadow(
-                          color: AppColors.telegramBlue.withValues(alpha: 0.5),
-                          blurRadius: ResponsiveValues.spacingXS(context))
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  void _showDeleteDownloadDialog() {
-    AppDialog.delete(
-      context: context,
-      title: 'Remove Download',
-      message: 'Remove downloaded video "${widget.video.title}"?',
-    ).then((confirmed) {
-      if (confirmed == true) {
-        _videoProvider.removeDownload(widget.video.id).then((_) {
-          setState(() => _isDownloaded = false);
-          SnackbarService().showSuccess(context, 'Download removed');
-        });
-      }
-    });
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    _updateSubscription?.cancel();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final hasMultipleQualities = widget.video.hasQualities;
+    final qualities = widget.video.availableQualities;
+    final hasQualities = qualities.length > 1;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isTablet = screenWidth > 600;
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOutCubic,
-      child: AppCard.video(
-        isDownloaded: _isDownloaded,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Stack(
-              children: [
-                ClipRRect(
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(24)),
-                  child: AspectRatio(
-                    aspectRatio: 16 / 9,
-                    child: widget.video.hasThumbnail
-                        ? CachedNetworkImage(
-                            imageUrl: widget.video.fullThumbnailUrl!,
-                            fit: BoxFit.cover,
-                            placeholder: (context, url) => Container(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    AppColors.getSurface(context)
-                                        .withValues(alpha: 0.5),
-                                    AppColors.getSurface(context)
-                                        .withValues(alpha: 0.3),
-                                  ],
-                                ),
-                              ),
-                              child: Center(
-                                child: Icon(
-                                  Icons.movie,
-                                  size: ResponsiveValues.iconSizeXL(context),
-                                  color: Colors.white.withValues(alpha: 0.3),
-                                ),
-                              ),
-                            ),
-                            errorWidget: (context, url, error) => Container(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    AppColors.getSurface(context)
-                                        .withValues(alpha: 0.5),
-                                    AppColors.getSurface(context)
-                                        .withValues(alpha: 0.3),
-                                  ],
-                                ),
-                              ),
-                              child: Center(
-                                child: Icon(
-                                  Icons.broken_image,
-                                  size: ResponsiveValues.iconSizeXL(context),
-                                  color: Colors.white.withValues(alpha: 0.3),
-                                ),
-                              ),
-                            ),
-                          )
-                        : Container(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  AppColors.getSurface(context)
-                                      .withValues(alpha: 0.5),
-                                  AppColors.getSurface(context)
-                                      .withValues(alpha: 0.3),
-                                ],
-                              ),
-                            ),
-                            child: Center(
-                              child: Icon(
-                                Icons.play_circle_outline,
-                                size: ResponsiveValues.iconSizeXXL(context),
-                                color: Colors.white.withValues(alpha: 0.3),
-                              ),
-                            ),
-                          ),
-                  ),
-                ),
-                Positioned.fill(
-                  child: Container(
+    return AppCard.video(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Thumbnail with overlay - ENTIRE AREA IS CLICKABLE
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: _isDownloading ? null : widget.onPlay,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(24)),
+              splashColor: AppColors.telegramBlue.withValues(alpha: 0.3),
+              highlightColor: Colors.transparent,
+              child: Stack(
+                children: [
+                  // Thumbnail placeholder
+                  Container(
+                    height: isTablet ? 220 : 180,
+                    width: double.infinity,
                     decoration: BoxDecoration(
-                      borderRadius:
-                          const BorderRadius.vertical(top: Radius.circular(24)),
                       gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
                         colors: [
-                          Colors.transparent,
-                          Colors.black.withValues(alpha: 0.7)
+                          AppColors.telegramBlue.withValues(alpha: 0.3),
+                          AppColors.telegramPurple.withValues(alpha: 0.2),
                         ],
-                        stops: const [0.6, 1.0],
+                      ),
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(24),
                       ),
                     ),
-                  ),
-                ),
-                Positioned(
-                  top: ResponsiveValues.spacingM(context),
-                  right: ResponsiveValues.spacingM(context),
-                  child: Container(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: ResponsiveValues.spacingS(context),
-                      vertical: ResponsiveValues.spacingXS(context),
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.8),
-                      borderRadius: BorderRadius.circular(
-                          ResponsiveValues.radiusFull(context)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.access_time,
-                            size: ResponsiveValues.iconSizeXXS(context),
-                            color: Colors.white),
-                        SizedBox(width: ResponsiveValues.spacingXXS(context)),
-                        Text(
-                          widget.video.formattedDuration,
-                          style: AppTextStyles.caption(context).copyWith(
-                              color: Colors.white, fontWeight: FontWeight.w600),
+                    child: Center(
+                      child: Container(
+                        width: isTablet ? 80 : 64,
+                        height: isTablet ? 80 : 64,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.3),
+                          shape: BoxShape.circle,
                         ),
-                      ],
+                        child: Icon(
+                          Icons.play_arrow_rounded,
+                          color: Colors.white,
+                          size: isTablet ? 48 : 40,
+                        ),
+                      ),
                     ),
                   ),
-                ),
-                if (hasMultipleQualities)
+
+                  // Duration badge
                   Positioned(
-                    bottom: ResponsiveValues.spacingM(context),
-                    left: ResponsiveValues.spacingM(context),
+                    bottom: 12,
+                    right: 12,
                     child: Container(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: ResponsiveValues.spacingS(context),
-                        vertical: ResponsiveValues.spacingXS(context),
-                      ),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                            colors: AppColors.blueGradient),
-                        borderRadius: BorderRadius.circular(
-                            ResponsiveValues.radiusFull(context)),
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.hd,
-                              size: ResponsiveValues.iconSizeXXS(context),
-                              color: Colors.white),
-                          SizedBox(width: ResponsiveValues.spacingXXS(context)),
-                          Text(
-                            'HD',
-                            style: AppTextStyles.caption(context).copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600),
-                          ),
-                        ],
+                      child: Text(
+                        widget.video.formattedDuration,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
                   ),
-                Positioned.fill(
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: () {
-                        if (widget.onPlay != null) {
-                          widget.onPlay!();
-                        } else if (widget.onShowQualitySelector != null) {
-                          widget.onShowQualitySelector!
-                                  (widget.video, forPlayback: true)
-                              .then((quality) {
-                            if (widget.onDownload != null) {
-                              widget.onDownload!(quality);
-                            }
-                          });
-                        }
-                      },
-                      borderRadius:
-                          const BorderRadius.vertical(top: Radius.circular(24)),
-                      child: Center(
-                        child: Container(
-                          width: ResponsiveValues.iconSizeXXL(context) * 1.5,
-                          height: ResponsiveValues.iconSizeXXL(context) * 1.5,
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                                colors: AppColors.blueGradient),
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.telegramBlue
-                                    .withValues(alpha: 0.5),
-                                blurRadius: ResponsiveValues.spacingXL(context),
-                                spreadRadius:
-                                    ResponsiveValues.spacingXS(context),
+
+                  // Quality badges
+                  if (hasQualities)
+                    Positioned(
+                      top: 12,
+                      left: 12,
+                      child: Row(
+                        children: qualities.take(3).map((q) {
+                          final isRecommended = q.label ==
+                              widget.video.getRecommendedQuality().label;
+                          return Container(
+                            margin: const EdgeInsets.only(right: 4),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              gradient: isRecommended
+                                  ? const LinearGradient(colors: [
+                                      Color(0xFF0088CC),
+                                      Color(0xFF0055AA)
+                                    ])
+                                  : null,
+                              color: isRecommended ? null : Colors.black54,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              q.label,
+                              style: TextStyle(
+                                color: isRecommended
+                                    ? Colors.white
+                                    : Colors.white70,
+                                fontSize: 10,
+                                fontWeight:
+                                    isRecommended ? FontWeight.bold : null,
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+
+                  // Downloading overlay
+                  if (_isDownloading)
+                    Positioned.fill(
+                      child: Container(
+                        color: Colors.black54,
+                        child: Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              ScaleTransition(
+                                scale:
+                                    Tween<double>(begin: 0.8, end: 1.2).animate(
+                                  CurvedAnimation(
+                                    parent: _pulseController,
+                                    curve: Curves.easeInOut,
+                                  ),
+                                ),
+                                child: const Icon(
+                                  Icons.cloud_download_rounded,
+                                  color: Colors.white,
+                                  size: 48,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Downloading... ${(_downloadProgress * 100).toInt()}%',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              SizedBox(
+                                width: 200,
+                                child: LinearProgressIndicator(
+                                  value: _downloadProgress,
+                                  backgroundColor: Colors.white24,
+                                  valueColor: const AlwaysStoppedAnimation(
+                                      Color(0xFF0088CC)),
+                                ),
                               ),
                             ],
                           ),
-                          child: const Icon(Icons.play_arrow_rounded,
-                              color: Colors.white, size: 40),
                         ),
+                      ),
+                    ),
+
+                  // Downloaded badge
+                  if (_isDownloaded && !_isDownloading)
+                    Positioned(
+                      top: 12,
+                      right: 12,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.green,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.check_circle,
+                                color: Colors.white, size: 14),
+                            SizedBox(width: 4),
+                            Text(
+                              'Downloaded',
+                              style:
+                                  TextStyle(color: Colors.white, fontSize: 10),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+
+          // Content
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.video.title,
+                  style: AppTextStyles.titleMedium(context).copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 8),
+
+                // Metadata row
+                Row(
+                  children: [
+                    Icon(
+                      Icons.visibility_rounded,
+                      size: 16,
+                      color: AppColors.getTextSecondary(context),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${widget.video.viewCount} views',
+                      style: AppTextStyles.caption(context).copyWith(
+                        color: AppColors.getTextSecondary(context),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Icon(
+                      Icons.hd_rounded,
+                      size: 16,
+                      color: hasQualities
+                          ? AppColors.telegramBlue
+                          : AppColors.getTextSecondary(context),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${qualities.length} quality${qualities.length > 1 ? 'ies' : ''}',
+                      style: AppTextStyles.caption(context).copyWith(
+                        color: hasQualities
+                            ? AppColors.telegramBlue
+                            : AppColors.getTextSecondary(context),
+                        fontWeight: hasQualities ? FontWeight.w600 : null,
+                      ),
+                    ),
+                  ],
+                ),
+
+                // Download progress bar (when downloading)
+                if (_isDownloading) ...[
+                  const SizedBox(height: 12),
+                  LinearProgressIndicator(
+                    value: _downloadProgress,
+                    backgroundColor: Colors.grey[300],
+                    valueColor: const AlwaysStoppedAnimation(Color(0xFF0088CC)),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Downloading...',
+                        style: AppTextStyles.caption(context).copyWith(
+                          color: AppColors.telegramBlue,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        '${(_downloadProgress * 100).toInt()}%',
+                        style: AppTextStyles.caption(context).copyWith(
+                          color: AppColors.getTextSecondary(context),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+
+          // Action buttons - BIGGER HIT TARGETS
+          Container(
+            decoration: BoxDecoration(
+              border: Border(
+                top: BorderSide(color: AppColors.getDivider(context)),
+              ),
+            ),
+            child: Row(
+              children: [
+                // Play button
+                Expanded(
+                  child: Container(
+                    height: 56,
+                    child: TextButton(
+                      onPressed: _isDownloading ? null : widget.onPlay,
+                      style: TextButton.styleFrom(
+                        shape: const RoundedRectangleBorder(),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.play_arrow_rounded,
+                            color: _isDownloading
+                                ? Colors.grey
+                                : AppColors.telegramBlue,
+                            size: 24,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Play',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                              color: _isDownloading
+                                  ? Colors.grey
+                                  : AppColors.telegramBlue,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Container(
+                  width: 1,
+                  height: 56,
+                  color: AppColors.getDivider(context),
+                ),
+                // Download button
+                Expanded(
+                  child: Container(
+                    height: 56,
+                    child: TextButton(
+                      onPressed: _isDownloading
+                          ? _showCancelDownloadDialog
+                          : () async {
+                              if (_isDownloaded) {
+                                _showDeleteDialog();
+                              } else {
+                                final connectivity =
+                                    context.read<ConnectivityService>();
+                                if (!connectivity.isOnline) {
+                                  SnackbarService()
+                                      .showOffline(context, action: 'download');
+                                  return;
+                                }
+
+                                final quality =
+                                    await widget.onShowQualitySelector(
+                                  widget.video,
+                                  forPlayback: false,
+                                );
+                                if (quality != null) {
+                                  widget.onDownload(quality);
+                                }
+                              }
+                            },
+                      style: TextButton.styleFrom(
+                        shape: const RoundedRectangleBorder(),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            _isDownloaded
+                                ? Icons.check_circle
+                                : (_isDownloading
+                                    ? Icons.hourglass_empty
+                                    : Icons.download_rounded),
+                            color: _isDownloaded
+                                ? Colors.green
+                                : (_isDownloading
+                                    ? Colors.orange
+                                    : AppColors.telegramBlue),
+                            size: 24,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            _isDownloaded
+                                ? 'Downloaded'
+                                : (_isDownloading ? 'Downloading' : 'Download'),
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                              color: _isDownloaded
+                                  ? Colors.green
+                                  : (_isDownloading
+                                      ? Colors.orange
+                                      : AppColors.telegramBlue),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
                 ),
               ],
             ),
-            Padding(
-              padding: ResponsiveValues.cardPadding(context),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    widget.video.title,
-                    style: AppTextStyles.titleMedium(context).copyWith(
-                        fontWeight: FontWeight.w600, letterSpacing: -0.3),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  SizedBox(height: ResponsiveValues.spacingM(context)),
-                  Row(
-                    children: [
-                      _buildMetadataChip(
-                        icon: Icons.visibility_rounded,
-                        label: '${widget.video.viewCount} views',
-                      ),
-                      SizedBox(width: ResponsiveValues.spacingS(context)),
-                      _buildMetadataChip(
-                        icon: Icons.calendar_today_rounded,
-                        label: widget.video.createdAt
-                            .toLocal()
-                            .toString()
-                            .split(' ')[0],
-                      ),
-                    ],
-                  ),
-                  if (_isDownloading) ...[
-                    SizedBox(height: ResponsiveValues.spacingL(context)),
-                    _buildDownloadProgress(),
-                  ],
-                ],
-              ),
-            ),
-            Divider(
-              height: 1,
-              thickness: 1,
-              color: AppColors.getDivider(context).withValues(alpha: 0.2),
-            ),
-            Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: ResponsiveValues.spacingS(context),
-                vertical: ResponsiveValues.spacingXS(context),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: AppButton.glass(
-                      label: 'Play',
-                      icon: Icons.play_arrow_rounded,
-                      onPressed: () {
-                        if (widget.onPlay != null) {
-                          widget.onPlay!();
-                        } else if (widget.onShowQualitySelector != null) {
-                          widget.onShowQualitySelector!
-                                  (widget.video, forPlayback: true)
-                              .then((quality) {
-                            if (widget.onDownload != null) {
-                              widget.onDownload!(quality);
-                            }
-                          });
-                        }
-                      },
-                    ),
-                  ),
-                  Container(
-                    width: 1,
-                    height: ResponsiveValues.spacingXL(context),
-                    color: AppColors.getDivider(context).withValues(alpha: 0.2),
-                  ),
-                  Expanded(
-                    child: AppButton.glass(
-                      label: _isDownloaded
-                          ? 'Downloaded'
-                          : (_isDownloading ? 'Downloading' : 'Download'),
-                      icon: _isDownloaded
-                          ? Icons.check_circle_rounded
-                          : (_isDownloading
-                              ? Icons.hourglass_empty_rounded
-                              : Icons.cloud_download_rounded),
-                      onPressed: _isDownloading
-                          ? null
-                          : () {
-                              if (_isDownloaded) {
-                                _showDeleteDownloadDialog();
-                              } else if (widget.onShowQualitySelector != null) {
-                                widget.onShowQualitySelector!
-                                        (widget.video, forPlayback: false)
-                                    .then((quality) {
-                                  if (widget.onDownload != null) {
-                                    widget.onDownload!(quality);
-                                  }
-                                });
-                              } else if (widget.onDownload != null) {
-                                widget.onDownload!(null);
-                              }
-                            },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
-    )
-        .animate()
-        .fadeIn(
-          duration: 400.ms,
-          delay: (widget.index * 100).ms,
-          curve: Curves.easeOutQuad,
-        )
-        .scale(
-          begin: const Offset(0.95, 0.95),
-          end: const Offset(1, 1),
-          duration: 400.ms,
-          delay: (widget.index * 100).ms,
-          curve: Curves.easeOutCubic,
-        );
+    );
+  }
+
+  void _showDeleteDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove Download'),
+        content: Text('Remove "${widget.video.title}" from your downloads?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _videoProvider.removeDownloadedVideo(widget.video.id);
+              SnackbarService().showSuccess(context, 'Download removed');
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCancelDownloadDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Cancel Download'),
+        content: Text('Cancel downloading "${widget.video.title}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('No'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _videoProvider.cancelDownload(widget.video.id);
+              SnackbarService().showInfo(context, 'Download cancelled');
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.orange),
+            child: const Text('Yes, Cancel'),
+          ),
+        ],
+      ),
+    );
   }
 }

@@ -1,25 +1,66 @@
 import '../utils/constants.dart';
 import '../utils/parsers.dart';
+import 'package:hive/hive.dart'; // NEW
 
+part 'user_model.g.dart'; // NEW
+
+@HiveType(typeId: 0) // NEW
 class User {
+  @HiveField(0)
   final int id;
+
+  @HiveField(1)
   final String username;
+
+  @HiveField(2)
   final String? email;
+
+  @HiveField(3)
   final String? phone;
+
+  @HiveField(4)
   final String? profileImage;
+
+  @HiveField(5)
   final int? schoolId;
+
+  @HiveField(6)
   final String accountStatus;
+
+  @HiveField(7)
   final String? primaryDeviceId;
+
+  @HiveField(8)
   final String? tvDeviceId;
+
+  @HiveField(9)
   final bool parentLinked;
+
+  @HiveField(10)
   final String? parentTelegramUsername;
+
+  @HiveField(11)
   final DateTime? parentLinkDate;
+
+  @HiveField(12)
   final int streakCount;
+
+  @HiveField(13)
   final DateTime? lastStreakDate;
+
+  @HiveField(14)
   final int totalStudyTime;
+
+  @HiveField(15)
   final String? adminNotes;
+
+  @HiveField(16)
   final DateTime createdAt;
+
+  @HiveField(17)
   final DateTime updatedAt;
+
+  @HiveField(18)
   final List<Map<String, dynamic>>? subscriptions;
 
   User({
@@ -123,7 +164,7 @@ class User {
     final cleanPath = profileImage!.startsWith('/')
         ? profileImage!.substring(1)
         : profileImage!;
-    return '${AppConstants.baseUrl}/$cleanPath';
+    return '${AppConstants.apiBaseUrl}/$cleanPath';
   }
 
   bool get hasActiveSubscription {

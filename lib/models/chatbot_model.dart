@@ -1,13 +1,30 @@
 import 'dart:convert';
 import '../utils/parsers.dart';
+import 'package:hive/hive.dart'; // NEW
 
+part 'chatbot_model.g.dart'; // NEW
+
+@HiveType(typeId: 13) // NEW
 class ChatbotConversation {
+  @HiveField(0)
   final int id;
+
+  @HiveField(1)
   final String title;
+
+  @HiveField(2)
   final DateTime createdAt;
+
+  @HiveField(3)
   final DateTime updatedAt;
+
+  @HiveField(4)
   final String? lastMessage;
+
+  @HiveField(5)
   final String? lastMessageRole;
+
+  @HiveField(6)
   final int messageCount;
 
   ChatbotConversation({
@@ -47,10 +64,18 @@ class ChatbotConversation {
   String toJsonString() => jsonEncode(toJson());
 }
 
+@HiveType(typeId: 14) // NEW
 class ChatbotMessage {
+  @HiveField(0)
   final int id;
+
+  @HiveField(1)
   final String role;
+
+  @HiveField(2)
   final String content;
+
+  @HiveField(3)
   final DateTime timestamp;
 
   ChatbotMessage({
@@ -83,12 +108,24 @@ class ChatbotMessage {
   bool get isUser => role == 'user';
 }
 
+@HiveType(typeId: 20) // NEW - Using 20 for usage stats
 class ChatbotUsageStats {
+  @HiveField(0)
   final int remaining;
+
+  @HiveField(1)
   final int limit;
+
+  @HiveField(2)
   final int used;
+
+  @HiveField(3)
   final int totalMessages;
+
+  @HiveField(4)
   final int totalConversations;
+
+  @HiveField(5)
   final List<Map<String, dynamic>> weeklyUsage;
 
   ChatbotUsageStats({
@@ -103,8 +140,8 @@ class ChatbotUsageStats {
   factory ChatbotUsageStats.fromJson(Map<String, dynamic> json) {
     final daily = json['daily'] ?? {};
     return ChatbotUsageStats(
-      remaining: Parsers.parseInt(daily['remaining'], 30),
-      limit: Parsers.parseInt(daily['limit'], 30),
+      remaining: Parsers.parseInt(daily['remaining'], 20),
+      limit: Parsers.parseInt(daily['limit'], 20),
       used: Parsers.parseInt(daily['used']),
       totalMessages: Parsers.parseInt(json['total_messages']),
       totalConversations: Parsers.parseInt(json['total_conversations']),

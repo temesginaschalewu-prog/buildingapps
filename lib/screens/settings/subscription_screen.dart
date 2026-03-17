@@ -1,13 +1,16 @@
+// lib/screens/settings/subscription_screen.dart
+// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+
 import '../../models/subscription_model.dart';
 import '../../providers/subscription_provider.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
-import '../../services/refresh_service.dart';
 import '../../utils/ui_helpers.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_button.dart';
@@ -18,7 +21,10 @@ import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/responsive_values.dart';
+import '../../utils/helpers.dart';
+import '../../utils/constants.dart';
 
+/// PRODUCTION-READY SUBSCRIPTION SCREEN with 3-Tier Caching
 class SubscriptionScreen extends StatefulWidget {
   const SubscriptionScreen({super.key});
 
@@ -41,16 +47,29 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
     super.initState();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkConnectivity();
-      _checkPendingCount();
-      _checkCachedData();
-      _loadSubscriptions();
-    });
-    _refreshTimer = Timer.periodic(const Duration(minutes: 5), (_) {
-      if (mounted && !_isOffline) _loadSubscriptions(forceRefresh: true);
+      _initialize();
     });
 
+    _refreshTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+      if (mounted && !_isOffline) {
+        _loadSubscriptions(forceRefresh: true); // TIER 3
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    _connectivitySubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _initialize() async {
+    await _checkConnectivity();
     _setupConnectivityListener();
+    _checkPendingCount();
+    _checkCachedData(); // TIER 1 & 2
+    _loadSubscriptions(); // TIER 1 & 2
   }
 
   void _setupConnectivityListener() {
@@ -62,64 +81,85 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
           _isOffline = !isOnline;
           _pendingCount = connectivityService.pendingActionsCount;
         });
+
+        // Auto-refresh when coming online
+        if (isOnline && !_isRefreshing) {
+          _loadSubscriptions(forceRefresh: true);
+        }
       }
     });
   }
 
-  void _checkCachedData() {
-    final subscriptionProvider = context.read<SubscriptionProvider>();
-    _hasCachedData = subscriptionProvider.hasLoaded &&
-        subscriptionProvider.allSubscriptions.isNotEmpty;
+  Future<void> _checkConnectivity() async {
+    final connectivityService = context.read<ConnectivityService>();
+    await connectivityService.checkConnectivity();
+    if (mounted) {
+      setState(() {
+        _isOffline = !connectivityService.isOnline;
+        _pendingCount = connectivityService.pendingActionsCount;
+      });
+    }
   }
 
   Future<void> _checkPendingCount() async {
-    final connectivity = ConnectivityService();
-    setState(() => _pendingCount = connectivity.pendingActionsCount);
-  }
-
-  @override
-  void dispose() {
-    _refreshTimer?.cancel();
-    _connectivitySubscription?.cancel();
-    super.dispose();
-  }
-
-  Future<void> _checkConnectivity() async {
     final connectivityService = context.read<ConnectivityService>();
-    setState(() {
-      _isOffline = !connectivityService.isOnline;
-      _pendingCount = connectivityService.pendingActionsCount;
-    });
+    if (mounted) {
+      setState(() => _pendingCount = connectivityService.pendingActionsCount);
+    }
   }
 
+  // TIER 1 & 2: Check if we have cached data
+  void _checkCachedData() {
+    final subscriptionProvider = context.read<SubscriptionProvider>();
+    // ✅ FIXED: Changed hasLoaded to isLoaded
+    _hasCachedData = subscriptionProvider.isLoaded &&
+        subscriptionProvider.allSubscriptions.isNotEmpty;
+  }
+
+  // TIER 1 & 2 & 3: Load subscriptions
   Future<void> _loadSubscriptions({bool forceRefresh = false}) async {
     final subscriptionProvider = context.read<SubscriptionProvider>();
     await subscriptionProvider.loadSubscriptions(
-        forceRefresh: forceRefresh && !_isOffline);
+        forceRefresh: forceRefresh && !_isOffline); // Provider handles 3-tier
     if (mounted) {
       setState(() {
-        _hasCachedData = subscriptionProvider.hasLoaded &&
+        // ✅ FIXED: Changed hasLoaded to isLoaded
+        _hasCachedData = subscriptionProvider.isLoaded &&
             subscriptionProvider.allSubscriptions.isNotEmpty;
       });
     }
   }
 
+  // Manual refresh with connectivity check
   Future<void> _manualRefresh() async {
     if (_isRefreshing) return;
+
+    final connectivityService = context.read<ConnectivityService>();
+    if (!connectivityService.isOnline) {
+      setState(() => _isOffline = true);
+      SnackbarService().showOffline(context, action: AppStrings.refresh);
+      return;
+    }
+
     setState(() => _isRefreshing = true);
 
-    final success = await RefreshService().executeRefresh(
-      context: context,
-      refreshFunction: () async {
-        final subscriptionProvider = context.read<SubscriptionProvider>();
-        await subscriptionProvider.loadSubscriptions(forceRefresh: true);
-        if (mounted) setState(() => _isOffline = false);
-      },
-      successMessage: 'Subscriptions updated',
-    );
-
-    if (!success && mounted) setState(() => _isOffline = true);
-    if (mounted) setState(() => _isRefreshing = false);
+    try {
+      final subscriptionProvider = context.read<SubscriptionProvider>();
+      await subscriptionProvider.loadSubscriptions(
+          forceRefresh: true, isManualRefresh: true); // TIER 3
+      setState(() => _isOffline = false);
+      SnackbarService().showSuccess(context, AppStrings.subscriptionsUpdated);
+    } catch (e) {
+      if (isNetworkError(e)) {
+        setState(() => _isOffline = true);
+        SnackbarService().showOffline(context, action: AppStrings.refresh);
+      } else {
+        setState(() => _isOffline = false);
+        SnackbarService().showError(context, AppStrings.refreshFailed);
+      }
+    } finally {
+      if (mounted) setState(() => _isRefreshing = false);
+    }
   }
 
   Color _getStatusColor(String status) =>
@@ -166,7 +206,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                     context.push('/payment', extra: {
                       'category': {
                         'id': subscription.categoryId,
-                        'name': subscription.categoryName ?? 'Category',
+                        'name':
+                            subscription.categoryName ?? AppStrings.category,
                         'price': subscription.price,
                         'billing_cycle': subscription.billingCycle,
                         'isFree': false,
@@ -174,8 +215,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                       'paymentType': 'repayment',
                       'months': subscription.billingCycle == 'semester' ? 4 : 1,
                       'duration_text': subscription.billingCycle == 'semester'
-                          ? '4 months'
-                          : '1 month',
+                          ? AppStrings.fourMonths
+                          : AppStrings.oneMonth,
                     });
                   }
                 : null,
@@ -218,7 +259,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              subscription.categoryName ?? 'Unknown Category',
+                              subscription.categoryName ??
+                                  AppStrings.unknownCategory,
                               style: AppTextStyles.titleMedium(context)
                                   .copyWith(fontWeight: FontWeight.w600),
                               maxLines: 1,
@@ -228,8 +270,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                                 height: ResponsiveValues.spacingXS(context)),
                             Text(
                               subscription.billingCycle == 'monthly'
-                                  ? 'Monthly Subscription'
-                                  : 'Semester Subscription',
+                                  ? AppStrings.monthlySubscription
+                                  : AppStrings.semesterSubscription,
                               style: AppTextStyles.bodySmall(context).copyWith(
                                   color: AppColors.getTextSecondary(context)),
                             ),
@@ -268,12 +310,12 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              'Expires in $daysRemaining days',
+                              '${AppStrings.expiresIn} $daysRemaining ${AppStrings.days}',
                               style: AppTextStyles.labelSmall(context).copyWith(
                                   color: AppColors.getTextSecondary(context)),
                             ),
                             Text(
-                              '${((1 - progressValue) * 100).toInt()}% used',
+                              '${((1 - progressValue) * 100).toInt()}% ${AppStrings.used}',
                               style: AppTextStyles.labelSmall(context).copyWith(
                                   color: statusColor,
                                   fontWeight: FontWeight.w600),
@@ -303,7 +345,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                         children: [
                           _buildInfoRow(
                             icon: Icons.calendar_today_rounded,
-                            label: 'Start Date',
+                            label: AppStrings.startDate,
                             value: _formatDate(subscription.startDate),
                           ),
                           SizedBox(height: ResponsiveValues.spacingM(context)),
@@ -311,24 +353,24 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                             icon: isExpired
                                 ? Icons.event_busy_rounded
                                 : Icons.calendar_month_rounded,
-                            label: 'Expiry Date',
+                            label: AppStrings.expiryDate,
                             value: _formatDate(subscription.expiryDate),
                             valueColor: isExpired ? statusColor : null,
                           ),
                           SizedBox(height: ResponsiveValues.spacingM(context)),
                           _buildInfoRow(
                             icon: Icons.repeat_rounded,
-                            label: 'Billing Cycle',
+                            label: AppStrings.billingCycle,
                             value: subscription.billingCycle == 'monthly'
-                                ? 'Monthly'
-                                : 'Semester',
+                                ? AppStrings.monthly
+                                : AppStrings.semester,
                           ),
                           if (subscription.price != null) ...[
                             SizedBox(
                                 height: ResponsiveValues.spacingM(context)),
                             _buildInfoRow(
                               icon: Icons.payments_rounded,
-                              label: 'Price',
+                              label: AppStrings.price,
                               value:
                                   '${subscription.price!.toStringAsFixed(0)} ETB',
                               valueColor: AppColors.telegramBlue,
@@ -339,8 +381,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                                 height: ResponsiveValues.spacingM(context)),
                             _buildInfoRow(
                               icon: Icons.timer_rounded,
-                              label: 'Days Remaining',
-                              value: '$daysRemaining days',
+                              label: AppStrings.daysRemaining,
+                              value: '$daysRemaining ${AppStrings.days}',
                               valueColor: isExpiringSoon ? statusColor : null,
                             ),
                           ],
@@ -354,13 +396,13 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                       width: double.infinity,
                       child: isExpired
                           ? AppButton.danger(
-                              label: 'Renew Now',
+                              label: AppStrings.renewNow,
                               onPressed: () {
                                 context.push('/payment', extra: {
                                   'category': {
                                     'id': subscription.categoryId,
-                                    'name':
-                                        subscription.categoryName ?? 'Category',
+                                    'name': subscription.categoryName ??
+                                        AppStrings.category,
                                     'price': subscription.price,
                                     'billing_cycle': subscription.billingCycle,
                                     'isFree': false,
@@ -371,13 +413,13 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                               expanded: true,
                             )
                           : AppButton.primary(
-                              label: 'Extend Now',
+                              label: AppStrings.extendNow,
                               onPressed: () {
                                 context.push('/payment', extra: {
                                   'category': {
                                     'id': subscription.categoryId,
-                                    'name':
-                                        subscription.categoryName ?? 'Category',
+                                    'name': subscription.categoryName ??
+                                        AppStrings.category,
                                     'price': subscription.price,
                                     'billing_cycle': subscription.billingCycle,
                                     'isFree': false,
@@ -499,28 +541,34 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
     final expiredSubscriptions = subscriptionProvider.expiredSubscriptions;
     final allSubscriptions = subscriptionProvider.allSubscriptions;
 
+    // 1. LOADING STATE
     if (subscriptionProvider.isLoading && !_hasCachedData) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
         appBar: CustomAppBar(
-          title: 'My Subscriptions',
-          subtitle: 'Loading...',
+          title: AppStrings.mySubscriptions,
+          subtitle: AppStrings.loading,
           leading: AppButton.icon(
               icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
+          showOfflineIndicator: _isOffline,
         ),
         body: Center(child: _buildSkeletonLoader()),
       );
     }
 
+    // 2. MAIN CONTENT
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: CustomAppBar(
-        title: 'My Subscriptions',
+        title: AppStrings.mySubscriptions,
         subtitle: _isRefreshing
-            ? 'Refreshing...'
-            : (_isOffline ? 'Offline mode' : 'Manage your subscriptions'),
+            ? AppStrings.refreshing
+            : (_isOffline
+                ? AppStrings.offlineMode
+                : AppStrings.manageSubscriptions),
         leading: AppButton.icon(
             icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
+        showOfflineIndicator: _isOffline,
       ),
       body: RefreshIndicator(
         onRefresh: _manualRefresh,
@@ -529,6 +577,42 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
         child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
+            // Pending count banner (if offline with pending actions)
+            if (_isOffline && _pendingCount > 0)
+              SliverToBoxAdapter(
+                child: Container(
+                  margin: EdgeInsets.all(ResponsiveValues.spacingM(context)),
+                  padding: ResponsiveValues.cardPadding(context),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        AppColors.info.withValues(alpha: 0.2),
+                        AppColors.info.withValues(alpha: 0.1)
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(
+                        ResponsiveValues.radiusMedium(context)),
+                    border: Border.all(
+                        color: AppColors.info.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.schedule_rounded,
+                          color: AppColors.info,
+                          size: ResponsiveValues.iconSizeS(context)),
+                      SizedBox(width: ResponsiveValues.spacingM(context)),
+                      Expanded(
+                        child: Text(
+                          '$_pendingCount pending action${_pendingCount > 1 ? 's' : ''}',
+                          style: AppTextStyles.bodySmall(context)
+                              .copyWith(color: AppColors.info),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
             SliverPadding(
               padding: EdgeInsets.symmetric(
                 horizontal: ResponsiveValues.spacingL(context),
@@ -537,51 +621,15 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
               sliver: SliverToBoxAdapter(
                 child: Text(
                   _isOffline
-                      ? 'Offline mode - showing cached subscriptions'
-                      : 'Your active and expired subscriptions',
+                      ? AppStrings.offlineCachedSubscriptions
+                      : AppStrings.yourActiveExpiredSubscriptions,
                   style: AppTextStyles.bodyMedium(context)
                       .copyWith(color: AppColors.getTextSecondary(context)),
                 ),
               ),
             ),
-            if (_pendingCount > 0)
-              SliverPadding(
-                padding: EdgeInsets.symmetric(
-                    horizontal: ResponsiveValues.spacingL(context)),
-                sliver: SliverToBoxAdapter(
-                  child: Container(
-                    margin: EdgeInsets.only(
-                        bottom: ResponsiveValues.spacingL(context)),
-                    padding: ResponsiveValues.cardPadding(context),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          AppColors.info.withValues(alpha: 0.2),
-                          AppColors.info.withValues(alpha: 0.1)
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(
-                          ResponsiveValues.radiusMedium(context)),
-                      border: Border.all(
-                          color: AppColors.info.withValues(alpha: 0.3)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.schedule_rounded,
-                            color: AppColors.info, size: 20),
-                        SizedBox(width: ResponsiveValues.spacingM(context)),
-                        Expanded(
-                          child: Text(
-                            '$_pendingCount pending change${_pendingCount > 1 ? 's' : ''}',
-                            style: AppTextStyles.bodySmall(context)
-                                .copyWith(color: AppColors.info),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+
+            // Active Subscriptions Section
             if (activeSubscriptions.isNotEmpty) ...[
               SliverPadding(
                 padding: EdgeInsets.fromLTRB(
@@ -595,7 +643,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        'Active',
+                        AppStrings.active,
                         style: AppTextStyles.titleLarge(context)
                             .copyWith(fontWeight: FontWeight.w600),
                       ),
@@ -636,6 +684,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                 ),
               ),
             ],
+
+            // Expired Subscriptions Section
             if (expiredSubscriptions.isNotEmpty) ...[
               SliverPadding(
                 padding: EdgeInsets.fromLTRB(
@@ -649,7 +699,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        'Expired',
+                        AppStrings.expired,
                         style: AppTextStyles.titleLarge(context)
                             .copyWith(fontWeight: FontWeight.w600),
                       ),
@@ -690,12 +740,14 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                 ),
               ),
             ],
+
+            // Empty State
             if (allSubscriptions.isEmpty && !subscriptionProvider.isLoading)
               SliverFillRemaining(
                 child: Center(
                   child: _isOffline
                       ? AppEmptyState.offline(
-                          message: 'No cached subscriptions available.',
+                          message: AppStrings.noCachedSubscriptions,
                           onRetry: () {
                             setState(() => _isOffline = false);
                             _checkConnectivity();
@@ -704,13 +756,14 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                           pendingCount: _pendingCount,
                         )
                       : AppEmptyState.noData(
-                          dataType: 'subscriptions',
-                          customMessage:
-                              'You don\'t have any subscriptions yet.\nBrowse categories to get started.',
+                          dataType: AppStrings.subscriptions,
+                          customMessage: AppStrings.noSubscriptionsYet,
                           onRefresh: () => context.go('/'),
                         ),
                 ),
               ),
+
+            // Loading indicator while refreshing
             if (subscriptionProvider.isLoading && allSubscriptions.isNotEmpty)
               const SliverToBoxAdapter(
                 child: Padding(

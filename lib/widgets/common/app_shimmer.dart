@@ -92,6 +92,8 @@ class AppShimmer extends StatelessWidget {
     final cardHeight = ResponsiveValues.categoryCardHeight(context);
     final spacing = ResponsiveValues.spacingM(context);
     final isDesktop = MediaQuery.of(context).size.width >= 1024;
+    final titleSize = ResponsiveValues.categoryCardTitleSize(context);
+    final badgeTextSize = ResponsiveValues.categoryCardBadgeTextSize(context);
 
     return Container(
       height: cardHeight,
@@ -102,17 +104,57 @@ class AppShimmer extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          Positioned.fill(child: Container(color: Colors.white)),
+          // Background image placeholder
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.grey[300]!,
+                    Colors.grey[400]!,
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(
+                    ResponsiveValues.radiusXLarge(context)),
+              ),
+            ),
+          ),
+          // Gradient overlay
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withValues(alpha: 0.3),
+                    Colors.transparent,
+                    Colors.black.withValues(alpha: 0.5),
+                  ],
+                  stops: const [0.0, 0.5, 1.0],
+                ),
+                borderRadius: BorderRadius.circular(
+                    ResponsiveValues.radiusXLarge(context)),
+              ),
+            ),
+          ),
+          // Title badge
           Positioned(
             top: spacing,
             left: spacing,
             child: Container(
               width: isDesktop ? 80 : 100,
-              height: 16,
+              height: titleSize + 4,
               decoration: BoxDecoration(
-                  color: Colors.white, borderRadius: BorderRadius.circular(4)),
+                color: Colors.black.withValues(alpha: 0.4),
+                borderRadius: BorderRadius.circular(
+                    ResponsiveValues.radiusSmall(context)),
+              ),
             ),
           ),
+          // Status badge
           Positioned(
             top: spacing,
             right: spacing,
@@ -120,17 +162,37 @@ class AppShimmer extends StatelessWidget {
               width: isDesktop ? 60 : 70,
               height: isDesktop ? 18 : 22,
               decoration: BoxDecoration(
-                  color: Colors.white, borderRadius: BorderRadius.circular(4)),
+                color: Colors.black.withValues(alpha: 0.4),
+                borderRadius: BorderRadius.circular(
+                    ResponsiveValues.radiusSmall(context)),
+              ),
             ),
           ),
+          // Price badge (if applicable)
           Positioned(
             bottom: spacing,
             left: spacing,
             child: Container(
               width: isDesktop ? 50 : 60,
-              height: 16,
+              height: badgeTextSize + 4,
               decoration: BoxDecoration(
-                  color: Colors.white, borderRadius: BorderRadius.circular(4)),
+                color: Colors.black.withValues(alpha: 0.4),
+                borderRadius: BorderRadius.circular(
+                    ResponsiveValues.radiusSmall(context)),
+              ),
+            ),
+          ),
+          // Border overlay
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.1),
+                  width: 0.5,
+                ),
+                borderRadius: BorderRadius.circular(
+                    ResponsiveValues.radiusXLarge(context)),
+              ),
             ),
           ),
         ],

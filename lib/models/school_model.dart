@@ -1,9 +1,20 @@
 import '../utils/parsers.dart';
+import 'package:hive/hive.dart'; // NEW
 
+part 'school_model.g.dart'; // NEW
+
+@HiveType(typeId: 16) // NEW
 class School {
+  @HiveField(0)
   final int id;
+
+  @HiveField(1)
   final String name;
+
+  @HiveField(2)
   final DateTime createdAt;
+
+  @HiveField(3)
   final DateTime updatedAt;
 
   School({

@@ -1,32 +1,89 @@
 import '../utils/parsers.dart';
+import 'package:hive/hive.dart'; // NEW
 
+part 'exam_model.g.dart'; // NEW
+
+@HiveType(typeId: 7) // NEW
 class Exam {
+  @HiveField(0)
   final int id;
+
+  @HiveField(1)
   final String title;
+
+  @HiveField(2)
   final String examType;
+
+  @HiveField(3)
   final DateTime startDate;
+
+  @HiveField(4)
   final DateTime endDate;
+
+  @HiveField(5)
   final int duration;
+
+  @HiveField(6)
   final int? userTimeLimit;
+
+  @HiveField(7)
   final int passingScore;
+
+  @HiveField(8)
   final int maxAttempts;
+
+  @HiveField(9)
   final bool autoSubmit;
+
+  @HiveField(10)
   final bool showResultsImmediately;
+
+  @HiveField(11)
   final String courseName;
+
+  @HiveField(12)
   final int courseId;
+
+  @HiveField(13)
   final int categoryId;
+
+  @HiveField(14)
   final String categoryName;
+
+  @HiveField(15)
   final String categoryStatus;
+
+  @HiveField(16)
   final int attemptsTaken;
+
+  @HiveField(17)
   final String? lastAttemptStatus;
+
+  @HiveField(18)
   final int questionCount;
+
+  @HiveField(19)
   final String status;
+
+  @HiveField(20)
   final String message;
+
+  @HiveField(21)
   final bool canTakeExam;
+
+  @HiveField(22)
   final bool requiresPayment;
+
+  @HiveField(23)
   final bool hasAccess;
+
+  @HiveField(24)
   final int actualDuration;
+
+  @HiveField(25)
   final String timingType;
+
+  @HiveField(26)
   final bool hasPendingPayment;
 
   Exam({

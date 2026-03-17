@@ -1,4 +1,5 @@
 import 'package:familyacademyclient/models/exam_model.dart';
+import 'package:familyacademyclient/utils/responsive_values.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -24,6 +25,7 @@ import 'package:familyacademyclient/screens/settings/parent_link_screen.dart';
 import 'package:familyacademyclient/screens/settings/subscription_screen.dart';
 import 'package:familyacademyclient/screens/settings/support_screen.dart';
 import 'package:familyacademyclient/screens/settings/tv_pairing_screen.dart';
+import 'package:familyacademyclient/utils/helpers.dart';
 
 class AppRouter {
   late final GoRouter router;
@@ -69,6 +71,7 @@ class AppRouter {
                   lastLoginResult['data']['remainingChanges'] ?? 2,
               'canChangeDevice':
                   lastLoginResult['data']['canChangeDevice'] ?? true,
+              'data': lastLoginResult['data'], // Include full data
             };
           }
 
@@ -187,11 +190,19 @@ class AppRouter {
           name: 'device-change',
           pageBuilder: (context, state) {
             Map<String, dynamic> extra = {};
+
+            // FIXED: Properly handle extra data
+            debugLog('Router', 'DeviceChange route called');
+
             if (state.extra != null && state.extra is Map<String, dynamic>) {
-              extra = state.extra as Map<String, dynamic>;
+              extra = Map<String, dynamic>.from(state.extra as Map);
+              debugLog(
+                  'Router', 'Got extra from state with keys: ${extra.keys}');
             } else if (_pendingDeviceChangeData != null) {
-              extra = _pendingDeviceChangeData!;
+              extra = Map<String, dynamic>.from(_pendingDeviceChangeData!);
+              debugLog('Router', 'Using pending device change data');
             }
+
             return MaterialPage(
               key: state.pageKey,
               child: const DeviceChangeScreen(),
@@ -386,8 +397,13 @@ class AppRouter {
             GoRoute(
                 path: '/chatbot',
                 name: 'chatbot',
-                pageBuilder: (context, state) =>
-                    const NoTransitionPage(child: ChatbotScreen())),
+                pageBuilder: (context, state) {
+                  final convParam = state.uri.queryParameters['conv'];
+                  final conversationId = int.tryParse(convParam ?? '');
+                  return NoTransitionPage(
+                    child: ChatbotScreen(conversationId: conversationId),
+                  );
+                }),
             GoRoute(
                 path: '/progress',
                 name: 'progress',
@@ -409,11 +425,12 @@ class AppRouter {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(Icons.error_outline,
-                    size: 64, color: Theme.of(context).colorScheme.error),
+                    size: ResponsiveValues.iconSizeXXXXL(context),
+                    color: Theme.of(context).colorScheme.error),
                 const SizedBox(height: 24),
                 Text('Oops!',
                     style: TextStyle(
-                        fontSize: 36,
+                        fontSize: ResponsiveValues.fontErrorIcon(context),
                         fontWeight: FontWeight.bold,
                         color: Theme.of(context).colorScheme.error)),
                 const SizedBox(height: 16),

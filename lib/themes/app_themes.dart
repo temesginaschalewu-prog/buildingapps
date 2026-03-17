@@ -23,29 +23,35 @@ class AppThemes {
         outline: AppColors.lightDivider,
         outlineVariant: AppColors.lightCardAlt,
       ),
-      scaffoldBackgroundColor: AppColors.lightBackground,
-      appBarTheme: const AppBarTheme(
-        backgroundColor: AppColors.lightBackground,
+      scaffoldBackgroundColor: AppColors.lightBackground
+          .withValues(alpha: 0.92), // More pronounced glass effect
+      appBarTheme: AppBarTheme(
+        backgroundColor: AppColors.lightSurface.withValues(
+            alpha: 0.78), // Even less transparent for better definition
         foregroundColor: AppColors.lightTextPrimary,
-        elevation: 0,
+        elevation: 2, // Increase elevation for better definition
+        shadowColor: AppColors.telegramBlue
+            .withValues(alpha: 0.12), // Slightly more visible shadow
         centerTitle: false,
-        titleTextStyle: TextStyle(
+        titleTextStyle: const TextStyle(
           fontSize: 18,
           fontWeight: FontWeight.w600,
           color: AppColors.lightTextPrimary,
         ),
-        iconTheme: IconThemeData(
+        iconTheme: const IconThemeData(
           color: AppColors.lightTextPrimary,
           size: 24,
         ),
         toolbarHeight: 56,
-        surfaceTintColor: Colors.transparent,
+        surfaceTintColor: AppColors.telegramBlue.withValues(
+            alpha: 0.08), // Slightly more blue tint for subtle coloring
       ),
       bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-        backgroundColor: AppColors.lightBottomNavBar,
+        backgroundColor:
+            AppColors.lightBottomNavBar, // Updated to match new surface color
         selectedItemColor: AppColors.telegramBlue,
         unselectedItemColor: AppColors.lightTextSecondary,
-        elevation: 3,
+        elevation: 2, // Slightly reduce elevation
         type: BottomNavigationBarType.fixed,
         showSelectedLabels: true,
         showUnselectedLabels: true,
@@ -59,12 +65,14 @@ class AppThemes {
         ),
       ),
       cardTheme: CardThemeData(
-        color: AppColors.lightCard,
-        elevation: 1,
+        color: AppColors.lightCard
+            .withValues(alpha: 0.98), // Add subtle transparency
+        elevation: 0.5, // Reduce elevation for subtlety
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
           side: BorderSide(
-            color: AppColors.lightDivider.withValues(alpha: 0.5),
+            color: AppColors.lightDivider
+                .withValues(alpha: 0.3), // More subtle border
             width: 0.5,
           ),
         ),

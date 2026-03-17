@@ -1,31 +1,77 @@
 import '../utils/parsers.dart';
+import '../utils/helpers.dart';
+import 'package:hive/hive.dart'; // NEW
 
+part 'video_model.g.dart'; // NEW
+
+@HiveType(typeId: 4) // NEW
 class VideoQuality {
+  @HiveField(0)
   final String label;
+
+  @HiveField(1)
   final String url;
+
+  @HiveField(2)
   final int height;
+
+  @HiveField(3)
   final bool isAvailable;
+
+  @HiveField(4)
+  final int estimatedSize;
 
   const VideoQuality({
     required this.label,
     required this.url,
     required this.height,
     this.isAvailable = true,
+    this.estimatedSize = 0,
   });
 
-  factory VideoQuality.fromJson(String key, String url) {
+  factory VideoQuality.fromJson(String key, String url, {int duration = 0}) {
+    String label;
+    int height;
+
     switch (key) {
       case 'low':
-        return VideoQuality(label: '360p', url: url, height: 360);
+        label = '360p';
+        height = 360;
+        break;
       case 'medium':
-        return VideoQuality(label: '480p', url: url, height: 480);
+        label = '480p';
+        height = 480;
+        break;
       case 'high':
-        return VideoQuality(label: '720p', url: url, height: 720);
+        label = '720p';
+        height = 720;
+        break;
       case 'highest':
-        return VideoQuality(label: '1080p', url: url, height: 1080);
+        label = '1080p';
+        height = 1080;
+        break;
       default:
-        return VideoQuality(label: '480p', url: url, height: 480);
+        label = '480p';
+        height = 480;
     }
+
+    const bitrates = {
+      360: 0.12,
+      480: 0.25,
+      720: 0.55,
+      1080: 0.95,
+    };
+
+    final seconds = duration.toDouble();
+    final bitrateMbps = bitrates[height] ?? 0.55;
+    final estimatedSize = ((bitrateMbps * 1000000 / 8) * seconds).round();
+
+    return VideoQuality(
+      label: label,
+      url: url,
+      height: height,
+      estimatedSize: estimatedSize,
+    );
   }
 
   Map<String, dynamic> toJson() => {
@@ -33,22 +79,58 @@ class VideoQuality {
         'url': url,
         'height': height,
         'isAvailable': isAvailable,
+        'estimatedSize': estimatedSize,
       };
+
+  String get formattedSize {
+    if (estimatedSize <= 0) return 'Unknown';
+    if (estimatedSize < 1024 * 1024) {
+      return '${(estimatedSize / 1024).round()} KB';
+    }
+    return '${(estimatedSize / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
 }
 
+@HiveType(typeId: 4) // Video itself uses typeId 4
 class Video {
+  @HiveField(0)
   final int id;
+
+  @HiveField(1)
   final String title;
+
+  @HiveField(2)
   final int chapterId;
+
+  @HiveField(3)
   final String filePath;
+
+  @HiveField(4)
   final int fileSize;
+
+  @HiveField(5)
   final int duration;
+
+  @HiveField(6)
   final String? thumbnailUrl;
+
+  @HiveField(7)
   final DateTime? releaseDate;
+
+  @HiveField(8)
   final int viewCount;
+
+  @HiveField(9)
   final DateTime createdAt;
+
+  @HiveField(10)
   final Map<String, VideoQuality>? qualities;
+
+  @HiveField(11)
   final bool hasQualities;
+
+  @HiveField(12)
+  final String? processingStatus;
 
   const Video({
     required this.id,
@@ -63,35 +145,55 @@ class Video {
     required this.createdAt,
     this.qualities,
     this.hasQualities = false,
+    this.processingStatus,
   });
 
   factory Video.fromJson(Map<String, dynamic> json) {
     Map<String, VideoQuality>? qualities;
     final hasQualities = json['has_qualities'] == true;
+    final duration = Parsers.parseInt(json['duration']);
 
-    if (hasQualities && json['qualities'] != null) {
+    if (json['qualities'] != null) {
       qualities = {};
-      final qualitiesJson = json['qualities'] as Map<String, dynamic>;
-      qualitiesJson.forEach((key, value) {
-        if (value is String) {
-          qualities![key] = VideoQuality.fromJson(key, value);
-        }
-      });
+      final qualitiesJson = json['qualities'];
+
+      // Handle both Map<String, dynamic> and Map<dynamic, dynamic>
+      if (qualitiesJson is Map<String, dynamic>) {
+        debugLog('Video', '📦 Raw qualities: ${qualitiesJson.keys.join(', ')}');
+        qualitiesJson.forEach((key, value) {
+          if (value is String && value.isNotEmpty) {
+            qualities![key] =
+                VideoQuality.fromJson(key, value, duration: duration);
+          }
+        });
+      } else if (qualitiesJson is Map<dynamic, dynamic>) {
+        debugLog('Video',
+            '📦 Raw qualities: ${qualitiesJson.keys.map((k) => k.toString()).join(', ')}');
+        qualitiesJson.forEach((key, value) {
+          if (key is String && value is String && value.isNotEmpty) {
+            qualities![key] =
+                VideoQuality.fromJson(key, value, duration: duration);
+          }
+        });
+      }
+
+      debugLog('Video', '✅ Parsed ${qualities.length} qualities');
     }
 
     return Video(
       id: Parsers.parseInt(json['id']),
-      title: json['title']?.toString() ?? '',
+      title: json['title']?.toString().trim() ?? '',
       chapterId: Parsers.parseInt(json['chapter_id']),
       filePath: json['file_path']?.toString() ?? '',
       fileSize: Parsers.parseInt(json['file_size']),
-      duration: Parsers.parseInt(json['duration']),
+      duration: duration,
       thumbnailUrl: json['thumbnail_url']?.toString(),
       releaseDate: Parsers.parseDate(json['release_date']),
       viewCount: Parsers.parseInt(json['view_count']),
       createdAt: Parsers.parseDate(json['created_at']) ?? DateTime.now(),
       qualities: qualities,
       hasQualities: hasQualities,
+      processingStatus: json['processing_status']?.toString(),
     );
   }
 
@@ -108,69 +210,58 @@ class Video {
       'has_qualities': hasQualities,
     };
 
-    if (thumbnailUrl != null) json['thumbnail_url'] = thumbnailUrl;
+    if (thumbnailUrl != null && thumbnailUrl!.isNotEmpty) {
+      json['thumbnail_url'] = thumbnailUrl;
+    }
+
     if (releaseDate != null) {
       json['release_date'] = releaseDate!.toIso8601String();
     }
-    if (qualities != null) {
+
+    if (qualities != null && qualities!.isNotEmpty) {
       json['qualities'] =
           qualities!.map((key, value) => MapEntry(key, value.url));
+    }
+
+    if (processingStatus != null) {
+      json['processing_status'] = processingStatus;
     }
 
     return json;
   }
 
-  String _normalizeUrl(String url) {
-    if (url.isEmpty) return url;
-
-    String normalized = url;
-
-    normalized = normalized.replaceAllMapped(RegExp(r'(https?:)\/\/+'),
-        (match) => match[1] == 'https:' ? 'https://' : 'http://');
-
-    normalized = normalized.replaceAllMapped(RegExp(r'(https?:)\/+'),
-        (match) => match[1] == 'https:' ? 'https://' : 'http://');
-
-    normalized = normalized.replaceAllMapped(
-        RegExp(r'([^:])\/\/(?!/)'), (match) => '${match[1]}/');
-
-    normalized = normalized.replaceAll(RegExp(r'(?<!https?:)\/\/'), '/');
-
-    if (normalized.startsWith('/') || normalized.startsWith('./')) {
-      return 'file://$normalized';
-    }
-
-    if (normalized.contains('/Documents/.familyacademy_cache/')) {
-      return 'file://${normalized.replaceFirst('https://', '').replaceFirst('http://', '')}';
-    }
-
-    if (normalized.contains('dsros0pyh.res.cloudinary.com')) {
-      normalized = normalized.replaceAll(
-          'dsros0pyh.res.cloudinary.com', 'res.cloudinary.com/dsros0pyh');
-    }
-
-    if (normalized.startsWith('res.cloudinary.com')) {
-      normalized = 'https://$normalized';
-    }
-
-    if (normalized.startsWith('https:///')) {
-      normalized = normalized.replaceFirst('https:///', 'https://');
-    }
-    if (normalized.startsWith('http:///')) {
-      normalized = normalized.replaceFirst('http:///', 'http://');
-    }
-
-    return normalized;
+  String? getQualityUrl(String qualityKey) {
+    if (qualities == null || !qualities!.containsKey(qualityKey)) return null;
+    return qualities![qualityKey]!.url;
   }
 
-  String? getQualityUrl(String qualityName) {
-    if (qualities?[qualityName]?.url == null) return null;
-    return _normalizeUrl(qualities![qualityName]!.url);
-  }
+  String get fullVideoUrl => filePath;
 
-  String get fullVideoUrl {
-    if (filePath.isEmpty) return '';
-    return _normalizeUrl(filePath);
+  String? get fullThumbnailUrl => thumbnailUrl;
+
+  bool get hasThumbnail => thumbnailUrl != null && thumbnailUrl!.isNotEmpty;
+
+  List<VideoQuality> get availableQualities {
+    if (qualities != null && qualities!.isNotEmpty) {
+      final list = <VideoQuality>[];
+
+      if (qualities!.containsKey('low')) list.add(qualities!['low']!);
+      if (qualities!.containsKey('medium')) list.add(qualities!['medium']!);
+      if (qualities!.containsKey('high')) list.add(qualities!['high']!);
+      if (qualities!.containsKey('highest')) list.add(qualities!['highest']!);
+
+      debugLog('Video', '📊 Available: ${list.map((q) => q.label).join(', ')}');
+      return list;
+    }
+
+    return [
+      VideoQuality(
+        label: '480p',
+        url: fullVideoUrl,
+        height: 480,
+        estimatedSize: fileSize,
+      )
+    ];
   }
 
   VideoQuality getRecommendedQuality([String? connectionType]) {
@@ -181,69 +272,42 @@ class Video {
     }
 
     try {
-      if (connectionType == 'mobile') {
+      if (connectionType == 'offline') {
+        return available.first;
+      }
+
+      if (connectionType == 'mobile' ||
+          connectionType == '2g' ||
+          connectionType == '3g') {
         for (final q in available) {
           if (q.height <= 480) return q;
         }
         return available.first;
       }
 
-      for (final q in available.reversed) {
-        if (q.height >= 720) return q;
+      if (connectionType == '4g') {
+        for (final q in available) {
+          if (q.height == 480) return q;
+        }
+        return available.first;
       }
 
       return available.last;
     } catch (e) {
-      return available.isNotEmpty
-          ? available.first
-          : VideoQuality(label: '480p', url: fullVideoUrl, height: 480);
+      return available.isNotEmpty ? available.first : available.first;
     }
   }
-
-  List<VideoQuality> get availableQualities {
-    if (qualities != null && qualities!.isNotEmpty) {
-      final list = qualities!.values.toList();
-      list.sort((a, b) => a.height.compareTo(b.height));
-      return list;
-    }
-    return [VideoQuality(label: '480p', url: fullVideoUrl, height: 480)];
-  }
-
-  VideoQuality? get bestQuality {
-    if (qualities == null || qualities!.isEmpty) return null;
-    return qualities!.values.reduce((a, b) => a.height > b.height ? a : b);
-  }
-
-  String? get fullThumbnailUrl {
-    if (thumbnailUrl?.isEmpty ?? true) return null;
-    return _normalizeUrl(thumbnailUrl!);
-  }
-
-  bool get hasThumbnail => fullThumbnailUrl != null;
 
   String get formattedDuration {
+    if (duration <= 0) return '00:00';
+
     final hours = duration ~/ 3600;
     final minutes = (duration % 3600) ~/ 60;
     final seconds = duration % 60;
 
-    if (hours > 0) return '${hours}h ${minutes}m ${seconds}s';
-    if (minutes > 0) return '${minutes}m ${seconds}s';
-    return '${seconds}s';
-  }
-
-  int estimatedSizeForQuality(String quality) {
-    final minutes = duration / 60;
-    switch (quality) {
-      case 'low':
-        return (minutes * 3 * 1024 * 1024).round();
-      case 'medium':
-        return (minutes * 5 * 1024 * 1024).round();
-      case 'high':
-        return (minutes * 8 * 1024 * 1024).round();
-      case 'highest':
-        return (minutes * 12 * 1024 * 1024).round();
-      default:
-        return fileSize;
+    if (hours > 0) {
+      return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
     }
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 }

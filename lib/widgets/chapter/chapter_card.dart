@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -6,23 +5,24 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../models/chapter_model.dart';
 import '../../models/category_model.dart';
 import '../../providers/auth_provider.dart';
-import '../../providers/category_provider.dart';
-import '../../providers/payment_provider.dart';
 import '../../providers/subscription_provider.dart';
+import '../../providers/category_provider.dart';
+import '../../services/connectivity_service.dart';
+import '../../services/snackbar_service.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
-import '../../themes/app_themes.dart';
 import '../../utils/responsive_values.dart';
 import '../../utils/helpers.dart';
+import '../common/app_card.dart';
 import '../common/app_dialog.dart';
 
+/// PRODUCTION-READY CHAPTER CARD with Payment Dialog
 class ChapterCard extends StatelessWidget {
   final Chapter chapter;
   final int courseId;
   final int categoryId;
   final String categoryName;
   final VoidCallback onTap;
-  final EdgeInsetsGeometry? margin;
   final int index;
 
   const ChapterCard({
@@ -32,279 +32,272 @@ class ChapterCard extends StatelessWidget {
     required this.categoryId,
     required this.categoryName,
     required this.onTap,
-    this.margin,
-    this.index = 0,
+    required this.index,
   });
 
-  Color _getStatusColor(BuildContext context, bool hasAccess) {
-    if (hasAccess) return AppColors.telegramGreen;
-    return chapter.isFree ? AppColors.telegramBlue : AppColors.telegramBlue;
-  }
+  @override
+  Widget build(BuildContext context) {
+    final bool canAccess = chapter.canAccessContent;
+    final bool isFree = chapter.isFree;
+    final bool isComingSoon = chapter.status.toLowerCase() == 'coming_soon';
 
-  Color _getStatusBackgroundColor(BuildContext context, bool hasAccess) {
-    if (hasAccess) return AppColors.greenFaded;
-    return chapter.isFree ? AppColors.blueFaded : AppColors.blueFaded;
-  }
-
-  IconData _getStatusIcon(bool hasAccess) {
-    if (hasAccess) return Icons.play_circle_rounded;
-    return chapter.isFree ? Icons.schedule_rounded : Icons.lock_rounded;
-  }
-
-  String _getStatusText(bool hasAccess) {
-    if (hasAccess) return 'START';
-    return chapter.isFree ? 'FREE' : 'LOCKED';
+    return AppCard.chapter(
+      hasAccess: canAccess,
+      onTap: () => _handleTap(context),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _handleTap(context),
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
+          splashColor: AppColors.telegramBlue.withValues(alpha: 0.1),
+          highlightColor: Colors.transparent,
+          child: Padding(
+            padding: ResponsiveValues.cardPadding(context),
+            child: Row(
+              children: [
+                // Icon with status
+                Container(
+                  width: ResponsiveValues.iconSizeXXL(context),
+                  height: ResponsiveValues.iconSizeXXL(context),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: isComingSoon
+                          ? [
+                              AppColors.telegramYellow.withValues(alpha: 0.2),
+                              AppColors.telegramYellow.withValues(alpha: 0.1)
+                            ]
+                          : (canAccess
+                              ? [
+                                  AppColors.telegramGreen
+                                      .withValues(alpha: 0.2),
+                                  AppColors.telegramGreen.withValues(alpha: 0.1)
+                                ]
+                              : [
+                                  AppColors.telegramGray.withValues(alpha: 0.2),
+                                  AppColors.telegramGray.withValues(alpha: 0.1)
+                                ]),
+                    ),
+                    borderRadius: BorderRadius.circular(
+                        ResponsiveValues.radiusLarge(context)),
+                  ),
+                  child: Icon(
+                    isComingSoon
+                        ? Icons.schedule_rounded
+                        : (canAccess
+                            ? Icons.lock_open_rounded
+                            : Icons.lock_rounded),
+                    size: ResponsiveValues.iconSizeL(context),
+                    color: isComingSoon
+                        ? AppColors.telegramYellow
+                        : (canAccess
+                            ? AppColors.telegramGreen
+                            : AppColors.telegramGray),
+                  ),
+                ),
+                SizedBox(width: ResponsiveValues.spacingL(context)),
+                // Content
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        chapter.name,
+                        style: AppTextStyles.titleMedium(context)
+                            .copyWith(fontWeight: FontWeight.w600),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      SizedBox(height: ResponsiveValues.spacingXS(context)),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.calendar_today_rounded,
+                            size: ResponsiveValues.iconSizeXXS(context),
+                            color: AppColors.getTextSecondary(context),
+                          ),
+                          SizedBox(width: ResponsiveValues.spacingXXS(context)),
+                          Text(
+                            chapter.releaseDate != null
+                                ? 'Available: ${formatDate(chapter.releaseDate!)}'
+                                : 'Available now',
+                            style: AppTextStyles.caption(context).copyWith(
+                                color: AppColors.getTextSecondary(context)),
+                          ),
+                        ],
+                      ),
+                      if (isFree)
+                        Padding(
+                          padding: EdgeInsets.only(
+                              top: ResponsiveValues.spacingXS(context)),
+                          child: Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: ResponsiveValues.spacingS(context),
+                              vertical: ResponsiveValues.spacingXXS(context),
+                            ),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(colors: [
+                                AppColors.telegramGreen,
+                                Color(0xFF34D399)
+                              ]),
+                              borderRadius: BorderRadius.circular(
+                                  ResponsiveValues.radiusFull(context)),
+                            ),
+                            child: Text(
+                              'FREE PREVIEW',
+                              style:
+                                  AppTextStyles.statusBadge(context).copyWith(
+                                color: Colors.white,
+                                fontSize:
+                                    ResponsiveValues.fontStatusBadge(context) *
+                                        0.9,
+                              ),
+                            ),
+                          ),
+                        )
+                      else if (isComingSoon)
+                        Padding(
+                          padding: EdgeInsets.only(
+                              top: ResponsiveValues.spacingXS(context)),
+                          child: Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: ResponsiveValues.spacingS(context),
+                              vertical: ResponsiveValues.spacingXXS(context),
+                            ),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  AppColors.telegramYellow
+                                      .withValues(alpha: 0.2),
+                                  AppColors.telegramYellow
+                                      .withValues(alpha: 0.1)
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(
+                                  ResponsiveValues.radiusFull(context)),
+                            ),
+                            child: Text(
+                              'COMING SOON',
+                              style:
+                                  AppTextStyles.statusBadge(context).copyWith(
+                                color: AppColors.telegramYellow,
+                                fontSize:
+                                    ResponsiveValues.fontStatusBadge(context) *
+                                        0.9,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                // Arrow
+                Container(
+                  width: ResponsiveValues.iconSizeL(context),
+                  height: ResponsiveValues.iconSizeL(context),
+                  decoration: BoxDecoration(
+                    color: canAccess
+                        ? AppColors.telegramBlue.withValues(alpha: 0.1)
+                        : Colors.transparent,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Icon(
+                      canAccess
+                          ? Icons.arrow_forward_ios_rounded
+                          : Icons.lock_rounded,
+                      size: ResponsiveValues.iconSizeXS(context),
+                      color: canAccess
+                          ? AppColors.telegramBlue
+                          : AppColors.getTextSecondary(context),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    )
+        .animate()
+        .fadeIn(
+          duration: 300.ms,
+          delay: (index * 50).ms,
+        )
+        .slideX(
+          begin: 0.1,
+          end: 0,
+          duration: 300.ms,
+          delay: (index * 50).ms,
+        );
   }
 
   Future<void> _handleTap(BuildContext context) async {
     final authProvider = context.read<AuthProvider>();
     final subscriptionProvider = context.read<SubscriptionProvider>();
     final categoryProvider = context.read<CategoryProvider>();
+    final connectivity = context.read<ConnectivityService>();
 
     if (!authProvider.isAuthenticated) {
-      showTopSnackBar(context, 'Please login to access content', isError: true);
+      SnackbarService().showError(context, 'Please login to access content');
       return;
     }
 
     final category = categoryProvider.getCategoryById(categoryId);
     if (category == null) {
-      showTopSnackBar(context, 'Category not found', isError: true);
+      SnackbarService().showError(context, 'Category not found');
       return;
     }
 
-    bool hasAccess;
-    if (chapter.isFree || category.isFree) {
-      hasAccess = true;
-    } else {
-      hasAccess = await subscriptionProvider
-          .checkHasActiveSubscriptionForCategory(categoryId);
+    final bool isComingSoon = chapter.status.toLowerCase() == 'coming_soon';
+
+    if (isComingSoon) {
+      SnackbarService().showInfo(context, 'This chapter is coming soon!');
+      return;
     }
+
+    // ✅ FIX: Check if we can access content (either free or have access)
+    final bool hasAccess = chapter.canAccessContent ||
+        subscriptionProvider.hasActiveSubscriptionForCategory(categoryId);
 
     if (hasAccess) {
+      // Can access regardless of online/offline
       onTap();
-    } else {
-      _showAccessDialog(context, category);
-    }
-  }
-
-  void _showAccessDialog(BuildContext context, Category category) {
-    final paymentProvider = context.read<PaymentProvider>();
-    final hasPendingPayment = paymentProvider.payments.any(
-      (payment) =>
-          payment.status == 'pending' &&
-          payment.categoryName.toLowerCase() == category.name.toLowerCase(),
-    );
-
-    if (hasPendingPayment) {
-      _showPendingPaymentDialog(context);
       return;
     }
 
-    _showPurchaseDialog(context, category);
+    // If no access, check if online to show payment dialog
+    if (!connectivity.isOnline) {
+      SnackbarService().showOffline(context, action: 'make payment');
+      return;
+    }
+
+    // Show payment dialog
+    _showPaymentDialog(context, category);
   }
 
-  void _showPurchaseDialog(BuildContext context, Category category) {
+  void _showPaymentDialog(BuildContext context, Category category) {
+    // ✅ FIXED: Check if this is a renewal (user has expired subscription)
+    final subscriptionProvider = context.read<SubscriptionProvider>();
+    final hasExpiredSubscription = subscriptionProvider.expiredSubscriptions
+        .any((sub) => sub.categoryId == category.id);
+
+    final paymentType = hasExpiredSubscription ? 'repayment' : 'first_time';
+
     AppDialog.confirm(
       context: context,
-      title: 'Purchase Required',
-      message:
-          'You need to purchase "${category.name}" to access this chapter.',
-      confirmText: 'Purchase Now',
+      title: 'Unlock Content',
+      message: hasExpiredSubscription
+          ? 'Your subscription for "${category.name}" has expired. Renew to access this chapter.'
+          : 'This chapter requires access to "${category.name}". Purchase to unlock all content.',
+      confirmText: hasExpiredSubscription ? 'Renew Now' : 'Purchase Access',
     ).then((confirmed) {
-      if (confirmed == true) {
+      if (confirmed == true && context.mounted) {
         context.push('/payment', extra: {
           'category': category,
-          'paymentType': 'first_time',
+          'paymentType': paymentType,
         });
       }
     });
-  }
-
-  void _showPendingPaymentDialog(BuildContext context) {
-    AppDialog.info(
-      context: context,
-      title: 'Payment Pending',
-      message:
-          'You have a pending payment for this category. Please wait for admin verification (1-3 working days).',
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Consumer<SubscriptionProvider>(
-      builder: (context, subscriptionProvider, child) {
-        final categoryProvider = context.watch<CategoryProvider>();
-        final category = categoryProvider.getCategoryById(categoryId);
-        final isCategoryFree = category?.isFree ?? false;
-        final hasCachedAccess = isCategoryFree ||
-            subscriptionProvider.hasActiveSubscriptionForCategory(categoryId);
-        final hasAccess = chapter.isFree || hasCachedAccess;
-        final statusColor = _getStatusColor(context, hasAccess);
-        final statusBgColor = _getStatusBackgroundColor(context, hasAccess);
-
-        final iconSize = ResponsiveValues.iconSizeXXL(context);
-        final titleSize = ResponsiveValues.fontTitleMedium(context);
-        final badgeSize = ResponsiveValues.fontBodySmall(context);
-        final padding = ResponsiveValues.cardPadding(context);
-        final iconSpacing = ResponsiveValues.spacingS(context);
-
-        return Container(
-          margin: margin ??
-              EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
-          child: ClipRRect(
-            borderRadius:
-                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      AppColors.getCard(context).withValues(alpha: 0.4),
-                      AppColors.getCard(context).withValues(alpha: 0.2),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(
-                      ResponsiveValues.radiusXLarge(context)),
-                  border: Border.all(
-                    color: hasAccess
-                        ? AppColors.telegramGreen.withValues(alpha: 0.3)
-                        : chapter.isFree
-                            ? AppColors.telegramBlue.withValues(alpha: 0.3)
-                            : AppColors.getTextSecondary(context)
-                                .withValues(alpha: 0.1),
-                    width: 1.5,
-                  ),
-                ),
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: () => _handleTap(context),
-                    borderRadius: BorderRadius.circular(
-                        ResponsiveValues.radiusXLarge(context)),
-                    child: Padding(
-                      padding: padding,
-                      child: Row(
-                        children: [
-                          Container(
-                            width: iconSize,
-                            height: iconSize,
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  statusColor.withValues(alpha: 0.2),
-                                  statusColor.withValues(alpha: 0.05)
-                                ],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                              borderRadius: BorderRadius.circular(
-                                  ResponsiveValues.radiusLarge(context)),
-                              border: Border.all(
-                                  color: statusColor.withValues(alpha: 0.3),
-                                  width: 1.5),
-                            ),
-                            child: Icon(_getStatusIcon(hasAccess),
-                                size: iconSize * 0.5, color: statusColor),
-                          ),
-                          SizedBox(width: iconSpacing),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  chapter.name,
-                                  style: AppTextStyles.titleMedium(context)
-                                      .copyWith(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: titleSize,
-                                    letterSpacing: -0.3,
-                                  ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                SizedBox(
-                                    height: ResponsiveValues.spacingS(context)),
-                                Container(
-                                  padding: EdgeInsets.symmetric(
-                                    horizontal: iconSpacing,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: statusBgColor,
-                                    borderRadius: BorderRadius.circular(
-                                        ResponsiveValues.radiusFull(context)),
-                                    border: Border.all(
-                                        color:
-                                            statusColor.withValues(alpha: 0.3)),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(_getStatusIcon(hasAccess),
-                                          size: badgeSize * 1.2,
-                                          color: statusColor),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        _getStatusText(hasAccess),
-                                        style: TextStyle(
-                                          fontSize: badgeSize,
-                                          color: statusColor,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Padding(
-                            padding: EdgeInsets.only(left: iconSpacing),
-                            child: Container(
-                              padding: EdgeInsets.all(iconSpacing),
-                              decoration: BoxDecoration(
-                                color: hasAccess
-                                    ? AppColors.telegramBlue
-                                        .withValues(alpha: 0.1)
-                                    : Colors.transparent,
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                hasAccess
-                                    ? Icons.chevron_right_rounded
-                                    : Icons.lock_rounded,
-                                size: badgeSize * 1.5,
-                                color: hasAccess
-                                    ? AppColors.telegramBlue
-                                    : AppColors.getTextSecondary(context),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        )
-            .animate()
-            .fadeIn(
-              duration: AppThemes.animationMedium,
-              delay: (index * 50).ms,
-            )
-            .slideX(
-              begin: 0.1,
-              end: 0,
-              duration: AppThemes.animationMedium,
-              delay: (index * 50).ms,
-            );
-      },
-    );
   }
 }

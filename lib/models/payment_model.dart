@@ -1,16 +1,41 @@
 import '../utils/parsers.dart';
+import 'package:hive/hive.dart'; // NEW
 
+part 'payment_model.g.dart'; // NEW
+
+@HiveType(typeId: 10) // NEW
 class Payment {
+  @HiveField(0)
   final int id;
+
+  @HiveField(1)
   final String paymentType;
+
+  @HiveField(2)
   final double amount;
+
+  @HiveField(3)
   final String paymentMethod;
+
+  @HiveField(4)
   final String? accountHolderName;
+
+  @HiveField(5)
   final String status;
+
+  @HiveField(6)
   final DateTime createdAt;
+
+  @HiveField(7)
   final String categoryName;
+
+  @HiveField(8)
   final DateTime? verifiedAt;
+
+  @HiveField(9)
   final String? rejectionReason;
+
+  @HiveField(10)
   final int? categoryId;
 
   Payment({

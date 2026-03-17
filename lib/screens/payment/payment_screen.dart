@@ -1,11 +1,15 @@
-import 'dart:async' show StreamSubscription;
+// lib/screens/payment/payment_screen.dart
+// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:flutter/services.dart';
+
 import '../../models/category_model.dart';
 import '../../providers/payment_provider.dart';
 import '../../providers/auth_provider.dart';
@@ -15,6 +19,7 @@ import '../../providers/category_provider.dart';
 import '../../services/device_service.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
+import '../../services/offline_queue_manager.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_text_field.dart';
@@ -26,7 +31,9 @@ import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/helpers.dart';
+import '../../utils/constants.dart';
 
+/// PRODUCTION-READY PAYMENT SCREEN with 3-Tier Caching
 class PaymentScreen extends StatefulWidget {
   final Map<String, dynamic>? extra;
   const PaymentScreen({super.key, this.extra});
@@ -71,15 +78,28 @@ class _PaymentScreenState extends State<PaymentScreen>
     super.initState();
     _animationController =
         AnimationController(vsync: this, duration: AppThemes.animationMedium);
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _getCurrentUserId();
-      _checkConnectivity();
-      _checkPendingCount();
-      _initializeData();
+      _initialize();
       _animationController.forward();
     });
+  }
 
+  @override
+  void dispose() {
+    _passwordController.dispose();
+    _accountHolderNameController.dispose();
+    _animationController.dispose();
+    _connectivitySubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _initialize() async {
+    await _getCurrentUserId();
+    await _checkConnectivity();
     _setupConnectivityListener();
+    _checkPendingCount();
+    _initializeData();
   }
 
   void _setupConnectivityListener() {
@@ -95,15 +115,6 @@ class _PaymentScreenState extends State<PaymentScreen>
     });
   }
 
-  @override
-  void dispose() {
-    _passwordController.dispose();
-    _accountHolderNameController.dispose();
-    _animationController.dispose();
-    _connectivitySubscription?.cancel();
-    super.dispose();
-  }
-
   Future<void> _getCurrentUserId() async {
     final authProvider = context.read<AuthProvider>();
     _currentUserId = authProvider.currentUser?.id.toString();
@@ -111,17 +122,23 @@ class _PaymentScreenState extends State<PaymentScreen>
 
   Future<void> _checkConnectivity() async {
     final connectivityService = context.read<ConnectivityService>();
-    setState(() {
-      _isOffline = !connectivityService.isOnline;
-      _pendingCount = connectivityService.pendingActionsCount;
-    });
+    await connectivityService.checkConnectivity();
+    if (mounted) {
+      setState(() {
+        _isOffline = !connectivityService.isOnline;
+        _pendingCount = connectivityService.pendingActionsCount;
+      });
+    }
   }
 
   Future<void> _checkPendingCount() async {
-    final connectivity = ConnectivityService();
-    setState(() => _pendingCount = connectivity.pendingActionsCount);
+    final connectivityService = context.read<ConnectivityService>();
+    if (mounted) {
+      setState(() => _pendingCount = connectivityService.pendingActionsCount);
+    }
   }
 
+  // TIER 2: Load cached payment methods
   Future<void> _loadCachedPaymentMethods() async {
     try {
       final deviceService = context.read<DeviceService>();
@@ -149,6 +166,7 @@ class _PaymentScreenState extends State<PaymentScreen>
     }
   }
 
+  // TIER 1 & 2: Initialize from cache/args
   void _initializeData() {
     if (_initialized) return;
 
@@ -156,11 +174,11 @@ class _PaymentScreenState extends State<PaymentScreen>
       final args = widget.extra;
       if (args == null) {
         if (_isOffline) {
-          _loadCachedPaymentMethods();
+          _loadCachedPaymentMethods(); // TIER 2
         }
         setState(() {
           _hasError = true;
-          _errorMessage = 'No payment data provided';
+          _errorMessage = AppStrings.noPaymentDataProvided;
         });
         return;
       }
@@ -177,7 +195,7 @@ class _PaymentScreenState extends State<PaymentScreen>
         if (categoryData['price'] != null) {
           category = Category(
             id: categoryData['id'] ?? 0,
-            name: categoryData['name'] ?? 'Unknown',
+            name: categoryData['name'] ?? AppStrings.unknown,
             status: 'active',
             price: double.parse(categoryData['price'].toString()),
             billingCycle: categoryData['billing_cycle'] ?? 'monthly',
@@ -186,7 +204,7 @@ class _PaymentScreenState extends State<PaymentScreen>
         } else {
           final categoryId = categoryData['id'];
           if (categoryId != null) {
-            category = categoryProvider.getCategoryById(categoryId);
+            category = categoryProvider.getCategoryById(categoryId); // TIER 1
           }
         }
       }
@@ -194,7 +212,7 @@ class _PaymentScreenState extends State<PaymentScreen>
       if (category == null) {
         setState(() {
           _hasError = true;
-          _errorMessage = 'Category not found';
+          _errorMessage = AppStrings.categoryNotFound;
         });
         return;
       }
@@ -212,15 +230,16 @@ class _PaymentScreenState extends State<PaymentScreen>
         _initialized = true;
       });
 
-      _loadPaymentMethods();
+      _loadPaymentMethods(); // TIER 3 if online, TIER 2 if cached
     } catch (e) {
       setState(() {
         _hasError = true;
-        _errorMessage = 'Failed to initialize: $e';
+        _errorMessage = '${AppStrings.failedToInitialize}: $e';
       });
     }
   }
 
+  // TIER 3: Load payment methods from API
   Future<void> _loadPaymentMethods() async {
     if (_settingsLoadAttempted) return;
     _settingsLoadAttempted = true;
@@ -228,15 +247,15 @@ class _PaymentScreenState extends State<PaymentScreen>
     final settingsProvider = context.read<SettingsProvider>();
 
     if (settingsProvider.allSettings.isEmpty && !_isOffline) {
-      await settingsProvider.getAllSettings();
+      await settingsProvider.getAllSettings(); // TIER 3
     }
 
-    _cachedMethods = settingsProvider.getPaymentMethods();
+    _cachedMethods = settingsProvider.getPaymentMethods(); // TIER 1
 
     if (_cachedMethods.isNotEmpty && _currentUserId != null && !_isOffline) {
       try {
         final deviceService = context.read<DeviceService>();
-        await deviceService.saveCacheItem(
+        deviceService.saveCacheItem(
           'payment_methods_$_currentUserId',
           _cachedMethods
               .map((m) => {
@@ -248,7 +267,7 @@ class _PaymentScreenState extends State<PaymentScreen>
               .toList(),
           ttl: const Duration(days: 7),
           isUserSpecific: true,
-        );
+        ); // Save to TIER 2
       } catch (e) {
         debugLog('PaymentScreen', 'Error caching payment methods: $e');
       }
@@ -270,7 +289,7 @@ class _PaymentScreenState extends State<PaymentScreen>
         final sizeInMB = await file.length() / (1024 * 1024);
 
         if (sizeInMB > 5) {
-          SnackbarService().showError(context, 'Image must be less than 5MB');
+          SnackbarService().showError(context, AppStrings.imageTooLarge5MB);
           return;
         }
 
@@ -278,35 +297,36 @@ class _PaymentScreenState extends State<PaymentScreen>
       }
     } catch (e) {
       debugLog('PaymentScreen', 'Error picking image: $e');
-      SnackbarService().showError(context, 'Failed to pick image: $e');
+      SnackbarService()
+          .showError(context, '${AppStrings.failedToPickImage}: $e');
     }
   }
 
   String _getBillingCycleDescription() {
     return _billingCycle == 'semester'
-        ? 'Semester (4 months)'
-        : 'Monthly (1 month)';
+        ? AppStrings.semesterBilling
+        : AppStrings.monthlyBilling;
   }
 
   String _getAccessDurationText() {
     return _billingCycle == 'semester'
-        ? 'You will get access for 4 months'
-        : 'You will get access for 1 month';
+        ? AppStrings.accessFourMonths
+        : AppStrings.accessOneMonth;
   }
 
   String? _validateAccountHolderName(String? value) {
     if (value == null || value.trim().isEmpty) {
-      return 'Account holder name is required';
+      return AppStrings.accountHolderNameRequired;
     }
     if (value.trim().length < 3) {
-      return 'Account holder name must be at least 3 characters';
+      return AppStrings.accountHolderNameMinLength;
     }
     return null;
   }
 
   String? _validatePassword(String? value) {
-    if (value == null || value.isEmpty) return 'Password is required';
-    if (value.length < 6) return 'Password must be at least 6 characters';
+    if (value == null || value.isEmpty) return AppStrings.passwordRequired;
+    if (value.length < 6) return AppStrings.passwordMinLength;
     return null;
   }
 
@@ -325,17 +345,18 @@ class _PaymentScreenState extends State<PaymentScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Payment Method', style: AppTextStyles.labelMedium(context)),
+        Text(AppStrings.paymentMethod,
+            style: AppTextStyles.labelMedium(context)),
         SizedBox(height: ResponsiveValues.spacingS(context)),
         AppCard.glass(
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: DropdownButtonFormField<PaymentMethod>(
-              initialValue: _selectedPaymentMethod,
+              value: _selectedPaymentMethod,
               hint: Padding(
                 padding: ResponsiveValues.listItemPadding(context),
                 child: Text(
-                  'Select a payment method',
+                  AppStrings.selectPaymentMethod,
                   style: AppTextStyles.bodyMedium(context)
                       .copyWith(color: AppColors.getTextSecondary(context)),
                 ),
@@ -400,15 +421,6 @@ class _PaymentScreenState extends State<PaymentScreen>
             ),
           ),
         ),
-        if (_isOffline)
-          Padding(
-            padding: EdgeInsets.only(top: ResponsiveValues.spacingS(context)),
-            child: Text(
-              'Payment methods require internet connection',
-              style: AppTextStyles.caption(context)
-                  .copyWith(color: AppColors.warning),
-            ),
-          ),
         if (_selectedPaymentMethod != null) ...[
           SizedBox(height: ResponsiveValues.spacingL(context)),
           AppCard.glass(
@@ -423,7 +435,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                           size: 16, color: AppColors.telegramBlue),
                       SizedBox(width: ResponsiveValues.spacingS(context)),
                       Text(
-                        'Account Details',
+                        AppStrings.accountDetails,
                         style: AppTextStyles.labelMedium(context)
                             .copyWith(fontWeight: FontWeight.w600),
                       ),
@@ -454,8 +466,8 @@ class _PaymentScreenState extends State<PaymentScreen>
                           onTap: () {
                             Clipboard.setData(ClipboardData(
                                 text: _selectedPaymentMethod!.accountInfo));
-                            SnackbarService()
-                                .showSuccess(context, 'Copied to clipboard');
+                            SnackbarService().showSuccess(
+                                context, AppStrings.copiedToClipboard);
                           },
                           child: Container(
                             padding: EdgeInsets.all(
@@ -479,7 +491,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                   ),
                   SizedBox(height: ResponsiveValues.spacingM(context)),
                   Text(
-                    'Instructions',
+                    AppStrings.instructions,
                     style: AppTextStyles.labelSmall(context)
                         .copyWith(color: AppColors.getTextSecondary(context)),
                   ),
@@ -571,7 +583,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                               SizedBox(
                                   width: ResponsiveValues.spacingXS(context)),
                               Text(
-                                'Remove',
+                                AppStrings.remove,
                                 style: AppTextStyles.caption(context).copyWith(
                                     color: Colors.white,
                                     fontWeight: FontWeight.w600),
@@ -607,7 +619,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                             SizedBox(
                                 width: ResponsiveValues.spacingXS(context)),
                             Text(
-                              'Uploaded',
+                              AppStrings.uploaded,
                               style: AppTextStyles.caption(context).copyWith(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w600),
@@ -634,8 +646,8 @@ class _PaymentScreenState extends State<PaymentScreen>
                   SizedBox(height: ResponsiveValues.spacingM(context)),
                   Text(
                     _isOffline
-                        ? 'Offline - will queue when online'
-                        : 'Tap to upload payment proof',
+                        ? AppStrings.offlineWillQueue
+                        : AppStrings.tapToUploadProof,
                     style: AppTextStyles.bodyMedium(context).copyWith(
                       color: _isOffline
                           ? AppColors.warning
@@ -644,7 +656,9 @@ class _PaymentScreenState extends State<PaymentScreen>
                   ),
                   SizedBox(height: ResponsiveValues.spacingXS(context)),
                   Text(
-                    _isOffline ? 'Connect to internet' : 'JPG or PNG • Max 5MB',
+                    _isOffline
+                        ? AppStrings.connectToInternet
+                        : AppStrings.imageRequirements,
                     style: AppTextStyles.caption(context).copyWith(
                       color: _isOffline
                           ? AppColors.warning
@@ -710,13 +724,13 @@ class _PaymentScreenState extends State<PaymentScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(_category?.name ?? 'Payment',
+                      Text(_category?.name ?? AppStrings.payment,
                           style: AppTextStyles.titleMedium(context)),
                       SizedBox(height: ResponsiveValues.spacingXS(context)),
                       Text(
                         _paymentType == 'first_time'
-                            ? 'First Time Payment'
-                            : 'Renewal Payment',
+                            ? AppStrings.firstTimePayment
+                            : AppStrings.renewalPayment,
                         style: AppTextStyles.bodySmall(context).copyWith(
                             color: AppColors.getTextSecondary(context)),
                       ),
@@ -733,7 +747,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                           fontWeight: FontWeight.w700),
                     ),
                     Text(
-                      'ETB',
+                      AppStrings.etb,
                       style: AppTextStyles.labelMedium(context)
                           .copyWith(color: AppColors.getTextSecondary(context)),
                     ),
@@ -748,22 +762,22 @@ class _PaymentScreenState extends State<PaymentScreen>
             SizedBox(height: ResponsiveValues.spacingL(context)),
             _buildSummaryRow(
                 icon: Icons.category_rounded,
-                label: 'Category',
-                value: _category?.name ?? 'N/A'),
+                label: AppStrings.category,
+                value: _category?.name ?? AppStrings.notAvailable),
             SizedBox(height: ResponsiveValues.spacingS(context)),
             _buildSummaryRow(
                 icon: Icons.calendar_today_rounded,
-                label: 'Billing Cycle',
+                label: AppStrings.billingCycle,
                 value: _getBillingCycleDescription()),
             SizedBox(height: ResponsiveValues.spacingS(context)),
             _buildSummaryRow(
                 icon: Icons.timer_rounded,
-                label: 'Access Duration',
+                label: AppStrings.accessDuration,
                 value: _getAccessDurationText()),
             SizedBox(height: ResponsiveValues.spacingS(context)),
             _buildSummaryRow(
                 icon: Icons.person_rounded,
-                label: 'Username',
+                label: AppStrings.username,
                 value: _username),
           ],
         ),
@@ -823,15 +837,15 @@ class _PaymentScreenState extends State<PaymentScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Payment Details',
+              Text(AppStrings.paymentDetails,
                   style: AppTextStyles.titleMedium(context)),
               SizedBox(height: ResponsiveValues.spacingL(context)),
               _buildPaymentMethodDropdown(methods),
               SizedBox(height: ResponsiveValues.spacingL(context)),
               AppTextField(
                 controller: _accountHolderNameController,
-                label: 'Account Holder Name',
-                hint: 'Enter the account holder name',
+                label: AppStrings.accountHolderName,
+                hint: AppStrings.enterAccountHolderName,
                 prefixIcon: Icons.person_outline_rounded,
                 enabled: !_isOffline,
                 validator: _validateAccountHolderName,
@@ -840,14 +854,15 @@ class _PaymentScreenState extends State<PaymentScreen>
               SizedBox(height: ResponsiveValues.spacingL(context)),
               AppTextField.password(
                 controller: _passwordController,
-                label: 'Password',
-                hint: 'Enter your password',
+                label: AppStrings.password,
+                hint: AppStrings.enterPassword,
                 enabled: !_isOffline,
                 validator: _validatePassword,
                 requiresOnline: true,
               ),
               SizedBox(height: ResponsiveValues.spacingL(context)),
-              Text('Payment Proof', style: AppTextStyles.labelMedium(context)),
+              Text(AppStrings.paymentProof,
+                  style: AppTextStyles.labelMedium(context)),
               SizedBox(height: ResponsiveValues.spacingS(context)),
               _buildProofUploadSection(),
               SizedBox(height: ResponsiveValues.spacingL(context)),
@@ -872,7 +887,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                   SizedBox(width: ResponsiveValues.spacingM(context)),
                   Expanded(
                     child: Text(
-                      'I confirm that all payment information is accurate and valid',
+                      AppStrings.confirmAccuracy,
                       style: AppTextStyles.bodyMedium(context).copyWith(
                         color: _isOffline
                             ? AppColors.getTextSecondary(context)
@@ -883,44 +898,13 @@ class _PaymentScreenState extends State<PaymentScreen>
                   ),
                 ],
               ),
-              if (_isOffline)
-                Padding(
-                  padding: EdgeInsets.only(
-                      top: ResponsiveValues.spacingL(context),
-                      bottom: ResponsiveValues.spacingL(context)),
-                  child: Container(
-                    padding: ResponsiveValues.cardPadding(context),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          AppColors.warning.withValues(alpha: 0.2),
-                          AppColors.warning.withValues(alpha: 0.1)
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(
-                          ResponsiveValues.radiusMedium(context)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.wifi_off_rounded,
-                            color: AppColors.warning, size: 20),
-                        SizedBox(width: ResponsiveValues.spacingM(context)),
-                        Expanded(
-                          child: Text(
-                            'You are offline. Payment will be queued.',
-                            style: AppTextStyles.bodySmall(context)
-                                .copyWith(color: AppColors.warning),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
               SizedBox(height: ResponsiveValues.spacingXL(context)),
               SizedBox(
                 width: double.infinity,
                 child: AppButton.primary(
-                  label: _isOffline ? 'Queue Payment' : 'Submit Payment',
+                  label: _isOffline
+                      ? AppStrings.queuePayment
+                      : AppStrings.submitPayment,
                   onPressed: _isLoading ? null : _submitPayment,
                   icon:
                       _isOffline ? Icons.schedule_rounded : Icons.send_rounded,
@@ -938,31 +922,32 @@ class _PaymentScreenState extends State<PaymentScreen>
         .slideY(begin: 0.1, end: 0, duration: AppThemes.animationMedium);
   }
 
+  // TIER 2 & 3: Submit payment with offline queue
   Future<void> _submitPayment() async {
     if (_category == null) {
-      SnackbarService().showError(context, 'Category information missing');
+      SnackbarService().showError(context, AppStrings.categoryInfoMissing);
       return;
     }
 
     if (_amount <= 0) {
-      SnackbarService().showError(context, 'Invalid payment amount');
+      SnackbarService().showError(context, AppStrings.invalidPaymentAmount);
       return;
     }
 
     if (!_formKey.currentState!.validate()) return;
 
     if (_selectedPaymentMethod == null) {
-      SnackbarService().showError(context, 'Please select a payment method');
+      SnackbarService().showError(context, AppStrings.selectPaymentMethod);
       return;
     }
 
     if (_proofImageFile == null) {
-      SnackbarService().showError(context, 'Please upload payment proof');
+      SnackbarService().showError(context, AppStrings.uploadPaymentProof);
       return;
     }
 
     if (!_confirmAccuracy) {
-      SnackbarService().showError(context, 'Please confirm accuracy');
+      SnackbarService().showError(context, AppStrings.confirmAccuracy);
       return;
     }
 
@@ -974,6 +959,7 @@ class _PaymentScreenState extends State<PaymentScreen>
     final paymentProvider = context.read<PaymentProvider>();
     final subscriptionProvider = context.read<SubscriptionProvider>();
     final authProvider = context.read<AuthProvider>();
+    final queueManager = context.read<OfflineQueueManager>();
 
     try {
       final paymentMethod = _selectedPaymentMethod!.method;
@@ -982,20 +968,19 @@ class _PaymentScreenState extends State<PaymentScreen>
 
       if (isOnline) {
         try {
-          final apiService = paymentProvider.apiService;
           final uploadResponse =
-              await apiService.uploadPaymentProof(_proofImageFile!);
+              await paymentProvider.uploadPaymentProof(_proofImageFile!);
           if (uploadResponse.success && uploadResponse.data != null) {
             proofImageUrl = uploadResponse.data;
           } else {
             SnackbarService()
-                .showError(context, 'Failed to upload payment proof');
+                .showError(context, AppStrings.failedToUploadProof);
             setState(() => _isLoading = false);
             return;
           }
         } catch (uploadError) {
           debugLog('PaymentScreen', 'Upload error: $uploadError');
-          SnackbarService().showError(context, 'Failed to upload image');
+          SnackbarService().showError(context, AppStrings.failedToUploadImage);
           setState(() => _isLoading = false);
           return;
         }
@@ -1003,47 +988,80 @@ class _PaymentScreenState extends State<PaymentScreen>
 
       final accountHolderName = _accountHolderNameController.text.trim();
 
-      final result = await paymentProvider.submitPayment(
-        categoryId: _category!.id,
-        paymentType: _paymentType,
-        paymentMethod: paymentMethod,
-        amount: _amount,
-        accountHolderName:
-            accountHolderName.isNotEmpty ? accountHolderName : null,
-        proofImagePath: proofImageUrl,
-      );
+      if (!isOnline) {
+        // TIER 2: Queue offline
+        queueManager.addItem(
+          type: AppConstants.queueActionSubmitPayment,
+          data: {
+            'categoryId': _category!.id,
+            'paymentType': _paymentType,
+            'paymentMethod': paymentMethod,
+            'amount': _amount,
+            'accountHolderName':
+                accountHolderName.isNotEmpty ? accountHolderName : null,
+            'proofImagePath': null,
+            'userId': _currentUserId,
+          },
+        );
 
-      if (result['success'] == true) {
-        if (result['queued'] == true) {
-          // Payment queued offline
-          SnackbarService().showQueued(context, action: 'Payment');
-          if (mounted) {
-            await context.push('/payment-success', extra: {
-              'category': _category,
-              'category_id': _category!.id,
-              'category_name': _category!.name,
-              'payment_type': _paymentType,
-              'payment_method': paymentMethod,
-              'payment_method_name': _selectedPaymentMethod!.name,
-              'amount': _amount,
-              'billing_cycle': _billingCycle,
-              'months': _monthsToAdd,
-              'duration_text': _getAccessDurationText(),
-              'username': _username,
-              'account_holder_name':
-                  accountHolderName.isNotEmpty ? accountHolderName : null,
-              'timestamp': DateTime.now().toIso8601String(),
-              'queued': true,
-            });
-          }
-        } else {
-          // Payment submitted online
+        // Also save to cache for success screen
+        final deviceService = context.read<DeviceService>();
+        deviceService.saveCacheItem(
+          'last_payment_data',
+          {
+            'categoryId': _category!.id,
+            'paymentType': _paymentType,
+            'paymentMethod': paymentMethod,
+            'paymentMethodName': _selectedPaymentMethod!.name,
+            'categoryName': _category!.name,
+            'amount': _amount,
+            'billingCycle': _billingCycle,
+            'durationText': _getAccessDurationText(),
+            'username': _username,
+            'accountHolderName':
+                accountHolderName.isNotEmpty ? accountHolderName : null,
+            'queued': true,
+          },
+          ttl: const Duration(days: 1),
+        );
+
+        if (mounted) {
+          await context.push('/payment-success', extra: {
+            'category': _category,
+            'category_id': _category!.id,
+            'category_name': _category!.name,
+            'payment_type': _paymentType,
+            'payment_method': paymentMethod,
+            'payment_method_name': _selectedPaymentMethod!.name,
+            'amount': _amount,
+            'billing_cycle': _billingCycle,
+            'months': _monthsToAdd,
+            'duration_text': _getAccessDurationText(),
+            'username': _username,
+            'account_holder_name':
+                accountHolderName.isNotEmpty ? accountHolderName : null,
+            'timestamp': DateTime.now().toIso8601String(),
+            'queued': true,
+          });
+        }
+      } else {
+        // TIER 3: Submit online
+        final result = await paymentProvider.submitPayment(
+          categoryId: _category!.id,
+          paymentType: _paymentType,
+          paymentMethod: paymentMethod,
+          amount: _amount,
+          accountHolderName:
+              accountHolderName.isNotEmpty ? accountHolderName : null,
+          proofImagePath: proofImageUrl,
+        );
+
+        if (result.success && result.data != null) {
           await subscriptionProvider.refreshAfterPaymentVerification();
           await authProvider.checkSession();
 
           if (mounted) {
-            SnackbarService()
-                .showSuccess(context, 'Payment submitted successfully!');
+            SnackbarService().showSuccess(context, AppStrings.paymentSubmitted);
             await context.push('/payment-success', extra: {
               'category': _category,
               'category_id': _category!.id,
@@ -1061,27 +1079,28 @@ class _PaymentScreenState extends State<PaymentScreen>
               'timestamp': DateTime.now().toIso8601String(),
             });
           }
-        }
-      } else {
-        final message = result['message'] ?? 'Payment failed';
-        final action = result['action'];
-
-        if (action == 'device_change_required') {
-          if (mounted) {
-            await context.push('/device-change', extra: {
-              'message': message,
-              'action': action,
-              'data': result['data']
-            });
-          }
         } else {
-          if (mounted) SnackbarService().showError(context, message);
+          final message = result.message;
+          final action = result.data?['action'];
+
+          if (action == 'device_change_required') {
+            if (mounted) {
+              await context.push('/device-change', extra: {
+                'message': message,
+                'action': action,
+                'data': result.data
+              });
+            }
+          } else {
+            if (mounted) SnackbarService().showError(context, message);
+          }
         }
       }
     } catch (e) {
       debugLog('PaymentScreen', 'Payment error: $e');
       if (mounted) {
-        SnackbarService().showError(context, 'Payment failed: ${e.toString()}');
+        SnackbarService()
+            .showError(context, '${AppStrings.paymentFailed}: ${e.toString()}');
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -1117,7 +1136,8 @@ class _PaymentScreenState extends State<PaymentScreen>
                       color: AppColors.telegramBlue, size: 20),
                 ),
                 SizedBox(width: ResponsiveValues.spacingM(context)),
-                Text('Instructions', style: AppTextStyles.titleSmall(context)),
+                Text(AppStrings.instructions,
+                    style: AppTextStyles.titleSmall(context)),
               ],
             ),
             SizedBox(height: ResponsiveValues.spacingL(context)),
@@ -1135,16 +1155,15 @@ class _PaymentScreenState extends State<PaymentScreen>
                 color: AppColors.getDivider(context).withValues(alpha: 0.2),
                 height: 1),
             SizedBox(height: ResponsiveValues.spacingL(context)),
-            Text('Important Notes:',
+            Text(AppStrings.importantNotes,
                 style: AppTextStyles.labelMedium(context)
                     .copyWith(fontWeight: FontWeight.w600)),
             SizedBox(height: ResponsiveValues.spacingS(context)),
-            _buildNoteItem(
-                'Make sure the account holder name matches the bank/mobile account'),
-            _buildNoteItem('Payments are processed within 24 hours'),
-            _buildNoteItem('Keep your payment proof screenshot'),
-            _buildNoteItem('Contact support if payment is not verified'),
-            _buildNoteItem('You will be notified when payment is verified'),
+            _buildNoteItem(AppStrings.noteAccountHolderMatch),
+            _buildNoteItem(AppStrings.noteProcessingTime),
+            _buildNoteItem(AppStrings.noteKeepProof),
+            _buildNoteItem(AppStrings.noteContactSupport),
+            _buildNoteItem(AppStrings.noteNotification),
           ],
         ),
       ),
@@ -1221,7 +1240,8 @@ class _PaymentScreenState extends State<PaymentScreen>
       leading: AppButton.icon(
           icon: Icons.arrow_back_rounded,
           onPressed: () => GoRouter.of(context).pop()),
-      title: Text('Payment', style: AppTextStyles.appBarTitle(context)),
+      title:
+          Text(AppStrings.payment, style: AppTextStyles.appBarTitle(context)),
       centerTitle: false,
     );
   }
@@ -1234,7 +1254,7 @@ class _PaymentScreenState extends State<PaymentScreen>
         child: Padding(
           padding: ResponsiveValues.dialogPadding(context),
           child: AppEmptyState.error(
-            title: 'Payment Error',
+            title: AppStrings.paymentError,
             message: _errorMessage,
             onRetry: () => GoRouter.of(context).pop(),
           ),
@@ -1248,9 +1268,8 @@ class _PaymentScreenState extends State<PaymentScreen>
       child: Padding(
         padding: ResponsiveValues.dialogPadding(context),
         child: AppEmptyState.noData(
-          dataType: 'payment methods',
-          customMessage:
-              'Payment methods are not available.\nPlease try again or contact support.',
+          dataType: AppStrings.paymentMethods,
+          customMessage: AppStrings.paymentMethodsNotAvailable,
           onRefresh: () {
             setState(() {
               _settingsLoadAttempted = false;
@@ -1265,24 +1284,9 @@ class _PaymentScreenState extends State<PaymentScreen>
     );
   }
 
-  Widget _buildOfflineNoMethodsState() {
-    return Center(
-      child: Padding(
-        padding: ResponsiveValues.dialogPadding(context),
-        child: AppEmptyState.offline(
-          message:
-              'No cached payment methods are available.\nPlease connect to the internet and try again.',
-          onRetry: () => GoRouter.of(context).pop(),
-          pendingCount: _pendingCount,
-        ),
-      ),
-    );
-  }
-
   Widget _buildMobileLayout(BuildContext context, List<PaymentMethod> methods) {
     if (_hasError) return _buildErrorState();
     if (_isLoadingMethods) return _buildSkeletonLoader();
-    if (methods.isEmpty && _isOffline) return _buildOfflineNoMethodsState();
     if (methods.isEmpty) return _buildNoMethodsState();
 
     return Scaffold(
@@ -1294,7 +1298,8 @@ class _PaymentScreenState extends State<PaymentScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (_pendingCount > 0)
+              // Pending count banner (if offline with pending actions)
+              if (_isOffline && _pendingCount > 0)
                 Container(
                   margin: EdgeInsets.only(
                       bottom: ResponsiveValues.spacingL(context)),
@@ -1313,12 +1318,13 @@ class _PaymentScreenState extends State<PaymentScreen>
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.schedule_rounded,
-                          color: AppColors.info, size: 20),
+                      Icon(Icons.schedule_rounded,
+                          color: AppColors.info,
+                          size: ResponsiveValues.iconSizeS(context)),
                       SizedBox(width: ResponsiveValues.spacingM(context)),
                       Expanded(
                         child: Text(
-                          '$_pendingCount pending payment${_pendingCount > 1 ? 's' : ''} waiting to sync',
+                          '$_pendingCount pending action${_pendingCount > 1 ? 's' : ''}',
                           style: AppTextStyles.bodySmall(context)
                               .copyWith(color: AppColors.info),
                         ),
@@ -1326,6 +1332,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                     ],
                   ),
                 ),
+
               _buildPaymentSummary(),
               SizedBox(height: ResponsiveValues.spacingXL(context)),
               _buildPaymentForm(methods),
@@ -1343,9 +1350,6 @@ class _PaymentScreenState extends State<PaymentScreen>
       BuildContext context, List<PaymentMethod> methods) {
     if (_hasError) return _buildErrorState();
     if (_isLoadingMethods) return Center(child: _buildSkeletonLoader());
-    if (methods.isEmpty && _isOffline) {
-      return Center(child: _buildOfflineNoMethodsState());
-    }
     if (methods.isEmpty) return Center(child: _buildNoMethodsState());
 
     return Scaffold(
@@ -1359,7 +1363,8 @@ class _PaymentScreenState extends State<PaymentScreen>
               padding: ResponsiveValues.dialogPadding(context),
               child: Column(
                 children: [
-                  if (_pendingCount > 0)
+                  // Pending count banner (if offline with pending actions)
+                  if (_isOffline && _pendingCount > 0)
                     Container(
                       margin: EdgeInsets.only(
                           bottom: ResponsiveValues.spacingL(context)),
@@ -1377,19 +1382,22 @@ class _PaymentScreenState extends State<PaymentScreen>
                             color: AppColors.info.withValues(alpha: 0.3)),
                       ),
                       child: Row(
-                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.schedule_rounded,
-                              color: AppColors.info, size: 20),
+                          Icon(Icons.schedule_rounded,
+                              color: AppColors.info,
+                              size: ResponsiveValues.iconSizeS(context)),
                           SizedBox(width: ResponsiveValues.spacingM(context)),
-                          Text(
-                            '$_pendingCount pending payment${_pendingCount > 1 ? 's' : ''}',
-                            style: AppTextStyles.bodySmall(context)
-                                .copyWith(color: AppColors.info),
+                          Expanded(
+                            child: Text(
+                              '$_pendingCount pending action${_pendingCount > 1 ? 's' : ''}',
+                              style: AppTextStyles.bodySmall(context)
+                                  .copyWith(color: AppColors.info),
+                            ),
                           ),
                         ],
                       ),
                     ),
+
                   _buildPaymentSummary(),
                   SizedBox(height: ResponsiveValues.spacingXXXL(context)),
                   Row(
@@ -1414,6 +1422,7 @@ class _PaymentScreenState extends State<PaymentScreen>
   Widget build(BuildContext context) {
     final methods = _cachedMethods;
 
+    // 1. LOADING STATE
     if (_isLoadingMethods) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
@@ -1422,8 +1431,10 @@ class _PaymentScreenState extends State<PaymentScreen>
       );
     }
 
+    // 2. ERROR STATE
     if (_hasError) return _buildErrorState();
 
+    // 3. NO CATEGORY STATE
     if (_category == null) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
@@ -1442,7 +1453,7 @@ class _PaymentScreenState extends State<PaymentScreen>
               ),
               SizedBox(height: ResponsiveValues.spacingL(context)),
               Text(
-                'Loading payment details...',
+                AppStrings.loadingPaymentDetails,
                 style: AppTextStyles.bodyMedium(context)
                     .copyWith(color: AppColors.getTextSecondary(context)),
               ),
@@ -1452,6 +1463,7 @@ class _PaymentScreenState extends State<PaymentScreen>
       );
     }
 
+    // 4. MAIN CONTENT
     return ResponsiveLayout(
       mobile: _buildMobileLayout(context, methods),
       tablet: _buildDesktopLayout(context, methods),

@@ -1,775 +1,714 @@
+// lib/providers/user_provider.dart
+// COMPLETE PRODUCTION-READY FINAL VERSION - INSTANT CACHE LOADING
+
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:hive/hive.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../services/user_session.dart';
 import '../services/connectivity_service.dart';
+import '../services/hive_service.dart';
+import '../services/offline_queue_manager.dart';
 import '../models/user_model.dart';
-import '../models/payment_model.dart';
-import '../models/notification_model.dart' as notification_model;
 import '../utils/constants.dart';
-import '../utils/helpers.dart';
-import '../utils/parsers.dart';
+import '../utils/api_response.dart';
+import 'base_provider.dart';
 
-class UserProvider with ChangeNotifier {
-  final ApiService apiService;
-  final DeviceService deviceService;
+class UserProvider extends ChangeNotifier
+    with BaseProvider<UserProvider>, OfflineAwareProvider<UserProvider> {
+  @override
   final ConnectivityService connectivityService;
 
+  final ApiService apiService;
+  final DeviceService deviceService;
+  final HiveService hiveService;
+  final OfflineQueueManager offlineQueueManager;
+
   User? _currentUser;
-  List<Payment> _payments = [];
-  List<notification_model.Notification> _notifications = [];
-  bool _isLoading = false;
+
   bool _hasLoadedProfile = false;
-  bool _hasLoadedNotifications = false;
-  bool _hasLoadedPayments = false;
-  String? _error;
+  bool _hasInitialData = false;
+  bool _isLoadingProfile = false;
+  DateTime? _lastProfileFetch;
+
+  int _apiCallCount = 0;
   String? _currentUserId;
-  bool _isOffline = false;
 
   bool _isBackgroundRefreshing = false;
-  bool _hasInitialCache = false;
-  Timer? _backgroundRefreshTimer;
+
+  static const Duration _cacheExpiry = AppConstants.cacheTTLUserProfile;
+  static const Duration _minFetchInterval = Duration(minutes: 5);
+
+  Box? _userBox;
+
   final StreamController<User?> _userUpdateController =
       StreamController<User?>.broadcast();
-  final StreamController<List<Payment>> _paymentsUpdateController =
-      StreamController<List<Payment>>.broadcast();
-  final StreamController<List<notification_model.Notification>>
-      _notificationsUpdateController =
-      StreamController<List<notification_model.Notification>>.broadcast();
-
-  DateTime? _lastProfileCacheTime;
-  DateTime? _lastNotificationsCacheTime;
-  DateTime? _lastPaymentsCacheTime;
-  static const Duration _cacheExpiry = AppConstants.cacheTTLUserProfile;
-  static const Duration _backgroundRefreshInterval = Duration(minutes: 10);
-  static const Duration _minRefreshInterval = Duration(minutes: 2);
-  static final Map<String, DateTime> _lastRefreshTime = {};
-  final Map<String, Completer<bool>> _ongoingRefreshes = {};
 
   UserProvider({
     required this.apiService,
     required this.deviceService,
     required this.connectivityService,
+    required this.hiveService,
+    required this.offlineQueueManager,
   }) {
+    log('UserProvider constructor called');
+    initializeOfflineAware(
+      connectivity: connectivityService,
+      queue: offlineQueueManager,
+    );
+    _registerQueueProcessors();
     _init();
-    _setupConnectivityListener();
   }
 
-  void _setupConnectivityListener() {
-    connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (_isOffline != !isOnline) {
-        _isOffline = !isOnline;
-        if (!_isOffline && _hasInitialCache) {
-          _refreshAllInBackground();
-        }
-        notifyListeners();
+  void _registerQueueProcessors() {
+    offlineQueueManager.registerProcessor(
+      AppConstants.queueActionUpdateProfile,
+      _processProfileUpdate,
+    );
+    log('✅ Registered queue processors');
+  }
+
+  Future<bool> _processProfileUpdate(Map<String, dynamic> data) async {
+    try {
+      log('Processing offline profile update');
+
+      final response = await apiService.updateMyProfile(
+        email: data['email'],
+        phone: data['phone'],
+        profileImage: data['profileImage'],
+      );
+
+      if (response.success) {
+        await loadUserProfile(forceRefresh: true);
       }
-    });
+
+      return response.success;
+    } catch (e) {
+      log('Error processing profile update: $e');
+      return false;
+    }
   }
 
   Future<void> _init() async {
+    log('_init() START');
     await _getCurrentUserId();
-    _startBackgroundRefresh();
+    await _openHiveBoxes();
+    await _loadCachedData();
+    log('_init() END');
+  }
+
+  Future<void> _openHiveBoxes() async {
+    try {
+      if (!Hive.isBoxOpen(AppConstants.hiveUserBox)) {
+        _userBox = await Hive.openBox<dynamic>(AppConstants.hiveUserBox);
+      } else {
+        _userBox = Hive.box<dynamic>(AppConstants.hiveUserBox);
+      }
+      log('✅ Hive box opened');
+    } catch (e) {
+      log('⚠️ Error opening Hive boxes: $e');
+    }
   }
 
   Future<void> _getCurrentUserId() async {
-    final prefs = await SharedPreferences.getInstance();
-    _currentUserId = prefs.getString(AppConstants.currentUserIdKey);
+    final session = UserSession();
+    _currentUserId = await session.getCurrentUserId();
+    log('Current user ID: $_currentUserId');
   }
 
-  User? get currentUser => _currentUser;
-  List<Payment> get payments => List.unmodifiable(_payments);
-  List<notification_model.Notification> get notifications =>
-      List.unmodifiable(_notifications);
-  bool get isLoading => _isLoading;
-  bool get isBackgroundRefreshing => _isBackgroundRefreshing;
-  bool get hasInitialCache => _hasInitialCache;
-  String? get error => _error;
-  bool get isOffline => _isOffline;
-
-  Stream<User?> get userUpdates => _userUpdateController.stream;
-  Stream<List<Payment>> get paymentsUpdates => _paymentsUpdateController.stream;
-  Stream<List<notification_model.Notification>> get notificationsUpdates =>
-      _notificationsUpdateController.stream;
-
-  bool get hasActiveSubscription {
-    if (_currentUser == null) return false;
-    if (_currentUser!.subscriptions == null ||
-        _currentUser!.subscriptions!.isEmpty) {
-      return false;
-    }
-
-    final now = DateTime.now();
-    return _currentUser!.subscriptions!.any((sub) {
-      final status = sub['status']?.toString() ?? '';
-      final expiryStr = sub['expiry_date']?.toString();
-      if (expiryStr == null) return false;
-      try {
-        final expiryDate = DateTime.parse(expiryStr);
-        return status == 'active' && expiryDate.isAfter(now);
-      } catch (e) {
-        return false;
-      }
-    });
-  }
-
-  bool hasActiveSubscriptionForCategory(int categoryId) {
-    if (_currentUser == null || _currentUser!.subscriptions == null) {
-      return false;
-    }
-
-    final now = DateTime.now();
-    return _currentUser!.subscriptions!.any((sub) {
-      final subCategoryId = Parsers.parseInt(sub['category_id']);
-      if (subCategoryId != categoryId) return false;
-
-      final status = sub['status']?.toString() ?? '';
-      final expiryStr = sub['expiry_date']?.toString();
-      if (expiryStr == null) return false;
-
-      try {
-        final expiryDate = DateTime.parse(expiryStr);
-        return status == 'active' && expiryDate.isAfter(now);
-      } catch (e) {
-        return false;
-      }
-    });
-  }
-
-  List<Map<String, dynamic>> get activeSubscriptions {
-    if (_currentUser == null || _currentUser!.subscriptions == null) return [];
-
-    final now = DateTime.now();
-    return _currentUser!.subscriptions!.where((sub) {
-      final status = sub['status']?.toString() ?? '';
-      final expiryStr = sub['expiry_date']?.toString();
-      if (expiryStr == null) return false;
-
-      try {
-        final expiryDate = DateTime.parse(expiryStr);
-        return status == 'active' && expiryDate.isAfter(now);
-      } catch (e) {
-        return false;
-      }
-    }).toList();
-  }
-
-  bool _shouldRefresh(String type, {bool forceRefresh = false}) {
-    if (forceRefresh) return true;
-    final lastRefresh = _lastRefreshTime[type];
-    if (lastRefresh == null) return true;
-    final secondsSinceLastRefresh =
-        DateTime.now().difference(lastRefresh).inSeconds;
-    return secondsSinceLastRefresh >= _minRefreshInterval.inSeconds;
-  }
-
-  Future<bool> _executeRefresh(
-      String type, Future<void> Function() refreshFunction,
-      {bool forceRefresh = false}) async {
-    if (!_shouldRefresh(type, forceRefresh: forceRefresh)) return false;
-    if (_ongoingRefreshes.containsKey(type)) {
-      return _ongoingRefreshes[type]!.future;
-    }
-
-    final completer = Completer<bool>();
-    _ongoingRefreshes[type] = completer;
+  Future<void> _loadCachedData() async {
+    log('_loadCachedData() START');
 
     try {
-      await refreshFunction();
-      _lastRefreshTime[type] = DateTime.now();
-      completer.complete(true);
-      return true;
+      // Try Hive first (fastest)
+      if (_userBox != null && _currentUserId != null) {
+        final cachedUser = _userBox!.get('user_${_currentUserId}_profile');
+        if (cachedUser != null) {
+          if (cachedUser is User) {
+            _currentUser = cachedUser;
+            _hasLoadedProfile = true;
+            _hasInitialData = true;
+            _userUpdateController.add(_currentUser);
+            log('✅ Loaded user from Hive INSTANTLY: ${_currentUser?.username}');
+            return;
+          } else if (cachedUser is Map) {
+            try {
+              _currentUser = User.fromJson(
+                Map<String, dynamic>.from(cachedUser),
+              );
+              _hasLoadedProfile = true;
+              _hasInitialData = true;
+              _userUpdateController.add(_currentUser);
+              log('✅ Loaded user from Hive INSTANTLY (converted): ${_currentUser?.username}');
+              return;
+            } catch (e) {
+              log('Error converting user from Hive: $e');
+            }
+          }
+        }
+      }
+
+      // If no Hive data, try DeviceService
+      if (_currentUser == null) {
+        log('Trying DeviceService for user');
+        final cachedUser =
+            await deviceService.getCacheItem<Map<String, dynamic>>(
+          'user_profile',
+          isUserSpecific: true,
+        );
+        if (cachedUser != null) {
+          _currentUser = User.fromJson(cachedUser);
+          _hasLoadedProfile = true;
+          _hasInitialData = true;
+          _userUpdateController.add(_currentUser);
+          log('✅ Loaded user from DeviceService: ${_currentUser?.username}');
+
+          if (_userBox != null && _currentUserId != null) {
+            await _userBox!.put(
+              'user_${_currentUserId}_profile',
+              _currentUser,
+            );
+          }
+          return;
+        }
+      }
+
+      if (_currentUser == null) {
+        _hasLoadedProfile = true;
+        _hasInitialData = true;
+        log('ℹ️ No cached user data found, but marked as loaded');
+      }
+
+      log('✅ Loaded cached data: profile=$_hasLoadedProfile, hasInitialData=$_hasInitialData');
     } catch (e) {
-      debugLog('UserProvider', 'Refresh error for $type: $e');
-      completer.complete(false);
-      return false;
-    } finally {
-      _ongoingRefreshes.remove(type);
+      log('Error loading cached data: $e');
+      _hasLoadedProfile = true;
+      _hasInitialData = true;
     }
   }
 
-  bool _isCacheStale(DateTime? cacheTime) {
-    if (cacheTime == null) return true;
-    return DateTime.now().difference(cacheTime) > _cacheExpiry;
+  Future<void> _saveUserToHive() async {
+    try {
+      if (_userBox != null && _currentUserId != null && _currentUser != null) {
+        await _userBox!.put('user_${_currentUserId}_profile', _currentUser);
+        log('💾 Saved user to Hive');
+      }
+    } catch (e) {
+      log('Error saving user to Hive: $e');
+    }
   }
 
-  Future<void> loadUserProfile(
-      {bool forceRefresh = false, bool isManualRefresh = false}) async {
-    if (!forceRefresh && _hasLoadedProfile && _currentUser != null) {
+  // ===== GETTERS =====
+  User? get currentUser => _currentUser;
+
+  bool get hasLoadedProfile => _hasLoadedProfile;
+  bool get hasInitialData => _hasInitialData;
+  bool get isLoadingProfile => _isLoadingProfile;
+
+  bool get isBackgroundRefreshing => _isBackgroundRefreshing;
+
+  Stream<User?> get userUpdates => _userUpdateController.stream;
+
+  // ===== LOAD USER PROFILE - FIXED FOR INSTANT CACHE =====
+  Future<void> loadUserProfile({
+    bool forceRefresh = false,
+    bool isManualRefresh = false,
+  }) async {
+    _apiCallCount++;
+    final callId = _apiCallCount;
+
+    log('loadUserProfile() CALL #$callId');
+
+    if (isManualRefresh && isOffline) {
+      throw Exception('Network error. Please check your internet connection.');
+    }
+
+    // ✅ CRITICAL: Return cached data IMMEDIATELY if we have it
+    if (_hasLoadedProfile && _currentUser != null && !forceRefresh) {
+      log('✅ Returning cached profile INSTANTLY');
       _userUpdateController.add(_currentUser);
+      setLoaded();
       return;
     }
 
-    if (!_hasLoadedProfile || forceRefresh) {
-      _isLoading = true;
-      _notifySafely();
+    if (_isLoadingProfile && !forceRefresh) {
+      log('⏳ Already loading, waiting for result...');
+      // Wait for loading to complete
+      int attempts = 0;
+      while (_isLoadingProfile && attempts < 50) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        attempts++;
+      }
+      if (_currentUser != null) {
+        log('✅ Got profile from existing load');
+        _userUpdateController.add(_currentUser);
+        setLoaded();
+        return;
+      }
     }
 
+    _isLoadingProfile = true;
+    setLoading();
+
     try {
-      if (!forceRefresh && !_isOffline && _currentUserId != null) {
-        final cachedUser = await deviceService.getCacheItem<User>(
-            AppConstants.userProfileKey(_currentUserId!),
-            isUserSpecific: true);
+      // STEP 1: Try Hive cache FIRST (before showing loading state)
+      if (!forceRefresh && _currentUserId != null && _userBox != null) {
+        log('STEP 1: Checking Hive cache');
+        final cachedUser = _userBox!.get('user_${_currentUserId}_profile');
+
         if (cachedUser != null) {
-          _currentUser = cachedUser;
+          if (cachedUser is User) {
+            _currentUser = cachedUser;
+          } else if (cachedUser is Map) {
+            try {
+              _currentUser = User.fromJson(
+                Map<String, dynamic>.from(cachedUser),
+              );
+            } catch (e) {
+              log('Error converting Hive user: $e');
+            }
+          }
+
+          if (_currentUser != null) {
+            _hasLoadedProfile = true;
+            _hasInitialData = true;
+            _lastProfileFetch = DateTime.now();
+            _isLoadingProfile = false;
+            setLoaded();
+            _userUpdateController.add(_currentUser);
+            log('✅ Loaded user from Hive: ${_currentUser?.username}');
+
+            // Refresh in background if online
+            if (!isOffline && !isManualRefresh) {
+              unawaited(_refreshProfileInBackground());
+            }
+            return;
+          }
+        }
+      }
+
+      // STEP 2: Try DeviceService cache
+      if (!forceRefresh && _currentUserId != null) {
+        log('STEP 2: Checking DeviceService cache');
+        final cachedUser =
+            await deviceService.getCacheItem<Map<String, dynamic>>(
+          AppConstants.userProfileKey(_currentUserId!),
+          isUserSpecific: true,
+        );
+
+        if (cachedUser != null) {
+          _currentUser = User.fromJson(cachedUser);
           _hasLoadedProfile = true;
-          _hasInitialCache = true;
-          _lastProfileCacheTime = DateTime.now();
+          _hasInitialData = true;
+          _lastProfileFetch = DateTime.now();
+          _isLoadingProfile = false;
+          setLoaded();
           _userUpdateController.add(_currentUser);
-          if (_isCacheStale(_lastProfileCacheTime) && !_isOffline) {
+          log('✅ Loaded user from DeviceService: ${_currentUser?.username}');
+
+          if (_userBox != null) {
+            await _userBox!.put(
+              'user_${_currentUserId}_profile',
+              _currentUser,
+            );
+          }
+
+          if (!isOffline && !isManualRefresh) {
             unawaited(_refreshProfileInBackground());
           }
           return;
         }
       }
 
-      if (_isOffline) {
-        _error = 'You are offline. Using cached data.';
-        _isLoading = false;
-        _notifySafely();
+      // STEP 3: Check offline status
+      if (isOffline) {
+        log('STEP 3: Offline mode');
+        if (_currentUser != null) {
+          _hasLoadedProfile = true;
+          _isLoadingProfile = false;
+          setLoaded();
+          _userUpdateController.add(_currentUser);
+          log('✅ Showing cached profile offline');
+          return;
+        }
+
+        setError('You are offline. No cached profile available.');
+        _hasLoadedProfile = true;
+        _isLoadingProfile = false;
+        setLoaded();
+        _userUpdateController.add(null);
+
         if (isManualRefresh) {
           throw Exception(
-              'Network error. Please check your internet connection.');
+            'Network error. Please check your internet connection.',
+          );
         }
         return;
       }
 
-      final response = await apiService.getMyProfile();
-      if (response.success) {
-        _currentUser = response.data is User
-            ? response.data
-            : User.fromJson(response.data as Map<String, dynamic>);
+      // STEP 4: Fetch from API (with timeout and cache fallback)
+      log('STEP 4: Fetching from API');
+
+      ApiResponse<User> response;
+      try {
+        response = await apiService.getMyProfile().timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            log('⏱️ API timeout in loadUserProfile - using cached data');
+            if (_currentUser != null) {
+              _hasLoadedProfile = true;
+              _isLoadingProfile = false;
+              setLoaded();
+              _userUpdateController.add(_currentUser);
+              return ApiResponse<User>(
+                success: true,
+                message: 'Using cached data (server timeout)',
+                data: _currentUser,
+              );
+            }
+            return ApiResponse<User>(
+              success: false,
+              message: 'Connection timeout. Please try again.',
+            );
+          },
+        );
+      } catch (timeoutError) {
+        log('⏱️ Timeout error caught: $timeoutError');
+        if (_currentUser != null) {
+          _hasLoadedProfile = true;
+          _isLoadingProfile = false;
+          setLoaded();
+          _userUpdateController.add(_currentUser);
+          return;
+        }
+        throw TimeoutException('Request timed out');
+      }
+
+      if (response.success && response.data != null) {
+        _currentUser = response.data;
+        log('✅ Received profile from API: ${_currentUser?.username}');
+        _hasLoadedProfile = true;
+        _hasInitialData = true;
+        _lastProfileFetch = DateTime.now();
+        _isLoadingProfile = false;
+        setLoaded();
+
+        if (_currentUser != null && _currentUserId != null) {
+          if (_userBox != null) {
+            await _userBox!.put(
+              'user_${_currentUserId}_profile',
+              _currentUser,
+            );
+          }
+
+          deviceService.saveCacheItem(
+            AppConstants.userProfileKey(_currentUserId!),
+            _currentUser!.toJson(),
+            ttl: _cacheExpiry,
+            isUserSpecific: true,
+          );
+        }
+        _userUpdateController.add(_currentUser);
+        log('✅ Success! User profile loaded');
       } else {
         throw Exception('Failed to load profile: ${response.message}');
       }
-
+    } catch (e) {
+      setError(e.toString());
       _hasLoadedProfile = true;
-      _hasInitialCache = true;
-      _lastProfileCacheTime = DateTime.now();
+      _isLoadingProfile = false;
+      setLoaded();
+      log('❌ Error loading profile: $e');
 
-      if (_currentUser != null && _currentUserId != null) {
-        await deviceService.saveCacheItem(
-            AppConstants.userProfileKey(_currentUserId!), _currentUser!,
-            ttl: _cacheExpiry, isUserSpecific: true);
+      if (_currentUser == null && _currentUserId != null) {
+        log('Attempting cache recovery');
+        await _recoverProfileFromCache();
+      } else if (_currentUser != null) {
+        // Still have cached data, so don't show error
+        setLoaded();
+        _userUpdateController.add(_currentUser);
+        return;
       }
 
       _userUpdateController.add(_currentUser);
-    } catch (e) {
-      _error = e.toString();
-      debugLog('UserProvider', 'Load user profile error: $e');
-      if (!forceRefresh && _currentUser != null) {
-        _userUpdateController.add(_currentUser);
-      } else {
+
+      if (isManualRefresh) {
         rethrow;
       }
     } finally {
-      _isLoading = false;
-      _notifySafely();
+      safeNotify();
     }
   }
 
   Future<void> _refreshProfileInBackground() async {
-    await _executeRefresh('profile', () async {
-      _isBackgroundRefreshing = true;
-      try {
-        if (_isOffline) return;
+    if (isOffline) return;
 
-        final response = await apiService.getMyProfile();
-        if (response.success) {
-          User? updatedUser;
-          if (response.data is User) {
-            updatedUser = response.data;
-          } else if (response.data is Map<String, dynamic>) {
-            updatedUser = User.fromJson(response.data as Map<String, dynamic>);
-          }
+    if (_isBackgroundRefreshing) {
+      log('Profile refresh already in progress');
+      return;
+    }
 
-          if (updatedUser != null && _currentUser?.id == updatedUser.id) {
-            _currentUser = updatedUser;
-            _lastProfileCacheTime = DateTime.now();
-            if (_currentUserId != null) {
-              await deviceService.saveCacheItem(
-                  AppConstants.userProfileKey(_currentUserId!), _currentUser!,
-                  ttl: _cacheExpiry, isUserSpecific: true);
+    if (_lastProfileFetch != null) {
+      final age = DateTime.now().difference(_lastProfileFetch!);
+      if (age < _minFetchInterval) {
+        log('Skipping background refresh - last fetch was ${age.inSeconds}s ago');
+        return;
+      }
+    }
+
+    _isBackgroundRefreshing = true;
+
+    try {
+      final response = await apiService.getMyProfile().timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          log('⏱️ API timeout in background refresh - skipping');
+          return ApiResponse<User>(
+            success: false,
+            message: 'Timeout',
+          );
+        },
+      );
+
+      if (response.success && response.data != null) {
+        final updatedUser = response.data;
+        if (updatedUser != null && _currentUser?.id == updatedUser.id) {
+          _currentUser = updatedUser;
+          _lastProfileFetch = DateTime.now();
+          log('Background refresh got updated user: ${updatedUser.username}');
+
+          if (_currentUserId != null) {
+            if (_userBox != null) {
+              await _userBox!.put(
+                'user_${_currentUserId}_profile',
+                updatedUser,
+              );
             }
-            if (_currentUser != null) _userUpdateController.add(_currentUser);
+            deviceService.saveCacheItem(
+              AppConstants.userProfileKey(_currentUserId!),
+              _currentUser!.toJson(),
+              ttl: _cacheExpiry,
+              isUserSpecific: true,
+            );
           }
-        }
-      } finally {
-        _isBackgroundRefreshing = false;
-      }
-    });
-  }
-
-  Future<void> loadPayments({bool forceRefresh = false}) async {
-    if (!forceRefresh && _hasLoadedPayments && _payments.isNotEmpty) {
-      _paymentsUpdateController.add(_payments);
-      return;
-    }
-
-    if (!_hasLoadedPayments || forceRefresh) {
-      _isLoading = true;
-      _notifySafely();
-    }
-
-    try {
-      if (!forceRefresh && !_isOffline && _currentUserId != null) {
-        final cachedPayments = await deviceService.getCacheItem<List<Payment>>(
-            AppConstants.userPaymentsKey(_currentUserId!),
-            isUserSpecific: true);
-        if (cachedPayments != null) {
-          _payments = cachedPayments;
-          _hasLoadedPayments = true;
-          _lastPaymentsCacheTime = DateTime.now();
-          _paymentsUpdateController.add(_payments);
-          if (_isCacheStale(_lastPaymentsCacheTime) && !_isOffline) {
-            unawaited(_refreshPaymentsInBackground());
-          }
-          return;
+          _userUpdateController.add(_currentUser);
+          safeNotify();
+          log('🔄 Profile background refresh complete');
         }
       }
-
-      if (_isOffline) {
-        _error = 'You are offline. Using cached data.';
-        _isLoading = false;
-        _notifySafely();
-        return;
-      }
-
-      final response = await apiService.getMyPayments();
-      _payments = response.data ?? [];
-      _hasLoadedPayments = true;
-      _lastPaymentsCacheTime = DateTime.now();
-
-      if (_currentUserId != null) {
-        await deviceService.saveCacheItem(
-            AppConstants.userPaymentsKey(_currentUserId!), _payments,
-            ttl: _cacheExpiry, isUserSpecific: true);
-      }
-
-      _paymentsUpdateController.add(_payments);
     } catch (e) {
-      _error = e.toString();
-      debugLog('UserProvider', 'Load payments error: $e');
-      if (!forceRefresh && _payments.isNotEmpty) {
-        _paymentsUpdateController.add(_payments);
-      } else {
-        rethrow;
-      }
+      log('Profile background refresh error: $e');
     } finally {
-      _isLoading = false;
-      _notifySafely();
+      _isBackgroundRefreshing = false;
     }
   }
 
-  Future<void> loadNotifications({bool forceRefresh = false}) async {
-    if (!forceRefresh && _hasLoadedNotifications && _notifications.isNotEmpty) {
-      _notificationsUpdateController.add(_notifications);
-      return;
-    }
+  Future<void> _recoverProfileFromCache() async {
+    log('Attempting profile cache recovery');
 
-    if (!_hasLoadedNotifications || forceRefresh) {
-      _isLoading = true;
-      _notifySafely();
-    }
-
-    try {
-      if (!forceRefresh && !_isOffline && _currentUserId != null) {
-        final cachedNotifications = await deviceService
-            .getCacheItem<List<notification_model.Notification>>(
-                AppConstants.userNotificationsKey(_currentUserId!),
-                isUserSpecific: true);
-        if (cachedNotifications != null) {
-          _notifications = cachedNotifications;
-          _hasLoadedNotifications = true;
-          _lastNotificationsCacheTime = DateTime.now();
-          _notificationsUpdateController.add(_notifications);
-          if (_isCacheStale(_lastNotificationsCacheTime) && !_isOffline) {
-            unawaited(_refreshNotificationsInBackground());
-          }
-          return;
-        }
-      }
-
-      if (_isOffline) {
-        _error = 'You are offline. Using cached data.';
-        _isLoading = false;
-        _notifySafely();
-        return;
-      }
-
-      final response = await apiService.getMyNotifications();
-      _notifications = response.data ?? [];
-      _hasLoadedNotifications = true;
-      _lastNotificationsCacheTime = DateTime.now();
-
-      if (_currentUserId != null) {
-        await deviceService.saveCacheItem(
-            AppConstants.userNotificationsKey(_currentUserId!), _notifications,
-            ttl: _cacheExpiry, isUserSpecific: true);
-      }
-
-      _notificationsUpdateController.add(_notifications);
-    } catch (e) {
-      _error = e.toString();
-      debugLog('UserProvider', 'Load notifications error: $e');
-      if (!forceRefresh && _notifications.isNotEmpty) {
-        _notificationsUpdateController.add(_notifications);
-      } else {
-        rethrow;
-      }
-    } finally {
-      _isLoading = false;
-      _notifySafely();
-    }
-  }
-
-  void _startBackgroundRefresh() {
-    _stopBackgroundRefresh();
-    _backgroundRefreshTimer =
-        Timer.periodic(_backgroundRefreshInterval, (timer) async {
-      if (!_isLoading && !_isBackgroundRefreshing && !_isOffline) {
-        await _refreshAllInBackground();
-      }
-    });
-  }
-
-  void _stopBackgroundRefresh() {
-    _backgroundRefreshTimer?.cancel();
-    _backgroundRefreshTimer = null;
-  }
-
-  Future<void> _refreshAllInBackground() async {
-    await Future.wait([
-      _refreshProfileInBackground(),
-      _refreshPaymentsInBackground(),
-      _refreshNotificationsInBackground(),
-    ]);
-  }
-
-  Future<void> _refreshPaymentsInBackground() async {
-    await _executeRefresh('payments', () async {
-      if (_isOffline) return;
-
+    if (_userBox != null && _currentUserId != null) {
       try {
-        final response = await apiService.getMyPayments();
-        if (response.data != null && response.data!.isNotEmpty) {
-          _payments = response.data!;
-          _lastPaymentsCacheTime = DateTime.now();
-          if (_currentUserId != null) {
-            await deviceService.saveCacheItem(
-                AppConstants.userPaymentsKey(_currentUserId!), _payments,
-                ttl: _cacheExpiry, isUserSpecific: true);
+        final cachedUser = _userBox!.get('user_${_currentUserId}_profile');
+        if (cachedUser != null) {
+          if (cachedUser is User) {
+            _currentUser = cachedUser;
+          } else if (cachedUser is Map) {
+            _currentUser = User.fromJson(Map<String, dynamic>.from(cachedUser));
           }
-          _paymentsUpdateController.add(_payments);
+          if (_currentUser != null) {
+            _hasLoadedProfile = true;
+            _hasInitialData = true;
+            _userUpdateController.add(_currentUser);
+            log('✅ Recovered profile from Hive after error');
+            return;
+          }
         }
       } catch (e) {
-        debugLog('UserProvider', 'Refresh payments error: $e');
+        log('Error recovering from Hive: $e');
       }
-    });
-  }
+    }
 
-  Future<void> _refreshNotificationsInBackground() async {
-    await _executeRefresh('notifications', () async {
-      if (_isOffline) return;
-
+    if (_currentUserId != null) {
       try {
-        final response = await apiService.getMyNotifications();
-        if (response.data != null) {
-          _notifications = response.data!;
-          _lastNotificationsCacheTime = DateTime.now();
-          if (_currentUserId != null) {
-            await deviceService.saveCacheItem(
-                AppConstants.userNotificationsKey(_currentUserId!),
-                _notifications,
-                ttl: _cacheExpiry,
-                isUserSpecific: true);
-          }
-          _notificationsUpdateController.add(_notifications);
-        }
-      } catch (e) {
-        debugLog('UserProvider', 'Refresh notifications error: $e');
-      }
-    });
-  }
-
-  Future<void> updateProfile(
-      {String? email, String? phone, String? profileImage}) async {
-    if (_isLoading) return;
-
-    _isLoading = true;
-    _error = null;
-    _notifySafely();
-
-    try {
-      if (_isOffline) {
-        // Queue for offline sync
-        await _queueProfileUpdateOffline(email, phone, profileImage);
-        _isLoading = false;
-        _notifySafely();
-        return;
-      }
-
-      await apiService.updateMyProfile(
-          email: email, phone: phone, profileImage: profileImage);
-
-      if (_currentUser != null) {
-        _currentUser = _currentUser!.copyWith(
-          email: email ?? _currentUser!.email,
-          phone: phone ?? _currentUser!.phone,
-          profileImage: profileImage ?? _currentUser!.profileImage,
+        final cachedUser =
+            await deviceService.getCacheItem<Map<String, dynamic>>(
+          AppConstants.userProfileKey(_currentUserId!),
+          isUserSpecific: true,
         );
-        _lastProfileCacheTime = DateTime.now();
-
-        if (_currentUserId != null) {
-          await deviceService.saveCacheItem(
-              AppConstants.userProfileKey(_currentUserId!), _currentUser!,
-              ttl: _cacheExpiry, isUserSpecific: true);
+        if (cachedUser != null) {
+          _currentUser = User.fromJson(cachedUser);
+          _hasLoadedProfile = true;
+          _hasInitialData = true;
+          _userUpdateController.add(_currentUser);
+          log('✅ Recovered profile from DeviceService after error');
         }
-        _userUpdateController.add(_currentUser);
+      } catch (e) {
+        log('Error recovering from DeviceService: $e');
+      }
+    }
+  }
+
+  Future<ApiResponse<Map<String, dynamic>>> updateProfile({
+    String? email,
+    String? phone,
+    String? profileImage,
+  }) async {
+    log('updateProfile()');
+
+    setLoading();
+
+    try {
+      if (isOffline) {
+        log('📝 Offline - queuing profile update');
+        await _queueProfileUpdateOffline(
+          email: email,
+          phone: phone,
+          profileImage: profileImage,
+        );
+        setLoaded();
+        return ApiResponse<Map<String, dynamic>>(
+          success: true,
+          message: 'Profile update saved offline. Will sync when online.',
+          isQueued: true,
+        );
+      }
+
+      final response = await apiService
+          .updateMyProfile(
+        email: email,
+        phone: phone,
+        profileImage: profileImage,
+      )
+          .timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          log('⏱️ API timeout in updateProfile');
+          throw TimeoutException('Request timed out');
+        },
+      );
+
+      if (response.success) {
+        log('✅ Profile updated successfully via API');
+
+        if (response.data != null) {
+          try {
+            final updatedUser = User.fromJson(response.data!);
+            _currentUser = updatedUser;
+            await _saveUserToHive();
+            _userUpdateController.add(_currentUser);
+            log('✅ Updated user data from API response');
+          } catch (e) {
+            log('Error parsing updated user data: $e');
+            await loadUserProfile(forceRefresh: true);
+          }
+        } else {
+          await loadUserProfile(forceRefresh: true);
+        }
+
+        setLoaded();
+        safeNotify();
+        return ApiResponse<Map<String, dynamic>>(
+          success: true,
+          message: 'Profile updated successfully',
+          data: response.data,
+        );
+      } else {
+        setLoaded();
+        return ApiResponse<Map<String, dynamic>>(
+          success: false,
+          message: response.message,
+        );
       }
     } catch (e) {
-      _error = e.toString();
-      debugLog('UserProvider', 'Update profile error: $e');
+      setLoaded();
+      setError(e.toString());
+      log('❌ Profile update error: $e');
+
       String errorMessage = 'Failed to update profile';
       if (e.toString().contains('Email already in use')) {
         errorMessage = 'Email already in use by another user';
       } else if (e.toString().contains('phone')) {
         errorMessage = 'Phone number already in use by another user';
-      } else if (e.toString().contains('Invalid email')) {
-        errorMessage = 'Please enter a valid email address';
-      } else if (e.toString().contains('Invalid phone')) {
-        errorMessage = 'Please enter a valid phone number';
+      } else if (e.toString().contains('timed out')) {
+        errorMessage = 'Request timed out. Please try again.';
       }
-      throw Exception(errorMessage);
-    } finally {
-      _isLoading = false;
-      _notifySafely();
+
+      return ApiResponse<Map<String, dynamic>>(
+        success: false,
+        message: errorMessage,
+      );
     }
   }
 
-  Future<void> _queueProfileUpdateOffline(
-      String? email, String? phone, String? profileImage) async {
+  Future<void> _queueProfileUpdateOffline({
+    String? email,
+    String? phone,
+    String? profileImage,
+  }) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
       final userId = await UserSession().getCurrentUserId();
-
       if (userId == null) return;
 
-      const pendingKey = 'pending_profile_updates';
-      final userPendingKey = '${pendingKey}_$userId';
-      final existingJson = prefs.getString(userPendingKey);
-      List<Map<String, dynamic>> pendingUpdates = [];
-
-      if (existingJson != null) {
-        try {
-          pendingUpdates =
-              List<Map<String, dynamic>>.from(jsonDecode(existingJson));
-        } catch (e) {
-          debugLog('UserProvider', 'Error parsing pending updates: $e');
-        }
-      }
-
-      pendingUpdates.add({
-        'email': email,
-        'phone': phone,
-        'profileImage': profileImage,
-        'timestamp': DateTime.now().toIso8601String(),
-        'retry_count': 0,
-      });
-
-      await prefs.setString(userPendingKey, jsonEncode(pendingUpdates));
-      debugLog('UserProvider', '📝 Queued profile update for offline sync');
-    } catch (e) {
-      debugLog('UserProvider', 'Error queueing profile update: $e');
-    }
-  }
-
-  Future<void> syncPendingProfileUpdates() async {
-    if (_isOffline) return;
-
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final userId = await UserSession().getCurrentUserId();
-
-      if (userId == null) return;
-
-      const pendingKey = 'pending_profile_updates';
-      final userPendingKey = '${pendingKey}_$userId';
-      final existingJson = prefs.getString(userPendingKey);
-
-      if (existingJson == null) return;
-
-      List<Map<String, dynamic>> pendingUpdates = [];
-      try {
-        pendingUpdates =
-            List<Map<String, dynamic>>.from(jsonDecode(existingJson));
-      } catch (e) {
-        debugLog('UserProvider', 'Error parsing pending updates: $e');
-        await prefs.remove(userPendingKey);
-        return;
-      }
-
-      if (pendingUpdates.isEmpty) return;
-
-      debugLog('UserProvider',
-          '🔄 Syncing ${pendingUpdates.length} pending profile updates');
-
-      final List<Map<String, dynamic>> failedUpdates = [];
-
-      for (final update in pendingUpdates) {
-        try {
-          await apiService.updateMyProfile(
-            email: update['email'],
-            phone: update['phone'],
-            profileImage: update['profileImage'],
-          );
-          debugLog('UserProvider', '✅ Synced profile update');
-        } catch (e) {
-          debugLog('UserProvider', '❌ Failed to sync profile update: $e');
-
-          final retryCount = (update['retry_count'] ?? 0) + 1;
-          if (retryCount <= 3) {
-            update['retry_count'] = retryCount;
-            failedUpdates.add(update);
-          }
-        }
-      }
-
-      if (failedUpdates.isEmpty) {
-        await prefs.remove(userPendingKey);
-        debugLog('UserProvider', '✅ All pending profile updates synced');
-      } else {
-        await prefs.setString(userPendingKey, jsonEncode(failedUpdates));
-        debugLog('UserProvider',
-            '⚠️ ${failedUpdates.length} profile updates still pending');
-      }
-
-      // Refresh profile after sync
-      await loadUserProfile(forceRefresh: true);
-    } catch (e) {
-      debugLog('UserProvider', 'Error syncing pending updates: $e');
-    }
-  }
-
-  Future<void> markNotificationAsRead(int logId) async {
-    final index = _notifications.indexWhere((n) => n.logId == logId);
-    if (index != -1) {
-      final notification = _notifications[index];
-      _notifications[index] = notification_model.Notification(
-        logId: notification.logId,
-        notificationId: notification.notificationId,
-        title: notification.title,
-        message: notification.message,
-        deliveryStatus: notification.deliveryStatus,
-        isRead: true,
-        receivedAt: notification.receivedAt,
-        sentAt: notification.sentAt,
-        readAt: DateTime.now(),
-        deliveredAt: notification.deliveredAt,
-        sentBy: notification.sentBy,
+      offlineQueueManager.addItem(
+        type: AppConstants.queueActionUpdateProfile,
+        data: {
+          'email': email,
+          'phone': phone,
+          'profileImage': profileImage,
+          'userId': userId,
+          'timestamp': DateTime.now().toIso8601String(),
+        },
       );
 
-      if (_currentUserId != null) {
-        await deviceService.saveCacheItem(
-            AppConstants.userNotificationsKey(_currentUserId!), _notifications,
-            ttl: _cacheExpiry, isUserSpecific: true);
-      }
-      _notificationsUpdateController.add(_notifications);
-      _notifySafely();
+      log('📝 Queued profile update for offline sync');
+    } catch (e) {
+      log('Error queueing profile update: $e');
+    }
+  }
+
+  @override
+  Future<void> onOnlineRefresh() async {
+    log('Online - refreshing user data');
+    if (_hasLoadedProfile) {
+      await loadUserProfile(forceRefresh: true);
     }
   }
 
   Future<void> clearUserData() async {
-    debugLog('UserProvider', 'Clearing user data');
-
     final session = UserSession();
-    final isDifferentUser = !await session.isSameUser();
-    final isLoggingOut = await _isLoggingOut();
+    if (!session.shouldClearCacheOnLogout()) return;
 
-    if (!isDifferentUser || !isLoggingOut) {
-      debugLog('UserProvider', '✅ Same user - preserving user cache');
-      return;
-    }
-
-    // Clear pending updates
     final userId = await session.getCurrentUserId();
     if (userId != null) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('pending_profile_updates_$userId');
+
+      await hiveService.clearUserData(userId);
     }
 
     if (_currentUserId != null) {
       await deviceService.removeCacheItem(
-          AppConstants.userProfileKey(_currentUserId!),
-          isUserSpecific: true);
-      await deviceService.removeCacheItem(
-          AppConstants.userPaymentsKey(_currentUserId!),
-          isUserSpecific: true);
-      await deviceService.removeCacheItem(
-          AppConstants.userNotificationsKey(_currentUserId!),
-          isUserSpecific: true);
+        AppConstants.userProfileKey(_currentUserId!),
+        isUserSpecific: true,
+      );
     }
 
     _currentUser = null;
-    _payments.clear();
-    _notifications.clear();
     _hasLoadedProfile = false;
-    _hasLoadedNotifications = false;
-    _hasLoadedPayments = false;
-    _hasInitialCache = false;
-    _lastProfileCacheTime = null;
-    _lastNotificationsCacheTime = null;
-    _lastPaymentsCacheTime = null;
-    _lastRefreshTime.clear();
-    _ongoingRefreshes.clear();
-    _stopBackgroundRefresh();
+    _hasInitialData = false;
+    _lastProfileFetch = null;
 
     _userUpdateController.add(null);
-    _paymentsUpdateController.add(_payments);
-    _notificationsUpdateController.add(_notifications);
-    _notifySafely();
-  }
-
-  Future<bool> _isLoggingOut() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
-  }
-
-  Future<void> clearNotifications() async {
-    if (_currentUserId != null) {
-      await deviceService.removeCacheItem(
-          AppConstants.userNotificationsKey(_currentUserId!),
-          isUserSpecific: true);
-    }
-    _notifications.clear();
-    _hasLoadedNotifications = false;
-    _lastNotificationsCacheTime = null;
-    _notificationsUpdateController.add(_notifications);
-    _notifySafely();
-  }
-
-  void clearError() {
-    _error = null;
-    _notifySafely();
+    safeNotify();
   }
 
   @override
   void dispose() {
-    _stopBackgroundRefresh();
     _userUpdateController.close();
-    _paymentsUpdateController.close();
-    _notificationsUpdateController.close();
+    _userBox?.close();
+    disposeSubscriptions();
     super.dispose();
-  }
-
-  void _notifySafely() {
-    if (hasListeners) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (hasListeners) notifyListeners();
-      });
-    }
   }
 }

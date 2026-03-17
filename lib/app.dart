@@ -1,10 +1,12 @@
+// lib/app.dart
+// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:familyacademyclient/providers/payment_provider.dart';
-import 'package:familyacademyclient/providers/settings_provider.dart';
-import 'package:familyacademyclient/providers/user_provider.dart';
 import 'package:familyacademyclient/services/connectivity_service.dart';
+import 'package:familyacademyclient/services/offline_queue_manager.dart'
+    as queue;
 import 'package:familyacademyclient/services/snackbar_service.dart';
 import 'package:familyacademyclient/utils/screen_protection.dart';
 import 'package:flutter/material.dart';
@@ -16,6 +18,7 @@ import 'providers/notification_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/subscription_provider.dart';
 import 'providers/category_provider.dart';
+import 'utils/app_enums.dart';
 import 'utils/router.dart';
 import 'services/notification_service.dart';
 import 'services/api_service.dart';
@@ -25,13 +28,11 @@ class FamilyAcademyApp extends StatefulWidget {
   final ApiService apiService;
   final NotificationService notificationService;
 
-  FamilyAcademyApp({
+  const FamilyAcademyApp({
     super.key,
     required this.apiService,
     required this.notificationService,
-  }) {
-    debugLog('FamilyAcademyApp', 'Constructor called');
-  }
+  });
 
   @override
   State<FamilyAcademyApp> createState() => _FamilyAcademyAppState();
@@ -40,46 +41,84 @@ class FamilyAcademyApp extends StatefulWidget {
 class _FamilyAcademyAppState extends State<FamilyAcademyApp>
     with WidgetsBindingObserver {
   bool _isAppInForeground = true;
-  String _currentRoute = '/';
-  bool _isRouterReady = false;
-  bool _isInitializing = false;
-  final Map<String, DateTime> _lastRouteVisited = {};
+  bool _wasOffline = false;
   Timer? _sessionCheckTimer;
   Timer? _syncTimer;
   StreamSubscription? _deviceDeactivatedSubscription;
   StreamSubscription? _connectivitySubscription;
-  bool _mounted = true;
-  bool _wasOffline = false;
+  bool _appInitialized = false;
+  bool _overlayReady = false;
+  final List<Map<String, dynamic>> _pendingSnackbars = [];
 
   @override
   void initState() {
     super.initState();
-    debugLog('FamilyAcademyApp', 'initState called');
+    debugLog('FamilyAcademyApp', 'Initializing app');
     WidgetsBinding.instance.addObserver(this);
-    _initializeApp();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        setState(() => _overlayReady = true);
+        SnackbarService().initializeWithContext(context);
+
+        for (final snackbar in _pendingSnackbars) {
+          SnackbarService().show(
+            context: context,
+            message: snackbar['message'],
+            type: snackbar['type'],
+          );
+        }
+        _pendingSnackbars.clear();
+
+        _initializeApp();
+      }
+    });
+
     _startSessionChecker();
     _setupConnectivityListener();
     _startPeriodicSync();
+    _setupOfflineQueueListener();
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (!_isRouterReady && _mounted && context.mounted) {
-      try {
-        final routeState = GoRouterState.of(context);
-        _currentRoute = routeState.uri.toString();
-        _isRouterReady = true;
-        debugLog('FamilyAcademyApp', 'Router ready: $_currentRoute');
-      } catch (e) {
-        debugLog('FamilyAcademyApp', 'Router error: $e');
+  void _setupOfflineQueueListener() {
+    final queueManager =
+        Provider.of<queue.OfflineQueueManager>(context, listen: false);
+
+    queueManager.queueStream.listen((items) {
+      if (!mounted || !_overlayReady) return;
+
+      final pendingCount = items
+          .where((item) => item.status == queue.QueueStatus.pending)
+          .length;
+
+      if (pendingCount > 0 && _isAppInForeground) {
+        _showSafeSnackbar(
+          '📦 $pendingCount item${pendingCount > 1 ? 's' : ''} pending sync',
+          SnackbarType.info,
+        );
       }
+    });
+  }
+
+  void _showSafeSnackbar(String message, SnackbarType type) {
+    if (!_overlayReady || !mounted) {
+      _pendingSnackbars.add({'message': message, 'type': type});
+      return;
+    }
+
+    try {
+      SnackbarService().show(
+        context: context,
+        message: message,
+        type: type,
+      );
+    } catch (e) {
+      _pendingSnackbars.add({'message': message, 'type': type});
     }
   }
 
   @override
   void dispose() {
-    _mounted = false;
     WidgetsBinding.instance.removeObserver(this);
     _sessionCheckTimer?.cancel();
     _syncTimer?.cancel();
@@ -89,51 +128,54 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
   }
 
   void _setupConnectivityListener() {
-    final BuildContext currentContext = context;
-    final bool wasMounted = _mounted;
-
     final connectivityService = Provider.of<ConnectivityService>(
-      currentContext,
+      context,
       listen: false,
     );
 
     _connectivitySubscription =
-        connectivityService.onConnectivityChanged.listen(
-      (isOnline) {
-        if (!wasMounted || !currentContext.mounted) return;
+        connectivityService.onConnectivityChanged.listen((isOnline) async {
+      if (!mounted) return;
 
-        if (isOnline && _wasOffline) {
-          SnackbarService().showSuccess(
-            currentContext,
-            'Back online! Syncing your changes...',
+      if (isOnline && _wasOffline) {
+        _showSafeSnackbar(
+          'Back online! Syncing your changes...',
+          SnackbarType.success,
+        );
+
+        final queueManager =
+            Provider.of<queue.OfflineQueueManager>(context, listen: false);
+        await queueManager.processQueue();
+
+        await _syncPendingActions();
+        await _refreshAllData();
+      } else if (!isOnline && !_wasOffline) {
+        final pendingCount = connectivityService.pendingActionsCount;
+        if (pendingCount > 0) {
+          _showSafeSnackbar(
+            'You are offline. $pendingCount change${pendingCount > 1 ? 's' : ''} queued.',
+            SnackbarType.offline,
           );
-          _syncPendingActions();
-          _refreshAllData();
-        } else if (!isOnline && !_wasOffline) {
-          final pendingCount = connectivityService.pendingActionsCount;
-          if (pendingCount > 0) {
-            SnackbarService().showInfo(
-              currentContext,
-              'You are offline. $pendingCount change${pendingCount > 1 ? 's' : ''} queued.',
-            );
-          } else {
-            SnackbarService().showOffline(currentContext);
-          }
+        } else {
+          _showSafeSnackbar(
+            'You are offline. Showing cached content.',
+            SnackbarType.offline,
+          );
         }
+      }
 
-        _wasOffline = !isOnline;
-      },
-    );
+      _wasOffline = !isOnline;
+    });
   }
 
   void _startPeriodicSync() {
     _syncTimer = Timer.periodic(const Duration(minutes: 5), (_) {
-      if (_mounted && context.mounted) {
+      if (mounted && _overlayReady) {
         final connectivity = Provider.of<ConnectivityService>(
           context,
           listen: false,
         );
-        if (connectivity.isOnline && connectivity.pendingActionsCount > 0) {
+        if (connectivity.isOnline) {
           _syncPendingActions();
         }
       }
@@ -141,61 +183,43 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
   }
 
   Future<void> _syncPendingActions() async {
-    if (!_mounted || !context.mounted || !_isRouterReady) return;
+    if (!mounted || !_overlayReady) return;
 
-    final BuildContext currentContext = context;
     final connectivity = Provider.of<ConnectivityService>(
-      currentContext,
+      context,
       listen: false,
     );
 
     if (!connectivity.isOnline) return;
 
-    final apiService = Provider.of<ApiService>(currentContext, listen: false);
+    final queueManager =
+        Provider.of<queue.OfflineQueueManager>(context, listen: false);
 
-    await connectivity.processQueueWithApi(apiService, onComplete: () {
-      if (_mounted && currentContext.mounted && _isRouterReady) {
-        final remaining = connectivity.pendingActionsCount;
-        if (remaining == 0) {
-          SnackbarService().showSyncComplete(currentContext);
-        } else {
-          SnackbarService().showInfo(
-            currentContext,
-            '$remaining change${remaining > 1 ? 's' : ''} remaining to sync',
-          );
-        }
-      }
-    });
+    await queueManager.processQueue();
+
+    final remaining = queueManager.pendingItems.length;
+    if (remaining == 0) {
+      _showSafeSnackbar('Sync complete!', SnackbarType.syncComplete);
+    } else {
+      _showSafeSnackbar(
+        '$remaining change${remaining > 1 ? 's' : ''} remaining to sync',
+        SnackbarType.info,
+      );
+    }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Don't try to sync if we're not fully initialized
-    if (!_isRouterReady || !_mounted || !context.mounted) {
-      // Just handle screen protection without syncing
-      switch (state) {
-        case AppLifecycleState.resumed:
-          _isAppInForeground = true;
-          ScreenProtectionService.enableOnResume();
-          break;
-        case AppLifecycleState.paused:
-        case AppLifecycleState.inactive:
-        case AppLifecycleState.detached:
-        case AppLifecycleState.hidden:
-          _isAppInForeground = false;
-          ScreenProtectionService.disableOnPause();
-          break;
-      }
-      return;
-    }
+    if (!_appInitialized) return;
 
-    // Full handling when ready
     switch (state) {
       case AppLifecycleState.resumed:
         _isAppInForeground = true;
         ScreenProtectionService.enableOnResume();
         _refreshAllData();
-        _syncPendingActions();
+        if (_overlayReady) {
+          _syncPendingActions();
+        }
         break;
       case AppLifecycleState.paused:
       case AppLifecycleState.inactive:
@@ -209,7 +233,7 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
 
   void _startSessionChecker() {
     _sessionCheckTimer = Timer.periodic(const Duration(minutes: 1), (_) {
-      if (_mounted && context.mounted) {
+      if (mounted && _appInitialized) {
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
         if (authProvider.isAuthenticated) {
           authProvider.checkSession();
@@ -228,47 +252,30 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
 
       widget.notificationService.apiService = widget.apiService;
 
-      if (_mounted) {
-        WidgetsBinding.instance.addPostFrameCallback((_) async {
-          if (_mounted && context.mounted) {
-            final authProvider =
-                Provider.of<AuthProvider>(context, listen: false);
-            _deviceDeactivatedSubscription =
-                authProvider.deviceDeactivated.listen((message) {
-              if (_mounted && context.mounted) {
-                _showDeviceDeactivatedDialog(
-                    message ?? 'Device has been deactivated.');
-              }
-            });
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      _deviceDeactivatedSubscription =
+          authProvider.deviceDeactivated.listen((message) {
+        if (mounted) {
+          _showDeviceDeactivatedDialog(
+              message ?? 'Device has been deactivated.');
+        }
+      });
 
-            // Initialize auth provider
-            await authProvider.initialize();
-            if (!mounted) return;
-
-            // Only initialize authenticated providers if we're actually authenticated
-            if (authProvider.isAuthenticated && _mounted && context.mounted) {
-              // Small delay to ensure everything is settled
-              await Future.delayed(const Duration(milliseconds: 500));
-              if (!mounted) return;
-
-              await _initializeAuthenticatedProviders();
-              if (!mounted) return;
-            }
-          }
-        });
-      }
+      await authProvider.initialize();
 
       widget.notificationService.notificationStream
           .listen(_handleNotificationData);
 
+      setState(() => _appInitialized = true);
       debugLog('FamilyAcademyApp', 'App initialization complete');
     } catch (e) {
       debugLog('FamilyAcademyApp', 'Initialization error: $e');
+      setState(() => _appInitialized = true);
     }
   }
 
   void _showDeviceDeactivatedDialog(String message) {
-    if (!_mounted || !context.mounted) return;
+    if (!mounted) return;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -279,7 +286,7 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
           TextButton(
             onPressed: () {
               Navigator.of(context).pop();
-              if (_mounted && context.mounted) {
+              if (mounted) {
                 GoRouter.of(context).go('/auth/login');
               }
             },
@@ -290,114 +297,8 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
     );
   }
 
-  Future<void> _initializeAuthenticatedProviders() async {
-    if (_isInitializing || !_mounted || !context.mounted) return;
-    _isInitializing = true;
-
-    final BuildContext currentContext = context;
-
-    try {
-      debugLog('FamilyAcademyApp',
-          'Starting authenticated providers initialization');
-
-      final subscriptionProvider =
-          Provider.of<SubscriptionProvider>(currentContext, listen: false);
-      final categoryProvider =
-          Provider.of<CategoryProvider>(currentContext, listen: false);
-      final settingsProvider =
-          Provider.of<SettingsProvider>(currentContext, listen: false);
-
-      // Load settings first (they don't depend on auth)
-      await settingsProvider.getAllSettings().catchError((e) {
-        debugLog('FamilyAcademyApp', 'Settings error (non-critical): $e');
-        return null;
-      });
-      if (!mounted) return;
-
-      // Load subscriptions
-      await subscriptionProvider.loadSubscriptions().catchError((e) {
-        debugLog('FamilyAcademyApp', 'Subscriptions error (non-critical): $e');
-        return null;
-      });
-      if (!mounted) return;
-
-      // Load categories
-      await categoryProvider
-          .loadCategoriesWithSubscriptionCheck()
-          .catchError((e) {
-        debugLog('FamilyAcademyApp', 'Categories error (non-critical): $e');
-        return null;
-      });
-      if (!mounted) return;
-
-      // Load background providers (don't await - let them run in background)
-      unawaited(_loadBackgroundProviders().catchError((e) {
-        debugLog('FamilyAcademyApp',
-            'Background providers error (non-critical): $e');
-      }));
-
-      unawaited(widget.notificationService
-          .sendFcmTokenToBackendIfAuthenticated()
-          .catchError((e) {
-        debugLog('FamilyAcademyApp', 'FCM token error (non-critical): $e');
-      }));
-
-      debugLog('FamilyAcademyApp',
-          'Authenticated providers initialization completed');
-    } catch (e) {
-      debugLog('FamilyAcademyApp', 'Provider init error: $e');
-      // Don't logout on provider errors - just log them
-    } finally {
-      _isInitializing = false;
-    }
-  }
-
-  Future<void> _loadBackgroundProviders() async {
-    if (!_mounted || !context.mounted) return;
-
-    final BuildContext currentContext = context;
-
-    try {
-      final userProvider =
-          Provider.of<UserProvider>(currentContext, listen: false);
-      final notificationProvider =
-          Provider.of<NotificationProvider>(currentContext, listen: false);
-      final paymentProvider =
-          Provider.of<PaymentProvider>(currentContext, listen: false);
-      final settingsProvider =
-          Provider.of<SettingsProvider>(currentContext, listen: false);
-
-      // Load all background data with individual error handling
-      await Future.wait([
-        userProvider.loadUserProfile().catchError((e) {
-          debugLog('FamilyAcademyApp', 'User profile error (non-critical): $e');
-          return null;
-        }),
-        notificationProvider.loadNotifications().catchError((e) {
-          debugLog(
-              'FamilyAcademyApp', 'Notifications error (non-critical): $e');
-          return null;
-        }),
-        paymentProvider.loadPayments().catchError((e) {
-          debugLog('FamilyAcademyApp', 'Payments error (non-critical): $e');
-          return null;
-        }),
-      ]).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-          debugLog('FamilyAcademyApp',
-              'Background providers timeout - continuing anyway');
-          return [];
-        },
-      );
-    } catch (e) {
-      debugLog('FamilyAcademyApp', 'Background providers error (ignored): $e');
-      // NEVER logout from background providers
-    }
-  }
-
   Future<void> _refreshAllData() async {
-    if (!_isAppInForeground || !_mounted || !context.mounted) return;
+    if (!_isAppInForeground || !mounted || !_appInitialized) return;
 
     final connectivityService = Provider.of<ConnectivityService>(
       context,
@@ -411,6 +312,7 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
           Provider.of<SubscriptionProvider>(context, listen: false);
       final categoryProvider =
           Provider.of<CategoryProvider>(context, listen: false);
+
       unawaited(subscriptionProvider
           .loadSubscriptions(forceRefresh: true)
           .catchError(
@@ -422,105 +324,73 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
 
   void _handleNotificationData(Map<String, dynamic> data) {
     final type = data['type'];
-    final notificationData = data['data'];
     final route = data['route'] ?? '/notifications';
 
     switch (type) {
       case 'payment_verified':
-        _handlePaymentVerified(notificationData);
+        _handlePaymentVerified(data['data']);
         break;
-      case 'payment_rejected':
-      case 'exam_result':
-      case 'streak_update':
-      case 'system_announcement':
+      case 'notification_clicked':
+      case 'navigate':
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _handleNavigation(route);
+        });
+        break;
+      default:
         unawaited(widget.notificationService.showLocalNotification(
           title: data['title'] ?? 'Notification',
           body: data['message'] ?? '',
         ));
         break;
-      case 'navigate':
-      case 'notification_clicked':
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _handleNavigation(route);
-        });
-        break;
     }
   }
 
   void _handleNavigation(String route) {
-    if (!_mounted || !context.mounted || !_isRouterReady) return;
+    if (!mounted || !_appInitialized) return;
 
     ScreenProtectionService.enableOnResume();
 
-    final currentContext = context;
-    final notificationProvider = currentContext.read<NotificationProvider>();
-
+    final notificationProvider = context.read<NotificationProvider>();
     notificationProvider.loadNotifications().then((_) {
-      if (!_mounted || !currentContext.mounted) return;
+      if (!mounted) return;
 
-      final currentRoute = GoRouterState.of(currentContext).uri.toString();
+      final currentRoute = GoRouterState.of(context).uri.toString();
       if (currentRoute == route) return;
 
-      if (currentRoute.startsWith('/chatbot') ||
-          currentRoute.startsWith('/progress')) {
-        GoRouter.of(currentContext).push(route);
-      } else {
-        GoRouter.of(currentContext).go(route);
-      }
+      GoRouter.of(context).push(route);
     });
   }
 
-  void _handlePaymentVerified(Map<String, dynamic> data) {
+  void _handlePaymentVerified(Map<String, dynamic>? data) {
     unawaited(widget.notificationService.showLocalNotification(
       title: 'Payment Verified!',
       body: 'Your payment has been verified. Access is now active.',
       payload: json.encode({
         'type': 'payment_verified_action',
         'action': 'refresh_subscriptions',
-        'category_id': data['category_id'],
+        'category_id': data?['category_id'],
         'click_action': '/notifications',
       }),
     ));
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _handlePaymentRefresh(data);
+      if (!mounted || !_appInitialized) return;
+
+      final subscriptionProvider =
+          Provider.of<SubscriptionProvider>(context, listen: false);
+      final categoryProvider =
+          Provider.of<CategoryProvider>(context, listen: false);
+
+      subscriptionProvider.refreshAfterPaymentVerification().then((_) {
+        if (mounted) {
+          categoryProvider.loadCategories(forceRefresh: true);
+        }
+      });
     });
-  }
-
-  void _handlePaymentRefresh(Map<String, dynamic> data) {
-    if (!_mounted || !context.mounted) return;
-
-    final subscriptionProvider =
-        Provider.of<SubscriptionProvider>(context, listen: false);
-    final categoryProvider =
-        Provider.of<CategoryProvider>(context, listen: false);
-
-    subscriptionProvider.refreshAfterPaymentVerification().then((_) {
-      if (_mounted && context.mounted) {
-        categoryProvider.loadCategories(forceRefresh: true);
-      }
-    });
-  }
-
-  void _monitorRouteChanges() {
-    if (!_isRouterReady || !_mounted || !context.mounted) return;
-    try {
-      final routeState = GoRouterState.of(context);
-      final currentUri = routeState.uri.toString();
-      if (_currentRoute != currentUri) {
-        _currentRoute = currentUri;
-        _lastRouteVisited[currentUri] = DateTime.now();
-        if (_isAppInForeground) ScreenProtectionService.enableOnResume();
-      }
-    } catch (e) {
-      debugLog('FamilyAcademyApp', 'Route monitor error: $e');
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    WidgetsBinding.instance.addPostFrameCallback((_) => _monitorRouteChanges());
-
     return Consumer<ThemeProvider>(
       builder: (context, themeProvider, child) => Consumer<AuthProvider>(
         builder: (context, authProvider, child) => MaterialApp.router(

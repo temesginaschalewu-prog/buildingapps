@@ -1,19 +1,50 @@
 import '../utils/parsers.dart';
+import 'package:hive/hive.dart'; // NEW
 
+part 'exam_question_model.g.dart'; // NEW
+
+@HiveType(typeId: 19) // NEW - Using 19 since 7-8 are taken
 class ExamQuestion {
+  @HiveField(0)
   final int id;
+
+  @HiveField(1)
   final int examId;
+
+  @HiveField(2)
   final int questionId;
+
+  @HiveField(3)
   final int displayOrder;
+
+  @HiveField(4)
   final int marks;
+
+  @HiveField(5)
   final String questionText;
+
+  @HiveField(6)
   final String? optionA;
+
+  @HiveField(7)
   final String? optionB;
+
+  @HiveField(8)
   final String? optionC;
+
+  @HiveField(9)
   final String? optionD;
+
+  @HiveField(10)
   final String? optionE;
+
+  @HiveField(11)
   final String? optionF;
+
+  @HiveField(12)
   final String difficulty;
+
+  @HiveField(13)
   final bool hasAnswer;
 
   ExamQuestion({

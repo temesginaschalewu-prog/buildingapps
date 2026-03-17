@@ -1,3 +1,6 @@
+// lib/utils/api_response.dart
+// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+
 class ApiResponse<T> {
   final bool success;
   final String message;
@@ -7,6 +10,7 @@ class ApiResponse<T> {
   final DateTime timestamp;
   final bool isOffline;
   final bool isQueued;
+  final String? requestId;
 
   ApiResponse({
     required this.success,
@@ -17,25 +21,33 @@ class ApiResponse<T> {
     DateTime? timestamp,
     this.isOffline = false,
     this.isQueued = false,
+    this.requestId,
   }) : timestamp = timestamp ?? DateTime.now();
 
-  factory ApiResponse.success(
-      {required String message, T? data, int? statusCode}) {
+  factory ApiResponse.success({
+    required String message,
+    T? data,
+    int? statusCode,
+    String? requestId,
+  }) {
     return ApiResponse<T>(
       success: true,
       message: message,
       data: data,
       statusCode: statusCode ?? 200,
+      requestId: requestId,
     );
   }
 
-  factory ApiResponse.error(
-      {required String message,
-      dynamic error,
-      int? statusCode,
-      T? data,
-      bool isOffline = false,
-      bool isQueued = false}) {
+  factory ApiResponse.error({
+    required String message,
+    dynamic error,
+    int? statusCode,
+    T? data,
+    bool isOffline = false,
+    bool isQueued = false,
+    String? requestId,
+  }) {
     return ApiResponse<T>(
       success: false,
       message: message,
@@ -44,11 +56,16 @@ class ApiResponse<T> {
       data: data,
       isOffline: isOffline,
       isQueued: isQueued,
+      requestId: requestId,
     );
   }
 
-  factory ApiResponse.offline(
-      {String? message, T? data, bool isQueued = false}) {
+  factory ApiResponse.offline({
+    String? message,
+    T? data,
+    bool isQueued = false,
+    String? requestId,
+  }) {
     return ApiResponse<T>(
       success: false,
       message: message ?? 'You are offline. Showing cached data.',
@@ -56,21 +73,28 @@ class ApiResponse<T> {
       isQueued: isQueued,
       data: data,
       statusCode: 0,
+      requestId: requestId,
     );
   }
 
-  factory ApiResponse.queued({String? message, T? data}) {
+  factory ApiResponse.queued({
+    String? message,
+    T? data,
+    String? requestId,
+  }) {
     return ApiResponse<T>(
       success: true,
       message: message ?? 'Action saved offline. Will sync when online.',
       isQueued: true,
       data: data,
       statusCode: 202, // Accepted
+      requestId: requestId,
     );
   }
 
   factory ApiResponse.fromJson(
-      Map<String, dynamic> json, T Function(dynamic) fromJson) {
+      Map<String, dynamic> json, T Function(dynamic) fromJson,
+      {String? requestId}) {
     try {
       return ApiResponse<T>(
         success: json['success'] ?? false,
@@ -80,28 +104,41 @@ class ApiResponse<T> {
         statusCode: json['statusCode'],
         isOffline: json['offline'] == true,
         isQueued: json['queued'] == true,
+        requestId: requestId ?? json['requestId']?.toString(),
       );
     } catch (e) {
       return ApiResponse<T>(
         success: false,
         message: 'Failed to parse response: $e',
         error: e,
+        requestId: requestId,
       );
     }
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'success': success,
-      'message': message,
-      'data': data,
-      'error': error,
-      'statusCode': statusCode,
-      'timestamp': timestamp.toIso8601String(),
-      'offline': isOffline,
-      'queued': isQueued,
-    };
+  // FIXED: The when method - no boolean negation issues
+  R? when<R>({
+    R? Function(T data)? onSuccess,
+    R? Function(String message)? onError,
+    R? Function()? onOffline,
+    R? Function()? onQueued,
+  }) {
+    if (isOffline && onOffline != null) return onOffline();
+    if (isQueued && onQueued != null) return onQueued();
+    if (!success && onError != null) return onError(message);
+    if (success && data != null && onSuccess != null) {
+      return onSuccess(data as T);
+    }
+    return null;
   }
+
+  T getDataOrThrow() {
+    if (!success) throw ApiError.fromResponse(this);
+    if (data == null) throw ApiError(message: 'No data available');
+    return data as T;
+  }
+
+  T? getDataOrNull() => success ? data : null;
 
   bool get hasData => data != null;
   bool get hasError => error != null;
@@ -124,6 +161,7 @@ class ApiResponse<T> {
         timestamp: timestamp,
         isOffline: isOffline,
         isQueued: isQueued,
+        requestId: requestId,
       );
     }
 
@@ -136,20 +174,13 @@ class ApiResponse<T> {
       timestamp: timestamp,
       isOffline: isOffline,
       isQueued: isQueued,
+      requestId: requestId,
     );
   }
 
-  T getDataOrThrow() {
-    if (!success) throw ApiError.fromResponse(this);
-    if (data == null) throw ApiError(message: 'No data available');
-    return data as T;
-  }
-
-  T? getDataOrNull() => success ? data : null;
-
   @override
   String toString() =>
-      'ApiResponse{success: $success, message: $message, hasData: ${data != null}, statusCode: $statusCode, isOffline: $isOffline, isQueued: $isQueued}';
+      'ApiResponse{success: $success, message: $message, hasData: ${data != null}, statusCode: $statusCode, isOffline: $isOffline, isQueued: $isQueued, requestId: $requestId}';
 }
 
 class ApiError implements Exception {
@@ -160,6 +191,7 @@ class ApiError implements Exception {
   final DateTime timestamp;
   final bool isOffline;
   final bool isQueued;
+  final String? requestId;
 
   ApiError({
     required this.message,
@@ -169,6 +201,7 @@ class ApiError implements Exception {
     DateTime? timestamp,
     this.isOffline = false,
     this.isQueued = false,
+    this.requestId,
   }) : timestamp = timestamp ?? DateTime.now();
 
   @override
@@ -182,6 +215,7 @@ class ApiError implements Exception {
       action: json['action'],
       isOffline: json['offline'] == true,
       isQueued: json['queued'] == true,
+      requestId: json['requestId']?.toString(),
     );
   }
 
@@ -192,35 +226,43 @@ class ApiError implements Exception {
       data: response.data,
       isOffline: response.isOffline,
       isQueued: response.isQueued,
+      requestId: response.requestId,
     );
   }
 
-  factory ApiError.networkError() {
+  factory ApiError.networkError({String? requestId}) {
     return ApiError(
         message: 'Network error. Please check your connection.',
         statusCode: 0,
-        isOffline: true);
+        isOffline: true,
+        requestId: requestId);
   }
 
-  factory ApiError.timeoutError() {
+  factory ApiError.timeoutError({String? requestId}) {
     return ApiError(
-        message: 'Request timeout. Please try again.', statusCode: 408);
+        message: 'Request timeout. Please try again.',
+        statusCode: 408,
+        requestId: requestId);
   }
 
-  factory ApiError.unauthorized() {
+  factory ApiError.unauthorized({String? requestId}) {
     return ApiError(
-        message: 'Unauthorized. Please login again.', statusCode: 401);
+        message: 'Unauthorized. Please login again.',
+        statusCode: 401,
+        requestId: requestId);
   }
 
-  factory ApiError.notFound() {
-    return ApiError(message: 'Resource not found.', statusCode: 404);
+  factory ApiError.notFound({String? requestId}) {
+    return ApiError(
+        message: 'Resource not found.', statusCode: 404, requestId: requestId);
   }
 
-  factory ApiError.queued() {
+  factory ApiError.queued({String? requestId}) {
     return ApiError(
         message: 'Action saved offline. Will sync when online.',
         statusCode: 202,
-        isQueued: true);
+        isQueued: true,
+        requestId: requestId);
   }
 
   Map<String, dynamic> toJson() {
@@ -232,6 +274,7 @@ class ApiError implements Exception {
       'timestamp': timestamp.toIso8601String(),
       'offline': isOffline,
       'queued': isQueued,
+      'requestId': requestId,
     };
   }
 

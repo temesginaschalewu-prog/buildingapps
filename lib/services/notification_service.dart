@@ -1,10 +1,12 @@
+// lib/services/notification_service.dart
+// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
-import 'dart:ui';
+import 'package:flutter/foundation.dart';
 import 'package:familyacademyclient/services/api_service.dart';
 import 'package:familyacademyclient/services/connectivity_service.dart';
-import 'package:familyacademyclient/services/platform_service.dart';
+import 'package:familyacademyclient/utils/platform_helper.dart'; // ✅ CHANGED
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/utils/constants.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -12,8 +14,10 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest.dart' as tz;
+import 'package:hive/hive.dart';
 import '../utils/helpers.dart';
 
+/// PRODUCTION-READY Notification Service with Offline Support
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
   factory NotificationService() => _instance;
@@ -21,7 +25,8 @@ class NotificationService {
 
   static bool _isInitialized = false;
   static bool _isInitializing = false;
-  static bool _listenersSetUp = false;
+  static bool _firebaseInitLogged = false;
+  static bool _fcmAuthFailureLogged = false;
 
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
@@ -38,57 +43,79 @@ class NotificationService {
   ApiService? _apiService;
   ConnectivityService? _connectivityService;
 
+  // Hive box for notification cache
+  Box? _notificationBox;
+
   set apiService(ApiService service) {
     _apiService = service;
-    debugLog('NotificationService', 'ApiService set');
   }
 
   set connectivityService(ConnectivityService service) {
     _connectivityService = service;
-    debugLog('NotificationService', 'ConnectivityService set');
   }
 
   final Map<String, DateTime> _lastNotificationTime = {};
   final Set<String> _processedMessageIds = {};
   final Set<String> _preventDuplicateIds = {};
 
-  Future<void> init(
-      {bool forceReinit = false, bool forceMinimal = false}) async {
+  Future<void> init({bool forceReinit = false}) async {
     if (_isInitialized && !forceReinit) return;
     if (_isInitializing) return;
 
     _isInitializing = true;
 
     try {
+      // Initialize notification box
+      await _initNotificationBox();
+
       tz.initializeTimeZones();
       await _initLocalNotifications();
 
-      if (PlatformService.isMobile) {
+      if (PlatformHelper.isMobile) {
+        // ✅ Using PlatformHelper
         try {
-          await Firebase.initializeApp();
-          debugLog('NotificationService', 'Firebase initialized');
+          if (Firebase.apps.isEmpty) {
+            await Firebase.initializeApp();
+          }
+          if (!_firebaseInitLogged) {
+            debugLog('NotificationService', 'Firebase initialized');
+            _firebaseInitLogged = true;
+          }
         } catch (e) {
           debugLog('NotificationService', 'Firebase init error: $e');
         }
       }
 
-      if (PlatformService.isMobile && !forceMinimal) {
+      if (PlatformHelper.isMobile) {
+        // ✅ Using PlatformHelper
         await _initFirebaseMessaging();
         await _requestPermissions();
         _setupTokenRefreshListener();
         await _setupMessageListeners();
-      } else {
-        debugLog('NotificationService',
-            'ℹ️ Skipping Firebase messaging on desktop/minimal mode');
       }
 
       _isInitialized = true;
-      debugLog('NotificationService',
-          'Notification service initialized (mode: ${forceMinimal ? 'minimal' : 'full'})');
+      debugLog('NotificationService', 'Notification service initialized');
     } catch (e) {
       debugLog('NotificationService', 'Init error: $e');
     } finally {
       _isInitializing = false;
+    }
+  }
+
+  // Initialize Hive notification box
+  Future<void> _initNotificationBox() async {
+    try {
+      if (Hive.isBoxOpen('notifications_box')) {
+        _notificationBox = Hive.box('notifications_box');
+        debugLog(
+            'NotificationService', '✅ Using already opened notification box');
+      } else {
+        _notificationBox = await Hive.openBox('notifications_box');
+        debugLog('NotificationService', '✅ Notification box opened');
+      }
+    } catch (e) {
+      debugLog('NotificationService', '⚠️ Error opening notification box: $e');
     }
   }
 
@@ -113,8 +140,6 @@ class NotificationService {
         onDidReceiveBackgroundNotificationResponse:
             _onDidReceiveNotificationResponse,
       );
-
-      debugLog('NotificationService', 'Local notifications initialized');
     } catch (e) {
       debugLog('NotificationService', 'Local notifications init error: $e');
     }
@@ -122,24 +147,36 @@ class NotificationService {
 
   Future<void> _initFirebaseMessaging() async {
     try {
-      if (PlatformService.isMobile) {
+      if (PlatformHelper.isMobile) {
+        // ✅ Using PlatformHelper
         _firebaseMessaging = FirebaseMessaging.instance;
         _fcmToken = await _firebaseMessaging!.getToken();
         if (_fcmToken != null) {
           await _saveFCMToken(_fcmToken!);
-          debugLog('NotificationService', 'FCM token obtained');
         }
       }
     } catch (e) {
-      debugLog('NotificationService', 'Firebase messaging init error: $e');
+      final message = e.toString();
+      if (message.contains('AUTHENTICATION_FAILED')) {
+        _fcmToken = null;
+        if (!_fcmAuthFailureLogged) {
+          debugLog(
+            'NotificationService',
+            'Firebase messaging auth failed in this environment. '
+                'Push token unavailable; in-app notifications will still work.',
+          );
+          _fcmAuthFailureLogged = true;
+        }
+      } else {
+        debugLog('NotificationService', 'Firebase messaging init error: $e');
+      }
     }
   }
 
   Future<void> _setupMessageListeners() async {
-    if (_listenersSetUp) return;
-
     try {
-      if (PlatformService.isMobile && _firebaseMessaging != null) {
+      if (PlatformHelper.isMobile && _firebaseMessaging != null) {
+        // ✅ Using PlatformHelper
         FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
         FirebaseMessaging.onMessageOpenedApp.listen(_handleMessageOpenedApp);
 
@@ -148,11 +185,7 @@ class NotificationService {
         if (initialMessage != null) {
           await _handleMessage(initialMessage);
         }
-
-        debugLog('NotificationService', 'Message listeners set up');
       }
-
-      _listenersSetUp = true;
     } catch (e) {
       debugLog('NotificationService', 'Message listeners error: $e');
     }
@@ -160,7 +193,8 @@ class NotificationService {
 
   Future<void> _requestPermissions() async {
     try {
-      if (PlatformService.isMobile && _firebaseMessaging != null) {
+      if (PlatformHelper.isMobile && _firebaseMessaging != null) {
+        // ✅ Using PlatformHelper
         await _firebaseMessaging!.requestPermission();
       }
     } catch (e) {
@@ -169,7 +203,8 @@ class NotificationService {
   }
 
   void _setupTokenRefreshListener() {
-    if (_firebaseMessaging != null && PlatformService.isMobile) {
+    if (_firebaseMessaging != null && PlatformHelper.isMobile) {
+      // ✅ Using PlatformHelper
       _firebaseMessaging!.onTokenRefresh.listen((newToken) async {
         _fcmToken = newToken;
         await _saveFCMToken(newToken);
@@ -182,20 +217,24 @@ class NotificationService {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(AppConstants.fcmTokenCacheKey, token);
+
+      // Save to Hive
+      if (_notificationBox != null) {
+        await _notificationBox!.put('fcm_token', token);
+      }
     } catch (e) {
       debugLog('NotificationService', 'Error saving FCM token: $e');
     }
   }
 
   Future<void> sendFcmTokenToBackendIfAuthenticated() async {
-    if (!PlatformService.isMobile) return;
+    if (!PlatformHelper.isMobile) return; // ✅ Using PlatformHelper
 
     try {
       if (_fcmToken == null) return;
 
       final connectivity = _connectivityService ?? ConnectivityService();
       if (!connectivity.isOnline) {
-        debugLog('NotificationService', 'Offline - will send token later');
         await _queueFcmTokenForSync(_fcmToken!);
         return;
       }
@@ -213,14 +252,13 @@ class NotificationService {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('pending_fcm_token', fcmToken);
-      debugLog('NotificationService', '📝 Queued FCM token for sync');
     } catch (e) {
       debugLog('NotificationService', 'Error queueing FCM token: $e');
     }
   }
 
   Future<void> syncPendingFcmToken() async {
-    if (!PlatformService.isMobile) return;
+    if (!PlatformHelper.isMobile) return; // ✅ Using PlatformHelper
 
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -232,7 +270,6 @@ class NotificationService {
 
       await _sendFcmTokenToBackend(pendingToken);
       await prefs.remove('pending_fcm_token');
-      debugLog('NotificationService', '✅ Synced pending FCM token');
     } catch (e) {
       debugLog('NotificationService', 'Error syncing FCM token: $e');
     }
@@ -240,13 +277,8 @@ class NotificationService {
 
   Future<void> _sendFcmTokenToBackend(String fcmToken) async {
     try {
-      if (_apiService == null) {
-        debugLog(
-            'NotificationService', 'ApiService not set, cannot send token');
-        return;
-      }
+      if (_apiService == null) return;
       await _apiService!.updateFcmToken(fcmToken);
-      debugLog('NotificationService', 'FCM token sent to backend');
     } catch (e) {
       debugLog('NotificationService', 'Error sending token to backend: $e');
     }
@@ -283,37 +315,10 @@ class NotificationService {
 
     if (message.notification?.title != null &&
         message.notification?.body != null) {
-      String notificationType = 'info';
-      if (message.data['type'] != null) {
-        notificationType = message.data['type'];
-      } else if (message.notification?.title
-              ?.toLowerCase()
-              .contains('payment') ??
-          false) {
-        notificationType = 'payment';
-      } else if (message.notification!.title?.toLowerCase().contains('exam') ??
-          false) {
-        notificationType = 'academic';
-      } else if (message.notification?.title
-              ?.toLowerCase()
-              .contains('success') ??
-          false) {
-        notificationType = 'success';
-      } else if (message.notification?.title
-              ?.toLowerCase()
-              .contains('warning') ??
-          false) {
-        notificationType = 'warning';
-      } else if (message.notification?.title?.toLowerCase().contains('error') ??
-          false) {
-        notificationType = 'error';
-      }
-
       await showLocalNotification(
         title: message.notification!.title!,
         body: message.notification!.body!,
         payload: json.encode(message.data),
-        type: notificationType,
       );
     }
   }
@@ -322,6 +327,9 @@ class NotificationService {
     try {
       final data = message.data;
       final type = data['type'] ?? 'general';
+
+      // Save notification to Hive for offline access
+      await _saveNotificationToHive(data);
 
       _notificationStreamController.add({
         'type': type,
@@ -337,6 +345,39 @@ class NotificationService {
     }
   }
 
+  // Save notification to Hive
+  Future<void> _saveNotificationToHive(Map<String, dynamic> data) async {
+    try {
+      if (_notificationBox == null) return;
+
+      final notificationId = data['notification_id'] ??
+          'notif_${DateTime.now().millisecondsSinceEpoch}';
+
+      final notification = {
+        'id': notificationId,
+        'type': data['type'],
+        'title': data['title'],
+        'body': data['body'],
+        'data': data,
+        'received_at': DateTime.now().toIso8601String(),
+        'is_read': false,
+      };
+
+      final existingNotifications =
+          _notificationBox!.get('notifications') as List? ?? [];
+      existingNotifications.insert(0, notification);
+
+      // Keep only last 100 notifications
+      if (existingNotifications.length > 100) {
+        existingNotifications.removeRange(100, existingNotifications.length);
+      }
+
+      await _notificationBox!.put('notifications', existingNotifications);
+    } catch (e) {
+      debugLog('NotificationService', 'Error saving to Hive: $e');
+    }
+  }
+
   String _getRouteFromData(Map<String, dynamic> data) {
     if (data['click_action'] != null) return data['click_action'];
     if (data['route'] != null) return data['route'];
@@ -347,10 +388,7 @@ class NotificationService {
     if (type == 'exam_result') {
       return '/exam-results';
     }
-    if (type == 'chapter_complete') {
-      return '/progress';
-    }
-    if (type == 'streak_update' || type == 'streak_milestone') {
+    if (type == 'chapter_complete' || type == 'streak_update') {
       return '/progress';
     }
     return '/notifications';
@@ -368,27 +406,6 @@ class NotificationService {
       'timestamp': DateTime.now(),
       'message_id': message.messageId,
     });
-  }
-
-  Future<void> handleBackgroundMessage(RemoteMessage message) async {
-    final String notificationId = _generateNotificationId(message);
-    if (_preventDuplicateIds.contains(notificationId)) return;
-    _preventDuplicateIds.add(notificationId);
-    if (_processedMessageIds.contains(message.messageId)) return;
-    final prefs = await SharedPreferences.getInstance();
-    final notificationsEnabled =
-        prefs.getBool(AppConstants.notificationsEnabledKey) ?? true;
-    if (!notificationsEnabled) return;
-    _processedMessageIds.add(message.messageId ?? '');
-    if (message.notification?.title != null &&
-        message.notification?.body != null) {
-      await showLocalNotification(
-        title: message.notification!.title!,
-        body: message.notification!.body!,
-        payload: json.encode(message.data),
-      );
-    }
-    await _handleMessage(message);
   }
 
   static Future<void> _onDidReceiveNotificationResponse(
@@ -413,7 +430,6 @@ class NotificationService {
     required String body,
     String? payload,
     int? id,
-    String? type,
   }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -429,43 +445,14 @@ class NotificationService {
 
       _lastNotificationTime[uniqueId] = now;
 
-      if (_lastNotificationTime.length > 100) {
-        final keysToRemove = _lastNotificationTime.keys
-            .where((key) =>
-                now.difference(_lastNotificationTime[key]!).inMinutes > 5)
-            .toList();
-        keysToRemove.forEach(_lastNotificationTime.remove);
-      }
-
-      Color notificationColor;
-      switch (type) {
-        case 'success':
-          notificationColor = AppColors.success;
-          break;
-        case 'warning':
-          notificationColor = AppColors.warning;
-          break;
-        case 'error':
-          notificationColor = AppColors.error;
-          break;
-        case 'academic':
-          notificationColor = AppColors.info;
-          break;
-        case 'payment':
-          notificationColor = AppColors.pending;
-          break;
-        default:
-          notificationColor = AppColors.info;
-      }
-
       final androidDetails = AndroidNotificationDetails(
         AppConstants.notificationChannelId,
         AppConstants.notificationChannelName,
         channelDescription: AppConstants.notificationChannelDescription,
         importance: Importance.high,
         priority: Priority.high,
-        color: notificationColor,
-        ledColor: notificationColor,
+        color: AppColors.info,
+        ledColor: AppColors.info,
         ledOnMs: AppConstants.notificationLedOnMs,
         ledOffMs: AppConstants.notificationLedOffMs,
         enableLights: true,
@@ -475,8 +462,6 @@ class NotificationService {
           summaryText: AppConstants.appName,
         ),
         icon: '@mipmap/ic_launcher',
-        largeIcon: const DrawableResourceAndroidBitmap('@mipmap/ic_launcher'),
-        ticker: AppConstants.appName,
         onlyAlertOnce: true,
       );
 
@@ -484,7 +469,6 @@ class NotificationService {
         presentAlert: true,
         presentBadge: true,
         presentSound: true,
-        threadIdentifier: AppConstants.appName,
       );
 
       const linuxDetails = LinuxNotificationDetails(
@@ -492,8 +476,12 @@ class NotificationService {
       );
 
       final notificationDetails = NotificationDetails(
-        android: PlatformService.isMobile ? androidDetails : null,
-        iOS: PlatformService.isMobile ? iosDetails : null,
+        android: PlatformHelper.isMobile
+            ? androidDetails
+            : null, // ✅ Using PlatformHelper
+        iOS: PlatformHelper.isMobile
+            ? iosDetails
+            : null, // ✅ Using PlatformHelper
         linux: linuxDetails,
       );
 
@@ -507,20 +495,30 @@ class NotificationService {
         notificationDetails,
         payload: payload,
       );
-
-      debugLog('NotificationService', '✨ Beautiful notification shown: $title');
     } catch (e) {
       debugLog('NotificationService', 'Show local notification error: $e');
     }
   }
 
   Future<String?> getFCMToken() async {
-    if (_fcmToken == null && PlatformService.isMobile) {
+    if (_fcmToken == null && PlatformHelper.isMobile) {
+      // ✅ Using PlatformHelper
       try {
         _fcmToken = await _firebaseMessaging?.getToken();
         if (_fcmToken != null) await _saveFCMToken(_fcmToken!);
       } catch (e) {
-        debugLog('NotificationService', 'Error getting FCM token: $e');
+        final message = e.toString();
+        if (message.contains('AUTHENTICATION_FAILED')) {
+          if (!_fcmAuthFailureLogged && kDebugMode) {
+            debugLog(
+              'NotificationService',
+              'FCM token unavailable due to AUTHENTICATION_FAILED in this environment.',
+            );
+            _fcmAuthFailureLogged = true;
+          }
+        } else {
+          debugLog('NotificationService', 'Error getting FCM token: $e');
+        }
       }
     }
     return _fcmToken;
@@ -536,6 +534,19 @@ class NotificationService {
     await prefs.setBool(AppConstants.notificationsEnabledKey, enabled);
   }
 
+  // Get cached notifications from Hive
+  Future<List<Map<String, dynamic>>> getCachedNotifications() async {
+    try {
+      if (_notificationBox == null) return [];
+      return _notificationBox!.get('notifications')
+              as List<Map<String, dynamic>>? ??
+          [];
+    } catch (e) {
+      debugLog('NotificationService', 'Error getting cached notifications: $e');
+      return [];
+    }
+  }
+
   void clearProcessedMessages() {
     _processedMessageIds.clear();
     _preventDuplicateIds.clear();
@@ -544,5 +555,6 @@ class NotificationService {
 
   void dispose() {
     _notificationStreamController.close();
+    _notificationBox?.close();
   }
 }

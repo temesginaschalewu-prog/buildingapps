@@ -1,11 +1,26 @@
 import '../utils/parsers.dart';
+import 'package:hive/hive.dart'; // NEW
 
+part 'streak_model.g.dart'; // NEW
+
+@HiveType(typeId: 15) // NEW
 class Streak {
+  @HiveField(0)
   final int currentStreak;
+
+  @HiveField(1)
   final int weekStreak;
+
+  @HiveField(2)
   final bool hasStreakToday;
+
+  @HiveField(3)
   final String streakLevel;
+
+  @HiveField(4)
   final String longestStreak;
+
+  @HiveField(5)
   final List<DateTime> history;
 
   Streak({

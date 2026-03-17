@@ -1,17 +1,42 @@
 import 'dart:convert';
 import '../utils/parsers.dart';
+import 'package:hive/hive.dart'; // NEW
 
+part 'setting_model.g.dart'; // NEW
+
+@HiveType(typeId: 17) // NEW
 class Setting {
+  @HiveField(0)
   final int id;
+
+  @HiveField(1)
   final String settingKey;
+
+  @HiveField(2)
   final String? settingValue;
+
+  @HiveField(3)
   final String displayName;
+
+  @HiveField(4)
   final String category;
+
+  @HiveField(5)
   final String dataType;
+
+  @HiveField(6)
   final bool isPublic;
+
+  @HiveField(7)
   final int displayOrder;
+
+  @HiveField(8)
   final String? description;
+
+  @HiveField(9)
   final DateTime createdAt;
+
+  @HiveField(10)
   final DateTime updatedAt;
 
   Setting({

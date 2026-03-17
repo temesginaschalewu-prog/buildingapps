@@ -1,59 +1,179 @@
+// lib/providers/payment_provider.dart
+// COMPLETE PRODUCTION-READY FINAL VERSION - FIXED SLOW API CALLS
+
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:hive/hive.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../services/user_session.dart';
 import '../services/connectivity_service.dart';
+import '../services/hive_service.dart';
+import '../services/offline_queue_manager.dart';
 import '../models/payment_model.dart';
+import '../utils/api_response.dart';
 import '../utils/constants.dart';
 import '../utils/helpers.dart';
+import 'base_provider.dart';
 
-class PaymentProvider with ChangeNotifier {
-  final ApiService apiService;
-  final DeviceService deviceService;
+/// PRODUCTION-READY Payment Provider with Full Offline Support
+class PaymentProvider extends ChangeNotifier
+    with
+        BaseProvider<PaymentProvider>,
+        OfflineAwareProvider<PaymentProvider>,
+        BackgroundRefreshMixin<PaymentProvider> {
+  @override
   final ConnectivityService connectivityService;
 
-  List<Payment> _payments = [];
-  bool _isLoading = false;
-  String? _error;
-  bool _isOffline = false;
+  final ApiService apiService;
+  final DeviceService deviceService;
+  final HiveService hiveService;
+  final OfflineQueueManager offlineQueueManager;
 
-  Timer? _refreshTimer;
-  StreamController<List<Payment>> _paymentsUpdateController =
-      StreamController<List<Payment>>.broadcast();
+  List<Payment> _payments = [];
 
   static const Duration _cacheDuration = AppConstants.cacheTTLPayments;
-  static const Duration _refreshInterval = Duration(minutes: 5);
+  @override
+  Duration get refreshInterval => const Duration(minutes: 5);
+
+  Box? _paymentsBox;
+
+  int _apiCallCount = 0;
+
+  // Flag to track if we've loaded initial data
+  bool _hasLoadedPayments = false;
+  bool _hasInitialData = false;
+
+  StreamController<List<Payment>> _paymentsUpdateController =
+      StreamController<List<Payment>>.broadcast();
 
   PaymentProvider({
     required this.apiService,
     required this.deviceService,
     required this.connectivityService,
+    required this.hiveService,
+    required this.offlineQueueManager,
   }) {
-    _setupConnectivityListener();
-    _refreshTimer = Timer.periodic(_refreshInterval, (_) {
-      _refreshDataInBackground();
-    });
+    log('PaymentProvider constructor called');
+    initializeOfflineAware(
+      connectivity: connectivityService,
+      queue: offlineQueueManager,
+    );
+    _registerQueueProcessors();
+    _init();
   }
 
-  void _setupConnectivityListener() {
-    connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (_isOffline != !isOnline) {
-        _isOffline = !isOnline;
-        if (!_isOffline && _payments.isNotEmpty) {
-          _refreshDataInBackground();
-        }
-        notifyListeners();
+  void _registerQueueProcessors() {
+    // Register processor for payment submissions
+    offlineQueueManager.registerProcessor(
+      AppConstants.queueActionSubmitPayment,
+      _processPaymentSubmission,
+    );
+    log('✅ Registered queue processors');
+  }
+
+  Future<bool> _processPaymentSubmission(Map<String, dynamic> data) async {
+    try {
+      log('Processing offline payment submission');
+
+      final response = await apiService.submitPayment(
+        categoryId: data['categoryId'],
+        paymentType: data['paymentType'],
+        paymentMethod: data['paymentMethod'],
+        amount: data['amount'],
+        accountHolderName: data['accountHolderName'],
+        proofImagePath: data['proofImagePath'],
+      );
+
+      if (response.success) {
+        // Refresh payments after successful submission
+        await loadPayments(forceRefresh: true);
       }
-    });
+
+      return response.success;
+    } catch (e) {
+      log('Error processing payment submission: $e');
+      return false;
+    }
   }
 
+  Future<void> _init() async {
+    log('_init() START');
+    await _openHiveBoxes();
+    await _loadCachedPayments();
+
+    if (_payments.isNotEmpty) {
+      startBackgroundRefresh();
+      _hasLoadedPayments = true;
+      _hasInitialData = true;
+    }
+
+    log('_init() END');
+  }
+
+  Future<void> _openHiveBoxes() async {
+    try {
+      if (!Hive.isBoxOpen(AppConstants.hivePaymentsBox)) {
+        _paymentsBox =
+            await Hive.openBox<dynamic>(AppConstants.hivePaymentsBox);
+      } else {
+        _paymentsBox = Hive.box<dynamic>(AppConstants.hivePaymentsBox);
+      }
+      log('✅ Hive box opened');
+    } catch (e) {
+      log('⚠️ Error opening Hive box: $e');
+    }
+  }
+
+  Future<void> _loadCachedPayments() async {
+    try {
+      final userId = await UserSession().getCurrentUserId();
+      if (userId == null || _paymentsBox == null) return;
+
+      final cachedKey = 'user_${userId}_payments';
+      final cachedPayments = _paymentsBox!.get(cachedKey);
+
+      if (cachedPayments != null && cachedPayments is List) {
+        final List<Payment> payments = [];
+        for (final item in cachedPayments) {
+          if (item is Payment) {
+            payments.add(item);
+          } else if (item is Map<String, dynamic>) {
+            payments.add(Payment.fromJson(item));
+          }
+        }
+
+        if (payments.isNotEmpty) {
+          _payments = payments;
+          log('✅ Loaded ${_payments.length} payments from Hive');
+        }
+      }
+    } catch (e) {
+      log('Error loading cached payments: $e');
+    }
+  }
+
+  Future<void> _saveToHive() async {
+    try {
+      final userId = await UserSession().getCurrentUserId();
+      if (userId == null || _paymentsBox == null) return;
+
+      final cacheKey = 'user_${userId}_payments';
+      await _paymentsBox!.put(cacheKey, _payments);
+      log('💾 Saved ${_payments.length} payments to Hive');
+    } catch (e) {
+      log('Error saving to Hive: $e');
+    }
+  }
+
+  // ===== GETTERS =====
   List<Payment> get payments => List.unmodifiable(_payments);
-  bool get isLoading => _isLoading;
-  String? get error => _error;
-  bool get isOffline => _isOffline;
+
+  bool get hasLoadedPayments => _hasLoadedPayments;
+  bool get hasInitialData => _hasInitialData;
 
   Stream<List<Payment>> get paymentsUpdates => _paymentsUpdateController.stream;
 
@@ -69,92 +189,325 @@ class PaymentProvider with ChangeNotifier {
     return _payments.where((p) => p.isRejected).toList();
   }
 
-  Future<void> _refreshDataInBackground() async {
-    if (_isLoading || _isOffline) return;
+  // ===== LOAD PAYMENTS =====
+  Future<void> loadPayments({
+    bool forceRefresh = false,
+    bool isManualRefresh = false,
+  }) async {
+    _apiCallCount++;
+    final callId = _apiCallCount;
 
-    try {
-      debugLog('PaymentProvider', '🔄 Background refresh of payment data');
-      await _loadPaymentsFromCacheOrApi(
-          forceRefresh: true, isManualRefresh: false);
-    } catch (e) {
-      debugLog('PaymentProvider', 'Background refresh error: $e');
-    }
-  }
+    log('loadPayments() CALL #$callId');
 
-  Future<void> loadPayments(
-      {bool forceRefresh = false, bool isManualRefresh = false}) async {
-    if (_isLoading && !forceRefresh) return;
-
-    if (isManualRefresh) {
-      forceRefresh = true;
+    if (isManualRefresh && isOffline) {
+      throw Exception('Network error. Please check your internet connection.');
     }
 
-    _isLoading = true;
-    _error = null;
-    _notifySafely();
+    // Return cached data immediately if already loaded
+    if (_hasLoadedPayments && !forceRefresh && !isManualRefresh) {
+      log('✅ Already have payments, returning cached');
+      _paymentsUpdateController.add(_payments);
+      setLoaded();
+      return;
+    }
 
-    try {
-      debugLog('PaymentProvider', 'Loading payments');
-      await _loadPaymentsFromCacheOrApi(
-          forceRefresh: forceRefresh && !_isOffline,
-          isManualRefresh: isManualRefresh);
-    } catch (e) {
-      _error = e.toString();
-      debugLog('PaymentProvider', 'loadPayments error: $e');
-
-      if (isManualRefresh) {
-        rethrow;
+    if (isLoading && !forceRefresh) {
+      log('⏳ Already loading, waiting...');
+      int attempts = 0;
+      while (isLoading && attempts < 50) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        attempts++;
       }
-    } finally {
-      _isLoading = false;
-      _notifySafely();
-    }
-  }
-
-  Future<void> _loadPaymentsFromCacheOrApi(
-      {bool forceRefresh = false, bool isManualRefresh = false}) async {
-    // STEP 1: ALWAYS try cache first (EVEN WHEN OFFLINE)
-    if (!forceRefresh) {
-      final cachedPayments = await deviceService
-          .getCacheItem<List<Payment>>(AppConstants.paymentsCacheKey);
-      if (cachedPayments != null) {
-        _payments = cachedPayments;
+      if (_hasLoadedPayments) {
+        log('✅ Got payments from existing load');
         _paymentsUpdateController.add(_payments);
-        debugLog('PaymentProvider',
-            'Loaded ${_payments.length} payments from cache');
+        setLoaded();
+        return;
+      }
+    }
 
-        // If this is a manual refresh and we're offline, throw exception
-        if (isManualRefresh && _isOffline) {
+    setLoading();
+
+    try {
+      // STEP 1: Try Hive first
+      if (!forceRefresh) {
+        log('STEP 1: Checking Hive cache');
+        final userId = await UserSession().getCurrentUserId();
+        if (userId != null && _paymentsBox != null) {
+          final cachedKey = 'user_${userId}_payments';
+          final cachedPayments = _paymentsBox!.get(cachedKey);
+
+          if (cachedPayments != null && cachedPayments is List) {
+            final List<Payment> payments = [];
+            for (final item in cachedPayments) {
+              if (item is Payment) {
+                payments.add(item);
+              } else if (item is Map<String, dynamic>) {
+                payments.add(Payment.fromJson(item));
+              }
+            }
+            if (payments.isNotEmpty) {
+              _payments = payments;
+              _hasLoadedPayments = true;
+              _hasInitialData = true;
+              setLoaded();
+              _paymentsUpdateController.add(_payments);
+              log('✅ Using cached payments from Hive');
+
+              if (!isOffline && !isManualRefresh) {
+                unawaited(_refreshInBackground());
+              }
+              return;
+            }
+          }
+        }
+      }
+
+      // STEP 2: Try DeviceService
+      if (!forceRefresh) {
+        log('STEP 2: Checking DeviceService cache');
+        final cachedPayments = await deviceService.getCacheItem<List<dynamic>>(
+          AppConstants.paymentsCacheKey,
+          isUserSpecific: true,
+        );
+
+        if (cachedPayments != null) {
+          final List<Payment> payments = [];
+          for (final json in cachedPayments) {
+            if (json is Map<String, dynamic>) {
+              payments.add(Payment.fromJson(json));
+            }
+          }
+          if (payments.isNotEmpty) {
+            _payments = payments;
+            _hasLoadedPayments = true;
+            _hasInitialData = true;
+            setLoaded();
+            _paymentsUpdateController.add(_payments);
+
+            await _saveToHive();
+            log('✅ Using cached payments from DeviceService');
+
+            if (!isOffline && !isManualRefresh) {
+              unawaited(_refreshInBackground());
+            }
+            return;
+          }
+        }
+      }
+
+      // STEP 3: Check offline status
+      if (isOffline) {
+        log('STEP 3: Offline mode');
+        if (_payments.isNotEmpty) {
+          _hasLoadedPayments = true;
+          setLoaded();
+          _paymentsUpdateController.add(_payments);
+          log('✅ Showing cached payments offline');
+          return;
+        }
+
+        setError('You are offline. No cached payments available.');
+        setLoaded();
+        _paymentsUpdateController.add(_payments);
+
+        if (isManualRefresh) {
           throw Exception(
               'Network error. Please check your internet connection.');
         }
         return;
       }
-    }
 
-    // STEP 2: If offline and no cache, throw error
-    if (_isOffline) {
-      debugLog('PaymentProvider', 'Offline - no cached data');
-      if (isManualRefresh) {
-        throw Exception(
-            'Network error. Please check your internet connection.');
+      // STEP 4: Fetch from API with timeout
+      log('STEP 4: Fetching from API');
+      final response = await apiService.getMyPayments().timeout(
+        const Duration(seconds: 8), // Reduced timeout to 8 seconds
+        onTimeout: () {
+          log('⏱️ API timeout in loadPayments - using cached data');
+          if (_payments.isNotEmpty) {
+            _hasLoadedPayments = true;
+            setLoaded();
+            _paymentsUpdateController.add(_payments);
+            return ApiResponse<List<Payment>>(
+              success: true,
+              message: 'Using cached payments (server timeout)',
+              data: _payments,
+            );
+          }
+          return ApiResponse<List<Payment>>(
+            success: false,
+            message: 'Request timed out. Please try again.',
+            data: [],
+          );
+        },
+      );
+
+      if (response.success) {
+        _payments = response.data ?? [];
+        log('✅ Received ${_payments.length} payments from API');
+        _hasLoadedPayments = true;
+        _hasInitialData = _payments.isNotEmpty;
+        setLoaded();
+
+        await _saveToHive();
+
+        deviceService.saveCacheItem(
+          AppConstants.paymentsCacheKey,
+          _payments.map((p) => p.toJson()).toList(),
+          ttl: _cacheDuration,
+          isUserSpecific: true,
+        );
+
+        _paymentsUpdateController.add(_payments);
+        log('✅ Success! Payments loaded');
+      } else {
+        setError(response.message);
+        log('❌ API error: ${response.message}');
+        setLoaded();
+
+        if (isManualRefresh) {
+          throw Exception(response.message);
+        }
       }
-      return;
+    } catch (e, stackTrace) {
+      log('❌ Error loading payments: $e');
+
+      setError(e.toString());
+      setLoaded();
+
+      if (_payments.isEmpty) {
+        await _recoverFromCache();
+      }
+
+      _paymentsUpdateController.add(_payments);
+
+      if (isManualRefresh) {
+        rethrow;
+      }
+    } finally {
+      safeNotify();
     }
-
-    // STEP 3: If online, fetch from API
-    debugLog('PaymentProvider', 'Fetching payments from API');
-    final response = await apiService.getMyPayments();
-    _payments = response.data ?? [];
-
-    await deviceService.saveCacheItem(AppConstants.paymentsCacheKey, _payments,
-        ttl: _cacheDuration);
-    _paymentsUpdateController.add(_payments);
-
-    debugLog('PaymentProvider', 'Loaded payments: ${_payments.length}');
   }
 
-  Future<Map<String, dynamic>> submitPayment({
+  Future<void> _refreshInBackground() async {
+    if (isOffline) return;
+
+    try {
+      final response = await apiService.getMyPayments().timeout(
+        const Duration(seconds: 8),
+        onTimeout: () {
+          log('⏱️ Background refresh timeout for payments');
+          return ApiResponse<List<Payment>>(
+            success: false,
+            message: 'Timeout',
+            data: null,
+          );
+        },
+      );
+
+      if (response.success) {
+        _payments = response.data ?? [];
+
+        await _saveToHive();
+
+        deviceService.saveCacheItem(
+          AppConstants.paymentsCacheKey,
+          _payments.map((p) => p.toJson()).toList(),
+          ttl: _cacheDuration,
+          isUserSpecific: true,
+        );
+
+        _paymentsUpdateController.add(_payments);
+        log('🔄 Background refresh complete');
+      }
+    } catch (e) {
+      log('Background refresh error: $e');
+    }
+  }
+
+  Future<void> _recoverFromCache() async {
+    log('Attempting cache recovery');
+    final userId = await UserSession().getCurrentUserId();
+    if (userId != null && _paymentsBox != null) {
+      try {
+        final cachedKey = 'user_${userId}_payments';
+        final cachedPayments = _paymentsBox!.get(cachedKey);
+        if (cachedPayments != null && cachedPayments is List) {
+          final List<Payment> payments = [];
+          for (final item in cachedPayments) {
+            if (item is Payment) {
+              payments.add(item);
+            } else if (item is Map<String, dynamic>) {
+              payments.add(Payment.fromJson(item));
+            }
+          }
+          if (payments.isNotEmpty) {
+            _payments = payments;
+            _hasLoadedPayments = true;
+            _hasInitialData = true;
+            _paymentsUpdateController.add(_payments);
+            log('✅ Recovered ${payments.length} payments from Hive after error');
+            return;
+          }
+        }
+      } catch (e) {
+        log('Error recovering from Hive: $e');
+      }
+    }
+
+    try {
+      final cachedPayments = await deviceService.getCacheItem<List<dynamic>>(
+        AppConstants.paymentsCacheKey,
+        isUserSpecific: true,
+      );
+      if (cachedPayments != null && cachedPayments.isNotEmpty) {
+        final List<Payment> payments = [];
+        for (final json in cachedPayments) {
+          if (json is Map<String, dynamic>) {
+            payments.add(Payment.fromJson(json));
+          }
+        }
+
+        if (payments.isNotEmpty) {
+          _payments = payments;
+          _hasLoadedPayments = true;
+          _hasInitialData = true;
+          _paymentsUpdateController.add(_payments);
+          log('✅ Recovered ${payments.length} payments from DeviceService after error');
+        }
+      }
+    } catch (e) {
+      log('Error recovering from DeviceService: $e');
+    }
+  }
+
+  // ===== UPLOAD PAYMENT PROOF =====
+  Future<ApiResponse<String>> uploadPaymentProof(File imageFile) async {
+    log('uploadPaymentProof()');
+
+    setLoading();
+
+    try {
+      if (isOffline) {
+        setLoaded();
+        return ApiResponse.offline(
+          message: 'You are offline. Please connect to upload.',
+        );
+      }
+
+      final response = await apiService.uploadPaymentProof(imageFile);
+      setLoaded();
+      return response;
+    } catch (e) {
+      setLoaded();
+      setError(e.toString());
+      log('❌ Error uploading proof: $e');
+      return ApiResponse.error(message: 'Failed to upload proof: $e');
+    }
+  }
+
+  // ===== SUBMIT PAYMENT =====
+  Future<ApiResponse<Map<String, dynamic>>> submitPayment({
     required int categoryId,
     required String paymentType,
     required String paymentMethod,
@@ -162,17 +515,29 @@ class PaymentProvider with ChangeNotifier {
     String? accountHolderName,
     String? proofImagePath,
   }) async {
-    if (_isLoading) return {'success': false, 'message': 'Already processing'};
+    log('submitPayment() for category $categoryId');
 
-    _isLoading = true;
-    _error = null;
-    _notifySafely();
+    setLoading();
 
     try {
-      debugLog('PaymentProvider',
-          'Submitting payment category:$categoryId amount:$amount method:$paymentMethod');
+      if (isOffline) {
+        log('📝 Offline - queuing payment');
+        await _queuePaymentOffline({
+          'categoryId': categoryId,
+          'paymentType': paymentType,
+          'paymentMethod': paymentMethod,
+          'amount': amount,
+          'accountHolderName': accountHolderName,
+          'proofImagePath': proofImagePath,
+        });
 
-      final apiResponse = await apiService.submitPayment(
+        setLoaded();
+        return ApiResponse.queued(
+          message: 'Payment saved offline. Will submit when online.',
+        );
+      }
+
+      final response = await apiService.submitPayment(
         categoryId: categoryId,
         paymentType: paymentType,
         paymentMethod: paymentMethod,
@@ -181,196 +546,103 @@ class PaymentProvider with ChangeNotifier {
         proofImagePath: proofImagePath,
       );
 
-      debugLog(
-          'PaymentProvider', 'Submit payment response: ${apiResponse.data}');
+      if (response.success) {
+        log('✅ Payment submitted successfully');
 
-      if (apiResponse.data != null && apiResponse.data?['queued'] == true) {
-        await _savePendingPaymentLocally({
-          'categoryId': categoryId,
-          'paymentType': paymentType,
-          'paymentMethod': paymentMethod,
-          'amount': amount,
-          'accountHolderName': accountHolderName,
-          'proofImagePath': proofImagePath,
+        // Clear cache and refresh
+        await deviceService.removeCacheItem(
+          AppConstants.paymentsCacheKey,
+          isUserSpecific: true,
+        );
+
+        final userId = await UserSession().getCurrentUserId();
+        if (userId != null && _paymentsBox != null) {
+          await _paymentsBox!.delete('user_${userId}_payments');
+        }
+
+        await loadPayments(forceRefresh: true);
+      }
+
+      setLoaded();
+      return response;
+    } catch (e) {
+      setLoaded();
+      setError(e.toString());
+      log('❌ Error submitting payment: $e');
+      return ApiResponse.error(message: 'Failed to submit payment: $e');
+    }
+  }
+
+  Future<void> _queuePaymentOffline(Map<String, dynamic> paymentData) async {
+    try {
+      final userId = await UserSession().getCurrentUserId();
+      if (userId == null) return;
+
+      offlineQueueManager.addItem(
+        type: AppConstants.queueActionSubmitPayment,
+        data: {
+          ...paymentData,
+          'userId': userId,
           'timestamp': DateTime.now().toIso8601String(),
-        });
-      }
+        },
+      );
 
-      if (apiResponse.success) {
-        await deviceService.removeCacheItem(AppConstants.paymentsCacheKey);
-        await _loadPaymentsFromCacheOrApi(forceRefresh: true);
-      }
-
-      return {
-        'success': apiResponse.success,
-        'message': apiResponse.message,
-        'data': apiResponse.data,
-        'queued': apiResponse.data?['queued'] ?? false,
-      };
-    } catch (e, stackTrace) {
-      _error = e.toString();
-      debugLog('PaymentProvider', 'submitPayment error: $e\n$stackTrace');
-
-      return {
-        'success': false,
-        'message': e.toString(),
-        'error': e.toString(),
-      };
-    } finally {
-      _isLoading = false;
-      _notifySafely();
+      log('📝 Queued payment for offline sync');
+    } catch (e) {
+      log('Error queueing payment: $e');
     }
   }
 
-  Future<void> _savePendingPaymentLocally(
-      Map<String, dynamic> paymentData) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final userId = await UserSession().getCurrentUserId();
-
-      if (userId == null) return;
-
-      final pendingKey = '${AppConstants.pendingPaymentsKey}_$userId';
-      final existingJson = prefs.getString(pendingKey);
-      List<Map<String, dynamic>> pendingPayments = [];
-
-      if (existingJson != null) {
-        try {
-          pendingPayments =
-              List<Map<String, dynamic>>.from(jsonDecode(existingJson));
-        } catch (e) {
-          debugLog('PaymentProvider', 'Error parsing pending payments: $e');
-        }
-      }
-
-      pendingPayments.add(paymentData);
-      await prefs.setString(pendingKey, jsonEncode(pendingPayments));
-
-      debugLog('PaymentProvider',
-          '📝 Saved pending payment locally (total: ${pendingPayments.length})');
-    } catch (e) {
-      debugLog('PaymentProvider', 'Error saving pending payment: $e');
+  @override
+  Future<void> onBackgroundRefresh() async {
+    log('Background refresh triggered');
+    if (!isOffline && _payments.isNotEmpty) {
+      await _refreshInBackground();
     }
   }
 
-  Future<void> syncPendingPayments() async {
-    if (_isOffline) return;
-
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final userId = await UserSession().getCurrentUserId();
-
-      if (userId == null) return;
-
-      final pendingKey = '${AppConstants.pendingPaymentsKey}_$userId';
-      final existingJson = prefs.getString(pendingKey);
-
-      if (existingJson == null) return;
-
-      List<Map<String, dynamic>> pendingPayments = [];
-      try {
-        pendingPayments =
-            List<Map<String, dynamic>>.from(jsonDecode(existingJson));
-      } catch (e) {
-        debugLog('PaymentProvider', 'Error parsing pending payments: $e');
-        await prefs.remove(pendingKey);
-        return;
-      }
-
-      if (pendingPayments.isEmpty) return;
-
-      debugLog('PaymentProvider',
-          '🔄 Syncing ${pendingPayments.length} pending payments');
-
-      final List<Map<String, dynamic>> failedPayments = [];
-
-      for (final payment in pendingPayments) {
-        try {
-          await apiService.submitPayment(
-            categoryId: payment['categoryId'],
-            paymentType: payment['paymentType'],
-            paymentMethod: payment['paymentMethod'],
-            amount: payment['amount'],
-            accountHolderName: payment['accountHolderName'],
-            proofImagePath: payment['proofImagePath'],
-          );
-
-          debugLog('PaymentProvider', '✅ Synced pending payment');
-        } catch (e) {
-          debugLog('PaymentProvider', '❌ Failed to sync payment: $e');
-          failedPayments.add(payment);
-        }
-      }
-
-      if (failedPayments.isEmpty) {
-        await prefs.remove(pendingKey);
-        debugLog('PaymentProvider', '✅ All pending payments synced');
-      } else {
-        await prefs.setString(pendingKey, jsonEncode(failedPayments));
-        debugLog('PaymentProvider',
-            '⚠️ ${failedPayments.length} payments still pending');
-      }
-
-      await loadPayments(forceRefresh: true);
-    } catch (e) {
-      debugLog('PaymentProvider', 'Error syncing pending payments: $e');
-    }
+  @override
+  Future<void> onOnlineRefresh() async {
+    log('Online - refreshing payments');
+    await loadPayments(forceRefresh: true);
   }
 
   Future<void> clearUserData() async {
-    debugLog('PaymentProvider', 'Clearing payment data');
-
     final session = UserSession();
-    final isDifferentUser = !await session.isSameUser();
-    final isLoggingOut = await _isLoggingOut();
-
-    if (!isDifferentUser || !isLoggingOut) {
-      debugLog('PaymentProvider', '✅ Same user - preserving payment cache');
-      return;
-    }
+    if (!session.shouldClearCacheOnLogout()) return;
 
     final userId = await session.getCurrentUserId();
     if (userId != null) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('${AppConstants.pendingPaymentsKey}_$userId');
+      if (_paymentsBox != null) {
+        final cacheKey = 'user_${userId}_payments';
+        await _paymentsBox!.delete(cacheKey);
+      }
+
+      await deviceService.clearCacheByPrefix('payment');
     }
 
-    await deviceService.clearCacheByPrefix('payment');
-
+    stopBackgroundRefresh();
     _payments = [];
+    _hasLoadedPayments = false;
+    _hasInitialData = false;
 
     await _paymentsUpdateController.close();
     _paymentsUpdateController = StreamController<List<Payment>>.broadcast();
-
     _paymentsUpdateController.add(_payments);
-
-    _notifySafely();
+    safeNotify();
   }
 
-  Future<bool> _isLoggingOut() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
-  }
-
+  @override
   void clearError() {
-    _error = null;
-    _notifySafely();
+    super.clearError();
   }
 
   @override
   void dispose() {
-    _refreshTimer?.cancel();
+    stopBackgroundRefresh();
     _paymentsUpdateController.close();
+    _paymentsBox?.close();
+    disposeSubscriptions();
     super.dispose();
-  }
-
-  void _notifySafely() {
-    if (hasListeners) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (hasListeners) {
-          notifyListeners();
-        }
-      });
-    }
   }
 }

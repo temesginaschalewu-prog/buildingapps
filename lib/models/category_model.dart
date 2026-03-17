@@ -1,13 +1,32 @@
 import '../utils/parsers.dart';
+import 'package:hive/hive.dart'; // NEW
 
+part 'category_model.g.dart';
+
+@HiveType(typeId: 1) // NEW
 class Category {
+  @HiveField(0)
   final int id;
+
+  @HiveField(1)
   final String name;
+
+  @HiveField(2)
   final String status;
+
+  @HiveField(3)
   final double? price;
+
+  @HiveField(4)
   final String billingCycle;
+
+  @HiveField(5)
   final String? description;
+
+  @HiveField(6)
   final String? imageUrl;
+
+  @HiveField(7)
   final int courseCount;
 
   Category({
@@ -64,6 +83,7 @@ class Category {
   }
 
   String get imageUrlOrDefault => imageUrl ?? '';
+
   String get initials => name.isNotEmpty
       ? name.substring(0, Parsers.min(2, name.length)).toUpperCase()
       : '?';

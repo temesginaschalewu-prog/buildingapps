@@ -10,21 +10,46 @@ class SnackbarService {
 
   OverlayEntry? _currentEntry;
   Timer? _timer;
-  bool _isShowing = false;
+  bool _isInitialized = false;
+
+  // Queue for messages when overlay not ready
+  final List<Map<String, dynamic>> _messageQueue = [];
+
+  // NEW: Prevent duplicate messages
+  final Set<String> _recentMessages = {};
+  Timer? _messageCleanupTimer;
+  static const Duration _messageDedupeDuration = Duration(seconds: 5);
 
   void show({
     required BuildContext context,
     required String message,
     SnackbarType type = SnackbarType.info,
     Duration duration = const Duration(seconds: 3),
+    String? id, // NEW: Optional ID for deduplication
   }) {
-    // Don't try to show if context isn't mounted or if we're already showing
-    if (!context.mounted || _isShowing) return;
+    // NEW: Deduplicate messages
+    final messageId = id ?? '$message${type.index}';
+    if (_recentMessages.contains(messageId)) {
+      return;
+    }
+    _recentMessages.add(messageId);
+    _messageCleanupTimer?.cancel();
+    _messageCleanupTimer = Timer(_messageDedupeDuration, _recentMessages.clear);
 
-    // Make sure we have an overlay
-    final overlayState = Overlay.of(context, rootOverlay: true);
+    // ✅ FIX: Don't try to show if context isn't mounted
+    if (!context.mounted) return;
+
+    // ✅ FIX: Check if we have a valid overlay
+    OverlayState? overlayState;
+    try {
+      overlayState = Overlay.maybeOf(context);
+    } catch (_) {
+      overlayState = null;
+    }
+
     if (overlayState == null) {
-      debugPrint('SnackbarService: No overlay found, skipping: $message');
+      debugPrint('SnackbarService: No overlay found, queueing: $message');
+      _queueMessage(message, type, messageId);
       return;
     }
 
@@ -98,33 +123,72 @@ class SnackbarService {
       ),
     );
 
-    _isShowing = true;
     overlayState.insert(_currentEntry!);
 
     _timer = Timer(duration, () {
       _currentEntry?.remove();
       _currentEntry = null;
-      _isShowing = false;
     });
   }
 
-  void showSuccess(BuildContext context, String message) {
-    show(context: context, message: message, type: SnackbarType.success);
+  void _queueMessage(String message, SnackbarType type, String id) {
+    _messageQueue.add({'message': message, 'type': type, 'id': id});
+
+    // Try to process queue after a short delay
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (_messageQueue.isNotEmpty && _isInitialized) {
+        _processQueue();
+      }
+    });
   }
 
-  void showError(BuildContext context, String message) {
-    show(context: context, message: message, type: SnackbarType.error);
+  void _processQueue() {
+    // This will be called from app.dart after overlay is ready
+    // The actual processing happens in initializeWithContext
   }
 
-  void showWarning(BuildContext context, String message) {
-    show(context: context, message: message, type: SnackbarType.warning);
+  // Call this from app.dart after overlay is ready
+  void initializeWithContext(BuildContext context) {
+    if (_isInitialized) return;
+    _isInitialized = true;
+
+    // Process any queued messages
+    if (_messageQueue.isNotEmpty) {
+      for (final msg in _messageQueue) {
+        Future.delayed(const Duration(milliseconds: 100), () {
+          if (context.mounted) {
+            show(
+              context: context,
+              message: msg['message'],
+              type: msg['type'],
+              id: msg['id'],
+            );
+          }
+        });
+      }
+      _messageQueue.clear();
+    }
   }
 
-  void showInfo(BuildContext context, String message) {
-    show(context: context, message: message);
+  void showSuccess(BuildContext context, String message, {String? id}) {
+    show(
+        context: context, message: message, type: SnackbarType.success, id: id);
   }
 
-  void showOffline(BuildContext context, {String? action}) {
+  void showError(BuildContext context, String message, {String? id}) {
+    show(context: context, message: message, type: SnackbarType.error, id: id);
+  }
+
+  void showWarning(BuildContext context, String message, {String? id}) {
+    show(
+        context: context, message: message, type: SnackbarType.warning, id: id);
+  }
+
+  void showInfo(BuildContext context, String message, {String? id}) {
+    show(context: context, message: message, id: id);
+  }
+
+  void showOffline(BuildContext context, {String? action, String? id}) {
     final message = action != null
         ? 'Cannot $action while offline. Your changes will sync when online.'
         : 'You are offline. Showing cached content.';
@@ -134,10 +198,11 @@ class SnackbarService {
       message: message,
       type: SnackbarType.offline,
       duration: const Duration(seconds: 2),
+      id: id ?? 'offline',
     );
   }
 
-  void showQueued(BuildContext context, {String? action}) {
+  void showQueued(BuildContext context, {String? action, String? id}) {
     final message = action != null
         ? '$action saved offline. Will sync when online.'
         : 'Action saved offline. Will sync when online.';
@@ -147,12 +212,26 @@ class SnackbarService {
       message: message,
       type: SnackbarType.queued,
       duration: const Duration(seconds: 2),
+      id: id ?? 'queued',
     );
   }
 
-  void showSyncComplete(BuildContext context, {int count = 0}) {
+  void showSyncComplete(BuildContext context, {int count = 0, String? id}) {
     // Don't show sync complete if we don't have a valid context
     if (!context.mounted) return;
+
+    // Check if overlay is available
+    OverlayState? overlayState;
+    try {
+      overlayState = Overlay.maybeOf(context);
+    } catch (_) {
+      overlayState = null;
+    }
+    if (overlayState == null) {
+      debugPrint(
+          'SnackbarService: Overlay not ready, skipping sync complete message');
+      return;
+    }
 
     final message = count > 0
         ? 'Sync complete. $count change${count > 1 ? 's' : ''} synced.'
@@ -163,6 +242,7 @@ class SnackbarService {
       message: message,
       type: SnackbarType.syncComplete,
       duration: const Duration(seconds: 2),
+      id: id ?? 'sync_complete',
     );
   }
 
@@ -202,5 +282,11 @@ class SnackbarService {
       case SnackbarType.syncComplete:
         return Icons.sync_rounded;
     }
+  }
+
+  void dispose() {
+    _timer?.cancel();
+    _messageCleanupTimer?.cancel();
+    _currentEntry?.remove();
   }
 }

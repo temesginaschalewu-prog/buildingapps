@@ -1,57 +1,159 @@
+// lib/providers/course_provider.dart
+// COMPLETE PRODUCTION-READY FINAL VERSION - WITH REQUEST QUEUING
+
 import 'dart:async';
+import 'package:familyacademyclient/services/offline_queue_manager.dart';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:hive/hive.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../services/user_session.dart';
 import '../services/connectivity_service.dart';
+import '../services/hive_service.dart';
 import '../models/course_model.dart';
+import '../utils/api_response.dart';
 import '../utils/constants.dart';
-import '../utils/helpers.dart';
+import 'base_provider.dart';
 
-class CourseProvider with ChangeNotifier {
-  final ApiService apiService;
-  final DeviceService deviceService;
+class CourseProvider extends ChangeNotifier
+    with
+        BaseProvider<CourseProvider>,
+        OfflineAwareProvider<CourseProvider>,
+        BackgroundRefreshMixin<CourseProvider> {
+  @override
   final ConnectivityService connectivityService;
 
-  final List<Course> _courses = [];
+  final ApiService apiService;
+  final DeviceService deviceService;
+  final HiveService hiveService;
+
   final Map<int, List<Course>> _coursesByCategory = {};
   final Map<int, bool> _hasLoadedCategory = {};
   final Map<int, bool> _isLoadingCategory = {};
-  final Map<int, DateTime> _lastLoadedTime = {};
-  bool _isLoading = false;
-  String? _error;
-  bool _isOffline = false;
+  final Map<int, bool> _failedCategory = {};
+  final Map<int, DateTime> _lastFailedAttempt = {};
+
+  // Request queuing to prevent parallel API calls
+  static const int _maxConcurrentRequests = 2;
+  int _activeRequests = 0;
+  final List<Map<String, dynamic>> _pendingRequests = [];
 
   static const Duration _cacheDuration = AppConstants.cacheTTLCourses;
+  static const Duration _retryDelay = Duration(seconds: 30);
+  @override
+  Duration get refreshInterval => const Duration(minutes: 5);
 
-  StreamController<Map<int, List<Course>>> _coursesUpdateController =
+  Box? _coursesBox;
+  int _apiCallCount = 0;
+
+  final StreamController<Map<int, List<Course>>> _coursesUpdateController =
       StreamController<Map<int, List<Course>>>.broadcast();
 
   CourseProvider({
     required this.apiService,
     required this.deviceService,
     required this.connectivityService,
+    required this.hiveService,
   }) {
-    _setupConnectivityListener();
+    log('CourseProvider constructor called');
+    initializeOfflineAware(
+      connectivity: connectivityService,
+      queue: OfflineQueueManager(),
+    );
+    _init();
   }
 
-  void _setupConnectivityListener() {
-    connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (_isOffline != !isOnline) {
-        _isOffline = !isOnline;
-        notifyListeners();
+  Future<void> _init() async {
+    log('_init() START');
+    await _openHiveBox();
+    await _loadCachedDataForAll();
+
+    if (_hasLoadedCategory.isNotEmpty) {
+      startBackgroundRefresh();
+    }
+
+    log('_init() END');
+  }
+
+  Future<void> _openHiveBox() async {
+    try {
+      if (!Hive.isBoxOpen(AppConstants.hiveCoursesBox)) {
+        _coursesBox = await Hive.openBox<dynamic>(AppConstants.hiveCoursesBox);
+      } else {
+        _coursesBox = Hive.box<dynamic>(AppConstants.hiveCoursesBox);
       }
-    });
+      log('✅ Hive box opened');
+    } catch (e) {
+      log('⚠️ Error opening Hive box: $e');
+    }
   }
 
-  List<Course> get courses => List.unmodifiable(_courses);
-  bool get isLoading => _isLoading;
-  String? get error => _error;
-  bool get isOffline => _isOffline;
-  Stream<Map<int, List<Course>>> get coursesUpdates =>
-      _coursesUpdateController.stream;
+  Future<void> _loadCachedDataForAll() async {
+    try {
+      final userId = await UserSession().getCurrentUserId();
+      if (userId == null || _coursesBox == null) return;
 
+      final cachedData = _coursesBox!.get('user_${userId}_all_courses');
+      if (cachedData != null && cachedData is Map) {
+        final Map<int, List<Course>> convertedMap = {};
+
+        cachedData.forEach((key, value) {
+          final int categoryId = int.tryParse(key.toString()) ?? 0;
+          if (categoryId > 0 && value is List) {
+            final List<Course> courses = [];
+            for (final item in value) {
+              if (item is Course) {
+                courses.add(item);
+              } else if (item is Map<String, dynamic>) {
+                courses.add(Course.fromJson(item));
+              }
+            }
+            if (courses.isNotEmpty) {
+              convertedMap[categoryId] = courses;
+            }
+          }
+        });
+
+        _coursesByCategory.addAll(convertedMap);
+        for (final categoryId in _coursesByCategory.keys) {
+          _hasLoadedCategory[categoryId] = true;
+          _failedCategory[categoryId] = false;
+        }
+        _coursesUpdateController.add(_coursesByCategory);
+        log('✅ Loaded ${_coursesByCategory.length} categories from Hive');
+      }
+    } catch (e) {
+      log('Error loading cached data: $e');
+    }
+  }
+
+  Future<void> _saveToHive() async {
+    try {
+      final userId = await UserSession().getCurrentUserId();
+      if (userId != null && _coursesBox != null) {
+        await _coursesBox!
+            .put('user_${userId}_all_courses', _coursesByCategory);
+        log('💾 Saved courses to Hive');
+      }
+    } catch (e) {
+      log('Error saving to Hive: $e');
+    }
+  }
+
+  Future<void> _saveCategoryToHive(int categoryId, List<Course> courses) async {
+    try {
+      final userId = await UserSession().getCurrentUserId();
+      if (userId != null && _coursesBox != null) {
+        await _coursesBox!.put('user_${userId}_category_${categoryId}_courses',
+            {categoryId: courses});
+        await _saveToHive();
+      }
+    } catch (e) {
+      log('Error saving category to Hive: $e');
+    }
+  }
+
+  // ===== GETTERS =====
   List<Course> getCoursesByCategory(int categoryId) {
     return _coursesByCategory[categoryId] ?? [];
   }
@@ -64,318 +166,453 @@ class CourseProvider with ChangeNotifier {
     return _isLoadingCategory[categoryId] ?? false;
   }
 
+  bool hasFailedCategory(int categoryId) {
+    return _failedCategory[categoryId] ?? false;
+  }
+
   Course? getCourseById(int id) {
-    try {
-      return _courses.firstWhere((c) => c.id == id);
-    } catch (e) {
-      return null;
-    }
-  }
-
-  bool hasAccessToCourse(int courseId, bool hasActiveSubscription) {
-    final course = getCourseById(courseId);
-    if (course == null) return false;
-    return course.hasFullAccess(hasActiveSubscription);
-  }
-
-  List<Course> getAccessibleCourses(bool hasActiveSubscription) {
-    return _courses
-        .where((course) => course.hasFullAccess(hasActiveSubscription))
-        .toList();
-  }
-
-  String getCourseAccessStatus(int courseId, bool hasActiveSubscription) {
-    final course = getCourseById(courseId);
-    if (course == null) return 'unknown';
-    return course.hasFullAccess(hasActiveSubscription) ? 'full' : 'limited';
-  }
-
-  Future<void> loadCoursesByCategory(int categoryId,
-      {bool forceRefresh = false,
-      bool? hasAccess,
-      bool isManualRefresh = false}) async {
-    // If this is a manual refresh, ALWAYS force refresh
-    if (isManualRefresh) {
-      forceRefresh = true;
-    }
-
-    _isLoadingCategory[categoryId] = true;
-    _isLoading = true;
-    _error = null;
-    _notifySafely();
-
-    debugLog('CourseProvider',
-        '🔍 loadCoursesByCategory called for category $categoryId, forceRefresh: $forceRefresh, isOffline: $_isOffline');
-
-    // STEP 1: ALWAYS try cache first (EVEN WHEN OFFLINE) - NO CONDITIONAL!
-    if (!forceRefresh) {
-      debugLog('CourseProvider',
-          '📦 Attempting to load from cache for category $categoryId');
-
-      final cachedCourses = await deviceService.getCacheItem<List<Course>>(
-        'courses_$categoryId',
-        isUserSpecific: true,
-      );
-
-      if (cachedCourses != null && cachedCourses.isNotEmpty) {
-        debugLog('CourseProvider',
-            '✅ FOUND ${cachedCourses.length} courses in cache for category $categoryId');
-
-        _coursesByCategory[categoryId] = cachedCourses;
-        _hasLoadedCategory[categoryId] = true;
-        _lastLoadedTime[categoryId] = DateTime.now();
-        _updateMainCoursesList(cachedCourses);
-
-        _isLoadingCategory[categoryId] = false;
-        _isLoading = false;
-
-        _coursesUpdateController.add({categoryId: cachedCourses});
-        _notifySafely();
-
-        // STEP 2: If online, refresh in background
-        if (!_isOffline) {
-          debugLog('CourseProvider',
-              '🔄 Online - refreshing in background for category $categoryId');
-          unawaited(_refreshInBackground(categoryId, hasAccess));
-        } else {
-          debugLog('CourseProvider',
-              '📴 Offline - using cached courses for category $categoryId');
-        }
-        return;
-      } else {
-        debugLog('CourseProvider',
-            '📦 No cached courses found for category $categoryId');
+    for (final courses in _coursesByCategory.values) {
+      try {
+        return courses.firstWhere((c) => c.id == id);
+      } catch (e) {
+        continue;
       }
-    } else {
-      debugLog('CourseProvider', '🔄 forceRefresh = true, skipping cache');
+    }
+    return null;
+  }
+
+  Stream<Map<int, List<Course>>> get coursesUpdates =>
+      _coursesUpdateController.stream;
+
+  // ===== LOAD COURSES - FIXED WITH REQUEST QUEUING =====
+  Future<void> loadCoursesByCategory(
+    int categoryId, {
+    bool forceRefresh = false,
+    bool? hasAccess,
+    bool isManualRefresh = false,
+  }) async {
+    _apiCallCount++;
+    final callId = _apiCallCount;
+
+    log('loadCoursesByCategory() CALL #$callId for category $categoryId');
+
+    if (isManualRefresh && isOffline) {
+      throw Exception('Network error. Please check your internet connection.');
     }
 
-    // STEP 3: If offline and no cache, show error
-    if (_isOffline) {
-      debugLog(
-          'CourseProvider', '📴 Offline and no cache for category $categoryId');
-      _error = 'You are offline. No cached courses available.';
-      _isLoadingCategory[categoryId] = false;
-      _isLoading = false;
-      _notifySafely();
-
-      if (isManualRefresh) {
-        throw Exception(
-            'Network error. Please check your internet connection.');
-      }
+    // Return cached data immediately if available
+    if (_hasLoadedCategory[categoryId] == true && !forceRefresh) {
+      log('✅ Already have data for category $categoryId, returning cached');
+      _coursesUpdateController
+          .add({categoryId: _coursesByCategory[categoryId]!});
+      setLoaded();
       return;
     }
 
-    debugLog('CourseProvider',
-        '📥 Loading courses from API for category: $categoryId');
+    // Check if recently failed
+    if (_failedCategory[categoryId] == true &&
+        _lastFailedAttempt[categoryId] != null &&
+        DateTime.now().difference(_lastFailedAttempt[categoryId]!) <
+            _retryDelay &&
+        !forceRefresh &&
+        !isManualRefresh) {
+      log('⚠️ Recently failed for category $categoryId, using cache if available');
+      if (_coursesByCategory.containsKey(categoryId)) {
+        _hasLoadedCategory[categoryId] = true;
+        _coursesUpdateController
+            .add({categoryId: _coursesByCategory[categoryId]!});
+        return;
+      }
+    }
+
+    if (_isLoadingCategory[categoryId] == true && !forceRefresh) {
+      log('⏳ Already loading category $categoryId, waiting...');
+      int attempts = 0;
+      while (_isLoadingCategory[categoryId] == true && attempts < 50) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        attempts++;
+      }
+      if (_hasLoadedCategory[categoryId] == true) {
+        log('✅ Got courses from existing load');
+        _coursesUpdateController
+            .add({categoryId: _coursesByCategory[categoryId]!});
+        setLoaded();
+        return;
+      }
+    }
+
+    _isLoadingCategory[categoryId] = true;
+    safeNotify();
 
     try {
-      final response = await apiService.getCoursesByCategory(categoryId);
+      // STEP 1: Check Hive cache first
+      if (!forceRefresh) {
+        log('STEP 1: Checking Hive cache for category $categoryId');
+        final userId = await UserSession().getCurrentUserId();
+        if (userId != null && _coursesBox != null) {
+          final cachedData =
+              _coursesBox!.get('user_${userId}_category_${categoryId}_courses');
+
+          if (cachedData != null &&
+              cachedData is Map &&
+              cachedData[categoryId] != null) {
+            final dynamic courseData = cachedData[categoryId];
+            if (courseData is List) {
+              final List<Course> courses = [];
+              for (final item in courseData) {
+                if (item is Course) {
+                  courses.add(item);
+                } else if (item is Map<String, dynamic>) {
+                  courses.add(Course.fromJson(item));
+                }
+              }
+              if (courses.isNotEmpty) {
+                _coursesByCategory[categoryId] = courses;
+                _hasLoadedCategory[categoryId] = true;
+                _failedCategory[categoryId] = false;
+                _isLoadingCategory[categoryId] = false;
+                setLoaded();
+                _coursesUpdateController.add({categoryId: courses});
+                log('✅ Loaded ${courses.length} courses from Hive for category $categoryId');
+
+                if (!isOffline && !isManualRefresh) {
+                  _queueBackgroundRefresh(categoryId, hasAccess);
+                }
+                return;
+              }
+            }
+          }
+        }
+      }
+
+      // STEP 2: Try DeviceService cache
+      if (!forceRefresh) {
+        log('STEP 2: Checking DeviceService cache for category $categoryId');
+        final cachedCourses = await deviceService.getCacheItem<List<dynamic>>(
+          'courses_$categoryId',
+          isUserSpecific: true,
+        );
+
+        if (cachedCourses != null && cachedCourses.isNotEmpty) {
+          final List<Course> courses = [];
+          for (final json in cachedCourses) {
+            if (json is Map<String, dynamic>) {
+              courses.add(Course.fromJson(json));
+            }
+          }
+
+          if (courses.isNotEmpty) {
+            _coursesByCategory[categoryId] = courses;
+            _hasLoadedCategory[categoryId] = true;
+            _failedCategory[categoryId] = false;
+            _isLoadingCategory[categoryId] = false;
+            setLoaded();
+            _coursesUpdateController.add({categoryId: courses});
+
+            await _saveCategoryToHive(categoryId, courses);
+            log('✅ Loaded ${courses.length} courses from DeviceService for category $categoryId');
+
+            if (!isOffline && !isManualRefresh) {
+              _queueBackgroundRefresh(categoryId, hasAccess);
+            }
+            return;
+          }
+        }
+      }
+
+      // STEP 3: Check offline status
+      if (isOffline) {
+        log('STEP 3: Offline mode for category $categoryId');
+        if (_coursesByCategory.containsKey(categoryId)) {
+          _hasLoadedCategory[categoryId] = true;
+          _isLoadingCategory[categoryId] = false;
+          setLoaded();
+          _coursesUpdateController
+              .add({categoryId: _coursesByCategory[categoryId]!});
+          log('✅ Showing cached courses offline for category $categoryId');
+          return;
+        }
+
+        if (isManualRefresh) {
+          throw Exception(
+              'Network error. Please check your internet connection.');
+        }
+
+        _coursesByCategory[categoryId] = [];
+        _hasLoadedCategory[categoryId] = true;
+        _isLoadingCategory[categoryId] = false;
+        setLoaded();
+        _coursesUpdateController.add({categoryId: []});
+        return;
+      }
+
+      // STEP 4: Queue the API request instead of executing immediately
+      log('STEP 4: Queuing API request for category $categoryId');
+      _queueCourseRequest(categoryId, forceRefresh, hasAccess, isManualRefresh);
+    } catch (e) {
+      log('❌ Error loading courses: $e');
+
+      _failedCategory[categoryId] = true;
+      _lastFailedAttempt[categoryId] = DateTime.now();
+
+      if (!_coursesByCategory.containsKey(categoryId)) {
+        await _recoverFromCache(categoryId);
+      }
+
+      _hasLoadedCategory[categoryId] = true;
+      _isLoadingCategory[categoryId] = false;
+      setLoaded();
+      _coursesUpdateController
+          .add({categoryId: _coursesByCategory[categoryId]!});
+
+      if (isManualRefresh) {
+        rethrow;
+      }
+    } finally {
+      safeNotify();
+    }
+  }
+
+  void _queueCourseRequest(int categoryId, bool forceRefresh, bool? hasAccess,
+      bool isManualRefresh) {
+    _pendingRequests.add({
+      'categoryId': categoryId,
+      'forceRefresh': forceRefresh,
+      'hasAccess': hasAccess,
+      'isManualRefresh': isManualRefresh,
+      'timestamp': DateTime.now(),
+    });
+
+    _processNextCourseRequest();
+  }
+
+  Future<void> _processNextCourseRequest() async {
+    if (_pendingRequests.isEmpty || _activeRequests >= _maxConcurrentRequests) {
+      return;
+    }
+
+    _activeRequests++;
+    final request = _pendingRequests.removeAt(0);
+    final categoryId = request['categoryId'];
+    final isManualRefresh = request['isManualRefresh'];
+
+    try {
+      log('Processing queued request for category $categoryId (active: $_activeRequests)');
+
+      final response =
+          await apiService.getCoursesByCategory(categoryId).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          log('⏱️ API timeout for category $categoryId');
+          if (_coursesByCategory.containsKey(categoryId)) {
+            log('✅ Using cached courses due to timeout');
+            _hasLoadedCategory[categoryId] = true;
+            _isLoadingCategory[categoryId] = false;
+            setLoaded();
+            _coursesUpdateController
+                .add({categoryId: _coursesByCategory[categoryId]!});
+            return ApiResponse<List<Course>>(
+              success: true,
+              message: 'Using cached data',
+              data: _coursesByCategory[categoryId],
+            );
+          }
+          return ApiResponse<List<Course>>(
+            success: false,
+            message: 'Request timed out',
+            data: [],
+          );
+        },
+      );
 
       if (!response.success) {
         throw Exception(response.message);
       }
 
-      final responseData = response.data ?? {};
-      final categoryData = responseData['category'] ?? {};
-      final coursesData = responseData['courses'] ?? [];
+      final courses = response.data ?? [];
+      log('✅ Received ${courses.length} courses from API for category $categoryId');
 
-      final bool categoryHasAccess =
-          hasAccess ?? (categoryData['has_access'] ?? false);
+      _coursesByCategory[categoryId] = courses;
+      _hasLoadedCategory[categoryId] = true;
+      _failedCategory[categoryId] = false;
+      _isLoadingCategory[categoryId] = false;
+      setLoaded();
 
-      if (coursesData is List) {
-        final List<Course> parsedCourses = [];
+      await _saveCategoryToHive(categoryId, courses);
 
-        for (final courseData in coursesData) {
-          try {
-            if (courseData is Map<String, dynamic>) {
-              final course = Course.fromJson(courseData);
+      deviceService.saveCacheItem(
+        'courses_$categoryId',
+        courses.map((c) => c.toJson()).toList(),
+        ttl: _cacheDuration,
+        isUserSpecific: true,
+      );
 
-              parsedCourses.add(Course(
-                id: course.id,
-                name: course.name,
-                categoryId: course.categoryId,
-                description: course.description,
-                chapterCount: course.chapterCount,
-                access: categoryHasAccess ? 'full' : 'limited',
-                message: categoryHasAccess
-                    ? 'Full access to all content'
-                    : 'Limited access to free chapters only',
-                requiresPayment: !categoryHasAccess,
-              ));
-            }
-          } catch (e) {
-            debugLog('CourseProvider',
-                'Error parsing course: $e, data: $courseData');
-          }
-        }
-
-        // Save to cache for next time
-        debugLog('CourseProvider',
-            '💾 Saving ${parsedCourses.length} courses to cache for category $categoryId');
-        await deviceService.saveCacheItem(
-          'courses_$categoryId',
-          parsedCourses,
-          ttl: _cacheDuration,
-          isUserSpecific: true,
-        );
-
-        _coursesByCategory[categoryId] = parsedCourses;
-        _hasLoadedCategory[categoryId] = true;
-        _lastLoadedTime[categoryId] = DateTime.now();
-
-        _updateMainCoursesList(parsedCourses);
-
-        _coursesUpdateController.add({categoryId: parsedCourses});
-        _notifySafely();
-
-        debugLog('CourseProvider',
-            '✅ Parsed ${parsedCourses.length} courses for category $categoryId, access: $categoryHasAccess');
-
-        if (parsedCourses.isEmpty) {
-          debugLog(
-              'CourseProvider', '⚠️ No courses found for category $categoryId');
-        }
-      } else {
-        debugLog('CourseProvider',
-            'Courses data is not a list: ${coursesData.runtimeType}');
-        _coursesByCategory[categoryId] = [];
-        _hasLoadedCategory[categoryId] = true;
-        _lastLoadedTime[categoryId] = DateTime.now();
-
-        _coursesUpdateController.add({categoryId: []});
-        _notifySafely();
-      }
+      _coursesUpdateController.add({categoryId: courses});
+      log('✅ Success! Courses loaded for category $categoryId');
     } catch (e) {
-      _error = e.toString();
-      debugLog('CourseProvider', '❌ loadCoursesByCategory error: $e');
+      log('❌ Error loading courses for category $categoryId: $e');
 
-      if (!_hasLoadedCategory.containsKey(categoryId) ||
-          _coursesByCategory[categoryId]?.isEmpty == true) {
-        _coursesByCategory[categoryId] = [];
-        _hasLoadedCategory[categoryId] = true;
-        _lastLoadedTime[categoryId] = DateTime.now();
-        _coursesUpdateController.add({categoryId: []});
-        _notifySafely();
+      _failedCategory[categoryId] = true;
+      _lastFailedAttempt[categoryId] = DateTime.now();
+
+      if (!_coursesByCategory.containsKey(categoryId)) {
+        await _recoverFromCache(categoryId);
       }
 
-      // Re-throw for manual refresh
+      _hasLoadedCategory[categoryId] = true;
+      _isLoadingCategory[categoryId] = false;
+      setLoaded();
+      _coursesUpdateController
+          .add({categoryId: _coursesByCategory[categoryId]!});
+
       if (isManualRefresh) {
         rethrow;
       }
     } finally {
-      _isLoadingCategory[categoryId] = false;
-      _isLoading = false;
-      _notifySafely();
+      _activeRequests--;
+      _processNextCourseRequest();
     }
   }
 
-  Future<void> _refreshInBackground(int categoryId, bool? hasAccess) async {
-    if (_isOffline) return;
+  void _queueBackgroundRefresh(int categoryId, bool? hasAccess) {
+    if (isOffline) return;
+
+    _pendingRequests.add({
+      'categoryId': categoryId,
+      'forceRefresh': true,
+      'hasAccess': hasAccess,
+      'isManualRefresh': false,
+      'isBackground': true,
+      'timestamp': DateTime.now(),
+    });
+
+    unawaited(_processNextCourseRequest());
+  }
+
+  Future<void> _recoverFromCache(int categoryId) async {
+    log('Attempting cache recovery for category $categoryId');
+    final userId = await UserSession().getCurrentUserId();
+    if (userId == null) return;
+
+    if (_coursesBox != null) {
+      try {
+        final cachedData =
+            _coursesBox!.get('user_${userId}_category_${categoryId}_courses');
+        if (cachedData != null &&
+            cachedData is Map &&
+            cachedData[categoryId] != null) {
+          final dynamic courseData = cachedData[categoryId];
+          if (courseData is List) {
+            final List<Course> courses = [];
+            for (final item in courseData) {
+              if (item is Course) {
+                courses.add(item);
+              } else if (item is Map<String, dynamic>) {
+                courses.add(Course.fromJson(item));
+              }
+            }
+            if (courses.isNotEmpty) {
+              _coursesByCategory[categoryId] = courses;
+              _hasLoadedCategory[categoryId] = true;
+              _failedCategory[categoryId] = false;
+              _coursesUpdateController.add({categoryId: courses});
+              log('✅ Recovered ${courses.length} courses from Hive after error');
+              return;
+            }
+          }
+        }
+      } catch (e) {
+        log('Error recovering from Hive: $e');
+      }
+    }
 
     try {
-      debugLog(
-          'CourseProvider', '🔄 Background refresh for category $categoryId');
-
-      final response = await apiService.getCoursesByCategory(categoryId);
-
-      if (response.success && response.data != null) {
-        final responseData = response.data ?? {};
-        final categoryData = responseData['category'] ?? {};
-        final coursesData = responseData['courses'] ?? [];
-
-        final bool categoryHasAccess =
-            hasAccess ?? (categoryData['has_access'] ?? false);
-
-        if (coursesData is List) {
-          final List<Course> parsedCourses = [];
-
-          for (final courseData in coursesData) {
-            try {
-              if (courseData is Map<String, dynamic>) {
-                final course = Course.fromJson(courseData);
-                parsedCourses.add(Course(
-                  id: course.id,
-                  name: course.name,
-                  categoryId: course.categoryId,
-                  description: course.description,
-                  chapterCount: course.chapterCount,
-                  access: categoryHasAccess ? 'full' : 'limited',
-                  message: categoryHasAccess
-                      ? 'Full access to all content'
-                      : 'Limited access to free chapters only',
-                  requiresPayment: !categoryHasAccess,
-                ));
-              }
-            } catch (e) {}
+      final cachedCourses = await deviceService.getCacheItem<List<dynamic>>(
+        'courses_$categoryId',
+        isUserSpecific: true,
+      );
+      if (cachedCourses != null && cachedCourses.isNotEmpty) {
+        final List<Course> courses = [];
+        for (final json in cachedCourses) {
+          if (json is Map<String, dynamic>) {
+            courses.add(Course.fromJson(json));
           }
+        }
 
-          if (parsedCourses.isNotEmpty) {
-            debugLog('CourseProvider',
-                '💾 Background refresh - updating cache for category $categoryId');
-            await deviceService.saveCacheItem(
-                'courses_$categoryId', parsedCourses,
-                ttl: _cacheDuration, isUserSpecific: true);
-
-            _coursesByCategory[categoryId] = parsedCourses;
-            _lastLoadedTime[categoryId] = DateTime.now();
-            _updateMainCoursesList(parsedCourses);
-
-            _coursesUpdateController.add({categoryId: parsedCourses});
-            _notifySafely();
-
-            debugLog('CourseProvider',
-                '✅ Background refresh completed for category $categoryId');
-          }
+        if (courses.isNotEmpty) {
+          _coursesByCategory[categoryId] = courses;
+          _hasLoadedCategory[categoryId] = true;
+          _failedCategory[categoryId] = false;
+          _coursesUpdateController.add({categoryId: courses});
+          log('✅ Recovered ${courses.length} courses from DeviceService after error');
         }
       }
     } catch (e) {
-      debugLog('CourseProvider', '⚠️ Background refresh failed: $e');
-    }
-  }
-
-  void _updateMainCoursesList(List<Course> newCourses) {
-    final currentIds = _courses.map((c) => c.id).toSet();
-    for (final course in newCourses) {
-      if (!currentIds.contains(course.id)) {
-        _courses.add(course);
-      }
+      log('Error recovering from DeviceService: $e');
     }
   }
 
   Future<void> refreshCoursesWithAccessCheck(
       int categoryId, bool hasAccess) async {
-    try {
-      debugLog('CourseProvider',
-          'Refreshing courses for category $categoryId with access: $hasAccess');
+    log('refreshCoursesWithAccessCheck($categoryId, $hasAccess)');
+    await deviceService.removeCacheItem('courses_$categoryId',
+        isUserSpecific: true);
 
-      await deviceService.removeCacheItem('courses_$categoryId',
-          isUserSpecific: true);
+    final userId = await UserSession().getCurrentUserId();
+    if (userId != null && _coursesBox != null) {
+      await _coursesBox!
+          .delete('user_${userId}_category_${categoryId}_courses');
+    }
 
-      _coursesByCategory.remove(categoryId);
-      _hasLoadedCategory.remove(categoryId);
-      _isLoadingCategory.remove(categoryId);
-      _lastLoadedTime.remove(categoryId);
+    _coursesByCategory.remove(categoryId);
+    _hasLoadedCategory.remove(categoryId);
+    _isLoadingCategory.remove(categoryId);
+    _failedCategory.remove(categoryId);
+    await loadCoursesByCategory(categoryId,
+        forceRefresh: true, hasAccess: hasAccess);
+  }
 
-      await loadCoursesByCategory(categoryId,
-          forceRefresh: true, hasAccess: hasAccess, isManualRefresh: true);
+  @override
+  Future<void> onBackgroundRefresh() async {
+    log('Background refresh triggered');
+    if (isOffline) return;
 
-      debugLog('CourseProvider', '✅ Courses refreshed with access: $hasAccess');
-    } catch (e) {
-      debugLog('CourseProvider', 'refreshCoursesWithAccessCheck error: $e');
+    for (final categoryId in _hasLoadedCategory.keys) {
+      final shouldSkip = _failedCategory[categoryId] == true &&
+          _lastFailedAttempt[categoryId] != null &&
+          DateTime.now().difference(_lastFailedAttempt[categoryId]!) <
+              _retryDelay;
+
+      if (_hasLoadedCategory[categoryId] == true &&
+          !(_isLoadingCategory[categoryId] ?? false) &&
+          !shouldSkip) {
+        _queueBackgroundRefresh(categoryId, null);
+      }
+    }
+  }
+
+  @override
+  Future<void> onOnlineRefresh() async {
+    log('Online - refreshing courses');
+    for (final categoryId in _hasLoadedCategory.keys) {
+      if (_hasLoadedCategory[categoryId] == true) {
+        await loadCoursesByCategory(categoryId, forceRefresh: true);
+      }
     }
   }
 
   Future<void> clearUserData() async {
-    debugLog('CourseProvider', 'Clearing course data');
-
     final session = UserSession();
-    final isDifferentUser = !await session.isSameUser();
-    final isLoggingOut = await _isLoggingOut();
+    if (!session.shouldClearCacheOnLogout()) return;
 
-    if (!isDifferentUser || !isLoggingOut) {
-      debugLog('CourseProvider', '✅ Same user - preserving course cache');
-      return;
+    final userId = await session.getCurrentUserId();
+    if (userId != null && _coursesBox != null) {
+      final keysToDelete = _coursesBox!.keys
+          .where((key) => key.toString().contains('user_${userId}_'))
+          .toList();
+      for (final key in keysToDelete) {
+        await _coursesBox!.delete(key);
+      }
     }
 
     for (final categoryId in _coursesByCategory.keys) {
@@ -383,60 +620,24 @@ class CourseProvider with ChangeNotifier {
           isUserSpecific: true);
     }
 
-    _courses.clear();
     _coursesByCategory.clear();
     _hasLoadedCategory.clear();
     _isLoadingCategory.clear();
-    _lastLoadedTime.clear();
-
-    await _coursesUpdateController.close();
-    _coursesUpdateController =
-        StreamController<Map<int, List<Course>>>.broadcast();
+    _failedCategory.clear();
+    _pendingRequests.clear();
+    _activeRequests = 0;
+    stopBackgroundRefresh();
     _coursesUpdateController.add({});
-
-    _notifySafely();
-  }
-
-  Future<bool> _isLoggingOut() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
-  }
-
-  Future<void> clearCoursesForCategory(int categoryId) async {
-    await deviceService.removeCacheItem('courses_$categoryId',
-        isUserSpecific: true);
-
-    final categoryCourses = _coursesByCategory[categoryId] ?? [];
-    _courses
-        .removeWhere((course) => categoryCourses.any((c) => c.id == course.id));
-
-    _coursesByCategory.remove(categoryId);
-    _hasLoadedCategory.remove(categoryId);
-    _isLoadingCategory.remove(categoryId);
-    _lastLoadedTime.remove(categoryId);
-
-    _coursesUpdateController.add({categoryId: []});
-    _notifySafely();
-  }
-
-  void clearError() {
-    _error = null;
-    _notifySafely();
+    safeNotify();
   }
 
   @override
   void dispose() {
+    stopBackgroundRefresh();
     _coursesUpdateController.close();
+    _coursesBox?.close();
+    _pendingRequests.clear();
+    disposeSubscriptions();
     super.dispose();
-  }
-
-  void _notifySafely() {
-    if (hasListeners) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (hasListeners) {
-          notifyListeners();
-        }
-      });
-    }
   }
 }

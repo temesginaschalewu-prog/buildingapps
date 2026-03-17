@@ -1,17 +1,44 @@
 import '../utils/parsers.dart';
+import 'package:hive/hive.dart'; // NEW
 
+part 'subscription_model.g.dart'; // NEW
+
+@HiveType(typeId: 9) // NEW
 class Subscription {
+  @HiveField(0)
   final int id;
+
+  @HiveField(1)
   final int userId;
+
+  @HiveField(2)
   final int categoryId;
+
+  @HiveField(3)
   final DateTime startDate;
+
+  @HiveField(4)
   final DateTime expiryDate;
+
+  @HiveField(5)
   final String status;
+
+  @HiveField(6)
   final String billingCycle;
+
+  @HiveField(7)
   final int? paymentId;
+
+  @HiveField(8)
   final DateTime? createdAt;
+
+  @HiveField(9)
   final DateTime? updatedAt;
+
+  @HiveField(10)
   final String? categoryName;
+
+  @HiveField(11)
   final double? price;
 
   Subscription({

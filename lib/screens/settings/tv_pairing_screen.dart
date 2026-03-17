@@ -1,11 +1,15 @@
+// lib/screens/settings/tv_pairing_screen.dart
+// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+
 import 'dart:async';
+import 'package:familyacademyclient/widgets/common/app_empty_state.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+
 import '../../providers/device_provider.dart';
 import '../../services/connectivity_service.dart';
-import '../../services/refresh_service.dart';
 import '../../services/snackbar_service.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_button.dart';
@@ -19,6 +23,7 @@ import '../../themes/app_text_styles.dart';
 import '../../utils/responsive_values.dart';
 import '../../utils/helpers.dart';
 
+/// PRODUCTION-READY TV PAIRING SCREEN
 class TvPairingScreen extends StatefulWidget {
   const TvPairingScreen({super.key});
 
@@ -51,8 +56,25 @@ class _TvPairingScreenState extends State<TvPairingScreen>
     _scanAnimationController =
         AnimationController(vsync: this, duration: 2.seconds)..repeat();
 
-    _checkDeviceStatus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initialize();
+    });
+  }
+
+  @override
+  void dispose() {
+    _codeController.dispose();
+    _pulseAnimationController.dispose();
+    _scanAnimationController.dispose();
+    _connectivitySubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _initialize() async {
+    await _checkConnectivity();
     _setupConnectivityListener();
+    _checkPendingCount();
+    _checkDeviceStatus();
   }
 
   void _setupConnectivityListener() {
@@ -68,13 +90,22 @@ class _TvPairingScreenState extends State<TvPairingScreen>
     });
   }
 
-  @override
-  void dispose() {
-    _codeController.dispose();
-    _pulseAnimationController.dispose();
-    _scanAnimationController.dispose();
-    _connectivitySubscription?.cancel();
-    super.dispose();
+  Future<void> _checkConnectivity() async {
+    final connectivityService = context.read<ConnectivityService>();
+    await connectivityService.checkConnectivity();
+    if (mounted) {
+      setState(() {
+        _isOffline = !connectivityService.isOnline;
+        _pendingCount = connectivityService.pendingActionsCount;
+      });
+    }
+  }
+
+  Future<void> _checkPendingCount() async {
+    final connectivityService = context.read<ConnectivityService>();
+    if (mounted) {
+      setState(() => _pendingCount = connectivityService.pendingActionsCount);
+    }
   }
 
   Future<void> _checkDeviceStatus() async {
@@ -95,22 +126,25 @@ class _TvPairingScreenState extends State<TvPairingScreen>
   Future<void> _manualRefresh() async {
     if (_isRefreshing) return;
 
-    setState(() {
-      _isRefreshing = true;
-    });
+    final connectivityService = context.read<ConnectivityService>();
+    if (!connectivityService.isOnline) {
+      setState(() => _isOffline = true);
+      SnackbarService().showOffline(context, action: 'refresh');
+      return;
+    }
 
-    final success = await RefreshService().executeRefresh(
-      context: context,
-      refreshFunction: () async {
-        await _checkDeviceStatus();
-        if (mounted) setState(() => _isOffline = false);
-      },
-      successMessage: 'Device status updated',
-    );
+    setState(() => _isRefreshing = true);
 
-    if (!success && mounted) setState(() => _isOffline = true);
-
-    if (mounted) setState(() => _isRefreshing = false);
+    try {
+      await _checkDeviceStatus();
+      setState(() => _isOffline = false);
+      SnackbarService().showSuccess(context, 'Device status updated');
+    } catch (e) {
+      setState(() => _isOffline = true);
+      SnackbarService().showError(context, 'Failed to refresh');
+    } finally {
+      if (mounted) setState(() => _isRefreshing = false);
+    }
   }
 
   Future<void> _pairDevice() async {
@@ -127,8 +161,8 @@ class _TvPairingScreenState extends State<TvPairingScreen>
       return;
     }
 
-    final connectivity = ConnectivityService();
-    if (!connectivity.isOnline) {
+    final connectivityService = context.read<ConnectivityService>();
+    if (!connectivityService.isOnline) {
       SnackbarService().showOffline(context, action: 'pair device');
       return;
     }
@@ -141,16 +175,16 @@ class _TvPairingScreenState extends State<TvPairingScreen>
       _codeController.clear();
       setState(() {});
     } catch (e) {
-      SnackbarService()
-          .showError(context, 'Pairing failed: ${formatErrorMessage(e)}');
+      SnackbarService().showError(
+          context, 'Pairing failed: ${getUserFriendlyErrorMessage(e)}');
     } finally {
       setState(() => _isVerifying = false);
     }
   }
 
   Future<void> _unpairDevice() async {
-    final connectivity = ConnectivityService();
-    if (!connectivity.isOnline) {
+    final connectivityService = context.read<ConnectivityService>();
+    if (!connectivityService.isOnline) {
       SnackbarService().showOffline(context, action: 'unpair device');
       return;
     }
@@ -171,8 +205,8 @@ class _TvPairingScreenState extends State<TvPairingScreen>
             .showSuccess(context, 'TV device unpaired successfully');
         setState(() {});
       } catch (e) {
-        SnackbarService()
-            .showError(context, 'Unpairing failed: ${formatErrorMessage(e)}');
+        SnackbarService().showError(
+            context, 'Unpairing failed: ${getUserFriendlyErrorMessage(e)}');
       }
     }
   }
@@ -270,8 +304,9 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                         border:
                             Border.all(color: AppColors.telegramBlue, width: 3),
                       ),
-                      child: const Icon(Icons.tv_rounded,
-                          size: 40, color: AppColors.telegramBlue),
+                      child: Icon(Icons.tv_rounded,
+                          size: ResponsiveValues.iconSizeXXXL(context),
+                          color: AppColors.telegramBlue),
                     );
                   },
                 ),
@@ -346,8 +381,9 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                     ),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.tv_rounded,
-                      color: AppColors.telegramBlue, size: 20),
+                  child: Icon(Icons.tv_rounded,
+                      color: AppColors.telegramBlue,
+                      size: ResponsiveValues.iconSizeS(context)),
                 ),
                 SizedBox(width: ResponsiveValues.spacingM(context)),
                 Text(
@@ -411,8 +447,9 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                     ),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.info_rounded,
-                      color: AppColors.telegramBlue, size: 18),
+                  child: Icon(Icons.info_rounded,
+                      color: AppColors.telegramBlue,
+                      size: ResponsiveValues.iconSizeXS(context)),
                 ),
                 SizedBox(width: ResponsiveValues.spacingM(context)),
                 Text(
@@ -437,8 +474,9 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                 padding: ResponsiveValues.cardPadding(context),
                 child: Row(
                   children: [
-                    const Icon(Icons.lightbulb_rounded,
-                        color: AppColors.telegramYellow, size: 20),
+                    Icon(Icons.lightbulb_rounded,
+                        color: AppColors.telegramYellow,
+                        size: ResponsiveValues.iconSizeS(context)),
                     SizedBox(width: ResponsiveValues.spacingM(context)),
                     Expanded(
                       child: Text(
@@ -510,6 +548,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
         deviceProvider.tvDeviceId!.isNotEmpty;
     final String? tvDeviceId = deviceProvider.tvDeviceId;
 
+    // 1. LOADING STATE
     if (_isLoading && !_hasCachedData) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
@@ -518,11 +557,13 @@ class _TvPairingScreenState extends State<TvPairingScreen>
           subtitle: 'Loading...',
           leading: AppButton.icon(
               icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
+          showOfflineIndicator: _isOffline,
         ),
         body: Center(child: _buildSkeletonLoader()),
       );
     }
 
+    // 2. MAIN CONTENT
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: CustomAppBar(
@@ -532,6 +573,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
             : (_isOffline ? 'Offline mode' : 'Connect your TV'),
         leading: AppButton.icon(
             icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
+        showOfflineIndicator: _isOffline,
       ),
       body: RefreshIndicator(
         onRefresh: _manualRefresh,
@@ -546,6 +588,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Pending count banner (if offline with pending actions)
                     if (_pendingCount > 0)
                       Container(
                         margin: EdgeInsets.only(
@@ -565,8 +608,9 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.schedule_rounded,
-                                color: AppColors.info, size: 20),
+                            Icon(Icons.schedule_rounded,
+                                color: AppColors.info,
+                                size: ResponsiveValues.iconSizeS(context)),
                             SizedBox(width: ResponsiveValues.spacingM(context)),
                             Expanded(
                               child: Text(
@@ -578,12 +622,23 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                           ],
                         ),
                       ),
+
                     _buildHeader(),
                     SizedBox(height: ResponsiveValues.spacingL(context)),
-                    if (hasTvDevice && tvDeviceId != null)
+
+                    // OFFLINE STATE
+                    if (_isOffline && !hasTvDevice)
+                      AppEmptyState.offline(
+                        message:
+                            'You are offline. Please connect to pair a TV device.',
+                        onRetry: _manualRefresh,
+                        pendingCount: _pendingCount,
+                      )
+                    else if (hasTvDevice && tvDeviceId != null)
                       _buildPairedDeviceCard(context, tvDeviceId)
                     else
                       _buildPairingForm(context),
+
                     SizedBox(height: ResponsiveValues.spacingXL(context)),
                     _buildInstructionsCard(context),
                     SizedBox(height: ResponsiveValues.spacingXXL(context)),

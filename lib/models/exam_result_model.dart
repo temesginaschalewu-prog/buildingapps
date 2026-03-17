@@ -1,22 +1,59 @@
 import '../utils/parsers.dart';
+import 'package:hive/hive.dart'; // NEW
 
+part 'exam_result_model.g.dart'; // NEW
+
+@HiveType(typeId: 8) // NEW
 class ExamResult {
+  @HiveField(0)
   final int id;
+
+  @HiveField(1)
   final int examId;
+
+  @HiveField(2)
   final int userId;
+
+  @HiveField(3)
   final double score;
+
+  @HiveField(4)
   final int totalQuestions;
+
+  @HiveField(5)
   final int correctAnswers;
+
+  @HiveField(6)
   final int timeTaken;
+
+  @HiveField(7)
   final DateTime startedAt;
+
+  @HiveField(8)
   final DateTime? completedAt;
+
+  @HiveField(9)
   final String status;
+
+  @HiveField(10)
   final String? examCode;
+
+  @HiveField(11)
   final List<dynamic>? answerDetails;
+
+  @HiveField(12)
   final String title;
+
+  @HiveField(13)
   final String examType;
+
+  @HiveField(14)
   final int duration;
+
+  @HiveField(15)
   final int passingScore;
+
+  @HiveField(16)
   final String courseName;
 
   ExamResult({
@@ -53,7 +90,9 @@ class ExamResult {
       status: json['status']?.toString() ?? 'unknown',
       examCode: json['exam_code']?.toString(),
       answerDetails: json['answer_details'],
-      title: json['title']?.toString() ?? 'Unknown Exam',
+      title: json['title']?.toString() ??
+          json['exam_title']?.toString() ??
+          'Unknown Exam',
       examType: json['exam_type']?.toString() ?? 'unknown',
       duration: Parsers.parseInt(json['duration']),
       passingScore: Parsers.parseInt(json['passing_score'], 50),
