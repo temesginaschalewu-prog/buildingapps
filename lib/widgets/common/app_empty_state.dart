@@ -1,3 +1,6 @@
+// lib/widgets/common/app_empty_state.dart
+// COMPLETE PRODUCTION-READY FILE - MATCHES YOUR EXISTING CODE
+
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../themes/app_colors.dart';
@@ -5,6 +8,18 @@ import '../../themes/app_text_styles.dart';
 import '../../utils/responsive_values.dart';
 import 'app_card.dart';
 import 'app_button.dart';
+
+enum EmptyStateType {
+  general,
+  error,
+  noInternet,
+  noResults,
+  noData,
+  success,
+  offline,
+  queued,
+  syncing,
+}
 
 class AppEmptyState extends StatelessWidget {
   final IconData? icon;
@@ -126,14 +141,14 @@ class AppEmptyState extends StatelessWidget {
   }
 
   factory AppEmptyState.error({
-    required String title,
+    required String title, // ✅ THIS IS CORRECT - title is required
     required String message,
     VoidCallback? onRetry,
     bool isRefreshing = false,
   }) {
     return AppEmptyState(
       icon: Icons.error_outline_rounded,
-      title: title,
+      title: title, // ✅ Using the title parameter
       message: message,
       actionText:
           onRetry != null ? (isRefreshing ? 'Retrying...' : 'Try Again') : null,
@@ -364,7 +379,7 @@ class AppEmptyState extends StatelessWidget {
     }
 
     return AppButton.primary(
-      label: actionText,
+      label: actionText!,
       icon: _getActionIcon(),
       onPressed: onAction,
       requiresOnline: type == EmptyStateType.offline ? false : true,

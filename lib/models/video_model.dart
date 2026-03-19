@@ -1,10 +1,13 @@
+// lib/models/video_model.dart
+// PRODUCTION-READY FINAL VERSION - FIXED LOG SPAM
+
 import '../utils/parsers.dart';
 import '../utils/helpers.dart';
-import 'package:hive/hive.dart'; // NEW
+import 'package:hive/hive.dart';
 
-part 'video_model.g.dart'; // NEW
+part 'video_model.g.dart';
 
-@HiveType(typeId: 4) // NEW
+@HiveType(typeId: 4)
 class VideoQuality {
   @HiveField(0)
   final String label;
@@ -132,6 +135,11 @@ class Video {
   @HiveField(12)
   final String? processingStatus;
 
+  // ✅ FIXED: Static flags to prevent log spam
+  static bool _qualityParsingLogShown = false;
+  static bool _availableQualitiesLogShown = false;
+  static int _lastVideoIdForLog = 0;
+
   const Video({
     required this.id,
     required this.title,
@@ -159,7 +167,12 @@ class Video {
 
       // Handle both Map<String, dynamic> and Map<dynamic, dynamic>
       if (qualitiesJson is Map<String, dynamic>) {
-        debugLog('Video', '📦 Raw qualities: ${qualitiesJson.keys.join(', ')}');
+        // ✅ FIXED: Log only once per app session
+        if (!_qualityParsingLogShown) {
+          debugLog(
+              'Video', '📦 Raw qualities: ${qualitiesJson.keys.join(', ')}');
+          _qualityParsingLogShown = true;
+        }
         qualitiesJson.forEach((key, value) {
           if (value is String && value.isNotEmpty) {
             qualities![key] =
@@ -167,8 +180,11 @@ class Video {
           }
         });
       } else if (qualitiesJson is Map<dynamic, dynamic>) {
-        debugLog('Video',
-            '📦 Raw qualities: ${qualitiesJson.keys.map((k) => k.toString()).join(', ')}');
+        if (!_qualityParsingLogShown) {
+          debugLog('Video',
+              '📦 Raw qualities: ${qualitiesJson.keys.map((k) => k.toString()).join(', ')}');
+          _qualityParsingLogShown = true;
+        }
         qualitiesJson.forEach((key, value) {
           if (key is String && value is String && value.isNotEmpty) {
             qualities![key] =
@@ -177,7 +193,10 @@ class Video {
         });
       }
 
-      debugLog('Video', '✅ Parsed ${qualities.length} qualities');
+      if (!_qualityParsingLogShown) {
+        debugLog('Video', '✅ Parsed ${qualities.length} qualities');
+        _qualityParsingLogShown = true;
+      }
     }
 
     return Video(
@@ -250,8 +269,21 @@ class Video {
       if (qualities!.containsKey('high')) list.add(qualities!['high']!);
       if (qualities!.containsKey('highest')) list.add(qualities!['highest']!);
 
-      debugLog('Video', '📊 Available: ${list.map((q) => q.label).join(', ')}');
+      // ✅ FIXED: Log only once per video to prevent spam
+      if (_lastVideoIdForLog != id && list.isNotEmpty) {
+        debugLog(
+            'Video', '📊 Video $id: ${list.map((q) => q.label).join(', ')}');
+        _lastVideoIdForLog = id;
+        _availableQualitiesLogShown = true;
+      }
+
       return list;
+    }
+
+    // ✅ FIXED: Log only once
+    if (!_availableQualitiesLogShown) {
+      debugLog('Video', '📊 Using fallback quality for video $id');
+      _availableQualitiesLogShown = true;
     }
 
     return [

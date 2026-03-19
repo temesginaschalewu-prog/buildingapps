@@ -1,5 +1,5 @@
 // lib/providers/exam_question_provider.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// PRODUCTION-READY FINAL VERSION - WITH ALL FIXES
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -16,6 +16,7 @@ import '../services/offline_queue_manager.dart';
 import '../models/exam_question_model.dart';
 import '../utils/constants.dart';
 import '../utils/api_response.dart';
+import '../utils/helpers.dart';
 import 'base_provider.dart';
 
 /// PRODUCTION-READY Exam Question Provider with Full Offline Support
@@ -49,10 +50,14 @@ class ExamQuestionProvider extends ChangeNotifier
   int _apiCallCount = 0;
   Timer? _cacheCleanupTimer;
 
-  StreamController<Map<int, List<ExamQuestion>>> _questionsUpdateController =
-      StreamController<Map<int, List<ExamQuestion>>>.broadcast();
-  StreamController<Map<int, bool>> _examAccessController =
-      StreamController<Map<int, bool>>.broadcast();
+  // ✅ FIXED: Proper stream declarations
+  late StreamController<Map<int, List<ExamQuestion>>>
+      _questionsUpdateController;
+  late StreamController<Map<int, bool>> _examAccessController;
+
+  // ✅ FIXED: Rate limiting
+  final Map<int, DateTime?> _lastBackgroundRefreshForExam = {};
+  static const Duration _minBackgroundInterval = Duration(minutes: 2);
 
   ExamQuestionProvider({
     required this.apiService,
@@ -60,7 +65,9 @@ class ExamQuestionProvider extends ChangeNotifier
     required this.connectivityService,
     required this.hiveService,
     required this.offlineQueueManager,
-  }) {
+  })  : _questionsUpdateController =
+            StreamController<Map<int, List<ExamQuestion>>>.broadcast(),
+        _examAccessController = StreamController<Map<int, bool>>.broadcast() {
     log('ExamQuestionProvider constructor called');
     initializeOfflineAware(
       connectivity: connectivityService,
@@ -290,7 +297,8 @@ class ExamQuestionProvider extends ChangeNotifier
     log('loadExamQuestions() CALL #$callId for exam $examId');
 
     if (isManualRefresh && isOffline) {
-      throw Exception('Network error. Please check your internet connection.');
+      throw Exception(getUserFriendlyErrorMessage(
+          'Network error. Please check your internet connection.'));
     }
 
     if (_isLoadingExam[examId] == true && !forceRefresh) {
@@ -304,7 +312,8 @@ class ExamQuestionProvider extends ChangeNotifier
       if (!hasAccess) {
         log('❌ No access to exam $examId');
         _isLoadingExam[examId] = false;
-        setError('You do not have access to this exam');
+        setError(
+            getUserFriendlyErrorMessage('You do not have access to this exam'));
         safeNotify();
         return;
       }
@@ -384,14 +393,15 @@ class ExamQuestionProvider extends ChangeNotifier
       // STEP 3: Check offline status
       if (isOffline) {
         log('STEP 3: Offline mode');
-        setError('You are offline. No cached exam questions available.');
+        setError(getUserFriendlyErrorMessage(
+            'You are offline. No cached exam questions available.'));
         setLoaded();
         _isLoadingExam[examId] = false;
         _questionsUpdateController.add({examId: []});
 
         if (isManualRefresh) {
-          throw Exception(
-              'Network error. Please check your internet connection.');
+          throw Exception(getUserFriendlyErrorMessage(
+              'Network error. Please check your internet connection.'));
         }
         return;
       }
@@ -428,7 +438,7 @@ class ExamQuestionProvider extends ChangeNotifier
         _questionsUpdateController.add({examId: questions});
         log('✅ Success! Questions loaded for exam $examId');
       } else {
-        setError(response.message);
+        setError(getUserFriendlyErrorMessage(response.message));
         log('❌ API error: ${response.message}');
 
         final cachedQuestions = await _getCachedExamQuestions(examId);
@@ -451,7 +461,7 @@ class ExamQuestionProvider extends ChangeNotifier
     } catch (e) {
       log('❌ Error loading exam questions: $e');
 
-      setError(e.toString());
+      setError(getUserFriendlyErrorMessage(e));
       setLoaded();
       _isLoadingExam[examId] = false;
 
@@ -525,8 +535,18 @@ class ExamQuestionProvider extends ChangeNotifier
     }
   }
 
+  // ✅ FIXED: Rate limited background refresh
   Future<void> _refreshInBackground(int examId) async {
     if (isOffline) return;
+
+    // Rate limiting
+    if (_lastBackgroundRefreshForExam[examId] != null &&
+        DateTime.now().difference(_lastBackgroundRefreshForExam[examId]!) <
+            _minBackgroundInterval) {
+      log('⏱️ Background refresh rate limited for exam $examId');
+      return;
+    }
+    _lastBackgroundRefreshForExam[examId] = DateTime.now();
 
     try {
       await loadExamQuestions(examId, forceRefresh: true, checkAccess: false);
@@ -589,9 +609,9 @@ class ExamQuestionProvider extends ChangeNotifier
       return response;
     } catch (e) {
       setLoaded();
-      setError(e.toString());
+      setError(getUserFriendlyErrorMessage(e));
       log('❌ Error saving exam progress: $e');
-      return ApiResponse.error(message: 'Failed to save progress: $e');
+      return ApiResponse.error(message: getUserFriendlyErrorMessage(e));
     }
   }
 
@@ -628,6 +648,7 @@ class ExamQuestionProvider extends ChangeNotifier
     }
   }
 
+  // ✅ FIXED: Clear user data with proper stream recreation
   Future<void> clearUserData() async {
     final session = UserSession();
     if (!session.shouldClearCacheOnLogout()) return;
@@ -680,7 +701,9 @@ class ExamQuestionProvider extends ChangeNotifier
     _examAccessChecked.clear();
     _examHasAccess.clear();
     _savedAnswers.clear();
+    _lastBackgroundRefreshForExam.clear();
 
+    // FIX: Properly recreate stream controllers
     await _questionsUpdateController.close();
     await _examAccessController.close();
 
@@ -690,12 +713,13 @@ class ExamQuestionProvider extends ChangeNotifier
 
     _questionsUpdateController.add({});
     _examAccessController.add({});
+
     safeNotify();
   }
 
   @override
   void clearError() {
-    clearError();
+    super.clearError();
   }
 
   @override

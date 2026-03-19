@@ -1,5 +1,5 @@
 // lib/providers/school_provider.dart
-// FIXED - Cache school names for faster access
+// PRODUCTION-READY FINAL VERSION
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -13,6 +13,7 @@ import 'package:familyacademyclient/services/offline_queue_manager.dart';
 import 'package:familyacademyclient/models/school_model.dart';
 import 'package:familyacademyclient/utils/constants.dart';
 import '../utils/api_response.dart';
+import '../utils/helpers.dart';
 import 'base_provider.dart';
 
 class SchoolProvider extends ChangeNotifier
@@ -46,17 +47,21 @@ class SchoolProvider extends ChangeNotifier
 
   int _apiCallCount = 0;
 
-  StreamController<List<School>> _schoolsUpdateController =
-      StreamController<List<School>>.broadcast();
-  StreamController<int?> _selectedSchoolController =
-      StreamController<int?>.broadcast();
+  // ✅ FIXED: Proper stream declarations
+  late StreamController<List<School>> _schoolsUpdateController;
+  late StreamController<int?> _selectedSchoolController;
+
+  // ✅ FIXED: Rate limiting
+  DateTime? _lastBackgroundRefresh;
+  static const Duration _minBackgroundInterval = Duration(minutes: 2);
 
   SchoolProvider({
     required this.apiService,
     required this.deviceService,
     required this.connectivityService,
     required this.hiveService,
-  }) {
+  })  : _schoolsUpdateController = StreamController<List<School>>.broadcast(),
+        _selectedSchoolController = StreamController<int?>.broadcast() {
     log('SchoolProvider constructor called');
     initializeOfflineAware(
       connectivity: connectivityService,
@@ -207,7 +212,7 @@ class SchoolProvider extends ChangeNotifier
     }
   }
 
-  // ✅ FAST cached school name lookup
+  // FAST cached school name lookup
   String? getSchoolNameById(int id) {
     // Check cache first
     if (_schoolNameCache.containsKey(id)) {
@@ -235,10 +240,11 @@ class SchoolProvider extends ChangeNotifier
     log('loadSchools() CALL #$callId');
 
     if (isManualRefresh && isOffline) {
-      throw Exception('Network error. Please check your internet connection.');
+      throw Exception(getUserFriendlyErrorMessage(
+          'Network error. Please check your internet connection.'));
     }
 
-    // ✅ Return cached data if already loaded and not too old
+    // Return cached data if already loaded and not too old
     if (_hasLoaded && !forceRefresh && !isManualRefresh) {
       if (_lastFetchTime != null) {
         final age = DateTime.now().difference(_lastFetchTime!);
@@ -365,14 +371,15 @@ class SchoolProvider extends ChangeNotifier
           return;
         }
 
-        setError('You are offline. No cached schools available.');
+        setError(getUserFriendlyErrorMessage(
+            'You are offline. No cached schools available.'));
         _loadError = true;
         setLoaded();
         _schoolsUpdateController.add(_schools);
 
         if (isManualRefresh) {
-          throw Exception(
-              'Network error. Please check your internet connection.');
+          throw Exception(getUserFriendlyErrorMessage(
+              'Network error. Please check your internet connection.'));
         }
         return;
       }
@@ -415,7 +422,7 @@ class SchoolProvider extends ChangeNotifier
         _schoolsUpdateController.add(_schools);
         log('✅ Success! Schools loaded');
       } else {
-        setError(response.message);
+        setError(getUserFriendlyErrorMessage(response.message));
         _loadError = true;
         setLoaded();
         log('❌ API error: ${response.message}');
@@ -431,7 +438,7 @@ class SchoolProvider extends ChangeNotifier
         }
       }
     } catch (e) {
-      setError(e.toString());
+      setError(getUserFriendlyErrorMessage(e));
       _loadError = true;
       setLoaded();
       log('❌ Error loading schools: $e');
@@ -450,8 +457,18 @@ class SchoolProvider extends ChangeNotifier
     }
   }
 
+  // ✅ FIXED: Rate limited background refresh
   Future<void> _refreshInBackground() async {
     if (isOffline) return;
+
+    // Rate limiting
+    if (_lastBackgroundRefresh != null &&
+        DateTime.now().difference(_lastBackgroundRefresh!) <
+            _minBackgroundInterval) {
+      log('⏱️ Background refresh rate limited');
+      return;
+    }
+    _lastBackgroundRefresh = DateTime.now();
 
     // Don't refresh if we just did
     if (_lastFetchTime != null) {
@@ -651,6 +668,7 @@ class SchoolProvider extends ChangeNotifier
     await loadSchools(forceRefresh: true);
   }
 
+  // ✅ FIXED: Clear user data with proper stream recreation
   Future<void> clearUserData() async {
     final session = UserSession();
     if (!session.shouldClearCacheOnLogout()) return;
@@ -658,6 +676,7 @@ class SchoolProvider extends ChangeNotifier
     await deviceService.clearCacheByPrefix('schools');
     await deviceService.removeCacheItem(AppConstants.selectedSchoolKey);
     stopBackgroundRefresh();
+    _lastBackgroundRefresh = null;
 
     await _saveSelectedToHive(null);
 
@@ -667,6 +686,7 @@ class SchoolProvider extends ChangeNotifier
     _hasLoaded = false;
     _lastFetchTime = null;
 
+    // FIX: Properly recreate stream controllers
     await _schoolsUpdateController.close();
     await _selectedSchoolController.close();
     _schoolsUpdateController = StreamController<List<School>>.broadcast();
@@ -674,9 +694,8 @@ class SchoolProvider extends ChangeNotifier
 
     _schoolsUpdateController.add(_schools);
     _selectedSchoolController.add(null);
-    safeNotify();
 
-    log('🧹 Cleared user school data');
+    safeNotify();
   }
 
   void retryLoadSchools() {

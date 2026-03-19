@@ -1,5 +1,5 @@
 // lib/screens/main/profile_screen.dart
-// COMPLETE PRODUCTION-READY FINAL VERSION - FIXED UI UPDATE
+// COMPLETE PRODUCTION-READY FINAL VERSION - FIXED PENDING COUNT
 
 import 'dart:async';
 import 'dart:io';
@@ -119,7 +119,8 @@ class _ProfileScreenState extends State<ProfileScreen>
 
       setState(() {
         _isOffline = !isOnline;
-        _pendingCount = connectivityService.pendingActionsCount;
+        final queueManager = context.read<OfflineQueueManager>();
+        _pendingCount = queueManager.pendingCount;
       });
 
       if (isOnline && !_isRefreshing && _cachedUser != null) {
@@ -134,14 +135,15 @@ class _ProfileScreenState extends State<ProfileScreen>
     if (!mounted) return;
     setState(() {
       _isOffline = !connectivityService.isOnline;
-      _pendingCount = connectivityService.pendingActionsCount;
+      final queueManager = context.read<OfflineQueueManager>();
+      _pendingCount = queueManager.pendingCount;
     });
   }
 
   Future<void> _checkPendingCount() async {
-    final connectivityService = context.read<ConnectivityService>();
+    final queueManager = context.read<OfflineQueueManager>();
     if (mounted) {
-      setState(() => _pendingCount = connectivityService.pendingActionsCount);
+      setState(() => _pendingCount = queueManager.pendingCount);
     }
   }
 
@@ -439,7 +441,6 @@ class _ProfileScreenState extends State<ProfileScreen>
         if (updateResponse.success) {
           await userProvider.loadUserProfile(forceRefresh: true);
 
-          // Force UI update with setState
           setState(() {
             _cachedUser = userProvider.currentUser;
             _profileImageFile = null;
@@ -533,7 +534,6 @@ class _ProfileScreenState extends State<ProfileScreen>
       if (response.success) {
         await userProvider.loadUserProfile(forceRefresh: true);
 
-        // Force UI update with setState
         setState(() {
           _cachedUser = userProvider.currentUser;
           _emailController.text = userProvider.currentUser?.email ?? '';

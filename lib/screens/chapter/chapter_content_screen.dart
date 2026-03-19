@@ -1,5 +1,5 @@
 // lib/screens/chapter/chapter_content_screen.dart
-// COMPLETE PRODUCTION-READY FINAL VERSION - FIXED ALL VIDEO ISSUES
+// COMPLETE PRODUCTION-READY FILE - FIXED PENDING COUNT
 
 import 'dart:async';
 import 'dart:io';
@@ -36,6 +36,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/progress_provider.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
+import '../../services/offline_queue_manager.dart';
 import '../../widgets/chapter/video_card.dart';
 import '../../widgets/chapter/note_card.dart';
 import '../../widgets/chapter/practice_question_card.dart';
@@ -52,9 +53,7 @@ import '../../utils/responsive_values.dart';
 import '../../utils/helpers.dart';
 import '../../utils/platform_helper.dart';
 import '../../utils/constants.dart';
-import '../../utils/app_enums.dart';
 
-/// PRODUCTION-READY CHAPTER CONTENT SCREEN
 class ChapterContentScreen extends StatefulWidget {
   final int chapterId;
   final Chapter? chapter;
@@ -82,7 +81,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
   Chapter? _chapter;
   Category? _category;
-  Course? _course;
 
   bool _isLoading = true;
   bool _hasAccess = false;
@@ -102,9 +100,9 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   bool _isPlayingVideo = false;
   bool _isVideoDialogOpen = false;
   bool _isPlayerInitialized = false;
-  Video? _currentPlayingVideo;
   String? _currentPlaybackQualityLabel;
   double _currentPlaybackSpeed = 1.0;
+  StateSetter? _videoDialogStateSetter;
 
   // Practice questions state
   final Map<int, String?> _selectedAnswers = {};
@@ -159,6 +157,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   void dispose() {
     _disposeAllPlayers();
     _cleanupResources();
+    _dio.close();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -167,9 +166,9 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     _isVideoDialogOpen = false;
     _isPlayingVideo = false;
     _isPlayerInitialized = false;
-    _currentPlayingVideo = null;
     _currentPlaybackQualityLabel = null;
     _currentPlaybackSpeed = 1.0;
+    _videoDialogStateSetter = null;
 
     try {
       if (_mediaKitPlayer != null) {
@@ -206,7 +205,36 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     _connectivitySubscription?.cancel();
     _tabController.dispose();
     _scrollController.dispose();
-    _dio.close();
+  }
+
+  void _refreshVideoUi([VoidCallback? update]) {
+    if (mounted) {
+      setState(() {
+        update?.call();
+      });
+    } else {
+      update?.call();
+    }
+
+    _videoDialogStateSetter?.call(() {});
+  }
+
+  Duration _clampSeekPosition(Duration position, Duration duration) {
+    if (duration <= Duration.zero) return position;
+    if (position <= Duration.zero) return Duration.zero;
+    if (position >= duration) {
+      return duration > const Duration(seconds: 1)
+          ? duration - const Duration(seconds: 1)
+          : Duration.zero;
+    }
+    return position;
+  }
+
+  String _formatPlaybackSpeed(double speed) {
+    if (speed == speed.roundToDouble()) {
+      return '${speed.toStringAsFixed(1)}x';
+    }
+    return '${speed.toString()}x';
   }
 
   Future<void> _getCurrentUserId() async {
@@ -216,12 +244,14 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
   void _setupConnectivityListener() {
     final connectivityService = context.read<ConnectivityService>();
+    _connectivitySubscription?.cancel();
     _connectivitySubscription =
         connectivityService.onConnectivityChanged.listen((isOnline) {
       if (mounted) {
         setState(() {
           _isOffline = !isOnline;
-          _pendingCount = connectivityService.pendingActionsCount;
+          final queueManager = context.read<OfflineQueueManager>();
+          _pendingCount = queueManager.pendingCount;
         });
         if (isOnline && !_isRefreshing && _chapter != null) {
           unawaited(_refreshInBackground());
@@ -236,7 +266,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     if (mounted) {
       setState(() {
         _isOffline = !connectivityService.isOnline;
-        _pendingCount = connectivityService.pendingActionsCount;
+        final queueManager = context.read<OfflineQueueManager>();
+        _pendingCount = queueManager.pendingCount;
       });
     }
   }
@@ -248,7 +279,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     return cacheDir;
   }
 
-  // TIER 2: Load cached downloads
   Future<void> _loadCachedContent() async {
     if (_currentUserId == null) return;
 
@@ -327,7 +357,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     }
   }
 
-  // TIER 2: Load from cache
   Future<void> _initializeFromCache() async {
     final chapterProvider = context.read<ChapterProvider>();
     final courseProvider = context.read<CourseProvider>();
@@ -337,7 +366,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     if (widget.chapter != null) {
       _chapter = widget.chapter;
       _category = widget.category;
-      _course = widget.course;
       _hasAccess = widget.hasAccess ?? false;
       _hasCachedData = true;
       return;
@@ -351,7 +379,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           if (chapter.id == widget.chapterId) {
             _chapter = chapter;
             _category = category;
-            _course = course;
             _hasCachedData = true;
             break;
           }
@@ -367,7 +394,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     }
   }
 
-  // TIER 3: Background refresh
   Future<void> _refreshInBackground() async {
     if (_isRefreshing) return;
     if (mounted) setState(() => _isRefreshing = true);
@@ -379,7 +405,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     }
   }
 
-  // Manual refresh with connectivity check
   Future<void> _manualRefresh() async {
     if (_isRefreshing) return;
 
@@ -418,7 +443,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         message.contains('offline');
   }
 
-  // TIER 3: Load fresh data
   Future<void> _checkAccessAndLoadData({bool forceRefresh = false}) async {
     final authProvider = context.read<AuthProvider>();
     final subscriptionProvider = context.read<SubscriptionProvider>();
@@ -487,7 +511,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           if (chapter.id == widget.chapterId) {
             _chapter = chapter;
             _category = category;
-            _course = course;
             return;
           }
         }
@@ -557,96 +580,100 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     } catch (e) {}
   }
 
-  // ===== SWITCH QUALITY METHOD =====
   Future<void> _switchQuality(Video video, VideoQuality quality) async {
-    if (_isVideoDialogOpen) {
-      // Show loading in the dialog
-      setState(() {
-        _isPlayerInitialized = false;
-        _currentPlaybackQualityLabel = quality.label;
-      });
+    if (!_isVideoDialogOpen) return;
 
-      try {
-        if (PlatformHelper.shouldUseMediaKit && _mediaKitPlayer != null) {
-          // For MediaKit, change source without disposing
-          await _mediaKitPlayer!.open(media_kit.Media(quality.url));
-          // Restore speed
-          await _mediaKitPlayer!.setRate(_currentPlaybackSpeed);
-          setState(() => _isPlayerInitialized = true);
-        } else if (_videoController != null && _chewieController != null) {
-          // For Chewie, recreate controller
-          _chewieController!.dispose();
-          _chewieController = null;
-          _videoController!.dispose();
-          _videoController = null;
+    _refreshVideoUi(() {
+      _isPlayerInitialized = false;
+      _currentPlaybackQualityLabel = quality.label;
+    });
 
-          _videoController =
-              VideoPlayerController.networkUrl(Uri.parse(quality.url));
-          await _videoController!.initialize();
-          _chewieController = ChewieController(
-            videoPlayerController: _videoController!,
-            autoPlay: true,
-            looping: false,
-            showControls: true,
-            showOptions: false,
-            allowFullScreen: false,
-            allowMuting: true,
-            playbackSpeeds: [0.5, 0.75, 1.0, 1.25, 1.5],
-            // Set initial speed
-          );
-          await _videoController!.setPlaybackSpeed(_currentPlaybackSpeed);
-          setState(() => _isPlayerInitialized = true);
+    try {
+      if (PlatformHelper.shouldUseMediaKit && _mediaKitPlayer != null) {
+        final player = _mediaKitPlayer!;
+        final currentPosition = player.state.position;
+        final wasPlaying = player.state.playing;
+
+        await player.open(media_kit.Media(quality.url), play: false);
+        await player.seek(currentPosition);
+        await player.setRate(_currentPlaybackSpeed);
+        if (wasPlaying) {
+          await player.play();
         }
-      } catch (e) {
-        debugLog('VideoCard', 'Error switching quality: $e');
-        setState(() => _isPlayerInitialized = true); // Hide loading on error
-        if (mounted) {
-          SnackbarService().showError(context, 'Failed to switch quality');
+        _refreshVideoUi(() => _isPlayerInitialized = true);
+      } else if (_videoController != null && _chewieController != null) {
+        final oldVideoController = _videoController!;
+        final oldChewieController = _chewieController!;
+        final wasPlaying = oldVideoController.value.isPlaying;
+        final currentPosition = oldVideoController.value.position;
+
+        final newVideoController =
+            VideoPlayerController.networkUrl(Uri.parse(quality.url));
+        await newVideoController.initialize();
+
+        final targetPosition = _clampSeekPosition(
+          currentPosition,
+          newVideoController.value.duration,
+        );
+        if (targetPosition > Duration.zero) {
+          await newVideoController.seekTo(targetPosition);
         }
+        await newVideoController.setPlaybackSpeed(_currentPlaybackSpeed);
+
+        final newChewieController = ChewieController(
+          videoPlayerController: newVideoController,
+          autoPlay: false,
+          looping: false,
+          showControls: true,
+          showOptions: false,
+          allowFullScreen: false,
+          allowMuting: true,
+          playbackSpeeds: [0.5, 0.75, 1.0, 1.25, 1.5],
+        );
+
+        _videoController = newVideoController;
+        _chewieController = newChewieController;
+
+        if (wasPlaying) {
+          await newVideoController.play();
+        }
+
+        await oldChewieController.pause();
+        oldChewieController.dispose();
+        oldVideoController.dispose();
+
+        _refreshVideoUi(() => _isPlayerInitialized = true);
+      }
+    } catch (e) {
+      debugLog('VideoCard', 'Error switching quality: $e');
+      _refreshVideoUi(() => _isPlayerInitialized = true);
+      if (mounted) {
+        SnackbarService().showError(context, AppStrings.failedToSwitchQuality);
       }
     }
   }
 
-  // ===== STREAMING QUALITY SELECTOR =====
   Future<void> _showStreamingQualitySelector(Video video) async {
     final quality = await _showQualitySelector(video, forPlayback: true);
     if (quality != null && mounted) {
-      // Update quality label immediately
-      setState(() {
+      _refreshVideoUi(() {
         _currentPlaybackQualityLabel = quality.label;
       });
 
-      // Show loading dialog while switching quality
-      if (!mounted) return;
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(
-            valueColor: AlwaysStoppedAnimation<Color>(AppColors.telegramBlue),
-          ),
-        ),
-      );
-
       try {
-        // Switch quality without closing video dialog
         await _switchQuality(video, quality);
-
-        if (mounted) Navigator.pop(context); // Close loading dialog only
       } catch (e) {
-        if (mounted) Navigator.pop(context); // Close loading dialog on error
-        SnackbarService().showError(context, 'Failed to change quality');
+        SnackbarService().showError(context, AppStrings.failedToChangeQuality);
       }
     }
   }
 
-  // ===== SPEED SELECTOR =====
   Future<void> _showSpeedSelector(Video video) async {
     final speeds = [0.5, 0.75, 1.0, 1.25, 1.5];
     final selectedSpeed = await showDialog<double>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Select Playback Speed'),
+        title: const Text(AppStrings.selectPlaybackSpeed),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: speeds.map((speed) {
@@ -665,7 +692,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     if (selectedSpeed != null &&
         selectedSpeed != _currentPlaybackSpeed &&
         mounted) {
-      setState(() {
+      final previousSpeed = _currentPlaybackSpeed;
+      _refreshVideoUi(() {
         _currentPlaybackSpeed = selectedSpeed;
       });
 
@@ -677,16 +705,17 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         }
       } catch (e) {
         debugLog('VideoCard', 'Error setting speed: $e');
-        SnackbarService().showError(context, 'Failed to change speed');
+        _refreshVideoUi(() {
+          _currentPlaybackSpeed = previousSpeed;
+        });
+        SnackbarService().showError(context, AppStrings.failedToChangeSpeed);
       }
     }
   }
 
-  // ===== VIDEO PLAYBACK =====
   Future<void> _playVideo(Video video) async {
     if (_isVideoDialogOpen) return;
 
-    // Show loading dialog immediately
     if (!mounted) return;
 
     showDialog(
@@ -702,14 +731,14 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     try {
       if (_cachedVideoPaths.containsKey(video.id)) {
         final localPath = _cachedVideoPaths[video.id]!;
-        if (mounted) Navigator.pop(context); // Close loading dialog
+        if (mounted) Navigator.pop(context);
         await _playLocalVideo(video, localPath);
         return;
       }
 
       final connectivity = context.read<ConnectivityService>();
       if (!connectivity.isOnline) {
-        if (mounted) Navigator.pop(context); // Close loading dialog
+        if (mounted) Navigator.pop(context);
         SnackbarService().showOffline(context, action: AppStrings.playVideo);
         return;
       }
@@ -717,18 +746,14 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       VideoQuality? selectedQuality;
 
       if (video.hasQualities) {
-        if (mounted)
-          Navigator.pop(
-              context); // Close loading dialog before quality selector
+        if (mounted) Navigator.pop(context);
         selectedQuality = await _showQualitySelector(video, forPlayback: true);
         if (selectedQuality == null) return;
 
-        // Update quality label
         setState(() {
           _currentPlaybackQualityLabel = selectedQuality?.label;
         });
 
-        // Show loading dialog again while preparing player
         if (!mounted) return;
         showDialog(
           context: context,
@@ -746,34 +771,33 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         });
       }
 
-      if (mounted) Navigator.pop(context); // Close loading dialog
+      if (mounted) Navigator.pop(context);
       await _playNetworkVideo(video, selectedQuality.url);
     } catch (e) {
       if (mounted) {
-        Navigator.pop(context); // Close loading dialog on error
-        SnackbarService().showError(context, 'Failed to play video');
+        Navigator.pop(context);
+        SnackbarService()
+            .showError(context, AppStrings.failedToPlayVideoSimple);
       }
     }
   }
 
   Future<void> _playLocalVideo(Video video, String localPath) async {
     _disposeAllPlayers();
-    _currentPlayingVideo = video;
 
     try {
-      setState(() {
+      _refreshVideoUi(() {
         _isPlayingVideo = true;
         _isVideoDialogOpen = true;
         _isPlayerInitialized = false;
+        _currentPlaybackQualityLabel = AppStrings.offlineQuality;
       });
 
-      // Check if file exists
       final file = File(localPath);
       if (!await file.exists()) {
         throw Exception('Downloaded file not found');
       }
 
-      // Use MediaKit for Linux, VideoPlayer for others
       if (PlatformHelper.isLinux) {
         await _playLocalWithMediaKit(video, localPath);
       } else {
@@ -786,7 +810,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         _isPlayingVideo = false;
       });
       if (mounted) {
-        SnackbarService().showError(context, 'Failed to play downloaded video');
+        SnackbarService()
+            .showError(context, AppStrings.failedToPlayDownloadedVideo);
       }
     }
   }
@@ -806,7 +831,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
       if (!mounted) return;
 
-      setState(() => _isPlayerInitialized = true);
+      _refreshVideoUi(() => _isPlayerInitialized = true);
 
       await showDialog(
         context: context,
@@ -821,7 +846,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
   Future<void> _playNetworkVideo(Video video, String videoUrl) async {
     _disposeAllPlayers();
-    _currentPlayingVideo = video;
 
     try {
       setState(() {
@@ -848,7 +872,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         _isVideoDialogOpen = false;
         _isPlayingVideo = false;
         _isPlayerInitialized = false;
-        _currentPlayingVideo = null;
       });
 
       if (mounted) {
@@ -927,10 +950,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         allowFullScreen: true,
         allowMuting: true,
         allowPlaybackSpeedChanging: true,
-        playbackSpeeds: [0.5, 0.75, 1.0, 1.25, 1.5], // Removed 2.0
+        playbackSpeeds: [0.5, 0.75, 1.0, 1.25, 1.5],
       );
 
-      setState(() => _isPlayerInitialized = true);
+      _refreshVideoUi(() => _isPlayerInitialized = true);
 
       try {
         await WakelockPlus.enable();
@@ -950,120 +973,137 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   }
 
   Widget _buildVideoDialog(Video video) {
-    return Dialog(
-      insetPadding: const EdgeInsets.all(8),
-      backgroundColor: Colors.transparent,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: Stack(
-          children: [
-            AspectRatio(
-              aspectRatio: 16 / 9,
-              child: PlatformHelper.isLinux && _mediaKitVideoController != null
-                  ? media_kit_video.Video(
-                      controller: _mediaKitVideoController!,
-                    )
-                  : (_chewieController != null
-                      ? Chewie(controller: _chewieController!)
-                      : const Center(child: CircularProgressIndicator())),
-            ),
-            Positioned(
-              top: 8,
-              right: 8,
-              child: Container(
-                decoration: const BoxDecoration(
-                  color: Colors.black54,
-                  shape: BoxShape.circle,
+    return StatefulBuilder(
+      builder: (context, setDialogState) {
+        _videoDialogStateSetter = setDialogState;
+        return Dialog(
+          insetPadding: const EdgeInsets.all(8),
+          backgroundColor: Colors.transparent,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Stack(
+              children: [
+                AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: PlatformHelper.isLinux &&
+                          _mediaKitVideoController != null
+                      ? media_kit_video.Video(
+                          controller: _mediaKitVideoController!,
+                        )
+                      : (_chewieController != null
+                          ? Chewie(controller: _chewieController!)
+                          : const Center(child: CircularProgressIndicator())),
                 ),
-                child: IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white),
-                  onPressed: () {
-                    Navigator.pop(context);
-                    if (mounted) _onVideoClosed(video);
-                  },
-                ),
-              ),
-            ),
-            Positioned(
-              top: 8,
-              left: 8,
-              child: Row(
-                children: [
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF0088CC), Color(0xFF0055AA)],
-                      ),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      _currentPlaybackQualityLabel ??
-                          video.getRecommendedQuality().label,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
+                if (!_isPlayerInitialized)
+                  const Positioned.fill(
+                    child: ColoredBox(
+                      color: Color(0x66000000),
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            AppColors.telegramBlue,
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFFFF6B35), Color(0xFFF7931E)],
-                      ),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      '${_currentPlaybackSpeed}x',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  // QUALITY SELECTOR BUTTON FOR STREAMING
-                  Container(
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Container(
                     decoration: const BoxDecoration(
                       color: Colors.black54,
                       shape: BoxShape.circle,
                     ),
                     child: IconButton(
-                      icon: const Icon(Icons.settings,
-                          color: Colors.white, size: 20),
-                      onPressed: () => _showStreamingQualitySelector(video),
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () {
+                        Navigator.pop(context);
+                        if (mounted) _onVideoClosed(video);
+                      },
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  // SPEED SELECTOR BUTTON
-                  Container(
-                    decoration: const BoxDecoration(
-                      color: Colors.black54,
-                      shape: BoxShape.circle,
-                    ),
-                    child: IconButton(
-                      icon: const Icon(Icons.speed,
-                          color: Colors.white, size: 20),
-                      onPressed: () => _showSpeedSelector(video),
-                    ),
+                ),
+                Positioned(
+                  top: 8,
+                  left: 8,
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF0088CC), Color(0xFF0055AA)],
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          _currentPlaybackQualityLabel ??
+                              video.getRecommendedQuality().label,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFFF6B35), Color(0xFFF7931E)],
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          _formatPlaybackSpeed(_currentPlaybackSpeed),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        decoration: const BoxDecoration(
+                          color: Colors.black54,
+                          shape: BoxShape.circle,
+                        ),
+                        child: IconButton(
+                          icon: const Icon(Icons.settings,
+                              color: Colors.white, size: 20),
+                          onPressed: () => _showStreamingQualitySelector(video),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        decoration: const BoxDecoration(
+                          color: Colors.black54,
+                          shape: BoxShape.circle,
+                        ),
+                        child: IconButton(
+                          icon: const Icon(Icons.speed,
+                              color: Colors.white, size: 20),
+                          onPressed: () => _showSpeedSelector(video),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
   Future<void> _onVideoClosed(Video video) async {
-    setState(() => _isVideoDialogOpen = false);
+    _refreshVideoUi(() => _isVideoDialogOpen = false);
 
     try {
       if (PlatformHelper.shouldUseMediaKit && _mediaKitPlayer != null) {
@@ -1112,7 +1152,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     }
   }
 
-  // ===== QUALITY SELECTOR =====
   Future<VideoQuality?> _showQualitySelector(Video video,
       {bool forPlayback = false}) async {
     if (_cachedVideoPaths.containsKey(video.id)) {
@@ -1146,7 +1185,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     final double? bottomSheetHeight =
         PlatformHelper.isTv ? MediaQuery.of(context).size.height * 0.6 : null;
 
-    // For streaming, get actual file sizes from server
     if (forPlayback) {
       await _fetchActualFileSizes(availableQualities);
     }
@@ -1327,7 +1365,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     return completer.future;
   }
 
-  // ===== FETCH ACTUAL FILE SIZES FROM SERVER =====
   Future<void> _fetchActualFileSizes(List<VideoQuality> qualities) async {
     for (final quality in qualities) {
       try {
@@ -1346,9 +1383,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         if (contentLength != null) {
           final size = int.tryParse(contentLength) ?? 0;
           if (size > 0) {
-            // Create a new VideoQuality with actual size
-            // We can't modify the original because it's final
-            // Instead, we'll update the list by creating a new quality
             final index = qualities.indexOf(quality);
             if (index != -1) {
               qualities[index] = VideoQuality(
@@ -1390,7 +1424,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     return 'mobile';
   }
 
-  // ===== DOWNLOAD METHODS =====
   Future<void> _downloadVideo(Video video) async {
     if (_isDownloading[video.id] == true) return;
     if (_currentUserId == null) {
@@ -1487,7 +1520,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         _downloadProgress.remove(video.id);
       });
 
-      // FIXED: Use fromHeight instead of casting
       final qualityLevel = VideoQualityLevel.fromHeight(quality.height);
 
       videoProvider.setDownloadState(video.id, false, 1.0);
@@ -1683,7 +1715,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     } catch (e) {}
   }
 
-  // ===== PRACTICE QUESTIONS =====
   Future<void> _checkAllQuestions(List<Question> questions) async {
     final questionProvider = context.read<QuestionProvider>();
     bool hasError = false;
@@ -1783,81 +1814,25 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     }
   }
 
-  Future<void> _clearAllDownloads() async {
-    final confirmed = await AppDialog.delete(
-      context: context,
-      title: AppStrings.clearDownloads,
-      message: AppStrings.clearDownloadsConfirm,
-    );
-
-    if (confirmed != true) return;
-
-    AppDialog.showLoading(context, message: AppStrings.clearingDownloads);
-
-    try {
-      // Delete files
-      for (final path in _cachedVideoPaths.values) {
-        try {
-          final file = File(path);
-          if (await file.exists()) {
-            await file.delete();
-          }
-        } catch (e) {}
-      }
-      for (final path in _cachedNotePaths.values) {
-        try {
-          final file = File(path);
-          if (await file.exists()) {
-            await file.delete();
-          }
-        } catch (e) {}
-      }
-
-      // Clear from VideoProvider
-      final videoProvider = context.read<VideoProvider>();
-      for (final videoId in _cachedVideoPaths.keys.toList()) {
-        await videoProvider.removeDownloadedVideo(videoId);
-      }
-
-      // Clear local state
-      setState(() {
-        _cachedVideoPaths.clear();
-        _cachedNotePaths.clear();
-        _downloadQuality.clear();
-      });
-
-      await _saveCacheMetadata();
-
-      AppDialog.hideLoading(context);
-
-      // Show success message
-      if (mounted) {
-        SnackbarService().showSuccess(context, AppStrings.downloadsCleared);
-      }
-    } catch (e) {
-      AppDialog.hideLoading(context);
-      if (mounted) {
-        SnackbarService().showError(context, AppStrings.errorClearingDownloads);
-      }
-    }
-  }
-
   Future<void> _initialize() async {
     await _checkConnectivity();
     _setupConnectivityListener();
-    await _loadCachedContent(); // TIER 2: Load downloads
-    await _initializeFromCache(); // TIER 2: Load from cache
+    await _loadCachedContent();
+    await _initializeFromCache();
 
     if (_chapter != null && _hasCachedData) {
       setState(() {
         _isLoading = false;
         _isCheckingAccess = false;
       });
+      if (_hasAccess || (_chapter?.isFree ?? false)) {
+        unawaited(_loadContent());
+      }
       if (!_isOffline) {
-        await _refreshInBackground(); // TIER 3: Background refresh
+        unawaited(_refreshInBackground());
       }
     } else {
-      await _checkAccessAndLoadData(); // TIER 3: Fresh load
+      await _checkAccessAndLoadData();
     }
 
     if (!_isOffline) {
@@ -1865,7 +1840,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     }
   }
 
-  // ===== UI BUILDERS =====
   Widget _buildAccessDeniedScreen() {
     final isFree = _chapter?.isFree ?? false;
 
@@ -1940,11 +1914,269 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     );
   }
 
+  Widget _buildHeroMetric(
+      {required IconData icon, required String label, required String value}) {
+    return Expanded(
+      child: Container(
+        padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.1),
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon,
+                color: Colors.white70,
+                size: ResponsiveValues.iconSizeS(context)),
+            SizedBox(height: ResponsiveValues.spacingS(context)),
+            Text(
+              value,
+              style: AppTextStyles.titleMedium(context).copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            SizedBox(height: ResponsiveValues.spacingXXS(context)),
+            Text(
+              label,
+              style: AppTextStyles.bodySmall(context)
+                  .copyWith(color: Colors.white70),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeroChip({required IconData icon, required String label}) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: ResponsiveValues.spacingM(context),
+        vertical: ResponsiveValues.spacingXS(context),
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.1),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusFull(context)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon,
+              color: Colors.white70,
+              size: ResponsiveValues.iconSizeXS(context)),
+          SizedBox(width: ResponsiveValues.spacingXS(context)),
+          Text(
+            label,
+            style: AppTextStyles.labelSmall(context).copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChapterHero() {
+    final videoCount = context
+        .watch<VideoProvider>()
+        .getVideosByChapter(widget.chapterId)
+        .length;
+    final noteCount = context
+        .watch<NoteProvider>()
+        .getNotesByChapter(widget.chapterId)
+        .length;
+    final questionCount = context
+        .watch<QuestionProvider>()
+        .getQuestionsByChapter(widget.chapterId)
+        .length;
+
+    return Container(
+      margin: EdgeInsets.fromLTRB(
+        ResponsiveValues.spacingM(context),
+        ResponsiveValues.spacingM(context),
+        ResponsiveValues.spacingM(context),
+        ResponsiveValues.spacingS(context),
+      ),
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFF0F766E),
+              Color(0xFF0EA5E9),
+              Color(0xFF111827),
+            ],
+          ),
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF0EA5E9).withValues(alpha: 0.16),
+              blurRadius: 26,
+              offset: const Offset(0, 12),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: ResponsiveValues.cardPadding(context),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Wrap(
+                spacing: ResponsiveValues.spacingS(context),
+                runSpacing: ResponsiveValues.spacingS(context),
+                children: [
+                  _buildHeroChip(
+                    icon: Icons.menu_book_rounded,
+                    label: widget.course?.name ?? AppStrings.course,
+                  ),
+                  _buildHeroChip(
+                    icon: _hasAccess
+                        ? Icons.verified_rounded
+                        : Icons.lock_outline_rounded,
+                    label: _hasAccess
+                        ? AppStrings.fullAccess
+                        : AppStrings.limitedAccess,
+                  ),
+                ],
+              ),
+              SizedBox(height: ResponsiveValues.spacingL(context)),
+              Text(
+                _chapter?.name ?? AppStrings.chapter,
+                style: AppTextStyles.headlineSmall(context).copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.8,
+                ),
+              ),
+              SizedBox(height: ResponsiveValues.spacingM(context)),
+              Text(
+                _chapter?.isFree ?? false
+                    ? AppStrings.chapterComingSoonMessage
+                    : '${AppStrings.accessRequiresSubscription} "${_category?.name ?? AppStrings.theCategory}".',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: AppTextStyles.bodyMedium(context).copyWith(
+                  color: Colors.white.withValues(alpha: 0.82),
+                  height: 1.5,
+                ),
+              ),
+              SizedBox(height: ResponsiveValues.spacingXL(context)),
+              Row(
+                children: [
+                  _buildHeroMetric(
+                    icon: Icons.videocam_rounded,
+                    label: AppStrings.videos,
+                    value: videoCount.toString(),
+                  ),
+                  SizedBox(width: ResponsiveValues.spacingM(context)),
+                  _buildHeroMetric(
+                    icon: Icons.note_alt_rounded,
+                    label: AppStrings.notes,
+                    value: noteCount.toString(),
+                  ),
+                  SizedBox(width: ResponsiveValues.spacingM(context)),
+                  _buildHeroMetric(
+                    icon: Icons.quiz_rounded,
+                    label: AppStrings.practice,
+                    value: questionCount.toString(),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionIntro({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        ResponsiveValues.spacingM(context),
+        ResponsiveValues.spacingM(context),
+        ResponsiveValues.spacingM(context),
+        ResponsiveValues.spacingS(context),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  AppColors.telegramBlue.withValues(alpha: 0.18),
+                  AppColors.info.withValues(alpha: 0.10),
+                ],
+              ),
+              borderRadius:
+                  BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+            ),
+            child: Icon(icon, color: AppColors.telegramBlue),
+          ),
+          SizedBox(width: ResponsiveValues.spacingM(context)),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: AppTextStyles.titleMedium(context).copyWith(
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.4,
+                  ),
+                ),
+                SizedBox(height: ResponsiveValues.spacingXXS(context)),
+                Text(
+                  subtitle,
+                  style: AppTextStyles.bodySmall(context).copyWith(
+                    color: AppColors.getTextSecondary(context),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTabShell({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Widget child,
+  }) {
+    return Column(
+      children: [
+        _buildSectionIntro(icon: icon, title: title, subtitle: subtitle),
+        Expanded(child: child),
+      ],
+    );
+  }
+
   Widget _buildVideosTab() {
     final videoProvider = context.watch<VideoProvider>();
     final videos = videoProvider.getVideosByChapter(widget.chapterId);
+    final hasLoadedVideos = videoProvider.hasLoadedForChapter(widget.chapterId);
 
-    if (videoProvider.isLoadingForChapter(widget.chapterId) && videos.isEmpty) {
+    if (videoProvider.isLoadingForChapter(widget.chapterId) &&
+        videos.isEmpty &&
+        !hasLoadedVideos &&
+        !_hasCachedData &&
+        !_isOffline) {
       return ListView.builder(
         padding: ResponsiveValues.screenPadding(context),
         itemCount: 3,
@@ -2004,8 +2236,13 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   Widget _buildNotesTab() {
     final noteProvider = context.watch<NoteProvider>();
     final notes = noteProvider.getNotesByChapter(widget.chapterId);
+    final hasLoadedNotes = noteProvider.hasLoadedForChapter(widget.chapterId);
 
-    if (noteProvider.isLoadingForChapter(widget.chapterId) && notes.isEmpty) {
+    if (noteProvider.isLoadingForChapter(widget.chapterId) &&
+        notes.isEmpty &&
+        !hasLoadedNotes &&
+        !_hasCachedData &&
+        !_isOffline) {
       return ListView.builder(
         padding: ResponsiveValues.screenPadding(context),
         itemCount: 3,
@@ -2082,9 +2319,14 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   Widget _buildPracticeTab() {
     final questionProvider = context.watch<QuestionProvider>();
     final questions = questionProvider.getQuestionsByChapter(widget.chapterId);
+    final hasLoadedQuestions =
+        questionProvider.hasLoadedForChapter(widget.chapterId);
 
     if (questionProvider.isLoadingForChapter(widget.chapterId) &&
-        questions.isEmpty) {
+        questions.isEmpty &&
+        !hasLoadedQuestions &&
+        !_hasCachedData &&
+        !_isOffline) {
       return ListView.builder(
         padding: ResponsiveValues.screenPadding(context),
         itemCount: 3,
@@ -2401,13 +2643,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       );
     }
 
-    // 3. CHECK IF WE HAVE CACHED DATA BUT STILL LOADING
     if (_hasCachedData && _isLoading) {
-      // We have cached data but still loading fresh data - show cached content
-      // This prevents shimmering when we have cached data available
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _isLoading = false);
+      });
     }
 
     if (!_hasAccess && !_isCheckingAccess) return _buildAccessDeniedScreen();
@@ -2420,20 +2659,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
             _isOffline ? AppStrings.offlineMode : AppStrings.chapterContent,
         leading: AppButton.icon(
             icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
-        actions: [
-          PopupMenuButton<String>(
-            icon: Icon(Icons.more_vert_rounded,
-                color: AppColors.getTextPrimary(context)),
-            onSelected: (value) {
-              if (value == 'clear_downloads') _clearAllDownloads();
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                  value: 'clear_downloads',
-                  child: Text(AppStrings.clearDownloads)),
-            ],
-          ),
-        ],
         showOfflineIndicator: _isOffline,
       ),
       body: RefreshIndicator(
@@ -2466,7 +2691,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                     SizedBox(width: ResponsiveValues.spacingM(context)),
                     Expanded(
                       child: Text(
-                        '$_pendingCount offline change${_pendingCount > 1 ? 's' : ''}',
+                        AppStrings.offlineChangesLabel(_pendingCount),
                         style: AppTextStyles.bodySmall(context)
                             .copyWith(color: AppColors.info),
                       ),
@@ -2507,7 +2732,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                 children: [
                   _buildVideosTab(),
                   _buildNotesTab(),
-                  _buildPracticeTab()
+                  _buildPracticeTab(),
                 ],
               ),
             ),
@@ -2518,7 +2743,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   }
 }
 
-// ===== NOTE DETAIL SCREEN =====
 class NoteDetailScreen extends StatelessWidget {
   final Note note;
   final String? cachedPath;

@@ -1,5 +1,5 @@
 // lib/providers/subscription_provider.dart
-// COMPLETE PRODUCTION-READY FINAL VERSION - FIXED PARALLEL API CALLS
+// PRODUCTION-READY FINAL VERSION - WITH BATCH SUBSCRIPTION CHECKING
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -14,6 +14,7 @@ import '../models/subscription_model.dart';
 import '../providers/category_provider.dart';
 import '../utils/constants.dart';
 import '../utils/api_response.dart';
+import '../utils/helpers.dart';
 import 'base_provider.dart';
 
 class SubscriptionProvider extends ChangeNotifier
@@ -41,10 +42,9 @@ class SubscriptionProvider extends ChangeNotifier
 
   int _apiCallCount = 0;
 
-  final StreamController<Map<int, bool>> _subscriptionUpdateController =
-      StreamController<Map<int, bool>>.broadcast();
-  final StreamController<List<Subscription>> _subscriptionsUpdateController =
-      StreamController<List<Subscription>>.broadcast();
+  // ✅ FIXED: Proper stream declarations
+  late StreamController<Map<int, bool>> _subscriptionUpdateController;
+  late StreamController<List<Subscription>> _subscriptionsUpdateController;
 
   final Map<int, Completer<bool>> _categoryCheckCompleters = {};
   static const Duration _categoryCheckTimeout = Duration(seconds: 10);
@@ -54,7 +54,15 @@ class SubscriptionProvider extends ChangeNotifier
   int _activeRequests = 0;
   final List<Map<String, dynamic>> _pendingRequests = [];
 
+  // ✅ FIXED: Rate limiting
+  DateTime? _lastBackgroundRefresh;
+  static const Duration _minBackgroundInterval = Duration(minutes: 2);
+
   CategoryProvider? _categoryProvider;
+
+  // ✅ FIXED: Cache for batch results
+  DateTime? _lastBatchCheck;
+  static const Duration _batchCheckCooldown = Duration(seconds: 30);
 
   SubscriptionProvider({
     required this.apiService,
@@ -62,7 +70,10 @@ class SubscriptionProvider extends ChangeNotifier
     required this.connectivityService,
     required this.hiveService,
     required this.offlineQueueManager,
-  }) {
+  })  : _subscriptionUpdateController =
+            StreamController<Map<int, bool>>.broadcast(),
+        _subscriptionsUpdateController =
+            StreamController<List<Subscription>>.broadcast() {
     log('SubscriptionProvider constructor called');
     initializeOfflineAware(
       connectivity: connectivityService,
@@ -265,7 +276,8 @@ class SubscriptionProvider extends ChangeNotifier
     log('loadSubscriptions() CALL #$callId');
 
     if (isManualRefresh && isOffline) {
-      throw Exception('Network error. Please check your internet connection.');
+      throw Exception(getUserFriendlyErrorMessage(
+          'Network error. Please check your internet connection.'));
     }
 
     if (_hasLoaded && !forceRefresh && !isManualRefresh) {
@@ -396,8 +408,8 @@ class SubscriptionProvider extends ChangeNotifier
         _notifyChanges();
 
         if (isManualRefresh) {
-          throw Exception(
-              'Network error. Please check your internet connection.');
+          throw Exception(getUserFriendlyErrorMessage(
+              'Network error. Please check your internet connection.'));
         }
         return;
       }
@@ -432,7 +444,7 @@ class SubscriptionProvider extends ChangeNotifier
           log('✅ Received ${_allSubscriptions.length} subscriptions from API');
         } else {
           _allSubscriptions = [];
-          setError(response.message);
+          setError(getUserFriendlyErrorMessage(response.message));
           log('ℹ️ No subscriptions found from API');
         }
 
@@ -462,7 +474,7 @@ class SubscriptionProvider extends ChangeNotifier
         log('✅ Success! Subscriptions loaded');
       } catch (e) {
         log('❌ Error loading subscriptions: $e');
-        setError(e.toString());
+        setError(getUserFriendlyErrorMessage(e));
         _hasLoaded = true;
         setLoaded();
         _notifyChanges();
@@ -474,7 +486,7 @@ class SubscriptionProvider extends ChangeNotifier
     } catch (e) {
       log('❌ Error loading subscriptions: $e');
 
-      setError(e.toString());
+      setError(getUserFriendlyErrorMessage(e));
 
       _hasLoaded = true;
       setLoaded();
@@ -488,7 +500,7 @@ class SubscriptionProvider extends ChangeNotifier
     }
   }
 
-  // ===== CHECK SUBSCRIPTION FOR CATEGORY - FIXED WITH QUEUE =====
+  // ===== CHECK SUBSCRIPTION FOR CATEGORY =====
   Future<bool> checkHasActiveSubscriptionForCategory(
     int categoryId, {
     bool isManualRefresh = false,
@@ -499,7 +511,8 @@ class SubscriptionProvider extends ChangeNotifier
     log('checkHasActiveSubscriptionForCategory() CALL #$callId for category $categoryId');
 
     if (isManualRefresh && isOffline) {
-      throw Exception('Network error. Please check your internet connection.');
+      throw Exception(getUserFriendlyErrorMessage(
+          'Network error. Please check your internet connection.'));
     }
 
     // Check cache first
@@ -547,8 +560,15 @@ class SubscriptionProvider extends ChangeNotifier
     _processNextRequest();
   }
 
+  // ✅ FIXED: Enhanced to use batch checking when possible
   Future<void> _processNextRequest() async {
     if (_pendingRequests.isEmpty || _activeRequests >= _maxConcurrentRequests) {
+      return;
+    }
+
+    // Check if we can do a batch request
+    if (_pendingRequests.length >= 3 && !isOffline) {
+      await _processBatchRequest();
       return;
     }
 
@@ -643,7 +663,83 @@ class SubscriptionProvider extends ChangeNotifier
     }
   }
 
-  // ===== CHECK MULTIPLE CATEGORIES - FIXED =====
+  // ✅ FIXED: New batch processing method
+  Future<void> _processBatchRequest() async {
+    if (_pendingRequests.isEmpty || isOffline) return;
+
+    // Check cooldown
+    if (_lastBatchCheck != null &&
+        DateTime.now().difference(_lastBatchCheck!) < _batchCheckCooldown) {
+      log('⏱️ Batch check cooldown, falling back to individual');
+      _processNextRequest(); // Fall back to individual
+      return;
+    }
+
+    // Collect up to 10 category IDs
+    final batchSize =
+        _pendingRequests.length > 10 ? 10 : _pendingRequests.length;
+    final batchRequests = _pendingRequests.sublist(0, batchSize);
+    final categoryIds =
+        batchRequests.map((r) => r['categoryId'] as int).toList();
+    final completers =
+        batchRequests.map((r) => r['completer'] as Completer<bool>).toList();
+
+    // Remove these from pending queue
+    _pendingRequests.removeRange(0, batchSize);
+
+    _activeRequests++;
+    _lastBatchCheck = DateTime.now();
+
+    try {
+      log('Processing batch request for ${categoryIds.length} categories');
+
+      final results =
+          await apiService.checkMultipleSubscriptions(categoryIds).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          log('⏱️ Batch API timeout');
+          return <int, bool>{};
+        },
+      );
+
+      // Process results
+      for (int i = 0; i < categoryIds.length; i++) {
+        final categoryId = categoryIds[i];
+        final completer = completers[i];
+
+        final hasSubscription = results[categoryId] ?? false;
+
+        _categoryAccessCache[categoryId] = hasSubscription;
+        _categoryCheckComplete[categoryId] = true;
+        _subscriptionUpdateController.add({categoryId: hasSubscription});
+
+        if (_categoryProvider != null) {
+          unawaited(_categoryProvider!
+              .updateCategorySubscriptionStatus(categoryId, hasSubscription));
+        }
+
+        completer.complete(hasSubscription);
+      }
+
+      log('✅ Batch processed ${results.length} results');
+    } catch (e) {
+      log('❌ Batch request failed: $e');
+      // Re-queue failed items as individual requests
+      for (int i = 0; i < categoryIds.length; i++) {
+        _pendingRequests.add({
+          'categoryId': categoryIds[i],
+          'completer': completers[i],
+          'timestamp': DateTime.now(),
+        });
+      }
+    } finally {
+      _activeRequests--;
+      // Continue processing
+      _processNextRequest();
+    }
+  }
+
+  // ===== CHECK MULTIPLE CATEGORIES =====
   Future<Map<int, bool>> checkSubscriptionsForCategories(
     List<int> categoryIds, {
     bool isManualRefresh = false,
@@ -665,23 +761,46 @@ class SubscriptionProvider extends ChangeNotifier
         categoryIds.where((id) => !results.containsKey(id)).toList();
 
     if (missingIds.isNotEmpty && !isOffline) {
-      log('Checking ${missingIds.length} missing categories (will be queued)');
+      log('Checking ${missingIds.length} missing categories');
 
-      // Create futures for all missing categories
-      final futures = missingIds.map((id) =>
-          checkHasActiveSubscriptionForCategory(id,
-              isManualRefresh: isManualRefresh));
+      // Try batch first if enough categories
+      if (missingIds.length >= 3 && !isOffline) {
+        try {
+          final batchResults =
+              await apiService.checkMultipleSubscriptions(missingIds);
+          if (batchResults.isNotEmpty) {
+            for (final entry in batchResults.entries) {
+              results[entry.key] = entry.value;
+              updates[entry.key] = entry.value;
+              _categoryAccessCache[entry.key] = entry.value;
+              _categoryCheckComplete[entry.key] = true;
+            }
 
-      // Wait for all to complete (they will be queued and processed sequentially)
-      final newResults = await Future.wait(futures);
+            // Remove successfully checked IDs
+            missingIds.removeWhere((id) => batchResults.containsKey(id));
+          }
+        } catch (e) {
+          log('Batch check failed, falling back to individual: $e');
+        }
+      }
 
-      for (int i = 0; i < missingIds.length; i++) {
-        results[missingIds[i]] = newResults[i];
-        updates[missingIds[i]] = newResults[i];
+      // Handle remaining IDs with individual checks
+      if (missingIds.isNotEmpty) {
+        final futures = missingIds.map((id) =>
+            checkHasActiveSubscriptionForCategory(id,
+                isManualRefresh: isManualRefresh));
+
+        final newResults = await Future.wait(futures);
+
+        for (int i = 0; i < missingIds.length; i++) {
+          results[missingIds[i]] = newResults[i];
+          updates[missingIds[i]] = newResults[i];
+        }
       }
     } else if (isOffline && missingIds.isNotEmpty && isManualRefresh) {
       log('❌ Offline with missing categories during manual refresh');
-      throw Exception('Network error. Please check your internet connection.');
+      throw Exception(getUserFriendlyErrorMessage(
+          'Network error. Please check your internet connection.'));
     }
 
     if (_categoryProvider != null && updates.isNotEmpty) {
@@ -692,8 +811,18 @@ class SubscriptionProvider extends ChangeNotifier
     return results;
   }
 
+  // ✅ FIXED: Rate limited background refresh
   Future<void> _refreshInBackground() async {
     if (isOffline) return;
+
+    // Rate limiting
+    if (_lastBackgroundRefresh != null &&
+        DateTime.now().difference(_lastBackgroundRefresh!) <
+            _minBackgroundInterval) {
+      log('⏱️ Background refresh rate limited');
+      return;
+    }
+    _lastBackgroundRefresh = DateTime.now();
 
     if (_lastBackgroundRefreshTime != null) {
       final minutesSinceLastRefresh =
@@ -800,9 +929,10 @@ class SubscriptionProvider extends ChangeNotifier
   @override
   Future<void> onOnlineRefresh() async {
     log('Online - refreshing subscriptions');
-    await loadSubscriptions(forceRefresh: true);
+    await loadSubscriptions();
   }
 
+  // ✅ FIXED: Clear user data with proper stream recreation
   Future<void> clearUserData() async {
     final session = UserSession();
     if (!session.shouldClearCacheOnLogout()) return;
@@ -821,15 +951,25 @@ class SubscriptionProvider extends ChangeNotifier
     _hasLoaded = false;
     _hasInitialData = false;
     _categoryCheckCompleters.clear();
+    _lastBackgroundRefresh = null;
+    _lastBatchCheck = null;
 
+    // FIX: Properly recreate streams
+    await _subscriptionUpdateController.close();
+    await _subscriptionsUpdateController.close();
+    _subscriptionUpdateController =
+        StreamController<Map<int, bool>>.broadcast();
+    _subscriptionsUpdateController =
+        StreamController<List<Subscription>>.broadcast();
     _subscriptionUpdateController.add({});
     _subscriptionsUpdateController.add([]);
+
     safeNotify();
   }
 
   @override
   void clearError() {
-    clearError();
+    super.clearError();
   }
 
   @override

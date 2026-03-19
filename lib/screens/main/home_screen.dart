@@ -1,5 +1,5 @@
 // lib/screens/main/home_screen.dart
-// COMPLETE PRODUCTION-READY FINAL VERSION - FIXED LOADING STATE
+// COMPLETE PRODUCTION-READY FINAL VERSION - FIXED PENDING COUNT
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -12,6 +12,7 @@ import '../../providers/category_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
+import '../../services/offline_queue_manager.dart';
 import '../../utils/helpers.dart';
 import '../../widgets/category/category_card.dart';
 import '../../widgets/common/app_bar.dart';
@@ -102,7 +103,8 @@ class _HomeScreenState extends State<HomeScreen>
       if (!mounted) return;
       setState(() {
         _isOffline = !isOnline;
-        _pendingCount = connectivityService.pendingActionsCount;
+        final queueManager = context.read<OfflineQueueManager>();
+        _pendingCount = queueManager.pendingCount;
       });
     });
   }
@@ -113,12 +115,12 @@ class _HomeScreenState extends State<HomeScreen>
     if (!mounted) return;
     setState(() {
       _isOffline = !connectivityService.isOnline;
-      _pendingCount = connectivityService.pendingActionsCount;
+      final queueManager = context.read<OfflineQueueManager>();
+      _pendingCount = queueManager.pendingCount;
     });
   }
 
   Future<void> _loadData() async {
-    // Only load categories if we don't have initial data from cache
     if (!_categoryProvider.hasInitialData) {
       await _categoryProvider.loadCategories();
     }
@@ -128,7 +130,6 @@ class _HomeScreenState extends State<HomeScreen>
 
   Future<void> _loadSubscriptionStatusInBackground() async {
     try {
-      // Only load subscriptions if we don't have initial data from cache
       if (!_subscriptionProvider.hasInitialData) {
         await _subscriptionProvider.loadSubscriptions();
       }
@@ -246,7 +247,6 @@ class _HomeScreenState extends State<HomeScreen>
     final activeCategories = _categoryProvider.activeCategories;
     final comingSoonCategories = _categoryProvider.comingSoonCategories;
 
-    // Use hasInitialData to determine if we should show shimmer
     final isLoading =
         _categoryProvider.isLoading && !_categoryProvider.hasInitialData;
     final hasLoaded = _categoryProvider.hasLoaded;
@@ -256,7 +256,7 @@ class _HomeScreenState extends State<HomeScreen>
     debugLog('HomeScreen',
         'BUILD - isLoading: $isLoading, hasLoaded: $hasLoaded, hasInitialData: $hasInitialData, categories: ${activeCategories.length}');
 
-    // 1. LOADING STATE - Only on first load with no data
+    // 1. LOADING STATE
     if (isLoading && !hasInitialData) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
@@ -278,7 +278,7 @@ class _HomeScreenState extends State<HomeScreen>
       );
     }
 
-    // 2. ERROR STATE - Only when we have error AND no data
+    // 2. ERROR STATE
     if (error != null && !hasInitialData) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
@@ -320,7 +320,7 @@ class _HomeScreenState extends State<HomeScreen>
       );
     }
 
-    // 4. EMPTY STATE - When we have no data but we're not loading
+    // 4. EMPTY STATE
     if (activeCategories.isEmpty && comingSoonCategories.isEmpty && hasLoaded) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),

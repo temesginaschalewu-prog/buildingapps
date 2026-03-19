@@ -1,5 +1,5 @@
 // lib/providers/course_provider.dart
-// COMPLETE PRODUCTION-READY FINAL VERSION - WITH REQUEST QUEUING
+// PRODUCTION-READY FINAL VERSION - FIXED RACE CONDITIONS
 
 import 'dart:async';
 import 'package:familyacademyclient/services/offline_queue_manager.dart';
@@ -33,6 +33,9 @@ class CourseProvider extends ChangeNotifier
   final Map<int, bool> _failedCategory = {};
   final Map<int, DateTime> _lastFailedAttempt = {};
 
+  // ✅ FIXED: Request deduplication
+  final Map<int, Future<void>?> _inFlightRequests = {};
+
   // Request queuing to prevent parallel API calls
   static const int _maxConcurrentRequests = 2;
   int _activeRequests = 0;
@@ -46,15 +49,16 @@ class CourseProvider extends ChangeNotifier
   Box? _coursesBox;
   int _apiCallCount = 0;
 
-  final StreamController<Map<int, List<Course>>> _coursesUpdateController =
-      StreamController<Map<int, List<Course>>>.broadcast();
+  // ✅ FIXED: Proper stream recreation
+  late StreamController<Map<int, List<Course>>> _coursesUpdateController;
 
   CourseProvider({
     required this.apiService,
     required this.deviceService,
     required this.connectivityService,
     required this.hiveService,
-  }) {
+  }) : _coursesUpdateController =
+            StreamController<Map<int, List<Course>>>.broadcast() {
     log('CourseProvider constructor called');
     initializeOfflineAware(
       connectivity: connectivityService,
@@ -184,7 +188,7 @@ class CourseProvider extends ChangeNotifier
   Stream<Map<int, List<Course>>> get coursesUpdates =>
       _coursesUpdateController.stream;
 
-  // ===== LOAD COURSES - FIXED WITH REQUEST QUEUING =====
+  // ===== LOAD COURSES - FIXED WITH REQUEST DEDUPLICATION =====
   Future<void> loadCoursesByCategory(
     int categoryId, {
     bool forceRefresh = false,
@@ -206,6 +210,18 @@ class CourseProvider extends ChangeNotifier
       _coursesUpdateController
           .add({categoryId: _coursesByCategory[categoryId]!});
       setLoaded();
+      return;
+    }
+
+    // ✅ FIXED: Check if request is already in flight
+    if (_inFlightRequests.containsKey(categoryId) && !forceRefresh) {
+      log('⏳ Request already in flight for category $categoryId, waiting...');
+      await _inFlightRequests[categoryId];
+      if (_hasLoadedCategory[categoryId] == true) {
+        _coursesUpdateController
+            .add({categoryId: _coursesByCategory[categoryId]!});
+        setLoaded();
+      }
       return;
     }
 
@@ -244,6 +260,27 @@ class CourseProvider extends ChangeNotifier
     _isLoadingCategory[categoryId] = true;
     safeNotify();
 
+    // ✅ FIXED: Store the future to deduplicate requests
+    _inFlightRequests[categoryId] = _executeLoadCoursesByCategory(
+      categoryId,
+      forceRefresh: forceRefresh,
+      hasAccess: hasAccess,
+      isManualRefresh: isManualRefresh,
+    );
+
+    try {
+      await _inFlightRequests[categoryId];
+    } finally {
+      _inFlightRequests.remove(categoryId);
+    }
+  }
+
+  Future<void> _executeLoadCoursesByCategory(
+    int categoryId, {
+    bool forceRefresh = false,
+    bool? hasAccess,
+    bool isManualRefresh = false,
+  }) async {
     try {
       // STEP 1: Check Hive cache first
       if (!forceRefresh) {
@@ -346,7 +383,7 @@ class CourseProvider extends ChangeNotifier
         return;
       }
 
-      // STEP 4: Queue the API request instead of executing immediately
+      // STEP 4: Queue the API request
       log('STEP 4: Queuing API request for category $categoryId');
       _queueCourseRequest(categoryId, forceRefresh, hasAccess, isManualRefresh);
     } catch (e) {
@@ -572,8 +609,21 @@ class CourseProvider extends ChangeNotifier
         forceRefresh: true, hasAccess: hasAccess);
   }
 
+  // ✅ FIXED: Background refresh with rate limiting
+  DateTime? _lastBackgroundRefresh;
+  static const Duration _minBackgroundInterval = Duration(minutes: 2);
+
   @override
   Future<void> onBackgroundRefresh() async {
+    // Rate limit background refreshes
+    if (_lastBackgroundRefresh != null &&
+        DateTime.now().difference(_lastBackgroundRefresh!) <
+            _minBackgroundInterval) {
+      log('⏱️ Background refresh rate limited');
+      return;
+    }
+    _lastBackgroundRefresh = DateTime.now();
+
     log('Background refresh triggered');
     if (isOffline) return;
 
@@ -601,6 +651,7 @@ class CourseProvider extends ChangeNotifier
     }
   }
 
+  // ✅ FIXED: Clear user data with proper stream recreation
   Future<void> clearUserData() async {
     final session = UserSession();
     if (!session.shouldClearCacheOnLogout()) return;
@@ -626,9 +677,21 @@ class CourseProvider extends ChangeNotifier
     _failedCategory.clear();
     _pendingRequests.clear();
     _activeRequests = 0;
+    _inFlightRequests.clear();
     stopBackgroundRefresh();
+
+    // ✅ FIXED: Properly recreate stream controller
+    await _coursesUpdateController.close();
+    _coursesUpdateController =
+        StreamController<Map<int, List<Course>>>.broadcast();
     _coursesUpdateController.add({});
+
     safeNotify();
+  }
+
+  @override
+  void clearError() {
+    super.clearError();
   }
 
   @override
@@ -637,6 +700,7 @@ class CourseProvider extends ChangeNotifier
     _coursesUpdateController.close();
     _coursesBox?.close();
     _pendingRequests.clear();
+    _inFlightRequests.clear();
     disposeSubscriptions();
     super.dispose();
   }

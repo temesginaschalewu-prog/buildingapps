@@ -1,5 +1,5 @@
 // lib/providers/base_provider.dart
-// COMPLETE PRODUCTION-READY FILE - CREATE THIS NEW FILE
+// COMPLETE FIXED VERSION - WITH SAFE CONTEXT PATTERN
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -33,12 +33,21 @@ mixin BaseProvider<T extends ChangeNotifier> on ChangeNotifier {
   }
 
   void setLoading() => setState(ProviderState.loading);
-  void setLoaded() => setState(ProviderState.loaded);
+
+  void setLoaded() {
+    if (_state == ProviderState.error) {
+      _errorMessage = null;
+    }
+    setState(ProviderState.loaded);
+  }
+
   void setOffline() => setState(ProviderState.offline);
   void setQueued() => setState(ProviderState.queued);
 
   void setError(String message) {
     setState(ProviderState.error, error: message);
+    _state = ProviderState.loaded;
+    safeNotify();
   }
 
   void clearError() {
@@ -81,25 +90,24 @@ mixin BaseProvider<T extends ChangeNotifier> on ChangeNotifier {
       clearError();
       return await action();
     } catch (e) {
-      setError(e.toString());
+      setError(getUserFriendlyErrorMessage(e));
       rethrow;
+    } finally {
+      setLoaded();
     }
   }
 
-  // Common cache key generator
   String getCacheKey(String base,
       {bool isUserSpecific = false, String? userId}) {
     if (!isUserSpecific || userId == null) return base;
     return 'user_${userId}_$base';
   }
 
-  // Logging helper
   void log(String message) {
     debugLog('${(this as T).runtimeType}', message);
   }
 }
 
-// Mixin for offline-aware providers
 mixin OfflineAwareProvider<T extends ChangeNotifier> on BaseProvider<T> {
   late final ConnectivityService connectivityService;
   late final OfflineQueueManager queueManager;
@@ -115,7 +123,6 @@ mixin OfflineAwareProvider<T extends ChangeNotifier> on BaseProvider<T> {
       connectivityService.onConnectivityChanged.listen(_onConnectivityChanged),
     );
 
-    // Initial state
     if (!connectivityService.isOnline) {
       setOffline();
     }
@@ -136,14 +143,9 @@ mixin OfflineAwareProvider<T extends ChangeNotifier> on BaseProvider<T> {
 
   Future<void> _onOnline() async {
     log('Online - processing queue and refreshing');
-
-    // Process queue first
     await queueManager.processQueue();
-
-    // Then refresh data if needed
     await onOnlineRefresh();
 
-    // Update state based on queue status
     if (queueManager.pendingCount > 0) {
       setQueued();
     } else {
@@ -153,20 +155,12 @@ mixin OfflineAwareProvider<T extends ChangeNotifier> on BaseProvider<T> {
 
   void _onOffline() {
     log('Offline - showing cached data');
-    // State already set to offline by connectivity handler
   }
 
-  // Override this in child providers to handle online refresh
-  Future<void> onOnlineRefresh() async {
-    // Default implementation - override as needed
-  }
+  Future<void> onOnlineRefresh() async {}
 
   bool ensureOnline({required BuildContext context, String? action}) {
     if (connectivityService.isOnline) return true;
-
-    if (context.mounted) {
-      // Show offline message - will be handled by screens
-    }
     return false;
   }
 
@@ -175,7 +169,6 @@ mixin OfflineAwareProvider<T extends ChangeNotifier> on BaseProvider<T> {
   }
 }
 
-// Mixin for providers that need background refresh
 mixin BackgroundRefreshMixin<T extends ChangeNotifier> on BaseProvider<T> {
   Timer? _refreshTimer;
   Duration get refreshInterval => const Duration(minutes: 5);
@@ -198,10 +191,7 @@ mixin BackgroundRefreshMixin<T extends ChangeNotifier> on BaseProvider<T> {
     _refreshTimer = null;
   }
 
-  // Override in child providers
-  Future<void> onBackgroundRefresh() async {
-    // Default implementation - override as needed
-  }
+  Future<void> onBackgroundRefresh() async {}
 
   @override
   void disposeSubscriptions() {

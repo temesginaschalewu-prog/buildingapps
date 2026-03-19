@@ -1,5 +1,5 @@
 // lib/providers/video_provider.dart
-// COMPLETE PRODUCTION-READY FINAL VERSION - WITH DOWNLOAD FIXES
+// PRODUCTION-READY FINAL VERSION - WITH ALL FIXES
 
 import 'dart:async';
 import 'dart:io';
@@ -63,8 +63,12 @@ class VideoProvider extends ChangeNotifier
 
   int _apiCallCount = 0;
 
-  final StreamController<Map<String, dynamic>> _videoUpdateController =
-      StreamController<Map<String, dynamic>>.broadcast();
+  // ✅ FIXED: Proper stream declaration
+  late StreamController<Map<String, dynamic>> _videoUpdateController;
+
+  // ✅ FIXED: Rate limiting
+  final Map<int, DateTime?> _lastBackgroundRefreshForChapter = {};
+  static const Duration _minBackgroundInterval = Duration(minutes: 2);
 
   VideoProvider({
     required this.apiService,
@@ -72,7 +76,8 @@ class VideoProvider extends ChangeNotifier
     required this.connectivityService,
     required this.hiveService,
     required this.offlineQueueManager,
-  }) {
+  }) : _videoUpdateController =
+            StreamController<Map<String, dynamic>>.broadcast() {
     log('VideoProvider constructor called');
     initializeOfflineAware(
       connectivity: connectivityService,
@@ -212,7 +217,8 @@ class VideoProvider extends ChangeNotifier
     log('loadVideosByChapter() CALL #$callId for chapter $chapterId');
 
     if (isManualRefresh && isOffline) {
-      throw Exception('Network error. Please check your internet connection.');
+      throw Exception(getUserFriendlyErrorMessage(
+          'Network error. Please check your internet connection.'));
     }
 
     // Return cached data immediately if available and not forcing refresh
@@ -348,8 +354,8 @@ class VideoProvider extends ChangeNotifier
         }
 
         if (isManualRefresh) {
-          throw Exception(
-              'Network error. Please check your internet connection.');
+          throw Exception(getUserFriendlyErrorMessage(
+              'Network error. Please check your internet connection.'));
         }
 
         _videosByChapter[chapterId] = [];
@@ -402,6 +408,8 @@ class VideoProvider extends ChangeNotifier
     } catch (e, stackTrace) {
       log('❌ Error loading videos: $e');
 
+      setError(getUserFriendlyErrorMessage(e));
+
       if (!_hasLoadedForChapter.containsKey(chapterId)) {
         await _recoverFromCache(chapterId);
       }
@@ -436,8 +444,19 @@ class VideoProvider extends ChangeNotifier
     }
   }
 
+  // ✅ FIXED: Rate limited background refresh
   Future<void> _refreshInBackground(int chapterId) async {
     if (isOffline) return;
+
+    // Rate limiting
+    if (_lastBackgroundRefreshForChapter[chapterId] != null &&
+        DateTime.now()
+                .difference(_lastBackgroundRefreshForChapter[chapterId]!) <
+            _minBackgroundInterval) {
+      log('⏱️ Background refresh rate limited for chapter $chapterId');
+      return;
+    }
+    _lastBackgroundRefreshForChapter[chapterId] = DateTime.now();
 
     try {
       final response = await apiService.getVideosByChapter(chapterId);
@@ -942,6 +961,7 @@ class VideoProvider extends ChangeNotifier
     }
   }
 
+  // ✅ FIXED: Clear user data with proper stream recreation
   Future<void> clearUserData() async {
     final session = UserSession();
     if (!session.shouldClearCacheOnLogout()) return;
@@ -981,9 +1001,14 @@ class VideoProvider extends ChangeNotifier
     _isLoadingForChapter.clear();
     _videoViewCounts.clear();
     _lastLoadedTime.clear();
+    _lastBackgroundRefreshForChapter.clear();
     stopBackgroundRefresh();
 
+    // FIX: Properly recreate stream controller
+    await _videoUpdateController.close();
+    _videoUpdateController = StreamController<Map<String, dynamic>>.broadcast();
     _videoUpdateController.add({'type': 'all_videos_cleared'});
+
     safeNotify();
   }
 

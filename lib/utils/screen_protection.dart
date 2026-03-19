@@ -1,15 +1,14 @@
 // lib/utils/screen_protection.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// PRODUCTION-READY FINAL VERSION
 
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import 'platform_helper.dart'; // Changed from platform_service.dart
+import 'platform_helper.dart';
 import 'helpers.dart';
 
 /// PRODUCTION-READY Screen Protection Service
-/// Handles screen recording prevention, secure mode, and orientation locking
 class ScreenProtectionService {
   static bool _protectionEnabled = true;
   static bool _initialized = false;
@@ -24,7 +23,6 @@ class ScreenProtectionService {
     if (_initialized) return;
 
     if (!PlatformHelper.isMobile) {
-      // ✅ Using PlatformHelper
       debugLog('ScreenProtection', '🖥️ Skipping initialization on desktop');
       _initialized = true;
       return;
@@ -47,7 +45,7 @@ class ScreenProtectionService {
   }
 
   static Future<void> enableSecureMode() async {
-    if (!PlatformHelper.isMobile) return; // ✅ Using PlatformHelper
+    if (!PlatformHelper.isMobile) return;
     if (_isSecureModeEnabled) return;
 
     try {
@@ -88,7 +86,7 @@ class ScreenProtectionService {
   }
 
   static Future<void> _setSafeSystemUiFlags() async {
-    if (!PlatformHelper.isMobile) return; // ✅ Using PlatformHelper
+    if (!PlatformHelper.isMobile) return;
 
     try {
       if (Platform.isAndroid) {
@@ -105,7 +103,7 @@ class ScreenProtectionService {
   }
 
   static Future<void> disableSplitScreen() async {
-    if (!PlatformHelper.isMobile) return; // ✅ Using PlatformHelper
+    if (!PlatformHelper.isMobile) return;
 
     try {
       if (Platform.isAndroid) {
@@ -133,7 +131,7 @@ class ScreenProtectionService {
   }
 
   static void enableOnResume() {
-    if (!PlatformHelper.isMobile) return; // ✅ Using PlatformHelper
+    if (!PlatformHelper.isMobile) return;
     if (!_protectionEnabled) return;
 
     _setSecureFlags(true);
@@ -148,13 +146,13 @@ class ScreenProtectionService {
   }
 
   static void disableOnPause() {
-    if (!PlatformHelper.isMobile) return; // ✅ Using PlatformHelper
+    if (!PlatformHelper.isMobile) return;
     _setSecureFlags(false);
     debugLog('ScreenProtection', '⚠️ Protection disabled on pause');
   }
 
   static void disable() {
-    if (!PlatformHelper.isMobile) return; // ✅ Using PlatformHelper
+    if (!PlatformHelper.isMobile) return;
     _protectionEnabled = false;
     _setSecureFlags(false);
 
@@ -169,7 +167,7 @@ class ScreenProtectionService {
   }
 
   static void enable() {
-    if (!PlatformHelper.isMobile) return; // ✅ Using PlatformHelper
+    if (!PlatformHelper.isMobile) return;
     _protectionEnabled = true;
     _setSecureFlags(true);
 
@@ -182,7 +180,7 @@ class ScreenProtectionService {
   }
 
   static void _setSecureFlags(bool secure) {
-    if (!PlatformHelper.isMobile) return; // ✅ Using PlatformHelper
+    if (!PlatformHelper.isMobile) return;
 
     try {
       if (Platform.isAndroid) {
@@ -198,7 +196,7 @@ class ScreenProtectionService {
   static bool isEnabled() => _protectionEnabled;
 
   static Widget protectWidget(Widget child, {bool enableProtection = true}) {
-    if (!PlatformHelper.isMobile) return child; // ✅ Using PlatformHelper
+    if (!PlatformHelper.isMobile) return child;
     if (!enableProtection || !_protectionEnabled) return child;
 
     return NotificationListener<UserScrollNotification>(
@@ -215,7 +213,7 @@ class ScreenProtectionService {
   }
 
   static Widget preventScreenshot(Widget child) {
-    if (!PlatformHelper.isMobile) return child; // ✅ Using PlatformHelper
+    if (!PlatformHelper.isMobile) return child;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
@@ -230,7 +228,7 @@ class ScreenProtectionService {
   }
 
   static Future<void> clear() async {
-    if (!PlatformHelper.isMobile) return; // ✅ Using PlatformHelper
+    if (!PlatformHelper.isMobile) return;
 
     _protectionEnabled = true;
     _initialized = false;
@@ -246,7 +244,7 @@ class ScreenProtectionService {
     debugLog('ScreenProtection', '🧹 Protection cleared');
   }
 
-  // NEW: Get current protection status
+  // Get current protection status
   static Map<String, dynamic> getStatus() {
     return {
       'isInitialized': _initialized,
@@ -257,7 +255,7 @@ class ScreenProtectionService {
     };
   }
 
-  // NEW: Toggle protection on/off
+  // Toggle protection on/off
   static Future<void> toggleProtection() async {
     if (_protectionEnabled) {
       disable();
@@ -266,7 +264,7 @@ class ScreenProtectionService {
     }
   }
 
-  // NEW: Force reapply protection settings
+  // Force reapply protection settings
   static Future<void> reapplyProtection() async {
     if (!PlatformHelper.isMobile) return;
     if (!_protectionEnabled) return;

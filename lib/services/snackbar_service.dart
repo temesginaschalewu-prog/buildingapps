@@ -1,3 +1,6 @@
+// lib/services/snackbar_service.dart
+// COMPLETE PRODUCTION-READY FILE - FIXED MESSAGE DEDUPLICATION
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../themes/app_colors.dart';
@@ -15,7 +18,7 @@ class SnackbarService {
   // Queue for messages when overlay not ready
   final List<Map<String, dynamic>> _messageQueue = [];
 
-  // NEW: Prevent duplicate messages
+  // ✅ FIXED: Message deduplication with cleanup
   final Set<String> _recentMessages = {};
   Timer? _messageCleanupTimer;
   static const Duration _messageDedupeDuration = Duration(seconds: 5);
@@ -25,21 +28,25 @@ class SnackbarService {
     required String message,
     SnackbarType type = SnackbarType.info,
     Duration duration = const Duration(seconds: 3),
-    String? id, // NEW: Optional ID for deduplication
+    String? id,
   }) {
-    // NEW: Deduplicate messages
+    // ✅ FIXED: Deduplicate messages
     final messageId = id ?? '$message${type.index}';
     if (_recentMessages.contains(messageId)) {
       return;
     }
     _recentMessages.add(messageId);
-    _messageCleanupTimer?.cancel();
-    _messageCleanupTimer = Timer(_messageDedupeDuration, _recentMessages.clear);
 
-    // ✅ FIX: Don't try to show if context isn't mounted
+    // ✅ FIXED: Clean up old messages periodically
+    _messageCleanupTimer?.cancel();
+    _messageCleanupTimer = Timer(_messageDedupeDuration, () {
+      _recentMessages.clear();
+    });
+
+    // Don't try to show if context isn't mounted
     if (!context.mounted) return;
 
-    // ✅ FIX: Check if we have a valid overlay
+    // Check if we have a valid overlay
     OverlayState? overlayState;
     try {
       overlayState = Overlay.maybeOf(context);

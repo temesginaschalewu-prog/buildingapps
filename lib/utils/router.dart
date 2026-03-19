@@ -1,3 +1,6 @@
+// lib/utils/router.dart
+// PRODUCTION-READY FINAL VERSION
+
 import 'package:familyacademyclient/models/exam_model.dart';
 import 'package:familyacademyclient/utils/responsive_values.dart';
 import 'package:flutter/material.dart';
@@ -191,7 +194,6 @@ class AppRouter {
           pageBuilder: (context, state) {
             Map<String, dynamic> extra = {};
 
-            // FIXED: Properly handle extra data
             debugLog('Router', 'DeviceChange route called');
 
             if (state.extra != null && state.extra is Map<String, dynamic>) {

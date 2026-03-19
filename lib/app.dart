@@ -1,5 +1,5 @@
 // lib/app.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// PRODUCTION-READY FINAL VERSION - FIXED CONNECTIVITY CALLS
 
 import 'dart:async';
 import 'dart:convert';
@@ -150,7 +150,10 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
         await _syncPendingActions();
         await _refreshAllData();
       } else if (!isOnline && !_wasOffline) {
-        final pendingCount = connectivityService.pendingActionsCount;
+        final queueManager =
+            Provider.of<queue.OfflineQueueManager>(context, listen: false);
+        final pendingCount = queueManager.pendingCount;
+
         if (pendingCount > 0) {
           _showSafeSnackbar(
             'You are offline. $pendingCount change${pendingCount > 1 ? 's' : ''} queued.',
@@ -313,11 +316,9 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
       final categoryProvider =
           Provider.of<CategoryProvider>(context, listen: false);
 
-      unawaited(subscriptionProvider
-          .loadSubscriptions(forceRefresh: true)
-          .catchError(
-              (e) => debugLog('FamilyAcademyApp', 'Refresh error: $e')));
-      unawaited(categoryProvider.loadCategories(forceRefresh: true).catchError(
+      unawaited(subscriptionProvider.loadSubscriptions().catchError(
+          (e) => debugLog('FamilyAcademyApp', 'Refresh error: $e')));
+      unawaited(categoryProvider.loadCategories().catchError(
           (e) => debugLog('FamilyAcademyApp', 'Refresh error: $e')));
     }
   }

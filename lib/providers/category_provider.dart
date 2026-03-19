@@ -1,5 +1,5 @@
 // lib/providers/category_provider.dart
-// COMPLETE PRODUCTION-READY FINAL VERSION - FIXED LOADING STATE
+// PRODUCTION-READY FINAL VERSION - FIXED STREAM RECREATION
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -39,15 +39,16 @@ class CategoryProvider extends ChangeNotifier
 
   Box? _categoriesBox;
 
-  final StreamController<List<Category>> _categoriesUpdateController =
-      StreamController<List<Category>>.broadcast();
+  // ✅ FIXED: Proper stream declaration with late
+  late StreamController<List<Category>> _categoriesUpdateController;
 
   CategoryProvider({
     required this.apiService,
     required this.deviceService,
     required this.connectivityService,
     required this.hiveService,
-  }) {
+  }) : _categoriesUpdateController =
+            StreamController<List<Category>>.broadcast() {
     log('CategoryProvider constructor called');
     initializeOfflineAware(
       connectivity: connectivityService,
@@ -339,7 +340,20 @@ class CategoryProvider extends ChangeNotifier
     }
   }
 
+  // ✅ FIXED: Background refresh with rate limiting
+  DateTime? _lastBackgroundRefresh;
+  static const Duration _minBackgroundInterval = Duration(minutes: 2);
+
   Future<void> _refreshInBackground() async {
+    // Rate limit background refreshes
+    if (_lastBackgroundRefresh != null &&
+        DateTime.now().difference(_lastBackgroundRefresh!) <
+            _minBackgroundInterval) {
+      log('⏱️ Background refresh rate limited');
+      return;
+    }
+    _lastBackgroundRefresh = DateTime.now();
+
     if (isOffline) return;
     try {
       final response = await apiService.getCategories();
@@ -411,9 +425,10 @@ class CategoryProvider extends ChangeNotifier
   @override
   Future<void> onOnlineRefresh() async {
     log('Online - refreshing categories');
-    await loadCategories(forceRefresh: true);
+    await loadCategories();
   }
 
+  // ✅ FIXED: Clear user data with proper stream recreation
   Future<void> clearUserData() async {
     final session = UserSession();
     final shouldClear = session.shouldClearCacheOnLogout();
@@ -429,7 +444,12 @@ class CategoryProvider extends ChangeNotifier
     _categorySubscriptionStatus.clear();
     _hasLoaded = false;
     _hasInitialData = false;
+
+    // ✅ FIXED: Properly recreate stream controller
+    await _categoriesUpdateController.close();
+    _categoriesUpdateController = StreamController<List<Category>>.broadcast();
     _categoriesUpdateController.add([]);
+
     safeNotify();
   }
 

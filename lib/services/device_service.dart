@@ -1,7 +1,8 @@
 // lib/services/device_service.dart
-// COMPLETE FIXED VERSION - Open ALL boxes as dynamic
+// PRODUCTION-READY FINAL VERSION - WITH CACHE PRUNING
 
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -25,20 +26,32 @@ import 'package:hive/hive.dart';
 import '../utils/helpers.dart';
 import 'hive_service.dart';
 
+// ✅ FIXED: CacheEntry class moved to top level
+class _CacheEntry {
+  final dynamic value;
+  final DateTime timestamp;
+  final Duration ttl;
+
+  _CacheEntry(this.value, this.timestamp, this.ttl);
+
+  bool isValid(DateTime now) => now.difference(timestamp) <= ttl;
+}
+
 class DeviceService {
   final DeviceInfoPlugin _deviceInfo = DeviceInfoPlugin();
   late SharedPreferences _prefs;
   static String? _persistentDeviceId;
 
-  final Map<String, dynamic> _memoryCache = {};
-  final Map<String, DateTime> _cacheTimestamps = {};
-  static const Duration _defaultCacheTTL = AppConstants.defaultCacheTTL;
+  // ✅ FIXED: Use LinkedHashMap with size limit
+  static const int _maxCacheSize = 100;
+  final LinkedHashMap<String, _CacheEntry> _memoryCache =
+      LinkedHashMap<String, _CacheEntry>();
 
   String? _currentUserId;
   bool _isInitialized = false;
   Future<void>? _initFuture;
 
-  // ALL BOXES OPENED AS DYNAMIC
+  // Hive boxes
   Box? _categoriesBox;
   Box? _coursesBox;
   Box? _chaptersBox;
@@ -76,16 +89,15 @@ class DeviceService {
       await _loadPersistentDeviceId();
       await _loadCurrentUserId();
 
-      // Open Hive boxes as dynamic
       await _openHiveBoxes();
 
       await saveDeviceInfo();
 
-      unawaited(_loadCacheFromPrefs().then((_) {
-        debugLog('DeviceService',
-            '✅ Cache loaded with ${_memoryCache.length} items');
-      }));
+      // Load cache from prefs
+      await _loadCacheFromPrefs();
 
+      debugLog(
+          'DeviceService', '✅ Cache loaded with ${_memoryCache.length} items');
       debugLog('DeviceService', '✅ Initialization complete');
       _isInitialized = true;
     } catch (e) {
@@ -94,6 +106,27 @@ class DeviceService {
           'fallback_${DateTime.now().millisecondsSinceEpoch}';
     } finally {
       _initFuture = null;
+    }
+  }
+
+  // ✅ FIXED: Prune cache when it gets too large
+  void _pruneCache() {
+    while (_memoryCache.length > _maxCacheSize) {
+      _memoryCache.remove(_memoryCache.keys.first);
+    }
+  }
+
+  // ✅ FIXED: Clean expired entries
+  void _cleanExpiredCache() {
+    final now = DateTime.now();
+    final expiredKeys = <String>[];
+    _memoryCache.forEach((key, entry) {
+      if (!entry.isValid(now)) {
+        expiredKeys.add(key);
+      }
+    });
+    for (final key in expiredKeys) {
+      _memoryCache.remove(key);
     }
   }
 
@@ -121,7 +154,6 @@ class DeviceService {
     try {
       final hiveService = HiveService();
 
-      // ALL BOXES OPENED AS DYNAMIC - NO TYPE SPECIFICATIONS
       _userBox = await hiveService.openBox<dynamic>(AppConstants.hiveUserBox);
       _categoriesBox =
           await hiveService.openBox<dynamic>(AppConstants.hiveCategoriesBox);
@@ -147,7 +179,7 @@ class DeviceService {
       _deviceInfoBox =
           await hiveService.openBox<Map<String, dynamic>>('device_info_box');
 
-      debugLog('DeviceService', '✅ Hive boxes opened (ALL dynamic)');
+      debugLog('DeviceService', '✅ Hive boxes opened');
     } catch (e) {
       debugLog('DeviceService', '⚠️ Error opening Hive boxes: $e');
     }
@@ -217,62 +249,57 @@ class DeviceService {
   // ===== CACHE METHODS =====
   Future<T?> getCacheItem<T>(String key, {bool isUserSpecific = false}) async {
     final cacheKey = _getCacheKey(key, isUserSpecific);
+    final now = DateTime.now();
 
+    // ✅ FIXED: Check memory cache with validation
     if (_memoryCache.containsKey(cacheKey)) {
-      final cacheData = _memoryCache[cacheKey] as Map<String, dynamic>?;
-      if (cacheData != null && _isCacheValid(cacheData)) {
-        return _decodeValue<T>(cacheData['value']);
+      final entry = _memoryCache[cacheKey]!;
+      if (entry.isValid(now)) {
+        return _decodeValue<T>(entry.value);
+      } else {
+        _memoryCache.remove(cacheKey);
       }
     }
 
+    // Try Hive
     try {
       final hiveKey = 'cache_$cacheKey';
-      Box? box;
-
-      if (key.contains('user') || key.contains('profile')) {
-        box = _userBox;
-      } else if (key.contains('categories')) {
-        box = _categoriesBox;
-      } else if (key.contains('courses')) {
-        box = _coursesBox;
-      } else if (key.contains('chapters')) {
-        box = _chaptersBox;
-      } else if (key.contains('videos')) {
-        box = _videosBox;
-      } else if (key.contains('notes')) {
-        box = _notesBox;
-      } else if (key.contains('questions')) {
-        box = _questionsBox;
-      } else if (key.contains('exams')) {
-        box = _examsBox;
-      } else if (key.contains('subscriptions')) {
-        box = _subscriptionsBox;
-      } else if (key.contains('payments')) {
-        box = _paymentsBox;
-      } else if (key.contains('notifications')) {
-        box = _notificationsBox;
-      } else if (key.contains('progress')) {
-        box = _progressBox;
-      }
+      Box? box = _getBoxForKey(key);
 
       if (box != null && box.containsKey(hiveKey)) {
-        final cached = box.get(hiveKey);
-        return cached as T?;
+        final value = box.get(hiveKey);
+        if (value != null) {
+          final ttl = _getDefaultTTLForType(T.toString());
+          _memoryCache[cacheKey] = _CacheEntry(value, now, ttl);
+          _pruneCache();
+          return _decodeValue<T>(value);
+        }
       }
-    } catch (e) {}
+    } catch (e) {
+      // Fall through to SharedPreferences
+    }
 
+    // Try SharedPreferences
     try {
       final cachedStr =
           _prefs.getString('${AppConstants.cachePrefix}$cacheKey');
       if (cachedStr != null) {
         final cacheData = json.decode(cachedStr) as Map<String, dynamic>;
-        if (_isCacheValid(cacheData)) {
-          _memoryCache[cacheKey] = cacheData;
-          _cacheTimestamps[cacheKey] = DateTime.parse(cacheData['timestamp']);
-          return _decodeValue<T>(cacheData['value']);
+        final timestamp = DateTime.parse(cacheData['timestamp']);
+        final ttl = Duration(
+            seconds: cacheData['ttl'] ??
+                _getDefaultTTLForType(T.toString()).inSeconds);
+
+        if (now.difference(timestamp) <= ttl) {
+          final value = cacheData['value'];
+          _memoryCache[cacheKey] = _CacheEntry(value, timestamp, ttl);
+          _pruneCache();
+          return _decodeValue<T>(value);
         }
       }
-    } catch (e) {}
+    } catch (e) {
+      // Cache miss or invalid
+    }
 
     return null;
   }
@@ -287,116 +314,122 @@ class DeviceService {
       {Duration? ttl, bool isUserSpecific = false}) async {
     try {
       final cacheKey = _getCacheKey(key, isUserSpecific);
+      final effectiveTtl = ttl ?? _getDefaultTTLForType(T.toString());
+      final now = DateTime.now();
 
-      final cacheData = {
-        'value': _encodeValue(value),
-        'timestamp': DateTime.now().toIso8601String(),
-        'ttl': (ttl ?? _getDefaultTTLForType(T.toString())).inSeconds,
-      };
+      // Save to memory cache
+      _memoryCache[cacheKey] = _CacheEntry(value, now, effectiveTtl);
+      _cleanExpiredCache();
+      _pruneCache();
 
-      _memoryCache[cacheKey] = cacheData;
-      _cacheTimestamps[cacheKey] = DateTime.now();
-
-      await _prefs.setString(
-          '${AppConstants.cachePrefix}$cacheKey', json.encode(cacheData));
-
+      // Save to Hive
       try {
         final hiveKey = 'cache_$cacheKey';
-
-        if (key.contains('user') || key.contains('profile')) {
-          if (_userBox != null) await _userBox!.put(hiveKey, value);
-        } else if (key.contains('categories')) {
-          if (_categoriesBox != null) await _categoriesBox!.put(hiveKey, value);
-        } else if (key.contains('courses')) {
-          if (_coursesBox != null) await _coursesBox!.put(hiveKey, value);
-        } else if (key.contains('chapters')) {
-          if (_chaptersBox != null) await _chaptersBox!.put(hiveKey, value);
-        } else if (key.contains('videos')) {
-          if (_videosBox != null) await _videosBox!.put(hiveKey, value);
-        } else if (key.contains('notes')) {
-          if (_notesBox != null) await _notesBox!.put(hiveKey, value);
-        } else if (key.contains('questions')) {
-          if (_questionsBox != null) await _questionsBox!.put(hiveKey, value);
-        } else if (key.contains('exams')) {
-          if (_examsBox != null) await _examsBox!.put(hiveKey, value);
-        } else if (key.contains('subscriptions')) {
-          if (_subscriptionsBox != null) {
-            await _subscriptionsBox!.put(hiveKey, value);
-          }
-        } else if (key.contains('payments')) {
-          if (_paymentsBox != null) await _paymentsBox!.put(hiveKey, value);
-        } else if (key.contains('notifications')) {
-          if (_notificationsBox != null) {
-            await _notificationsBox!.put(hiveKey, value);
-          }
-        } else if (key.contains('progress')) {
-          if (_progressBox != null) await _progressBox!.put(hiveKey, value);
+        final box = _getBoxForKey(key);
+        if (box != null) {
+          await box.put(hiveKey, value);
         }
-      } catch (e) {}
-    } catch (e) {}
+      } catch (e) {
+        // Hive save failed, continue with SharedPreferences
+      }
+
+      // Save to SharedPreferences as backup
+      final cacheData = {
+        'value': _encodeValue(value),
+        'timestamp': now.toIso8601String(),
+        'ttl': effectiveTtl.inSeconds,
+      };
+      await _prefs.setString(
+          '${AppConstants.cachePrefix}$cacheKey', json.encode(cacheData));
+    } catch (e) {
+      debugLog('DeviceService', 'Error saving cache item: $e');
+    }
+  }
+
+  Box? _getBoxForKey(String key) {
+    if (key.contains('user') || key.contains('profile')) return _userBox;
+    if (key.contains('categories')) return _categoriesBox;
+    if (key.contains('courses')) return _coursesBox;
+    if (key.contains('chapters')) return _chaptersBox;
+    if (key.contains('videos')) return _videosBox;
+    if (key.contains('notes')) return _notesBox;
+    if (key.contains('questions')) return _questionsBox;
+    if (key.contains('exams')) return _examsBox;
+    if (key.contains('subscriptions')) return _subscriptionsBox;
+    if (key.contains('payments')) return _paymentsBox;
+    if (key.contains('notifications')) return _notificationsBox;
+    if (key.contains('progress')) return _progressBox;
+    return null;
   }
 
   Future<void> removeCacheItem(String key,
       {bool isUserSpecific = false}) async {
     final cacheKey = _getCacheKey(key, isUserSpecific);
     _memoryCache.remove(cacheKey);
-    _cacheTimestamps.remove(cacheKey);
     await _prefs.remove('${AppConstants.cachePrefix}$cacheKey');
 
     try {
       final hiveKey = 'cache_$cacheKey';
-      if (_userBox?.containsKey(hiveKey) ?? false) {
-        await _userBox?.delete(hiveKey);
+      final box = _getBoxForKey(key);
+      if (box?.containsKey(hiveKey) ?? false) {
+        await box?.delete(hiveKey);
       }
-      if (_categoriesBox?.containsKey(hiveKey) ?? false) {
-        await _categoriesBox?.delete(hiveKey);
-      }
-      if (_coursesBox?.containsKey(hiveKey) ?? false) {
-        await _coursesBox?.delete(hiveKey);
-      }
-      if (_chaptersBox?.containsKey(hiveKey) ?? false) {
-        await _chaptersBox?.delete(hiveKey);
-      }
-      if (_videosBox?.containsKey(hiveKey) ?? false) {
-        await _videosBox?.delete(hiveKey);
-      }
-      if (_notesBox?.containsKey(hiveKey) ?? false) {
-        await _notesBox?.delete(hiveKey);
-      }
-      if (_questionsBox?.containsKey(hiveKey) ?? false) {
-        await _questionsBox?.delete(hiveKey);
-      }
-      if (_examsBox?.containsKey(hiveKey) ?? false) {
-        await _examsBox?.delete(hiveKey);
-      }
-      if (_subscriptionsBox?.containsKey(hiveKey) ?? false) {
-        await _subscriptionsBox?.delete(hiveKey);
-      }
-      if (_paymentsBox?.containsKey(hiveKey) ?? false) {
-        await _paymentsBox?.delete(hiveKey);
-      }
-      if (_notificationsBox?.containsKey(hiveKey) ?? false) {
-        await _notificationsBox?.delete(hiveKey);
-      }
-      if (_progressBox?.containsKey(hiveKey) ?? false) {
-        await _progressBox?.delete(hiveKey);
-      }
-    } catch (e) {}
+    } catch (e) {
+      // Ignore Hive errors
+    }
   }
 
   Future<void> clearCacheByPrefix(String prefix) async {
-    for (final key in _memoryCache.keys.toList()) {
-      if (key.startsWith(prefix) || key.contains(prefix)) {
-        _memoryCache.remove(key);
-        _cacheTimestamps.remove(key);
-      }
+    // Clear memory cache
+    final keysToRemove = _memoryCache.keys
+        .where((key) => key.startsWith(prefix) || key.contains(prefix))
+        .toList();
+    for (final key in keysToRemove) {
+      _memoryCache.remove(key);
     }
 
+    // Clear SharedPreferences
     for (final key in _prefs.getKeys()) {
       if (key.startsWith('${AppConstants.cachePrefix}$prefix') ||
           key.contains(prefix)) {
         await _prefs.remove(key);
       }
+    }
+
+    // Clear Hive (async, don't await)
+    unawaited(_clearHiveCacheByPrefix(prefix));
+  }
+
+  Future<void> _clearHiveCacheByPrefix(String prefix) async {
+    try {
+      final boxes = [
+        _userBox,
+        _categoriesBox,
+        _coursesBox,
+        _chaptersBox,
+        _videosBox,
+        _notesBox,
+        _questionsBox,
+        _examsBox,
+        _subscriptionsBox,
+        _paymentsBox,
+        _notificationsBox,
+        _progressBox
+      ];
+
+      for (final box in boxes) {
+        if (box == null) continue;
+        final keysToDelete = box.keys
+            .where((key) =>
+                key.toString().startsWith('cache_$prefix') ||
+                key.toString().contains(prefix))
+            .toList();
+        for (final key in keysToDelete) {
+          await box.delete(key);
+        }
+      }
+    } catch (e) {
+      debugLog('DeviceService', 'Error clearing Hive cache: $e');
     }
   }
 
@@ -429,29 +462,16 @@ class DeviceService {
     if (type.contains('Note')) return AppConstants.cacheTTLNotes;
     if (type.contains('Question')) return AppConstants.cacheTTLQuestions;
     if (type.contains('Exam')) return AppConstants.cacheTTLExams;
-    if (type.contains('Subscription')) {
+    if (type.contains('Subscription'))
       return AppConstants.cacheTTLSubscriptions;
-    }
     if (type.contains('Payment')) return AppConstants.cacheTTLPayments;
-    if (type.contains('Notification')) {
+    if (type.contains('Notification'))
       return AppConstants.cacheTTLNotifications;
-    }
     if (type.contains('Streak')) return AppConstants.cacheTTLStreak;
     if (type.contains('School')) return AppConstants.cacheTTLSchools;
     if (type.contains('Setting')) return AppConstants.cacheTTLSettings;
     if (type.contains('User')) return AppConstants.cacheTTLUserProfile;
-    return _defaultCacheTTL;
-  }
-
-  bool _isCacheValid(Map<String, dynamic> cacheData) {
-    try {
-      final timestamp = DateTime.parse(cacheData['timestamp']);
-      final ttl =
-          Duration(seconds: cacheData['ttl'] ?? _defaultCacheTTL.inSeconds);
-      return DateTime.now().difference(timestamp) <= ttl;
-    } catch (e) {
-      return false;
-    }
+    return AppConstants.defaultCacheTTL;
   }
 
   dynamic _encodeValue(dynamic value) {
@@ -459,31 +479,29 @@ class DeviceService {
       return value.map(_encodeValue).toList();
     } else if (value is Map) {
       return value;
-    } else if (value is Subscription) {
+    } else if (value is Subscription)
       return value.toJson();
-    } else if (value is Payment) {
+    else if (value is Payment)
       return value.toJson();
-    } else if (value is Setting) {
+    else if (value is Setting)
       return value.toJson();
-    } else if (value is School) {
+    else if (value is School)
       return value.toJson();
-    } else if (value is Category) {
+    else if (value is Category)
       return value.toJson();
-    } else if (value is Course) {
+    else if (value is Course)
       return value.toJson();
-    } else if (value is Chapter) {
+    else if (value is Chapter)
       return value.toJson();
-    } else if (value is Exam) {
+    else if (value is Exam)
       return value.toJson();
-    } else if (value is ExamResult) {
+    else if (value is ExamResult)
       return value.toJson();
-    } else if (value is UserProgress) {
+    else if (value is UserProgress)
       return value.toJson();
-    } else if (value is User) {
+    else if (value is User)
       return value.toJson();
-    } else if (value is Notification) {
-      return value.toJson();
-    }
+    else if (value is Notification) return value.toJson();
     return value;
   }
 
@@ -558,42 +576,30 @@ class DeviceService {
         }
       }
 
-      if (T == User && value is Map<String, dynamic>) {
+      if (T == User && value is Map<String, dynamic>)
         return User.fromJson(value) as T;
-      }
-      if (T == Subscription && value is Map) {
+      if (T == Subscription && value is Map)
         return Subscription.fromJson(value as Map<String, dynamic>) as T;
-      }
-      if (T == Payment && value is Map) {
+      if (T == Payment && value is Map)
         return Payment.fromJson(value as Map<String, dynamic>) as T;
-      }
-      if (T == Notification && value is Map<String, dynamic>) {
+      if (T == Notification && value is Map<String, dynamic>)
         return Notification.fromJson(value) as T;
-      }
-      if (T == Setting && value is Map) {
+      if (T == Setting && value is Map)
         return Setting.fromJson(value as Map<String, dynamic>) as T;
-      }
-      if (T == School && value is Map) {
+      if (T == School && value is Map)
         return School.fromJson(value as Map<String, dynamic>) as T;
-      }
-      if (T == Category && value is Map) {
+      if (T == Category && value is Map)
         return Category.fromJson(value as Map<String, dynamic>) as T;
-      }
-      if (T == Course && value is Map) {
+      if (T == Course && value is Map)
         return Course.fromJson(value as Map<String, dynamic>) as T;
-      }
-      if (T == Chapter && value is Map) {
+      if (T == Chapter && value is Map)
         return Chapter.fromJson(value as Map<String, dynamic>) as T;
-      }
-      if (T == Exam && value is Map) {
+      if (T == Exam && value is Map)
         return Exam.fromJson(value as Map<String, dynamic>) as T;
-      }
-      if (T == ExamResult && value is Map) {
+      if (T == ExamResult && value is Map)
         return ExamResult.fromJson(value as Map<String, dynamic>) as T;
-      }
-      if (T == UserProgress && value is Map) {
+      if (T == UserProgress && value is Map)
         return UserProgress.fromJson(value as Map<String, dynamic>) as T;
-      }
 
       return value as T?;
     } catch (e) {
@@ -613,12 +619,13 @@ class DeviceService {
               final cacheData = json.decode(cachedStr) as Map<String, dynamic>;
               final timestamp = DateTime.parse(cacheData['timestamp']);
               final ttl = Duration(
-                  seconds: cacheData['ttl'] ?? _defaultCacheTTL.inSeconds);
+                  seconds: cacheData['ttl'] ??
+                      AppConstants.defaultCacheTTL.inSeconds);
 
               if (DateTime.now().difference(timestamp) <= ttl) {
                 final cacheKey = key.substring(AppConstants.cachePrefix.length);
-                _memoryCache[cacheKey] = cacheData;
-                _cacheTimestamps[cacheKey] = timestamp;
+                _memoryCache[cacheKey] =
+                    _CacheEntry(cacheData['value'], timestamp, ttl);
               } else {
                 await _prefs.remove(key);
               }
@@ -628,6 +635,7 @@ class DeviceService {
           }
         }
       }
+      _pruneCache();
     } catch (e) {
       debugLog('DeviceService', 'Error loading cache: $e');
     }
@@ -665,19 +673,23 @@ class DeviceService {
           'is_physical_device': iosInfo.isPhysicalDevice,
         });
       }
-    } catch (e) {}
+    } catch (e) {
+      // Ignore device info errors
+    }
 
     return info;
   }
 
   Map<String, dynamic> getCacheStats() {
+    _cleanExpiredCache();
     return <String, dynamic>{
       'memory_cache_size': _memoryCache.length,
-      'cache_timestamps_size': _cacheTimestamps.length,
       'current_user_id': _currentUserId,
       'device_id': _persistentDeviceId,
     };
   }
 
-  void dispose() {}
+  void dispose() {
+    _memoryCache.clear();
+  }
 }

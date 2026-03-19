@@ -1,5 +1,5 @@
 // lib/providers/progress_provider.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// COMPLETE FIXED VERSION - SAFE TYPE CASTING
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -14,6 +14,7 @@ import '../providers/streak_provider.dart';
 import '../models/progress_model.dart';
 import '../utils/constants.dart';
 import '../utils/parsers.dart';
+import '../utils/helpers.dart';
 import 'base_provider.dart';
 
 /// PRODUCTION-READY Progress Provider with Full Offline Support
@@ -40,7 +41,7 @@ class ProgressProvider extends ChangeNotifier
 
   bool _hasLoadedOverall = false;
   bool _hasLoadedProgress = false;
-  bool _isLoadingOverall = false; // ADDED: missing variable
+  bool _isLoadingOverall = false;
 
   static const Duration _cacheDuration = AppConstants.cacheTTLUserProfile;
   static const Duration _saveDebounceDuration = Duration(seconds: 5);
@@ -55,13 +56,12 @@ class ProgressProvider extends ChangeNotifier
 
   int _apiCallCount = 0;
 
-  // CHANGED: Made these non-final so they can be reassigned in clearUserData
-  StreamController<List<UserProgress>> _progressUpdateController =
-      StreamController<List<UserProgress>>.broadcast();
-  StreamController<Map<int, UserProgress>> _chapterProgressController =
-      StreamController<Map<int, UserProgress>>.broadcast();
-  StreamController<Map<String, dynamic>> _overallStatsController =
-      StreamController<Map<String, dynamic>>.broadcast();
+  late StreamController<List<UserProgress>> _progressUpdateController;
+  late StreamController<Map<int, UserProgress>> _chapterProgressController;
+  late StreamController<Map<String, dynamic>> _overallStatsController;
+
+  DateTime? _lastBackgroundRefresh;
+  static const Duration _minBackgroundInterval = Duration(minutes: 2);
 
   ProgressProvider({
     required this.apiService,
@@ -70,7 +70,12 @@ class ProgressProvider extends ChangeNotifier
     required this.connectivityService,
     required this.hiveService,
     required this.offlineQueueManager,
-  }) {
+  })  : _progressUpdateController =
+            StreamController<List<UserProgress>>.broadcast(),
+        _chapterProgressController =
+            StreamController<Map<int, UserProgress>>.broadcast(),
+        _overallStatsController =
+            StreamController<Map<String, dynamic>>.broadcast() {
     log('ProgressProvider constructor called');
     initializeOfflineAware(
       connectivity: connectivityService,
@@ -81,7 +86,6 @@ class ProgressProvider extends ChangeNotifier
   }
 
   void _registerQueueProcessors() {
-    // Register processor for saving progress
     offlineQueueManager.registerProcessor(
       AppConstants.queueActionSaveProgress,
       _processSaveProgress,
@@ -92,7 +96,6 @@ class ProgressProvider extends ChangeNotifier
   Future<bool> _processSaveProgress(Map<String, dynamic> data) async {
     try {
       log('Processing offline progress save');
-
       final response = await apiService.saveUserProgress(
         chapterId: data['chapter_id'],
         videoProgress: data['video_progress'],
@@ -100,7 +103,6 @@ class ProgressProvider extends ChangeNotifier
         questionsAttempted: data['questions_attempted'],
         questionsCorrect: data['questions_correct'],
       );
-
       return response.success;
     } catch (e) {
       log('Error processing progress save: $e');
@@ -140,37 +142,79 @@ class ProgressProvider extends ChangeNotifier
     }
   }
 
+  // ✅ FIXED: Safe map conversion that handles all edge cases
+  Map<String, dynamic> _safeCastToMap(dynamic input) {
+    if (input == null) return {};
+    if (input is Map<String, dynamic>) return input;
+    if (input is Map) {
+      try {
+        final Map<String, dynamic> result = {};
+        input.forEach((key, value) {
+          result[key.toString()] = value;
+        });
+        return result;
+      } catch (e) {
+        log('Error converting map: $e');
+        return {};
+      }
+    }
+    return {};
+  }
+
+  // ✅ FIXED: Complete rewrite with safe casting
   Future<void> _loadCachedProgress() async {
     try {
       final userId = await UserSession().getCurrentUserId();
       if (userId == null) return;
 
-      // Load progress from Hive
       if (_progressBox != null) {
-        final cachedProgressMap = _progressBox!.get('user_${userId}_progress');
-        if (cachedProgressMap != null && cachedProgressMap is Map) {
+        final dynamic cachedProgressMap =
+            _progressBox!.get('user_${userId}_progress');
+
+        if (cachedProgressMap != null) {
           final Map<int, UserProgress> convertedMap = {};
-          cachedProgressMap.forEach((key, value) {
-            final int chapterId = int.tryParse(key.toString()) ?? 0;
-            if (chapterId > 0) {
-              if (value is UserProgress) {
-                convertedMap[chapterId] = value;
-              } else if (value is Map<String, dynamic>) {
-                convertedMap[chapterId] = UserProgress.fromJson(value);
-              } else if (value is Map<dynamic, dynamic>) {
-                // Convert Map<dynamic, dynamic> to Map<String, dynamic>
-                final stringMap =
-                    value.map((k, v) => MapEntry(k.toString(), v));
-                convertedMap[chapterId] = UserProgress.fromJson(stringMap);
+
+          if (cachedProgressMap is Map) {
+            try {
+              for (final entry in cachedProgressMap.entries) {
+                final key = entry.key;
+                final value = entry.value;
+                final int chapterId = int.tryParse(key.toString()) ?? 0;
+
+                if (chapterId > 0) {
+                  try {
+                    UserProgress progress;
+
+                    if (value is UserProgress) {
+                      progress = value;
+                    } else if (value is Map<String, dynamic>) {
+                      progress = UserProgress.fromJson(value);
+                    } else if (value is Map) {
+                      final safeMap = _safeCastToMap(value);
+                      if (safeMap.isNotEmpty) {
+                        progress = UserProgress.fromJson(safeMap);
+                      } else {
+                        continue;
+                      }
+                    } else {
+                      continue;
+                    }
+
+                    convertedMap[chapterId] = progress;
+                  } catch (e) {
+                    log('Error converting progress for chapter $chapterId: $e');
+                  }
+                }
               }
+            } catch (e) {
+              log('Error iterating progress map: $e');
             }
-          });
+          }
 
           if (convertedMap.isNotEmpty) {
             _progressByChapter = convertedMap;
             _userProgress = _progressByChapter.values.toList();
             _hasLoadedProgress = true;
-
             _progressUpdateController.add(_userProgress);
             _chapterProgressController.add(_progressByChapter);
             log('✅ Loaded ${_userProgress.length} progress entries from Hive');
@@ -178,20 +222,15 @@ class ProgressProvider extends ChangeNotifier
         }
       }
 
-      // Load stats from Hive
       if (_statsBox != null) {
-        final cachedStats = _statsBox!.get('user_${userId}_stats');
-        if (cachedStats != null && cachedStats is Map) {
-          final Map<String, dynamic> convertedStats = {};
-          cachedStats.forEach((key, value) {
-            convertedStats[key.toString()] = value;
-          });
-
+        final dynamic cachedStats = _statsBox!.get('user_${userId}_stats');
+        if (cachedStats != null) {
+          final Map<String, dynamic> convertedStats =
+              _safeCastToMap(cachedStats);
           if (convertedStats.isNotEmpty) {
             _overallStats = convertedStats;
             _hasLoadedOverall = true;
             _parseStatsFromMap();
-
             _overallStatsController.add(_overallStats);
             log('✅ Loaded stats from Hive');
             return;
@@ -199,7 +238,6 @@ class ProgressProvider extends ChangeNotifier
         }
       }
 
-      // Fall back to DeviceService
       log('Trying DeviceService cache');
       final cachedProgress =
           await deviceService.getCacheItem<Map<String, dynamic>>(
@@ -210,14 +248,14 @@ class ProgressProvider extends ChangeNotifier
       if (cachedProgress != null) {
         final progressList = cachedProgress['progress'] as List? ?? [];
         _userProgress = progressList
-            .map((json) => UserProgress.fromJson(json as Map<String, dynamic>))
+            .map((json) => UserProgress.fromJson(_safeCastToMap(json)))
+            .where((p) => p != null)
+            .cast<UserProgress>()
             .toList();
         _progressByChapter = {for (final p in _userProgress) p.chapterId: p};
         _hasLoadedProgress = true;
-
         _progressUpdateController.add(_userProgress);
         _chapterProgressController.add(_progressByChapter);
-
         await _saveProgressToHive();
       }
 
@@ -227,16 +265,13 @@ class ProgressProvider extends ChangeNotifier
         isUserSpecific: true,
       );
       if (cachedStats != null) {
-        _overallStats = cachedStats;
+        _overallStats = _safeCastToMap(cachedStats);
         _hasLoadedOverall = true;
         _parseStatsFromMap();
-
         _overallStatsController.add(_overallStats);
-
         await _saveStatsToHive();
       }
 
-      // If online, refresh in background
       if (!isOffline) {
         unawaited(_loadAllProgressFromApi());
       }
@@ -301,7 +336,7 @@ class ProgressProvider extends ChangeNotifier
 
   bool get hasLoadedOverall => _hasLoadedOverall;
   bool get hasLoadedProgress => _hasLoadedProgress;
-  bool get isLoadingOverall => _isLoadingOverall; // ADDED: getter
+  bool get isLoadingOverall => _isLoadingOverall;
 
   Stream<List<UserProgress>> get progressUpdates =>
       _progressUpdateController.stream;
@@ -342,29 +377,29 @@ class ProgressProvider extends ChangeNotifier
     return (correctQuestions / attemptedQuestions) * 100;
   }
 
-  // ===== LOAD ALL PROGRESS FROM API =====
   Future<void> _loadAllProgressFromApi() async {
-    if (isOffline) {
-      log('Offline, skipping API call');
+    if (isOffline) return;
+    if (_lastBackgroundRefresh != null &&
+        DateTime.now().difference(_lastBackgroundRefresh!) <
+            _minBackgroundInterval) {
+      log('⏱️ Background refresh rate limited');
       return;
     }
+    _lastBackgroundRefresh = DateTime.now();
 
     try {
       final response = await apiService.getOverallProgress();
 
       if (response.success && response.data != null) {
-        _overallStats = response.data!;
+        _overallStats = _safeCastToMap(response.data);
         _parseStatsFromMap();
-
         await _saveStatsToHive();
-
         deviceService.saveCacheItem(
           AppConstants.overallStatsKey,
           _overallStats,
           ttl: _cacheDuration,
           isUserSpecific: true,
         );
-
         _hasLoadedOverall = true;
         _overallStatsController.add(_overallStats);
         safeNotify();
@@ -375,7 +410,6 @@ class ProgressProvider extends ChangeNotifier
     }
   }
 
-  // ===== LOAD OVERALL PROGRESS =====
   Future<void> loadOverallProgress({
     bool forceRefresh = false,
     bool isManualRefresh = false,
@@ -386,7 +420,8 @@ class ProgressProvider extends ChangeNotifier
     log('loadOverallProgress() CALL #$callId');
 
     if (isManualRefresh && isOffline) {
-      throw Exception('Network error. Please check your internet connection.');
+      throw Exception(getUserFriendlyErrorMessage(
+          'Network error. Please check your internet connection.'));
     }
 
     if (_hasLoadedOverall && !forceRefresh) {
@@ -401,29 +436,24 @@ class ProgressProvider extends ChangeNotifier
       return;
     }
 
-    _isLoadingOverall = true; // FIXED: Now using the variable
+    _isLoadingOverall = true;
     setLoading();
 
     try {
-      // STEP 1: Try Hive first
       if (!forceRefresh) {
         log('STEP 1: Checking Hive cache');
         final userId = await UserSession().getCurrentUserId();
         if (userId != null && _statsBox != null) {
-          final cachedStats = _statsBox!.get('user_${userId}_stats');
-          if (cachedStats != null && cachedStats is Map) {
-            final Map<String, dynamic> convertedStats = {};
-            cachedStats.forEach((key, value) {
-              convertedStats[key.toString()] = value;
-            });
-
+          final dynamic cachedStats = _statsBox!.get('user_${userId}_stats');
+          if (cachedStats != null) {
+            final Map<String, dynamic> convertedStats =
+                _safeCastToMap(cachedStats);
             if (convertedStats.isNotEmpty) {
               _overallStats = convertedStats;
               _hasLoadedOverall = true;
-              _isLoadingOverall = false; // FIXED
+              _isLoadingOverall = false;
               setLoaded();
               _parseStatsFromMap();
-
               _overallStatsController.add(_overallStats);
               log('✅ Loaded stats from Hive');
 
@@ -436,7 +466,6 @@ class ProgressProvider extends ChangeNotifier
         }
       }
 
-      // STEP 2: Try DeviceService
       if (!forceRefresh) {
         log('STEP 2: Checking DeviceService cache');
         final cachedStats =
@@ -445,17 +474,14 @@ class ProgressProvider extends ChangeNotifier
           isUserSpecific: true,
         );
         if (cachedStats != null) {
-          _overallStats = cachedStats;
+          _overallStats = _safeCastToMap(cachedStats);
           _hasLoadedOverall = true;
-          _isLoadingOverall = false; // FIXED
+          _isLoadingOverall = false;
           setLoaded();
           _parseStatsFromMap();
-
           _overallStatsController.add(_overallStats);
           log('✅ Loaded stats from DeviceService');
-
           await _saveStatsToHive();
-
           if (!isOffline && !isManualRefresh) {
             unawaited(_loadAllProgressFromApi());
           }
@@ -463,63 +489,59 @@ class ProgressProvider extends ChangeNotifier
         }
       }
 
-      // STEP 3: Check offline status
       if (isOffline) {
         log('STEP 3: Offline mode');
         if (_overallStats.isNotEmpty) {
           _hasLoadedOverall = true;
-          _isLoadingOverall = false; // FIXED
+          _isLoadingOverall = false;
           setLoaded();
           _overallStatsController.add(_overallStats);
           log('✅ Showing cached progress offline');
           return;
         }
 
-        setError('You are offline. No cached progress available.');
+        setError(getUserFriendlyErrorMessage(
+            'You are offline. No cached progress available.'));
         _setEmptyProgressData();
         _overallStatsController.add(_overallStats);
-        _isLoadingOverall = false; // FIXED
+        _isLoadingOverall = false;
         setLoaded();
 
         if (isManualRefresh) {
-          throw Exception(
-              'Network error. Please check your internet connection.');
+          throw Exception(getUserFriendlyErrorMessage(
+              'Network error. Please check your internet connection.'));
         }
         return;
       }
 
-      // STEP 4: Fetch from API
       log('STEP 4: Fetching from API');
       final response = await apiService.getOverallProgress();
 
       if (response.success && response.data != null) {
-        _overallStats = response.data!;
+        _overallStats = _safeCastToMap(response.data);
         _hasLoadedOverall = true;
-        _isLoadingOverall = false; // FIXED
+        _isLoadingOverall = false;
         setLoaded();
         _parseStatsFromMap();
         log('✅ Received stats from API');
-
         await _saveStatsToHive();
-
         deviceService.saveCacheItem(
           AppConstants.overallStatsKey,
           _overallStats,
           ttl: _cacheDuration,
           isUserSpecific: true,
         );
-
         _overallStatsController.add(_overallStats);
         log('✅ Success! Overall progress loaded');
       } else {
-        setError(response.message);
+        setError(getUserFriendlyErrorMessage(response.message));
         log('❌ API error: ${response.message}');
         final restoredFromCache = await _restoreOverallStatsFromCache();
         if (!restoredFromCache && !_hasLoadedOverall) {
           _setEmptyProgressData();
         }
         _hasLoadedOverall = true;
-        _isLoadingOverall = false; // FIXED
+        _isLoadingOverall = false;
         setLoaded();
         _overallStatsController.add(_overallStats);
 
@@ -529,11 +551,9 @@ class ProgressProvider extends ChangeNotifier
       }
     } catch (e) {
       log('❌ Error loading overall progress: $e');
-
-      setError(e.toString());
-      _isLoadingOverall = false; // FIXED
+      setError(getUserFriendlyErrorMessage(e));
+      _isLoadingOverall = false;
       setLoaded();
-
       final restoredFromCache = await _restoreOverallStatsFromCache();
       if (!restoredFromCache && !_hasLoadedOverall) {
         _setEmptyProgressData();
@@ -586,13 +606,10 @@ class ProgressProvider extends ChangeNotifier
     try {
       final userId = await UserSession().getCurrentUserId();
       if (userId != null && _statsBox != null) {
-        final cachedStats = _statsBox!.get('user_${userId}_stats');
-        if (cachedStats != null && cachedStats is Map) {
-          final Map<String, dynamic> convertedStats = {};
-          cachedStats.forEach((key, value) {
-            convertedStats[key.toString()] = value;
-          });
-
+        final dynamic cachedStats = _statsBox!.get('user_${userId}_stats');
+        if (cachedStats != null) {
+          final Map<String, dynamic> convertedStats =
+              _safeCastToMap(cachedStats);
           if (convertedStats.isNotEmpty) {
             _overallStats = convertedStats;
             _hasLoadedOverall = true;
@@ -611,7 +628,7 @@ class ProgressProvider extends ChangeNotifier
       );
       if (cachedStats == null) return false;
 
-      _overallStats = cachedStats;
+      _overallStats = _safeCastToMap(cachedStats);
       _hasLoadedOverall = true;
       _parseStatsFromMap();
       _overallStatsController.add(_overallStats);
@@ -623,7 +640,6 @@ class ProgressProvider extends ChangeNotifier
     }
   }
 
-  // ===== SAVE CHAPTER PROGRESS =====
   Future<void> saveChapterProgress({
     required int chapterId,
     int? videoProgress,
@@ -817,6 +833,7 @@ class ProgressProvider extends ChangeNotifier
     await deviceService.clearCacheByPrefix('progress_');
     await deviceService.clearCacheByPrefix('pending_');
     stopBackgroundRefresh();
+    _lastBackgroundRefresh = null;
 
     _userProgress = [];
     _progressByChapter = {};
@@ -827,12 +844,10 @@ class ProgressProvider extends ChangeNotifier
     _hasLoadedOverall = false;
     _hasLoadedProgress = false;
 
-    // FIXED: Close existing controllers
     await _progressUpdateController.close();
     await _chapterProgressController.close();
     await _overallStatsController.close();
 
-    // FIXED: Create new controllers (not final anymore)
     _progressUpdateController =
         StreamController<List<UserProgress>>.broadcast();
     _chapterProgressController =
@@ -843,12 +858,12 @@ class ProgressProvider extends ChangeNotifier
     _progressUpdateController.add(_userProgress);
     _chapterProgressController.add(_progressByChapter);
     _overallStatsController.add(_overallStats);
+
     safeNotify();
   }
 
   @override
   void clearError() {
-    // ADDED: @override annotation
     super.clearError();
   }
 

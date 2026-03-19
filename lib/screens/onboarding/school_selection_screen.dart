@@ -1,5 +1,5 @@
 // lib/screens/onboarding/school_selection_screen.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// COMPLETE PRODUCTION-READY FILE - FIXED PENDING COUNT
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -13,6 +13,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/device_service.dart';
 import '../../services/snackbar_service.dart';
+import '../../services/offline_queue_manager.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_text_field.dart';
@@ -83,10 +84,10 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
       if (mounted) {
         setState(() {
           _isOffline = !isOnline;
-          _pendingCount = connectivityService.pendingActionsCount;
+          final queueManager = context.read<OfflineQueueManager>();
+          _pendingCount = queueManager.pendingCount;
         });
 
-        // Auto-refresh when coming online
         if (isOnline && !_schoolsLoaded) {
           _loadSchools(forceRefresh: true);
         }
@@ -100,15 +101,16 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
     if (mounted) {
       setState(() {
         _isOffline = !connectivityService.isOnline;
-        _pendingCount = connectivityService.pendingActionsCount;
+        final queueManager = context.read<OfflineQueueManager>();
+        _pendingCount = queueManager.pendingCount;
       });
     }
   }
 
   Future<void> _checkPendingCount() async {
-    final connectivity = ConnectivityService();
+    final queueManager = context.read<OfflineQueueManager>();
     if (mounted) {
-      setState(() => _pendingCount = connectivity.pendingActionsCount);
+      setState(() => _pendingCount = queueManager.pendingCount);
     }
   }
 
@@ -492,7 +494,6 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
     final hasVisibleSchools =
         _filteredSchools.isNotEmpty || schoolProvider.schools.isNotEmpty;
 
-    // 1. LOADING STATE (Shimmer)
     if (schoolProvider.isLoading && !_schoolsLoaded && !hasVisibleSchools) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
@@ -529,7 +530,6 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
       );
     }
 
-    // 2. MAIN CONTENT
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: AppBar(
@@ -559,7 +559,6 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
       ),
       body: Column(
         children: [
-          // Pending count banner (if offline with pending actions)
           if (_isOffline && _pendingCount > 0)
             Container(
               margin: EdgeInsets.all(ResponsiveValues.spacingM(context)),
@@ -592,8 +591,6 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                 ],
               ),
             ),
-
-          // Scrollable list of schools
           Expanded(
             child: CustomScrollView(
               slivers: [
@@ -622,8 +619,6 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
               ],
             ),
           ),
-
-          // Fixed bottom button section
           Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -642,7 +637,6 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Offline banner
                   if (_isOffline)
                     Container(
                       padding: ResponsiveValues.cardPadding(context),
@@ -675,8 +669,6 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                         ],
                       ),
                     ),
-
-                  // Continue button
                   SizedBox(
                     width: double.infinity,
                     child: AppButton(

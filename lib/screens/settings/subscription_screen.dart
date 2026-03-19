@@ -1,5 +1,5 @@
 // lib/screens/settings/subscription_screen.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// COMPLETE FIXED VERSION - NULL SAFETY IN INITSTATE
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -11,6 +11,7 @@ import '../../models/subscription_model.dart';
 import '../../providers/subscription_provider.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
+import '../../services/offline_queue_manager.dart';
 import '../../utils/ui_helpers.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_button.dart';
@@ -24,7 +25,6 @@ import '../../utils/responsive_values.dart';
 import '../../utils/helpers.dart';
 import '../../utils/constants.dart';
 
-/// PRODUCTION-READY SUBSCRIPTION SCREEN with 3-Tier Caching
 class SubscriptionScreen extends StatefulWidget {
   const SubscriptionScreen({super.key});
 
@@ -39,100 +39,120 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
   int _pendingCount = 0;
   Timer? _refreshTimer;
   StreamSubscription? _connectivitySubscription;
+  String? _errorMessage;
+  bool _isMounted = false; // ✅ Track mounted state
 
   bool _hasCachedData = false;
 
   @override
   void initState() {
     super.initState();
+    _isMounted = true;
 
+    // ✅ DON'T access context here - use post frame callback
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initialize();
+      if (_isMounted) {
+        _initialize();
+      }
     });
 
     _refreshTimer = Timer.periodic(const Duration(minutes: 5), (_) {
-      if (mounted && !_isOffline) {
-        _loadSubscriptions(forceRefresh: true); // TIER 3
+      if (_isMounted && !_isOffline) {
+        _loadSubscriptions(forceRefresh: true);
       }
     });
   }
 
   @override
   void dispose() {
+    _isMounted = false; // ✅ Mark as unmounted immediately
     _refreshTimer?.cancel();
     _connectivitySubscription?.cancel();
     super.dispose();
   }
 
   Future<void> _initialize() async {
+    if (!_isMounted) return;
+
     await _checkConnectivity();
     _setupConnectivityListener();
     _checkPendingCount();
-    _checkCachedData(); // TIER 1 & 2
-    _loadSubscriptions(); // TIER 1 & 2
+    _checkCachedData();
+    _loadSubscriptions();
   }
 
   void _setupConnectivityListener() {
+    if (!_isMounted) return;
+
     final connectivityService = context.read<ConnectivityService>();
     _connectivitySubscription =
         connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (mounted) {
-        setState(() {
-          _isOffline = !isOnline;
-          _pendingCount = connectivityService.pendingActionsCount;
-        });
+      if (!_isMounted) return;
 
-        // Auto-refresh when coming online
-        if (isOnline && !_isRefreshing) {
-          _loadSubscriptions(forceRefresh: true);
-        }
+      setState(() {
+        _isOffline = !isOnline;
+        final queueManager = context.read<OfflineQueueManager>();
+        _pendingCount = queueManager.pendingCount;
+      });
+
+      if (isOnline && !_isRefreshing) {
+        _loadSubscriptions(forceRefresh: true);
       }
     });
   }
 
   Future<void> _checkConnectivity() async {
+    if (!_isMounted) return;
+
     final connectivityService = context.read<ConnectivityService>();
     await connectivityService.checkConnectivity();
-    if (mounted) {
-      setState(() {
-        _isOffline = !connectivityService.isOnline;
-        _pendingCount = connectivityService.pendingActionsCount;
-      });
-    }
+    if (!_isMounted) return;
+
+    setState(() {
+      _isOffline = !connectivityService.isOnline;
+      final queueManager = context.read<OfflineQueueManager>();
+      _pendingCount = queueManager.pendingCount;
+    });
   }
 
   Future<void> _checkPendingCount() async {
-    final connectivityService = context.read<ConnectivityService>();
-    if (mounted) {
-      setState(() => _pendingCount = connectivityService.pendingActionsCount);
+    final queueManager = context.read<OfflineQueueManager>();
+    if (_isMounted) {
+      setState(() => _pendingCount = queueManager.pendingCount);
     }
   }
 
-  // TIER 1 & 2: Check if we have cached data
   void _checkCachedData() {
     final subscriptionProvider = context.read<SubscriptionProvider>();
-    // ✅ FIXED: Changed hasLoaded to isLoaded
     _hasCachedData = subscriptionProvider.isLoaded &&
         subscriptionProvider.allSubscriptions.isNotEmpty;
   }
 
-  // TIER 1 & 2 & 3: Load subscriptions
   Future<void> _loadSubscriptions({bool forceRefresh = false}) async {
+    if (!_isMounted) return;
+
     final subscriptionProvider = context.read<SubscriptionProvider>();
-    await subscriptionProvider.loadSubscriptions(
-        forceRefresh: forceRefresh && !_isOffline); // Provider handles 3-tier
-    if (mounted) {
-      setState(() {
-        // ✅ FIXED: Changed hasLoaded to isLoaded
-        _hasCachedData = subscriptionProvider.isLoaded &&
-            subscriptionProvider.allSubscriptions.isNotEmpty;
-      });
+    try {
+      await subscriptionProvider.loadSubscriptions(
+          forceRefresh: forceRefresh && !_isOffline);
+      if (_isMounted) {
+        setState(() {
+          _hasCachedData = subscriptionProvider.isLoaded &&
+              subscriptionProvider.allSubscriptions.isNotEmpty;
+          _errorMessage = null;
+        });
+      }
+    } catch (e) {
+      if (_isMounted) {
+        setState(() {
+          _errorMessage = getUserFriendlyErrorMessage(e);
+        });
+      }
     }
   }
 
-  // Manual refresh with connectivity check
   Future<void> _manualRefresh() async {
-    if (_isRefreshing) return;
+    if (_isRefreshing || !_isMounted) return;
 
     final connectivityService = context.read<ConnectivityService>();
     if (!connectivityService.isOnline) {
@@ -146,19 +166,22 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
     try {
       final subscriptionProvider = context.read<SubscriptionProvider>();
       await subscriptionProvider.loadSubscriptions(
-          forceRefresh: true, isManualRefresh: true); // TIER 3
-      setState(() => _isOffline = false);
+          forceRefresh: true, isManualRefresh: true);
+      setState(() {
+        _isOffline = false;
+        _errorMessage = null;
+      });
       SnackbarService().showSuccess(context, AppStrings.subscriptionsUpdated);
     } catch (e) {
       if (isNetworkError(e)) {
         setState(() => _isOffline = true);
         SnackbarService().showOffline(context, action: AppStrings.refresh);
       } else {
-        setState(() => _isOffline = false);
+        setState(() => _errorMessage = getUserFriendlyErrorMessage(e));
         SnackbarService().showError(context, AppStrings.refreshFailed);
       }
     } finally {
-      if (mounted) setState(() => _isRefreshing = false);
+      if (_isMounted) setState(() => _isRefreshing = false);
     }
   }
 
@@ -541,7 +564,26 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
     final expiredSubscriptions = subscriptionProvider.expiredSubscriptions;
     final allSubscriptions = subscriptionProvider.allSubscriptions;
 
-    // 1. LOADING STATE
+    if (_errorMessage != null) {
+      return Scaffold(
+        backgroundColor: AppColors.getBackground(context),
+        appBar: CustomAppBar(
+          title: AppStrings.mySubscriptions,
+          subtitle: AppStrings.error,
+          leading: AppButton.icon(
+              icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
+          showOfflineIndicator: _isOffline,
+        ),
+        body: Center(
+          child: AppEmptyState.error(
+            title: AppStrings.error,
+            message: _errorMessage!,
+            onRetry: _manualRefresh,
+          ),
+        ),
+      );
+    }
+
     if (subscriptionProvider.isLoading && !_hasCachedData) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
@@ -556,7 +598,6 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
       );
     }
 
-    // 2. MAIN CONTENT
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: CustomAppBar(
@@ -577,7 +618,6 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
         child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
-            // Pending count banner (if offline with pending actions)
             if (_isOffline && _pendingCount > 0)
               SliverToBoxAdapter(
                 child: Container(
@@ -612,7 +652,6 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                   ),
                 ),
               ),
-
             SliverPadding(
               padding: EdgeInsets.symmetric(
                 horizontal: ResponsiveValues.spacingL(context),
@@ -628,8 +667,6 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                 ),
               ),
             ),
-
-            // Active Subscriptions Section
             if (activeSubscriptions.isNotEmpty) ...[
               SliverPadding(
                 padding: EdgeInsets.fromLTRB(
@@ -684,8 +721,6 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                 ),
               ),
             ],
-
-            // Expired Subscriptions Section
             if (expiredSubscriptions.isNotEmpty) ...[
               SliverPadding(
                 padding: EdgeInsets.fromLTRB(
@@ -740,8 +775,6 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                 ),
               ),
             ],
-
-            // Empty State
             if (allSubscriptions.isEmpty && !subscriptionProvider.isLoading)
               SliverFillRemaining(
                 child: Center(
@@ -762,8 +795,6 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                         ),
                 ),
               ),
-
-            // Loading indicator while refreshing
             if (subscriptionProvider.isLoading && allSubscriptions.isNotEmpty)
               const SliverToBoxAdapter(
                 child: Padding(

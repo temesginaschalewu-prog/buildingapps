@@ -1,5 +1,5 @@
 // lib/screens/course/course_detail_screen.dart
-// COMPLETE PRODUCTION-READY FINAL VERSION - FIXED CHAPTER/EXAM LOADING
+// COMPLETE PRODUCTION-READY FILE - FIXED PENDING COUNT
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -22,6 +22,7 @@ import '../../providers/payment_provider.dart';
 import '../../services/device_service.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
+import '../../services/offline_queue_manager.dart';
 import '../../widgets/chapter/chapter_card.dart';
 import '../../widgets/common/access_banner.dart';
 import '../../widgets/exam/exam_card.dart';
@@ -72,7 +73,6 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
   bool _isLoading = true;
   int _pendingCount = 0;
 
-  // Track loading states for chapters and exams separately
   bool _chaptersLoaded = false;
   bool _examsLoaded = false;
   bool _chaptersLoading = false;
@@ -109,13 +109,11 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     await _loadFromCache();
 
     if (_course != null && _hasCachedData) {
-      // Load chapters and exams in parallel
-      await Future.wait([
-        _loadChapters(),
-        _loadExams(),
-      ]);
-      if (!mounted) return;
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+      unawaited(_loadChapters());
+      unawaited(_loadExams());
       if (!_isOffline) {
         unawaited(_refreshInBackground());
       }
@@ -131,7 +129,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
       if (mounted) {
         setState(() {
           _isOffline = !isOnline;
-          _pendingCount = connectivityService.pendingActionsCount;
+          final queueManager = context.read<OfflineQueueManager>();
+          _pendingCount = queueManager.pendingCount;
         });
         if (isOnline && !_isRefreshing && _course != null) {
           unawaited(_refreshInBackground());
@@ -163,7 +162,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     if (mounted) {
       setState(() {
         _isOffline = !connectivityService.isOnline;
-        _pendingCount = connectivityService.pendingActionsCount;
+        final queueManager = context.read<OfflineQueueManager>();
+        _pendingCount = queueManager.pendingCount;
       });
     }
   }
@@ -234,9 +234,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
       }
 
       await _checkAccessStatus();
-      await _loadPaymentInfo();
 
-      // Load chapters and exams in parallel
       await Future.wait([
         _loadChapters(),
         _loadExams(),
@@ -246,6 +244,10 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
 
       if (mounted) {
         setState(() => _isLoading = false);
+      }
+
+      if (!_isOffline) {
+        unawaited(_refreshPaymentInfoInBackground());
       }
     } catch (e) {
       debugLog('CourseDetailScreen', 'Error loading fresh data: $e');
@@ -296,10 +298,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
       await _checkAccessStatus(forceCheck: true);
       if (!mounted) return;
 
-      await _loadPaymentInfo(forceRefresh: true);
-      if (!mounted) return;
-
-      // Refresh chapters and exams in background
+      unawaited(_refreshPaymentInfoInBackground(forceRefresh: true));
       unawaited(_loadChapters(forceRefresh: true));
       unawaited(_loadExams(forceRefresh: true));
 
@@ -339,7 +338,6 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
       await _loadPaymentInfo(forceRefresh: true);
       if (!mounted) return;
 
-      // Refresh chapters and exams
       await Future.wait([
         _loadChapters(forceRefresh: true),
         _loadExams(forceRefresh: true),
@@ -400,14 +398,11 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
       await paymentProvider.loadPayments(
           forceRefresh: forceRefresh && !_isOffline);
       final pendingPayments = paymentProvider.getPendingPayments();
-      _hasPendingPayment = pendingPayments.any(
-        (payment) =>
-            payment.categoryName.toLowerCase() == _category!.name.toLowerCase(),
-      );
+      _hasPendingPayment = pendingPayments.any(_matchesPaymentToCategory);
 
       final rejectedPayments = paymentProvider.getRejectedPayments();
       final recentRejected = rejectedPayments.firstWhere(
-        (p) => p.categoryName.toLowerCase() == _category!.name.toLowerCase(),
+        _matchesPaymentToCategory,
         orElse: () => Payment(
           id: 0,
           paymentType: '',
@@ -423,6 +418,23 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     } catch (e) {
       debugLog('CourseDetailScreen', 'Error loading payment info: $e');
     }
+  }
+
+  bool _matchesPaymentToCategory(Payment payment) {
+    if (_category == null) return false;
+    if (payment.categoryId != null && payment.categoryId == _category!.id) {
+      return true;
+    }
+
+    return payment.categoryName.toLowerCase() == _category!.name.toLowerCase();
+  }
+
+  Future<void> _refreshPaymentInfoInBackground(
+      {bool forceRefresh = false}) async {
+    await _loadPaymentInfo(forceRefresh: forceRefresh);
+    if (!mounted) return;
+    setState(() {});
+    unawaited(_saveToCache());
   }
 
   Future<void> _loadChapters({bool forceRefresh = false}) async {
@@ -614,6 +626,254 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     );
   }
 
+  Widget _buildHeroMetric(
+      {required IconData icon, required String label, required String value}) {
+    return Expanded(
+      child: Container(
+        padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.1),
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon,
+                color: Colors.white70,
+                size: ResponsiveValues.iconSizeS(context)),
+            SizedBox(height: ResponsiveValues.spacingS(context)),
+            Text(
+              value,
+              style: AppTextStyles.titleMedium(context).copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            SizedBox(height: ResponsiveValues.spacingXXS(context)),
+            Text(
+              label,
+              style: AppTextStyles.bodySmall(context)
+                  .copyWith(color: Colors.white70),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeroChip({required IconData icon, required String label}) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: ResponsiveValues.spacingM(context),
+        vertical: ResponsiveValues.spacingXS(context),
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.1),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusFull(context)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon,
+              color: Colors.white70,
+              size: ResponsiveValues.iconSizeXS(context)),
+          SizedBox(width: ResponsiveValues.spacingXS(context)),
+          Text(
+            label,
+            style: AppTextStyles.labelSmall(context).copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCourseHero(List<Chapter> chapters, List<Exam> exams) {
+    final course = _course!;
+    final categoryPrice = _category?.price;
+    final billingLabel = _category?.isFree == true
+        ? AppStrings.free
+        : '${categoryPrice?.toStringAsFixed(0) ?? '0'} ${AppStrings.etb}';
+
+    return Container(
+      margin: EdgeInsets.fromLTRB(
+        ResponsiveValues.spacingM(context),
+        ResponsiveValues.spacingM(context),
+        ResponsiveValues.spacingM(context),
+        ResponsiveValues.spacingS(context),
+      ),
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFF0B5FFF),
+              Color(0xFF118AB2),
+              Color(0xFF0F172A),
+            ],
+          ),
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF0B5FFF).withValues(alpha: 0.16),
+              blurRadius: 26,
+              offset: const Offset(0, 12),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: ResponsiveValues.cardPadding(context),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Wrap(
+                spacing: ResponsiveValues.spacingS(context),
+                runSpacing: ResponsiveValues.spacingS(context),
+                children: [
+                  _buildHeroChip(
+                    icon: Icons.category_rounded,
+                    label: _category?.name ?? AppStrings.category,
+                  ),
+                  _buildHeroChip(
+                    icon: _hasAccess
+                        ? Icons.verified_rounded
+                        : Icons.lock_outline_rounded,
+                    label: _hasAccess
+                        ? AppStrings.fullAccess
+                        : (_hasPendingPayment
+                            ? AppStrings.paymentPending
+                            : AppStrings.limitedAccess),
+                  ),
+                ],
+              ),
+              SizedBox(height: ResponsiveValues.spacingL(context)),
+              Text(
+                course.name,
+                style: AppTextStyles.headlineSmall(context).copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.8,
+                ),
+              ),
+              if ((course.description ?? '').trim().isNotEmpty) ...[
+                SizedBox(height: ResponsiveValues.spacingM(context)),
+                Text(
+                  course.description!,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.bodyMedium(context).copyWith(
+                    color: Colors.white.withValues(alpha: 0.82),
+                    height: 1.5,
+                  ),
+                ),
+              ],
+              SizedBox(height: ResponsiveValues.spacingXL(context)),
+              Row(
+                children: [
+                  _buildHeroMetric(
+                    icon: Icons.menu_book_rounded,
+                    label: AppStrings.chapters,
+                    value: chapters.length.toString(),
+                  ),
+                  SizedBox(width: ResponsiveValues.spacingM(context)),
+                  _buildHeroMetric(
+                    icon: Icons.quiz_rounded,
+                    label: AppStrings.exams,
+                    value: exams.length.toString(),
+                  ),
+                  SizedBox(width: ResponsiveValues.spacingM(context)),
+                  _buildHeroMetric(
+                    icon: Icons.payments_rounded,
+                    label: AppStrings.price,
+                    value: billingLabel,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionIntro({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        ResponsiveValues.spacingM(context),
+        ResponsiveValues.spacingM(context),
+        ResponsiveValues.spacingM(context),
+        ResponsiveValues.spacingS(context),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  AppColors.telegramBlue.withValues(alpha: 0.18),
+                  AppColors.info.withValues(alpha: 0.10),
+                ],
+              ),
+              borderRadius:
+                  BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+            ),
+            child: Icon(icon, color: AppColors.telegramBlue),
+          ),
+          SizedBox(width: ResponsiveValues.spacingM(context)),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: AppTextStyles.titleMedium(context).copyWith(
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.4,
+                  ),
+                ),
+                SizedBox(height: ResponsiveValues.spacingXXS(context)),
+                Text(
+                  subtitle,
+                  style: AppTextStyles.bodySmall(context).copyWith(
+                    color: AppColors.getTextSecondary(context),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTabShell({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Widget child,
+  }) {
+    return Column(
+      children: [
+        _buildSectionIntro(icon: icon, title: title, subtitle: subtitle),
+        Expanded(child: child),
+      ],
+    );
+  }
+
   Widget _buildChaptersList(List<Chapter> chapters) {
     final chapterProvider = context.watch<ChapterProvider>();
     final isLoading =
@@ -621,7 +881,11 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     final hasLoaded =
         _chaptersLoaded || chapterProvider.hasLoadedForCourse(_course!.id);
 
-    if (isLoading && chapters.isEmpty && !hasLoaded) {
+    if (isLoading &&
+        chapters.isEmpty &&
+        !hasLoaded &&
+        !_hasCachedData &&
+        !_isOffline) {
       return ListView.builder(
         padding: ResponsiveValues.screenPadding(context),
         itemCount: 5,
@@ -695,7 +959,11 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     final hasLoaded =
         _examsLoaded || examProvider.hasLoadedForCourse(_course!.id);
 
-    if (isLoading && exams.isEmpty && !hasLoaded) {
+    if (isLoading &&
+        exams.isEmpty &&
+        !hasLoaded &&
+        !_hasCachedData &&
+        !_isOffline) {
       return ListView.builder(
         padding: ResponsiveValues.screenPadding(context),
         itemCount: 5,
@@ -826,12 +1094,10 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     final exams =
         _course != null ? examProvider.getExamsByCourse(_course!.id) : <Exam>[];
 
-    // 1. LOADING STATE
     if (_isLoading && !_hasCachedData) {
       return _buildSkeletonLoader();
     }
 
-    // 2. NO COURSE STATE
     if (_course == null) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
@@ -854,16 +1120,6 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
       );
     }
 
-    // 3. CHECK IF WE HAVE CACHED DATA BUT STILL LOADING
-    if (_hasCachedData && _isLoading) {
-      // We have cached data but still loading fresh data - show cached content
-      // This prevents shimmering when we have cached data available
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
-
-    // 3. MAIN CONTENT
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: CustomAppBar(
@@ -908,6 +1164,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
                 ],
               ),
             ),
+          _buildAccessBanner(),
           Container(
             decoration: BoxDecoration(
               border: Border(
@@ -932,7 +1189,6 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
               unselectedLabelColor: AppColors.getTextSecondary(context),
             ),
           ),
-          _buildAccessBanner(),
           Expanded(
             child: SmartRefresher(
               controller: _refreshController,
@@ -952,7 +1208,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
                 controller: _tabController,
                 children: [
                   _buildChaptersList(chapters),
-                  _buildExamsList(exams)
+                  _buildExamsList(exams),
                 ],
               ),
             ),

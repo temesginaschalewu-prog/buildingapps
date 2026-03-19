@@ -1,5 +1,5 @@
 // lib/services/hive_service.dart
-// COMPLETE PRODUCTION-READY FINAL VERSION - FIXED BOX HANDLING
+// PRODUCTION-READY FINAL VERSION
 
 import 'dart:io';
 import 'package:hive/hive.dart';
@@ -93,7 +93,7 @@ class HiveService {
     }
 
     try {
-      // ✅ FIXED: Check if box is already open
+      // Check if box is already open
       if (Hive.isBoxOpen(boxName)) {
         final box = Hive.box<T>(boxName);
         _boxCache[boxName] = box;

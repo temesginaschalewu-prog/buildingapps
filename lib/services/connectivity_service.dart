@@ -1,67 +1,18 @@
 // lib/services/connectivity_service.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// PRODUCTION FINAL - WITH CONNECTION QUALITY
 
 import 'dart:async';
-import 'dart:convert';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/utils/constants.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:hive/hive.dart';
 import '../utils/helpers.dart';
-import 'offline_queue_manager.dart';
 
-enum QueuePriority { high, normal, low }
+enum ConnectionQuality { none, poor, fair, good, excellent }
 
-enum QueueStatus { pending, processing, completed, failed }
-
-class QueueItem {
-  final String id;
-  final String type;
-  final Map<String, dynamic> data;
-  final DateTime timestamp;
-  final QueuePriority priority;
-  QueueStatus status;
-  int retryCount;
-  String? error;
-
-  QueueItem({
-    required this.id,
-    required this.type,
-    required this.data,
-    required this.timestamp,
-    this.priority = QueuePriority.normal,
-    this.status = QueueStatus.pending,
-    this.retryCount = 0,
-    this.error,
-  });
-
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'type': type,
-        'data': data,
-        'timestamp': timestamp.toIso8601String(),
-        'priority': priority.index,
-        'status': status.index,
-        'retryCount': retryCount,
-        'error': error,
-      };
-
-  factory QueueItem.fromJson(Map<String, dynamic> json) => QueueItem(
-        id: json['id'],
-        type: json['type'],
-        data: Map<String, dynamic>.from(json['data']),
-        timestamp: DateTime.parse(json['timestamp']),
-        priority: QueuePriority.values[json['priority']],
-        status: QueueStatus.values[json['status']],
-        retryCount: json['retryCount'] ?? 0,
-        error: json['error'],
-      );
-}
-
-/// PRODUCTION-READY Connectivity Service with Full Offline Queue Support
+/// PRODUCTION-READY Connectivity Service with Connection Quality
 class ConnectivityService {
   static final ConnectivityService _instance = ConnectivityService._internal();
   factory ConnectivityService() => _instance;
@@ -70,28 +21,29 @@ class ConnectivityService {
   final Connectivity _connectivity = Connectivity();
   final StreamController<bool> _connectionStatusController =
       StreamController<bool>.broadcast();
-  final List<QueueItem> _offlineQueue = [];
+  final StreamController<ConnectionQuality> _connectionQualityController =
+      StreamController<ConnectionQuality>.broadcast();
   final List<VoidCallback> _onlineListeners = [];
   final List<VoidCallback> _offlineListeners = [];
 
   bool _isOnline = true;
   bool _isInitialized = false;
-  bool _isProcessingQueue = false;
   DateTime? _lastSyncTime;
-
-  // Hive box for queue persistence
-  Box? _queueBox;
+  ConnectionQuality _connectionQuality = ConnectionQuality.good;
 
   Stream<bool> get onConnectivityChanged => _connectionStatusController.stream;
+  Stream<ConnectionQuality> get onConnectionQualityChanged =>
+      _connectionQualityController.stream;
   bool get isOnline => _isOnline;
   bool get isOffline => !_isOnline;
   bool get isInitialized => _isInitialized;
-  List<QueueItem> get offlineQueue => List.unmodifiable(_offlineQueue);
-  int get pendingActionsCount => _offlineQueue.length;
   DateTime? get lastSyncTime => _lastSyncTime;
+  ConnectionQuality get connectionQuality => _connectionQuality;
 
-  static const int _maxRetries = 5;
-  static const Duration _retryDelay = Duration(seconds: 30);
+  // Quality thresholds in milliseconds
+  static const int _excellentThreshold = 100;
+  static const int _goodThreshold = 300;
+  static const int _fairThreshold = 800;
 
   Future<void> initialize() async {
     if (_isInitialized) return;
@@ -99,11 +51,7 @@ class ConnectivityService {
     debugLog('ConnectivityService', 'Starting initialization');
 
     try {
-      // Initialize Hive queue box
-      await _initQueueBox();
-
       await checkConnectivity();
-      await _loadOfflineQueue();
       await _loadLastSyncTime();
 
       _connectivity.onConnectivityChanged
@@ -113,61 +61,19 @@ class ConnectivityService {
         _handleConnectivityChange(isOnline);
       });
 
+      // Start periodic quality checks
+      Timer.periodic(const Duration(seconds: 30), (_) {
+        if (_isOnline) {
+          unawaited(checkConnectionQuality());
+        }
+      });
+
       _isInitialized = true;
-      debugLog('ConnectivityService',
-          '✅ Initialized. Online: $_isOnline, Pending: ${_offlineQueue.length}');
+      debugLog('ConnectivityService', '✅ Initialized. Online: $_isOnline');
     } catch (e) {
       debugLog('ConnectivityService', '❌ Initialization error: $e');
       _isOnline = true;
       _isInitialized = true;
-    }
-  }
-
-  // Initialize Hive queue box
-  Future<void> _initQueueBox() async {
-    try {
-      _queueBox = await Hive.openBox('offline_queue_box');
-      debugLog('ConnectivityService', '✅ Queue box opened');
-    } catch (e) {
-      debugLog('ConnectivityService', '⚠️ Error opening queue box: $e');
-    }
-  }
-
-  Future<void> _loadOfflineQueue() async {
-    try {
-      // Try Hive first
-      if (_queueBox != null && _queueBox!.isNotEmpty) {
-        final queueData = _queueBox!.get('queue') as List?;
-        if (queueData != null) {
-          _offlineQueue.clear();
-          _offlineQueue.addAll(
-            queueData.map(
-                (item) => QueueItem.fromJson(Map<String, dynamic>.from(item))),
-          );
-          debugLog('ConnectivityService',
-              '📦 Loaded ${_offlineQueue.length} pending actions from Hive');
-          return;
-        }
-      }
-
-      // Fall back to SharedPreferences
-      final prefs = await SharedPreferences.getInstance();
-      final queueJson = prefs.getString(AppConstants.offlineQueueKey);
-      if (queueJson != null) {
-        final List<dynamic> decoded = jsonDecode(queueJson);
-        _offlineQueue.clear();
-        _offlineQueue.addAll(
-          decoded.map(
-              (item) => QueueItem.fromJson(Map<String, dynamic>.from(item))),
-        );
-        debugLog('ConnectivityService',
-            '📦 Loaded ${_offlineQueue.length} pending actions from Prefs');
-
-        // Save to Hive for next time
-        await _saveQueueToHive();
-      }
-    } catch (e) {
-      debugLog('ConnectivityService', 'Error loading offline queue: $e');
     }
   }
 
@@ -183,152 +89,6 @@ class ConnectivityService {
     }
   }
 
-  // Save queue to Hive
-  Future<void> _saveQueueToHive() async {
-    try {
-      if (_queueBox != null) {
-        await _queueBox!
-            .put('queue', _offlineQueue.map((a) => a.toJson()).toList());
-      }
-    } catch (e) {
-      debugLog('ConnectivityService', 'Error saving queue to Hive: $e');
-    }
-  }
-
-  Future<void> _saveOfflineQueue() async {
-    try {
-      // Save to SharedPreferences
-      final prefs = await SharedPreferences.getInstance();
-      final queueJson =
-          jsonEncode(_offlineQueue.map((a) => a.toJson()).toList());
-      await prefs.setString(AppConstants.offlineQueueKey, queueJson);
-
-      // Save to Hive
-      await _saveQueueToHive();
-
-      _connectionStatusController.add(_isOnline);
-    } catch (e) {
-      debugLog('ConnectivityService', 'Error saving offline queue: $e');
-    }
-  }
-
-  Future<void> _updateLastSyncTime() async {
-    _lastSyncTime = DateTime.now();
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
-          AppConstants.lastSyncTimeKey, _lastSyncTime!.toIso8601String());
-    } catch (e) {
-      debugLog('ConnectivityService', 'Error saving last sync time: $e');
-    }
-  }
-
-  // Queue action with priority
-  String queueAction(String type, Map<String, dynamic> data, String userId,
-      {QueuePriority priority = QueuePriority.normal}) {
-    final action = QueueItem(
-      id: '${DateTime.now().millisecondsSinceEpoch}_${type}_${data.hashCode}',
-      type: type,
-      data: data,
-      timestamp: DateTime.now(),
-      priority: priority,
-    );
-
-    _offlineQueue.add(action);
-    _saveOfflineQueue();
-
-    debugLog('ConnectivityService',
-        '📝 Queued action: $type (priority: ${priority.name}) (${_offlineQueue.length} total)');
-
-    // Try to process immediately if online
-    if (_isOnline && !_isProcessingQueue) {
-      unawaited(processQueue());
-    }
-
-    return action.id;
-  }
-
-  Future<void> processQueue() async {
-    if (_isProcessingQueue || _offlineQueue.isEmpty || !_isOnline) return;
-
-    _isProcessingQueue = true;
-    debugLog('ConnectivityService',
-        '🔄 Processing ${_offlineQueue.length} offline actions');
-
-    final actionsToProcess = List<QueueItem>.from(_offlineQueue);
-    final failedActions = <QueueItem>[];
-    int successCount = 0;
-
-    // Sort by priority (high first)
-    actionsToProcess
-        .sort((a, b) => a.priority.index.compareTo(b.priority.index));
-
-    for (final action in actionsToProcess) {
-      if (action.status != QueueStatus.pending) continue;
-
-      action.status = QueueStatus.processing;
-      _saveOfflineQueue();
-
-      final bool success = await _processAction(action);
-
-      if (success) {
-        _offlineQueue.removeWhere((a) => a.id == action.id);
-        successCount++;
-        debugLog('ConnectivityService', '✅ Completed: ${action.type}');
-      } else {
-        action.status = QueueStatus.pending;
-        action.retryCount++;
-        if (action.retryCount >= _maxRetries) {
-          action.status = QueueStatus.failed;
-          failedActions.add(action);
-          debugLog(
-              'ConnectivityService', '❌ Failed permanently: ${action.type}');
-        } else {
-          // Keep for retry
-          failedActions.add(action);
-          debugLog('ConnectivityService',
-              '⚠️ Will retry ${action.type} (attempt ${action.retryCount}/$_maxRetries)');
-        }
-      }
-
-      await Future.delayed(
-          const Duration(milliseconds: 500)); // Prevent rate limiting
-    }
-
-    if (failedActions.isNotEmpty) {
-      // Re-add failed actions for retry
-      _offlineQueue.clear();
-      _offlineQueue.addAll(failedActions);
-    }
-
-    await _saveOfflineQueue();
-
-    if (successCount > 0) {
-      await _updateLastSyncTime();
-    }
-
-    _isProcessingQueue = false;
-
-    debugLog('ConnectivityService',
-        '✅ Queue processed. $successCount succeeded, ${_offlineQueue.length} remaining');
-
-    // Schedule retry for failed items
-    if (_offlineQueue.any((item) => item.status == QueueStatus.pending)) {
-      Future.delayed(_retryDelay, processQueue);
-    }
-  }
-
-  Future<bool> _processAction(QueueItem action) async {
-    try {
-      // This will be implemented by each provider
-      // For now, return true to remove from queue
-      return true;
-    } catch (e) {
-      debugLog('ConnectivityService', 'Error processing action: $e');
-      return false;
-    }
-  }
-
   Future<bool> checkConnectivity() async {
     try {
       final List<ConnectivityResult> results = await _connectivity
@@ -339,7 +99,6 @@ class ConnectivityService {
           results.isNotEmpty && results.first != ConnectivityResult.none;
 
       if (hasNetwork) {
-        // Probe connectivity using backend first, then public fallback endpoints
         final probeResults = await Future.wait([
           _probeUrl('${AppConstants.apiBaseUrl}${AppConstants.healthEndpoint}'),
           _probeUrl('https://connectivitycheck.gstatic.com/generate_204'),
@@ -348,6 +107,7 @@ class ConnectivityService {
 
         if (probeResults.any((ok) => ok)) {
           _isOnline = true;
+          unawaited(checkConnectionQuality());
         } else {
           debugLog(
             'ConnectivityService',
@@ -357,14 +117,57 @@ class ConnectivityService {
         }
       } else {
         _isOnline = false;
+        _connectionQuality = ConnectionQuality.none;
+        _connectionQualityController.add(_connectionQuality);
       }
 
       return _isOnline;
     } catch (e) {
       debugLog('ConnectivityService', 'Connectivity check error: $e');
-      // On error, assume online to not block user
       _isOnline = true;
       return true;
+    }
+  }
+
+  Future<void> checkConnectionQuality() async {
+    if (!_isOnline) {
+      _connectionQuality = ConnectionQuality.none;
+      _connectionQualityController.add(_connectionQuality);
+      return;
+    }
+
+    try {
+      final stopwatch = Stopwatch()..start();
+      final dio = Dio();
+      await dio.get(
+        'https://www.google.com/generate_204',
+        options: Options(
+          sendTimeout: const Duration(seconds: 5),
+          receiveTimeout: const Duration(seconds: 5),
+          validateStatus: (status) => status != null && status < 500,
+        ),
+      );
+      stopwatch.stop();
+
+      final latency = stopwatch.elapsedMilliseconds;
+
+      if (latency < _excellentThreshold) {
+        _connectionQuality = ConnectionQuality.excellent;
+      } else if (latency < _goodThreshold) {
+        _connectionQuality = ConnectionQuality.good;
+      } else if (latency < _fairThreshold) {
+        _connectionQuality = ConnectionQuality.fair;
+      } else {
+        _connectionQuality = ConnectionQuality.poor;
+      }
+
+      _connectionQualityController.add(_connectionQuality);
+      debugLog('ConnectivityService',
+          'Connection quality: $_connectionQuality (${latency}ms)');
+    } catch (e) {
+      _connectionQuality = ConnectionQuality.poor;
+      _connectionQualityController.add(_connectionQuality);
+      debugLog('ConnectivityService', 'Failed to check quality: $e');
     }
   }
 
@@ -392,13 +195,15 @@ class ConnectivityService {
       _connectionStatusController.add(_isOnline);
       _notifyListeners();
 
+      if (isOnline) {
+        unawaited(checkConnectionQuality());
+      } else {
+        _connectionQuality = ConnectionQuality.none;
+        _connectionQualityController.add(_connectionQuality);
+      }
+
       debugLog('ConnectivityService',
           'Status changed: ${_isOnline ? 'ONLINE' : 'OFFLINE'}');
-
-      // When coming online, process queue
-      if (isOnline && !_isProcessingQueue && _offlineQueue.isNotEmpty) {
-        unawaited(processQueue());
-      }
     }
   }
 
@@ -428,40 +233,6 @@ class ConnectivityService {
         listener.call();
       }
     }
-  }
-
-  Future<void> clearUserQueue(String userId) async {
-    _offlineQueue.removeWhere((a) => a.data['userId'] == userId);
-    await _saveOfflineQueue();
-    debugLog('ConnectivityService', '🧹 Cleared queue for user $userId');
-
-    // Also clear from OfflineQueueManager
-    final queueManager = OfflineQueueManager();
-    final pendingItems = queueManager.pendingItems;
-    for (final item in pendingItems) {
-      if (item.data['userId'] == userId) {
-        await queueManager.removeItem(item.id);
-      }
-    }
-  }
-
-  // Add this method to process queue
-  Future<void> processPendingQueue() async {
-    if (!_isOnline || _offlineQueue.isEmpty) return;
-
-    final queueManager = OfflineQueueManager();
-    await queueManager.processQueue();
-  }
-
-  // Add this method to get queue stats
-  Map<String, dynamic> getQueueStats() {
-    return {
-      'pendingCount': _offlineQueue.length,
-      'lastSyncTime': _lastSyncTime?.toIso8601String(),
-      'isOnline': _isOnline,
-      'isProcessing': _isProcessingQueue,
-      'formattedLastSync': getLastSyncTimeText(),
-    };
   }
 
   Future<bool> ensureOnline(BuildContext context, {String? action}) async {
@@ -496,10 +267,40 @@ class ConnectivityService {
     return '${diff.inDays}d ago';
   }
 
+  String getQualityMessage() {
+    switch (_connectionQuality) {
+      case ConnectionQuality.none:
+        return 'Offline';
+      case ConnectionQuality.poor:
+        return 'Poor connection - videos may buffer';
+      case ConnectionQuality.fair:
+        return 'Fair connection';
+      case ConnectionQuality.good:
+        return 'Good connection';
+      case ConnectionQuality.excellent:
+        return 'Excellent connection';
+    }
+  }
+
+  Color getQualityColor() {
+    switch (_connectionQuality) {
+      case ConnectionQuality.none:
+        return Colors.red;
+      case ConnectionQuality.poor:
+        return Colors.orange;
+      case ConnectionQuality.fair:
+        return Colors.yellow;
+      case ConnectionQuality.good:
+        return Colors.green;
+      case ConnectionQuality.excellent:
+        return Colors.green;
+    }
+  }
+
   void dispose() {
     _connectionStatusController.close();
+    _connectionQualityController.close();
     _onlineListeners.clear();
     _offlineListeners.clear();
-    _queueBox?.close();
   }
 }

@@ -1,5 +1,5 @@
 // lib/services/offline_queue_manager.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// PRODUCTION FINAL - WITH PROCESSING STATE
 
 import 'dart:async';
 import 'dart:convert';
@@ -91,15 +91,16 @@ class OfflineQueueManager {
   List<QueueItem> get failedItems =>
       _queue.where((item) => item.status == QueueStatus.failed).toList();
   int get pendingCount => pendingItems.length;
-
   bool _isProcessing = false;
+
+  // ✅ NEW: Public getter for processing state
+  bool get isProcessing => _isProcessing;
+
   Timer? _retryTimer;
   Timer? _persistenceTimer;
   bool _useSharedPrefs = false;
 
-  void setApiService(ApiService apiService) {
-    // Store reference but not used directly
-  }
+  void setApiService(ApiService apiService) {}
 
   void registerProcessor(
       String type, Future<bool> Function(Map<String, dynamic>) processor) {
@@ -156,7 +157,6 @@ class OfflineQueueManager {
               (item) => QueueItem.fromJson(Map<String, dynamic>.from(item))),
         );
 
-        // Reset processing items to pending (in case of crash)
         for (final item in _queue) {
           if (item.status == QueueStatus.processing) {
             item.status = QueueStatus.pending;
@@ -187,7 +187,6 @@ class OfflineQueueManager {
               (item) => QueueItem.fromJson(Map<String, dynamic>.from(item))),
         );
 
-        // Reset processing items to pending
         for (final item in _queue) {
           if (item.status == QueueStatus.processing) {
             item.status = QueueStatus.pending;
@@ -276,7 +275,6 @@ class OfflineQueueManager {
     debugLog('OfflineQueueManager',
         '📝 Added: $type (priority: ${priority.name}) - Queue now has ${_queue.length} items');
 
-    // Try to process immediately if online
     Connectivity().checkConnectivity().then((result) {
       if (result != ConnectivityResult.none && !_isProcessing) {
         processQueue();
@@ -299,9 +297,9 @@ class OfflineQueueManager {
     }
 
     _isProcessing = true;
+    _queueStreamController.add(List.unmodifiable(_queue));
     debugLog('OfflineQueueManager', '🔄 Processing ${pending.length} items');
 
-    // Sort by priority (high first) and then by timestamp (oldest first)
     pending.sort((a, b) {
       final priorityCompare = a.priority.index.compareTo(b.priority.index);
       if (priorityCompare != 0) return priorityCompare;
@@ -314,7 +312,6 @@ class OfflineQueueManager {
     for (final item in pending) {
       if (item.status != QueueStatus.pending) continue;
 
-      // Check if we should retry this item
       if (item.retryCount > 0 && !item.shouldRetry) {
         debugLog('OfflineQueueManager',
             '⏸️ Skipping ${item.type} - retry in cooldown (attempt ${item.retryCount})');
@@ -348,17 +345,17 @@ class OfflineQueueManager {
       }
 
       _queueStreamController.add(List.unmodifiable(_queue));
-      await Future.delayed(const Duration(milliseconds: 500)); // Rate limiting
+      await Future.delayed(const Duration(milliseconds: 500));
     }
 
     await _saveQueue();
 
     _isProcessing = false;
+    _queueStreamController.add(List.unmodifiable(_queue));
 
     debugLog('OfflineQueueManager',
         '✅ Queue processed. $successCount succeeded, $failureCount failed, $pendingCount remaining');
 
-    // Schedule retry for failed items
     if (pendingItems.isNotEmpty) {
       const nextRetry = Duration(
         seconds: AppConstants.queueRetryBaseSeconds * 2,
@@ -378,7 +375,6 @@ class OfflineQueueManager {
     }
 
     try {
-      // Check connectivity
       final connectivity = await Connectivity().checkConnectivity();
       if (connectivity == ConnectivityResult.none) {
         debugLog('OfflineQueueManager',
@@ -442,6 +438,7 @@ class OfflineQueueManager {
           _queue.where((item) => item.status == QueueStatus.completed).length,
       'processing':
           _queue.where((item) => item.status == QueueStatus.processing).length,
+      'isProcessing': _isProcessing,
     };
   }
 

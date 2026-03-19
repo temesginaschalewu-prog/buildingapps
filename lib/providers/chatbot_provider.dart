@@ -1,5 +1,5 @@
 // lib/providers/chatbot_provider.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// PRODUCTION-READY FINAL VERSION - WITH ALL FIXES
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -13,6 +13,7 @@ import '../models/chatbot_model.dart';
 import '../utils/constants.dart';
 import '../utils/parsers.dart';
 import '../utils/api_response.dart';
+import '../utils/helpers.dart';
 import 'base_provider.dart';
 
 class ChatbotProvider extends ChangeNotifier
@@ -36,7 +37,7 @@ class ChatbotProvider extends ChangeNotifier
   bool _hasLoadedMessages = false;
   bool _hasInitialData = false;
 
-  int _apiCallCount = 0; // ✅ ADDED: missing field
+  int _apiCallCount = 0;
 
   static const int _clientDailyLimit = 20;
   static const Duration _usageFetchCooldown = Duration(seconds: 20);
@@ -56,6 +57,11 @@ class ChatbotProvider extends ChangeNotifier
   Box? _messagesBox;
   Box? _conversationsBox;
   Box? _usageBox;
+
+  // ✅ FIXED: Rate limiting
+  DateTime? _lastBackgroundRefreshConversations;
+  final Map<int, DateTime?> _lastBackgroundRefreshMessages = {};
+  static const Duration _minBackgroundInterval = Duration(minutes: 2);
 
   ChatbotProvider({
     required this.apiService,
@@ -370,7 +376,8 @@ class ChatbotProvider extends ChangeNotifier
     log('loadConversations() CALL #$callId');
 
     if (isManualRefresh && isOffline) {
-      throw Exception('Network error. Please check your internet connection.');
+      throw Exception(getUserFriendlyErrorMessage(
+          'Network error. Please check your internet connection.'));
     }
 
     // ✅ Return cached data immediately if already loaded
@@ -432,8 +439,8 @@ class ChatbotProvider extends ChangeNotifier
         _isLoadingMore = false;
 
         if (isManualRefresh) {
-          throw Exception(
-              'Network error. Please check your internet connection.');
+          throw Exception(getUserFriendlyErrorMessage(
+              'Network error. Please check your internet connection.'));
         }
         return;
       }
@@ -474,7 +481,7 @@ class ChatbotProvider extends ChangeNotifier
         }
       }
     } catch (e) {
-      setError('Failed to load conversations');
+      setError(getUserFriendlyErrorMessage('Failed to load conversations'));
       log('Error loading conversations: $e');
 
       // ✅ Always mark as loaded even on error
@@ -490,8 +497,18 @@ class ChatbotProvider extends ChangeNotifier
     }
   }
 
+  // ✅ FIXED: Rate limited background refresh
   Future<void> _refreshConversationsInBackground() async {
     if (isOffline) return;
+
+    // Rate limiting
+    if (_lastBackgroundRefreshConversations != null &&
+        DateTime.now().difference(_lastBackgroundRefreshConversations!) <
+            _minBackgroundInterval) {
+      log('⏱️ Conversations background refresh rate limited');
+      return;
+    }
+    _lastBackgroundRefreshConversations = DateTime.now();
 
     try {
       final response = await apiService.getChatbotConversations();
@@ -531,7 +548,8 @@ class ChatbotProvider extends ChangeNotifier
     log('loadMessages() CALL #$callId for conversation $conversationId');
 
     if (isManualRefresh && isOffline) {
-      throw Exception('Network error. Please check your internet connection.');
+      throw Exception(getUserFriendlyErrorMessage(
+          'Network error. Please check your internet connection.'));
     }
 
     // ✅ Return cached data immediately if already loaded
@@ -600,8 +618,8 @@ class ChatbotProvider extends ChangeNotifier
         _isLoadingMessages = false;
 
         if (isManualRefresh) {
-          throw Exception(
-              'Network error. Please check your internet connection.');
+          throw Exception(getUserFriendlyErrorMessage(
+              'Network error. Please check your internet connection.'));
         }
         return;
       }
@@ -641,7 +659,7 @@ class ChatbotProvider extends ChangeNotifier
         }
       }
     } catch (e) {
-      setError('Failed to load messages');
+      setError(getUserFriendlyErrorMessage('Failed to load messages'));
       log('Error loading messages: $e');
 
       // ✅ Always mark as loaded even on error
@@ -656,8 +674,19 @@ class ChatbotProvider extends ChangeNotifier
     }
   }
 
+  // ✅ FIXED: Rate limited background refresh
   Future<void> _refreshMessagesInBackground(int conversationId) async {
     if (isOffline) return;
+
+    // Rate limiting
+    if (_lastBackgroundRefreshMessages[conversationId] != null &&
+        DateTime.now()
+                .difference(_lastBackgroundRefreshMessages[conversationId]!) <
+            _minBackgroundInterval) {
+      log('⏱️ Messages background refresh rate limited for conversation $conversationId');
+      return;
+    }
+    _lastBackgroundRefreshMessages[conversationId] = DateTime.now();
 
     try {
       final response =
@@ -788,10 +817,10 @@ class ChatbotProvider extends ChangeNotifier
       }
     } catch (e) {
       _messages.remove(tempUserMessage);
-      setError('Failed to send message: $e');
+      setError(getUserFriendlyErrorMessage(e));
       log('❌ Error sending message: $e');
 
-      return ApiResponse.error(message: 'Failed to send message: $e');
+      return ApiResponse.error(message: getUserFriendlyErrorMessage(e));
     } finally {
       safeNotify();
     }
@@ -933,6 +962,7 @@ class ChatbotProvider extends ChangeNotifier
     await loadUsageStats();
   }
 
+  // ✅ FIXED: Clear user data with proper cleanup
   @override
   void dispose() {
     _messagesBox?.close();

@@ -1,5 +1,5 @@
 // lib/providers/theme_provider.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// PRODUCTION-READY FINAL VERSION
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,9 +7,10 @@ import 'package:hive/hive.dart';
 import '../utils/constants.dart';
 import '../themes/app_themes.dart';
 import '../services/connectivity_service.dart';
+import '../utils/helpers.dart';
 import 'base_provider.dart';
 
-/// PRODUCTION-READY Theme Provider with Persistent Storage
+/// PRODUCTION-READY Theme Provider
 class ThemeProvider extends ChangeNotifier with BaseProvider<ThemeProvider> {
   final ConnectivityService connectivityService;
 

@@ -1,8 +1,7 @@
 // lib/screens/settings/tv_pairing_screen.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// COMPLETE FIXED VERSION - NULL SAFETY IN INITSTATE
 
 import 'dart:async';
-import 'package:familyacademyclient/widgets/common/app_empty_state.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -11,11 +10,14 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../providers/device_provider.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
+import '../../services/offline_queue_manager.dart';
+import '../../utils/constants.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_text_field.dart';
 import '../../widgets/common/app_shimmer.dart';
 import '../../widgets/common/app_dialog.dart';
+import '../../widgets/common/app_empty_state.dart';
 import '../../widgets/common/app_bar.dart';
 import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
@@ -23,7 +25,6 @@ import '../../themes/app_text_styles.dart';
 import '../../utils/responsive_values.dart';
 import '../../utils/helpers.dart';
 
-/// PRODUCTION-READY TV PAIRING SCREEN
 class TvPairingScreen extends StatefulWidget {
   const TvPairingScreen({super.key});
 
@@ -39,7 +40,9 @@ class _TvPairingScreenState extends State<TvPairingScreen>
   bool _isRefreshing = false;
   bool _isOffline = false;
   int _pendingCount = 0;
+  String? _errorMessage;
   StreamSubscription? _connectivitySubscription;
+  bool _isMounted = false; // ✅ Track mounted state
 
   late AnimationController _pulseAnimationController;
   late AnimationController _scanAnimationController;
@@ -49,6 +52,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
   @override
   void initState() {
     super.initState();
+    _isMounted = true;
 
     _pulseAnimationController =
         AnimationController(vsync: this, duration: 1.seconds)
@@ -56,13 +60,17 @@ class _TvPairingScreenState extends State<TvPairingScreen>
     _scanAnimationController =
         AnimationController(vsync: this, duration: 2.seconds)..repeat();
 
+    // ✅ DON'T access context here - use post frame callback
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initialize();
+      if (_isMounted) {
+        _initialize();
+      }
     });
   }
 
   @override
   void dispose() {
+    _isMounted = false; // ✅ Mark as unmounted immediately
     _codeController.dispose();
     _pulseAnimationController.dispose();
     _scanAnimationController.dispose();
@@ -71,6 +79,8 @@ class _TvPairingScreenState extends State<TvPairingScreen>
   }
 
   Future<void> _initialize() async {
+    if (!_isMounted) return;
+
     await _checkConnectivity();
     _setupConnectivityListener();
     _checkPendingCount();
@@ -78,38 +88,44 @@ class _TvPairingScreenState extends State<TvPairingScreen>
   }
 
   void _setupConnectivityListener() {
+    if (!_isMounted) return;
+
     final connectivityService = context.read<ConnectivityService>();
     _connectivitySubscription =
         connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (mounted) {
-        setState(() {
-          _isOffline = !isOnline;
-          _pendingCount = connectivityService.pendingActionsCount;
-        });
-      }
+      if (!_isMounted) return;
+
+      setState(() {
+        _isOffline = !isOnline;
+        final queueManager = context.read<OfflineQueueManager>();
+        _pendingCount = queueManager.pendingCount;
+      });
     });
   }
 
   Future<void> _checkConnectivity() async {
+    if (!_isMounted) return;
+
     final connectivityService = context.read<ConnectivityService>();
     await connectivityService.checkConnectivity();
-    if (mounted) {
-      setState(() {
-        _isOffline = !connectivityService.isOnline;
-        _pendingCount = connectivityService.pendingActionsCount;
-      });
-    }
+    if (!_isMounted) return;
+
+    setState(() {
+      _isOffline = !connectivityService.isOnline;
+      final queueManager = context.read<OfflineQueueManager>();
+      _pendingCount = queueManager.pendingCount;
+    });
   }
 
   Future<void> _checkPendingCount() async {
-    final connectivityService = context.read<ConnectivityService>();
-    if (mounted) {
-      setState(() => _pendingCount = connectivityService.pendingActionsCount);
+    final queueManager = context.read<OfflineQueueManager>();
+    if (_isMounted) {
+      setState(() => _pendingCount = queueManager.pendingCount);
     }
   }
 
   Future<void> _checkDeviceStatus() async {
-    if (_isLoading) return;
+    if (_isLoading || !_isMounted) return;
 
     final deviceProvider = context.read<DeviceProvider>();
     _hasCachedData = deviceProvider.isInitialized;
@@ -118,13 +134,16 @@ class _TvPairingScreenState extends State<TvPairingScreen>
 
     try {
       await Future.delayed(const Duration(milliseconds: 300));
+      _errorMessage = null;
+    } catch (e) {
+      _errorMessage = getUserFriendlyErrorMessage(e);
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (_isMounted) setState(() => _isLoading = false);
     }
   }
 
   Future<void> _manualRefresh() async {
-    if (_isRefreshing) return;
+    if (_isRefreshing || !_isMounted) return;
 
     final connectivityService = context.read<ConnectivityService>();
     if (!connectivityService.isOnline) {
@@ -137,17 +156,25 @@ class _TvPairingScreenState extends State<TvPairingScreen>
 
     try {
       await _checkDeviceStatus();
-      setState(() => _isOffline = false);
+      setState(() {
+        _isOffline = false;
+        _errorMessage = null;
+      });
       SnackbarService().showSuccess(context, 'Device status updated');
     } catch (e) {
-      setState(() => _isOffline = true);
+      setState(() {
+        _isOffline = true;
+        _errorMessage = getUserFriendlyErrorMessage(e);
+      });
       SnackbarService().showError(context, 'Failed to refresh');
     } finally {
-      if (mounted) setState(() => _isRefreshing = false);
+      if (_isMounted) setState(() => _isRefreshing = false);
     }
   }
 
   Future<void> _pairDevice() async {
+    if (!_isMounted) return;
+
     final deviceProvider = context.read<DeviceProvider>();
     final code = _codeController.text.trim();
 
@@ -173,8 +200,9 @@ class _TvPairingScreenState extends State<TvPairingScreen>
       await deviceProvider.verifyTvPairing(code);
       SnackbarService().showSuccess(context, 'TV device paired successfully');
       _codeController.clear();
-      setState(() {});
+      setState(() => _errorMessage = null);
     } catch (e) {
+      setState(() => _errorMessage = getUserFriendlyErrorMessage(e));
       SnackbarService().showError(
           context, 'Pairing failed: ${getUserFriendlyErrorMessage(e)}');
     } finally {
@@ -183,6 +211,8 @@ class _TvPairingScreenState extends State<TvPairingScreen>
   }
 
   Future<void> _unpairDevice() async {
+    if (!_isMounted) return;
+
     final connectivityService = context.read<ConnectivityService>();
     if (!connectivityService.isOnline) {
       SnackbarService().showOffline(context, action: 'unpair device');
@@ -203,8 +233,9 @@ class _TvPairingScreenState extends State<TvPairingScreen>
         await deviceProvider.unpairTvDevice();
         SnackbarService()
             .showSuccess(context, 'TV device unpaired successfully');
-        setState(() {});
+        setState(() => _errorMessage = null);
       } catch (e) {
+        setState(() => _errorMessage = getUserFriendlyErrorMessage(e));
         SnackbarService().showError(
             context, 'Unpairing failed: ${getUserFriendlyErrorMessage(e)}');
       }
@@ -548,7 +579,26 @@ class _TvPairingScreenState extends State<TvPairingScreen>
         deviceProvider.tvDeviceId!.isNotEmpty;
     final String? tvDeviceId = deviceProvider.tvDeviceId;
 
-    // 1. LOADING STATE
+    if (_errorMessage != null && !hasTvDevice) {
+      return Scaffold(
+        backgroundColor: AppColors.getBackground(context),
+        appBar: CustomAppBar(
+          title: 'TV Pairing',
+          subtitle: AppStrings.error,
+          leading: AppButton.icon(
+              icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
+          showOfflineIndicator: _isOffline,
+        ),
+        body: Center(
+          child: AppEmptyState.error(
+            title: AppStrings.error,
+            message: _errorMessage!,
+            onRetry: _manualRefresh,
+          ),
+        ),
+      );
+    }
+
     if (_isLoading && !_hasCachedData) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
@@ -563,7 +613,6 @@ class _TvPairingScreenState extends State<TvPairingScreen>
       );
     }
 
-    // 2. MAIN CONTENT
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: CustomAppBar(
@@ -588,7 +637,6 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Pending count banner (if offline with pending actions)
                     if (_pendingCount > 0)
                       Container(
                         margin: EdgeInsets.only(
@@ -622,11 +670,8 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                           ],
                         ),
                       ),
-
                     _buildHeader(),
                     SizedBox(height: ResponsiveValues.spacingL(context)),
-
-                    // OFFLINE STATE
                     if (_isOffline && !hasTvDevice)
                       AppEmptyState.offline(
                         message:
@@ -638,7 +683,6 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                       _buildPairedDeviceCard(context, tvDeviceId)
                     else
                       _buildPairingForm(context),
-
                     SizedBox(height: ResponsiveValues.spacingXL(context)),
                     _buildInstructionsCard(context),
                     SizedBox(height: ResponsiveValues.spacingXXL(context)),

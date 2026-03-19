@@ -1,12 +1,16 @@
+// lib/widgets/common/app_bar.dart
+// PRODUCTION FINAL - WITH CONNECTION QUALITY & SYNC FEEDBACK
+
 import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../providers/theme_provider.dart';
-import '../../../services/connectivity_service.dart';
-import '../../../themes/app_colors.dart';
-import '../../../themes/app_text_styles.dart';
-import '../../../utils/responsive_values.dart';
+import '../../providers/theme_provider.dart';
+import '../../services/connectivity_service.dart';
+import '../../services/offline_queue_manager.dart';
+import '../../themes/app_colors.dart';
+import '../../themes/app_text_styles.dart';
+import '../../utils/responsive_values.dart';
 import 'notification_button.dart';
 
 class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
@@ -17,7 +21,7 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   final bool showThemeToggle;
   final bool showNotification;
   final Widget? customTrailing;
-  final bool showOfflineIndicator; // NEW: subtle indicator
+  final bool showOfflineIndicator;
 
   const CustomAppBar({
     super.key,
@@ -34,13 +38,45 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   @override
   Size get preferredSize => const Size.fromHeight(kToolbarHeight + 32);
 
+  String _getQualityMessage(ConnectionQuality quality) {
+    switch (quality) {
+      case ConnectionQuality.none:
+        return 'Offline';
+      case ConnectionQuality.poor:
+        return 'Poor connection - videos may buffer';
+      case ConnectionQuality.fair:
+        return 'Fair connection';
+      case ConnectionQuality.good:
+        return 'Good connection';
+      case ConnectionQuality.excellent:
+        return 'Excellent connection';
+    }
+  }
+
+  Color _getQualityColor(ConnectionQuality quality) {
+    switch (quality) {
+      case ConnectionQuality.none:
+        return Colors.red;
+      case ConnectionQuality.poor:
+        return Colors.orange;
+      case ConnectionQuality.fair:
+        return Colors.yellow;
+      case ConnectionQuality.good:
+        return Colors.green;
+      case ConnectionQuality.excellent:
+        return Colors.green;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Consumer2<ConnectivityService, ThemeProvider>(
-      builder: (context, connectivity, themeProvider, child) {
+    return Consumer3<ConnectivityService, ThemeProvider, OfflineQueueManager>(
+      builder: (context, connectivity, themeProvider, queueManager, child) {
         final isDark = Theme.of(context).brightness == Brightness.dark;
         final isOnline = connectivity.isOnline;
-        final pendingCount = connectivity.pendingActionsCount;
+        final pendingCount = queueManager.pendingCount;
+        final isProcessing = queueManager.isProcessing;
+        final quality = connectivity.connectionQuality;
         final topInset = MediaQuery.of(context).padding.top;
         final safeTopInset = math.min(topInset, 20.0);
 
@@ -113,19 +149,45 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
-                                if (showOfflineIndicator && !isOnline)
+
+                                // Connection Quality Indicator
+                                if (quality != ConnectionQuality.good &&
+                                    quality != ConnectionQuality.excellent)
                                   Padding(
                                     padding: EdgeInsets.only(
                                         left: ResponsiveValues.spacingXS(
                                             context)),
-                                    child: Icon(
-                                      Icons.wifi_off_rounded,
-                                      size:
-                                          ResponsiveValues.iconSizeXS(context),
-                                      color: AppColors.warning,
+                                    child: Tooltip(
+                                      message: _getQualityMessage(quality),
+                                      child: Container(
+                                        width: 8,
+                                        height: 8,
+                                        decoration: BoxDecoration(
+                                          color: _getQualityColor(quality),
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
                                     ),
                                   ),
-                                if (pendingCount > 0 && isOnline)
+
+                                // Sync/Pending Indicator
+                                if (isProcessing)
+                                  Padding(
+                                    padding: EdgeInsets.only(
+                                        left: ResponsiveValues.spacingXS(
+                                            context)),
+                                    child: SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                                AppColors.info),
+                                      ),
+                                    ),
+                                  )
+                                else if (pendingCount > 0 && isOnline)
                                   Padding(
                                     padding: EdgeInsets.only(
                                         left: ResponsiveValues.spacingXS(
@@ -137,8 +199,8 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
                                         shape: BoxShape.circle,
                                       ),
                                       constraints: const BoxConstraints(
-                                        minWidth: 16,
-                                        minHeight: 16,
+                                        minWidth: 18,
+                                        minHeight: 18,
                                       ),
                                       child: Center(
                                         child: Text(
@@ -154,6 +216,20 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
                                           ),
                                         ),
                                       ),
+                                    ),
+                                  ),
+
+                                // Offline Indicator
+                                if (showOfflineIndicator && !isOnline)
+                                  Padding(
+                                    padding: EdgeInsets.only(
+                                        left: ResponsiveValues.spacingXS(
+                                            context)),
+                                    child: Icon(
+                                      Icons.wifi_off_rounded,
+                                      size:
+                                          ResponsiveValues.iconSizeXS(context),
+                                      color: AppColors.warning,
                                     ),
                                   ),
                               ],

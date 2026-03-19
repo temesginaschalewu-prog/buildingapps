@@ -1,5 +1,5 @@
 // lib/providers/streak_provider.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// PRODUCTION-READY FINAL VERSION - WITH ALL FIXES
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -13,6 +13,7 @@ import '../services/offline_queue_manager.dart';
 import '../models/streak_model.dart';
 import '../utils/constants.dart';
 import '../utils/ui_helpers.dart';
+import '../utils/helpers.dart';
 import 'base_provider.dart';
 
 /// PRODUCTION-READY Streak Provider with Full Offline Support
@@ -40,6 +41,10 @@ class StreakProvider extends ChangeNotifier
   Box? _streakBox;
 
   int _apiCallCount = 0;
+
+  // ✅ FIXED: Rate limiting
+  DateTime? _lastBackgroundRefresh;
+  static const Duration _minBackgroundInterval = Duration(minutes: 2);
 
   StreakProvider({
     required this.apiService,
@@ -166,7 +171,8 @@ class StreakProvider extends ChangeNotifier
     log('loadStreak() CALL #$callId');
 
     if (isManualRefresh && isOffline) {
-      throw Exception('Network error. Please check your internet connection.');
+      throw Exception(getUserFriendlyErrorMessage(
+          'Network error. Please check your internet connection.'));
     }
 
     if (isLoading && !forceRefresh) {
@@ -246,12 +252,13 @@ class StreakProvider extends ChangeNotifier
           return;
         }
 
-        setError('You are offline. No cached streak available.');
+        setError(getUserFriendlyErrorMessage(
+            'You are offline. No cached streak available.'));
         setLoaded();
 
         if (isManualRefresh) {
-          throw Exception(
-              'Network error. Please check your internet connection.');
+          throw Exception(getUserFriendlyErrorMessage(
+              'Network error. Please check your internet connection.'));
         }
         return;
       }
@@ -280,7 +287,7 @@ class StreakProvider extends ChangeNotifier
         }
         log('✅ Success! Streak loaded');
       } else {
-        setError(response.message);
+        setError(getUserFriendlyErrorMessage(response.message));
         setLoaded();
         log('❌ API error: ${response.message}');
 
@@ -291,7 +298,7 @@ class StreakProvider extends ChangeNotifier
     } catch (e) {
       log('❌ Error loading streak: $e');
 
-      setError(e.toString());
+      setError(getUserFriendlyErrorMessage(e));
       setLoaded();
 
       if (_streak == null && _currentUserId != null) {
@@ -307,8 +314,18 @@ class StreakProvider extends ChangeNotifier
     }
   }
 
+  // ✅ FIXED: Rate limited background refresh
   Future<void> _refreshInBackground() async {
     if (isOffline) return;
+
+    // Rate limiting
+    if (_lastBackgroundRefresh != null &&
+        DateTime.now().difference(_lastBackgroundRefresh!) <
+            _minBackgroundInterval) {
+      log('⏱️ Background refresh rate limited');
+      return;
+    }
+    _lastBackgroundRefresh = DateTime.now();
 
     try {
       final response = await apiService.getMyStreak();
@@ -398,7 +415,7 @@ class StreakProvider extends ChangeNotifier
       await loadStreak(forceRefresh: true);
       log('✅ Streak updated successfully');
     } catch (e) {
-      setError(e.toString());
+      setError(getUserFriendlyErrorMessage(e));
       log('❌ Error updating streak: $e');
     } finally {
       setLoaded();
@@ -439,6 +456,7 @@ class StreakProvider extends ChangeNotifier
     await loadStreak(forceRefresh: true);
   }
 
+  // ✅ FIXED: Clear user data with proper cleanup
   Future<void> clearUserData() async {
     final session = UserSession();
     if (!session.shouldClearCacheOnLogout()) return;
@@ -456,11 +474,10 @@ class StreakProvider extends ChangeNotifier
     }
 
     stopBackgroundRefresh();
+    _lastBackgroundRefresh = null;
     _streak = null;
     _streakHistory = [];
     safeNotify();
-
-    log('🧹 Cleared user streak data');
   }
 
   @override

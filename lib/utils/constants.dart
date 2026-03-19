@@ -1,5 +1,4 @@
 // lib/utils/constants.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
 
 class AppConstants {
   // API Configuration
@@ -171,7 +170,7 @@ class AppConstants {
   static const int notificationLedOnMs = 300;
   static const int notificationLedOffMs = 500;
 
-  // ===== API Endpoint Helpers - CORRECT VERSIONS =====
+  // ===== API Endpoint Helpers =====
 
   // Categories
   static String get categoriesEndpoint => '$apiVersion/categories';
@@ -180,9 +179,9 @@ class AppConstants {
   static String coursesByCategory(int categoryId) =>
       '$apiVersion/courses/category/$categoryId';
 
-  // Chapters - FIXED: Correct endpoint from backend
+  // Chapters
   static String chaptersByCourse(int courseId) =>
-      '$apiVersion/chapters/course/$courseId'; // ✅ CORRECT
+      '$apiVersion/chapters/course/$courseId';
   static String chapterDetails(int chapterId) =>
       '$apiVersion/chapters/$chapterId';
 
@@ -210,7 +209,7 @@ class AppConstants {
   static String submitExamEndpoint(int examResultId) =>
       '$apiVersion/exam-results/$examResultId/submit';
 
-  // Exam Results - FIXED: Backend expects user_id
+  // Exam Results
   static String userExamResultsEndpoint(int userId) =>
       '$apiVersion/exam-results/user/$userId';
   static String userExamStatsEndpoint(int userId) =>
@@ -267,7 +266,7 @@ class AppConstants {
   // Upload
   static String get uploadImageEndpoint => '$apiVersion/upload/image';
 
-  // Chatbot - FIXED: All endpoints with /api/v1 prefix
+  // Chatbot
   static String get chatbotUsageEndpoint => '$apiVersion/chatbot/usage';
   static String get chatbotConversationsEndpoint =>
       '$apiVersion/chatbot/conversations';
@@ -277,7 +276,7 @@ class AppConstants {
       '$apiVersion/chatbot/conversations/$conversationId';
   static String get chatbotChatEndpoint => '$apiVersion/chatbot/chat';
 
-  // Settings - FIXED: Correct endpoints
+  // Settings
   static String get settingsAllEndpoint => '$apiVersion/settings/all';
   static String settingsCategoryEndpoint(String category) =>
       '$apiVersion/settings/category/$category';
@@ -341,12 +340,14 @@ class AppStrings {
   // Welcome messages
   static const String welcomeBack = 'Welcome Back';
   static const String signInToContinue = 'Sign in to continue learning';
+  static const String home = 'Home';
   static const String createAccount = 'Create Account';
   static const String joinFamilyAcademy = 'Join Family Academy';
   static const String dontHaveAccount = 'Don\'t have an account? ';
   static const String alreadyHaveAccount = 'Already have an account? ';
   static const String login = 'Login';
   static const String register = 'Register';
+  static const String search = 'Search';
 
   // Placeholders
   static const String enterUsername = 'Enter your username';
@@ -366,6 +367,8 @@ class AppStrings {
   static const String done = 'Done';
   static const String refresh = 'Refresh';
   static const String makePayment = 'make payment';
+  static const String connecting = 'Connecting...';
+  static const String retrying = 'Retrying...';
 
   // Errors
   static const String error = 'Error';
@@ -419,6 +422,18 @@ class AppStrings {
   static const String selectQuality = 'Select Quality';
   static const String clearDownloads = 'Clear Downloads';
   static const String downloadsCleared = 'All downloads cleared';
+  static const String offlineQuality = 'Offline';
+  static const String selectPlaybackSpeed = 'Select Playback Speed';
+  static const String failedToSwitchQuality = 'Failed to switch quality';
+  static const String failedToChangeQuality = 'Failed to change quality';
+  static const String failedToChangeSpeed = 'Failed to change speed';
+  static const String views = 'views';
+  static const String play = 'Play';
+  static const String downloadRemoved = 'Download removed';
+  static const String removeDownload = 'Remove Download';
+  static const String cancelDownload = 'Cancel Download';
+  static const String noAction = 'No';
+  static const String yesCancel = 'Yes, Cancel';
 
   // Chat
   static const String typeMessage = 'Type a message...';
@@ -448,6 +463,7 @@ class AppStrings {
 
   // Profile
   static const String profile = 'Profile';
+  static const String learningPlatform = 'Learning Platform';
   static const String editProfile = 'Edit Profile';
   static const String logout = 'Logout';
   static const String logoutConfirm = 'Are you sure you want to logout?';
@@ -486,6 +502,23 @@ class AppStrings {
   static const String deviceChange = 'Device Change';
   static const String newDevice = 'New Device Detected';
   static const String confirmDeviceChange = 'Confirm Device Change';
+  static const String secureAccountRecovery = 'Secure account recovery';
+  static const String reviewAndApproveDeviceChange =
+      'Review the new device request and confirm your password before approving access.';
+  static const String deviceSecurityStatus = 'Security Status';
+  static const String deviceInformation = 'Device Information';
+  static const String verifyPassword = 'Verify Password';
+  static const String enterPasswordConfirmDeviceChange =
+      'Enter your password to confirm device change';
+  static const String oldDeviceBlockedNotice =
+      'You are logging in from a new device. Your old device will be blocked after this change.';
+  static const String currentDevice = 'Current Device';
+  static const String requestedDevice = 'Requested Device';
+  static const String approve = 'Approve';
+  static const String approving = 'Approving...';
+  static const String cannotChange = 'Cannot Change';
+  static const String deviceChangeApproved =
+      'Device change approved successfully!';
 
   // Categories
   static const String category = 'Category';
@@ -507,8 +540,14 @@ class AppStrings {
   static const String notes = 'Notes';
   static const String practice = 'Practice';
   static const String comingSoon = 'Coming Soon';
+  static const String comingSoonUppercase = 'COMING SOON';
   static const String locked = 'Locked';
   static const String goBack = 'Go Back';
+  static const String freePreview = 'FREE PREVIEW';
+  static const String availableNow = 'Available now';
+  static const String loginToAccessContent = 'Please login to access content';
+  static const String chapterComingSoon = 'This chapter is coming soon!';
+  static const String viewThisNote = 'view this note';
 
   // Access banners
   static const String fullAccess = 'Full Access';
@@ -518,6 +557,9 @@ class AppStrings {
       'Free chapters only. Purchase to unlock all content.';
   static const String purchaseNow = 'Purchase';
   static const String payNow = 'Pay Now';
+  static const String allContentAccess = 'You have access to all content';
+  static const String allContentFree = 'All content is free and accessible';
+  static const String free = 'Free';
 
   // Time
   static const String justNow = 'Just now';
@@ -533,6 +575,18 @@ class AppStrings {
   static const String syncing = 'Syncing...';
   static const String syncComplete = 'Sync complete';
   static const String queued = 'Queued';
+  static const String completed = 'COMPLETED';
+  static const String inProgress = 'IN PROGRESS';
+  static const String upcoming = 'UPCOMING';
+  static const String ended = 'ENDED';
+  static String pendingActionsLabel(int count) =>
+      '$count pending action${count > 1 ? 's' : ''}';
+  static String pendingActionsSyncLabel(int count) =>
+      '${pendingActionsLabel(count)} will sync when online';
+  static String pendingChangesLabel(int count) =>
+      '$count pending change${count > 1 ? 's' : ''}';
+  static String offlineChangesLabel(int count) =>
+      '$count offline change${count > 1 ? 's' : ''}';
 
   // General
   static const String ok = 'OK';
@@ -576,6 +630,7 @@ class AppStrings {
   static const String estSize = 'Est. size';
   static const String best = 'Best';
   static const String quality = 'Quality';
+  static const String qualities = 'qualities';
   static const String quality360 = 'Good for mobile data, saves data';
   static const String quality480 = 'Balanced quality and data usage';
   static const String quality720 = 'HD quality, best on WiFi';
@@ -602,6 +657,10 @@ class AppStrings {
   static const String clearDownloadsConfirm =
       'Are you sure you want to remove all downloaded videos and notes?';
   static const String errorClearingDownloads = 'Error clearing downloads';
+  static String removeDownloadConfirm(String title) =>
+      'Remove "$title" from your downloads?';
+  static String cancelDownloadConfirm(String title) =>
+      'Cancel downloading "$title"?';
   static const String cannotOpenFile = 'Cannot open file';
   static const String errorOpeningFile = 'Error opening file';
   static const String pdfDocument = 'PDF Document';
@@ -614,9 +673,11 @@ class AppStrings {
   static const String showAllExplanations = 'Show All Explanations';
   static const String hideAllExplanations = 'Hide All Explanations';
   static const String checkingAnswers = 'Checking answers...';
+  static const String checkAnswer = 'Check Answer';
   static const String checked = 'Checked';
   static const String questions = 'questions';
   static const String correct = 'correct';
+  static const String correctExclamation = 'Correct!';
   static const String allQuestionsChecked = 'All questions checked';
   static const String failedToCheckAnswer = 'Failed to check answer';
   static const String chapterDoesNotExist =
@@ -738,6 +799,7 @@ class AppStrings {
   static const String askAboutAnySubject = 'Ask about any subject...';
   static const String messagesQueued = 'message(s) queued';
   static const String aiLearningAssistant = 'AI Learning Assistant';
+  static const String chatAssistant = 'Chat Assistant';
   static const String offlineMessagesWillBeQueued =
       'You are offline. Messages will be queued and sent when online.';
   static const String askAboutAnySubjectPrompt =
@@ -776,6 +838,70 @@ class AppStrings {
   static const String profileUpdateFailed = 'Failed to update profile';
   static const String darkMode = 'Dark Mode';
   static const String tvPairing = 'TV Pairing';
+  static const String connectYourTv = 'Connect Your TV';
+  static const String streamToAndroidTv =
+      'Stream Family Academy content directly to your Android TV';
+  static const String offlineConnectToPairTv =
+      'You are offline. Please connect to pair a TV device.';
+  static const String tvDevicePaired = 'TV Device Paired';
+  static const String tvDevicePairedSuccessfully =
+      'TV device paired successfully';
+  static const String tvDeviceUnpairedSuccessfully =
+      'TV device unpaired successfully';
+  static const String unpairTvDeviceTitle = 'Unpair TV Device';
+  static const String unpairTvDeviceConfirm =
+      'Are you sure you want to unpair your TV device? You will need to pair it again to stream content.';
+  static const String unpairingFailed = 'Unpairing failed';
+  static const String enterPairingCode = 'Please enter the pairing code';
+  static const String validSixDigitCode = 'Please enter a valid 6-digit code';
+  static const String pairDevice = 'pair device';
+  static const String unpairDevice = 'unpair device';
+  static const String deviceStatusUpdated = 'Device status updated';
+  static const String offlineMessagesLabel = 'offline messages';
+  static const String usernameNotFoundLoginAgain =
+      'Username not found. Please login again.';
+  static const String ready = 'Ready';
+  static const String connected = 'Connected';
+  static const String online = 'Online';
+  static const String mode = 'Mode';
+  static const String pairingCode = 'Pairing Code';
+  static const String invalidDeviceChangeRequest =
+      'Invalid device change request';
+  static const String passwordRequiredForDeviceChange =
+      'Password is required to confirm device change';
+  static const String confirmDeviceChangePrompt =
+      'Please confirm the device change';
+  static const String maxDeviceChangesReached =
+      'You have reached the maximum device changes';
+  static const String deviceChangesLimitedMessage =
+      'Device changes are limited to 2 per month for security reasons.';
+  static const String offlineCompleteDeviceChange =
+      'You are offline. Please connect to complete device change.';
+  static const String initializingDeviceInformation =
+      'Initializing device information...';
+  static const String invalidRequest = 'Invalid Request';
+  static const String noDeviceChangeDataProvided =
+      'No device change data provided.';
+  static const String deviceSetupFailed = 'Device setup failed';
+  static const String deviceNotReady = 'Device not ready';
+  static const String loginAction = 'login';
+  static const String registerAction = 'register';
+  static const String noConversationsTitle = 'No Conversations';
+  static const String startNewChatToBeginShort = 'Start a new chat to begin!';
+  static const String cancelDeviceChange = 'Cancel Device Change';
+  static const String cancelDeviceChangeConfirm =
+      'Are you sure you want to cancel? You will not be able to login on this device.';
+  static const String loginAfterDeviceChangeFailed =
+      'Login after device change failed';
+  static const String maximumDeviceChangesReachedSupport =
+      'Maximum device changes (2 per month) reached. Please contact support.';
+  static const String accessDeniedCheckPassword =
+      'Access denied. Please check your password.';
+  static const String deviceChangeFailedTryAgain =
+      'Device change failed. Please try again.';
+  static const String failedToPlayVideoSimple = 'Failed to play video';
+  static const String failedToPlayDownloadedVideo =
+      'Failed to play downloaded video';
   static const String parentControls = 'Parent Controls';
   static const String feedback = 'Feedback';
   static const String helpSupport = 'Help & Support';
@@ -855,8 +981,19 @@ class AppStrings {
 
   // Payment
   static const String payment = 'Payment';
+  static const String paymentSummary = 'Payment Summary';
   static const String paymentDetails = 'Payment Details';
   static const String paymentMethod = 'Payment Method';
+  static const String securePayment = 'Secure Payment';
+  static const String completeYourPayment = 'Complete Your Payment';
+  static const String submitYourPaymentProof =
+      'Submit your payment proof so we can verify your access quickly.';
+  static const String reviewPaymentBeforeSubmitting =
+      'Review the category, amount, and billing details before you send proof.';
+  static const String selectMethodAndUploadProof =
+      'Choose a payment method, fill in the account details, and upload your receipt.';
+  static const String followTheseStepsCarefully =
+      'Use the instructions below to avoid delays during verification.';
   static const String selectPaymentMethod = 'Select a payment method';
   static const String accountDetails = 'Account Details';
   static const String accountHolderName = 'Account Holder Name';
@@ -1109,4 +1246,59 @@ class AppStrings {
   static const String exams = 'Exams';
   static const String courseDoesNotExist =
       'The course you\'re looking for doesn\'t exist.';
+  static const String continueLabel = 'Continue';
+  static const String clearSearch = 'Clear Search';
+  static const String syncNow = 'Sync Now';
+  static const String syncingChanges = 'Your changes are being synced.';
+  static const String changesQueuedTitle = 'Changes Queued';
+  static const String internetConnectionRequired =
+      'Internet connection required';
+  static const String selectYourAnswer = 'Select your answer:';
+  static const String unlockingExam = 'Unlock Exam';
+  static const String loginToAccessExams = 'Please login to access exams';
+  static const String backTooltip = 'Back';
+  static const String empoweringEducation = 'Empowering Education';
+  static const String failedToStart = 'Failed to start';
+  static const String restartAppToInitialize =
+      'Could not initialize. Please restart app.';
+  static const String questionShortLabel = 'Q';
+  static const String today = 'Today';
+  static const String yesterday = 'Yesterday';
+
+  static String noCachedDataForType(String dataType) =>
+      'No cached $dataType available. Connect to internet.';
+  static String noDataAvailableForType(String dataType) =>
+      'No $dataType available.';
+  static String noDataTitleForType(String dataType) => 'No $dataType';
+  static String queuedChangesMessage(String action, int count) {
+    final actionCount = count > 1 ? '$count actions' : '1 action';
+    return '$actionCount waiting to sync. $action will complete when online.';
+  }
+
+  static String noResultsForQuery(String query) =>
+      'No results found for "$query". Try different keywords.';
+  static String pendingLabel(int count) => '$count pending';
+  static String marksLabel(int marks) => '$marks mark${marks > 1 ? 's' : ''}';
+  static String questionLabel(int order) => '$questionShortLabel$order';
+  static String questionCountLabel(int count) =>
+      '$count question${count > 1 ? 's' : ''}';
+  static String chapterCountLabel(int count) =>
+      '$count chapter${count > 1 ? 's' : ''}';
+  static String courseCountLabel(int count) =>
+      '$count course${count > 1 ? 's' : ''}';
+  static String availableDateLabel(String date) => 'Available: $date';
+  static String paymentRejectedReason(String reason) => 'Reason: $reason';
+  static String renewalRequiredForExam(String categoryName) =>
+      'Your subscription for "$categoryName" has expired. Renew to access this exam.';
+  static String purchaseRequiredForExam(String categoryName) =>
+      'This exam requires access to "$categoryName". Purchase to unlock.';
+  static String renewalRequiredForChapter(String categoryName) =>
+      'Your subscription for "$categoryName" has expired. Renew to access this chapter.';
+  static String purchaseRequiredForChapter(String categoryName) =>
+      'This chapter requires access to "$categoryName". Purchase to unlock all content.';
+  static String daysAgoLabel(int days) => '$days days ago';
+  static String weeksAgoLabel(int weeks) =>
+      '$weeks week${weeks > 1 ? 's' : ''} ago';
+  static String maxDeviceChangesReachedMessage(int maxChanges) =>
+      '$maxDeviceChangesReached ($maxChanges per month)';
 }

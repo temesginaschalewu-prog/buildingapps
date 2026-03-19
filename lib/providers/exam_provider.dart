@@ -1,5 +1,5 @@
 // lib/providers/exam_provider.dart
-// COMPLETE PRODUCTION-READY FINAL VERSION - FIXED INSTANT CACHE LOADING
+// PRODUCTION-READY FINAL VERSION - FIXED CONNECTIVITY & ERROR HANDLING
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -14,6 +14,7 @@ import '../models/exam_model.dart';
 import '../models/exam_result_model.dart';
 import '../utils/constants.dart';
 import '../utils/api_response.dart';
+import '../utils/helpers.dart';
 import 'base_provider.dart';
 
 /// PRODUCTION-READY Exam Provider with Full Offline Support
@@ -48,10 +49,9 @@ class ExamProvider extends ChangeNotifier
 
   int _apiCallCount = 0;
 
-  final StreamController<List<Exam>> _examsUpdateController =
-      StreamController<List<Exam>>.broadcast();
-  final StreamController<List<ExamResult>> _resultsUpdateController =
-      StreamController<List<ExamResult>>.broadcast();
+  // ✅ FIXED: Proper stream declarations with late
+  late StreamController<List<Exam>> _examsUpdateController;
+  late StreamController<List<ExamResult>> _resultsUpdateController;
 
   ExamProvider({
     required this.apiService,
@@ -59,7 +59,9 @@ class ExamProvider extends ChangeNotifier
     required this.connectivityService,
     required this.hiveService,
     required this.offlineQueueManager,
-  }) {
+  })  : _examsUpdateController = StreamController<List<Exam>>.broadcast(),
+        _resultsUpdateController =
+            StreamController<List<ExamResult>>.broadcast() {
     log('ExamProvider constructor called');
     initializeOfflineAware(
       connectivity: connectivityService,
@@ -252,7 +254,7 @@ class ExamProvider extends ChangeNotifier
     }
   }
 
-  // ===== LOAD EXAMS BY COURSE - FIXED =====
+  // ===== LOAD EXAMS BY COURSE =====
   Future<void> loadExamsByCourse(
     int courseId, {
     bool forceRefresh = false,
@@ -263,8 +265,10 @@ class ExamProvider extends ChangeNotifier
 
     log('loadExamsByCourse() CALL #$callId for course $courseId');
 
+    // ✅ FIXED: Early connectivity check with user-friendly message
     if (isManualRefresh && isOffline) {
-      throw Exception('Network error. Please check your internet connection.');
+      throw Exception(getUserFriendlyErrorMessage(
+          'Network error. Please check your internet connection.'));
     }
 
     // Return cached data immediately if available
@@ -386,14 +390,15 @@ class ExamProvider extends ChangeNotifier
           return;
         }
 
-        setError('You are offline. No cached exams available.');
+        setError(getUserFriendlyErrorMessage(
+            'You are offline. No cached exams available.'));
         _hasLoadedForCourse[courseId] = true;
         setLoaded();
         _isLoadingForCourse[courseId] = false;
 
         if (isManualRefresh) {
-          throw Exception(
-              'Network error. Please check your internet connection.');
+          throw Exception(getUserFriendlyErrorMessage(
+              'Network error. Please check your internet connection.'));
         }
         return;
       }
@@ -448,7 +453,7 @@ class ExamProvider extends ChangeNotifier
         _examsUpdateController.add(_availableExams);
         log('✅ Success! Exams loaded for course $courseId');
       } else {
-        setError(response.message);
+        setError(getUserFriendlyErrorMessage(response.message));
         _examsByCourse[courseId] = _examsByCourse[courseId] ?? [];
         _hasLoadedForCourse[courseId] = true;
         setLoaded();
@@ -462,7 +467,7 @@ class ExamProvider extends ChangeNotifier
     } catch (e) {
       log('❌ Error loading exams: $e');
 
-      setError(e.toString());
+      setError(getUserFriendlyErrorMessage(e));
       _examsByCourse[courseId] = _examsByCourse[courseId] ?? [];
       _hasLoadedForCourse[courseId] = true;
       setLoaded();
@@ -482,7 +487,7 @@ class ExamProvider extends ChangeNotifier
     }
   }
 
-  // ===== LOAD EXAM RESULTS - FIXED =====
+  // ===== LOAD EXAM RESULTS =====
   Future<void> loadMyExamResults({
     bool forceRefresh = false,
     bool isManualRefresh = false,
@@ -492,8 +497,10 @@ class ExamProvider extends ChangeNotifier
 
     log('loadMyExamResults() CALL #$callId');
 
+    // ✅ FIXED: Early connectivity check with user-friendly message
     if (isManualRefresh && isOffline) {
-      throw Exception('Network error. Please check your internet connection.');
+      throw Exception(getUserFriendlyErrorMessage(
+          'Network error. Please check your internet connection.'));
     }
 
     // Return cached data immediately if available
@@ -603,8 +610,8 @@ class ExamProvider extends ChangeNotifier
         _resultsUpdateController.add(_myExamResults);
 
         if (isManualRefresh) {
-          throw Exception(
-              'Network error. Please check your internet connection.');
+          throw Exception(getUserFriendlyErrorMessage(
+              'Network error. Please check your internet connection.'));
         }
         return;
       }
@@ -660,7 +667,7 @@ class ExamProvider extends ChangeNotifier
         _resultsUpdateController.add(_myExamResults);
         log('✅ Success! Exam results loaded');
       } else {
-        setError(response.message);
+        setError(getUserFriendlyErrorMessage(response.message));
         _hasLoadedResults = true;
         setLoaded();
         _resultsUpdateController.add(_myExamResults);
@@ -672,7 +679,7 @@ class ExamProvider extends ChangeNotifier
     } catch (e) {
       log('❌ Error loading exam results: $e');
 
-      setError(e.toString());
+      setError(getUserFriendlyErrorMessage(e));
       setLoaded();
       _hasLoadedResults = true;
 
@@ -693,44 +700,48 @@ class ExamProvider extends ChangeNotifier
   // ===== EXAM SUBMISSION METHODS =====
   Future<ApiResponse<Map<String, dynamic>>> startExam(int examId) async {
     log('startExam() for exam $examId');
+
+    // ✅ FIXED: Early connectivity check
+    if (isOffline) {
+      return ApiResponse.offline(
+        message:
+            'Cannot start exam while offline. Please connect and try again.',
+      );
+    }
+
     setLoading();
     try {
-      if (isOffline) {
-        setLoaded();
-        return ApiResponse.offline(
-          message: 'You are offline. Please connect to start exam.',
-        );
-      }
       final response = await apiService.startExam(examId);
       setLoaded();
       return response;
     } catch (e) {
       setLoaded();
-      setError(e.toString());
-      return ApiResponse.error(message: 'Failed to start exam: $e');
+      setError(getUserFriendlyErrorMessage(e));
+      return ApiResponse.error(message: getUserFriendlyErrorMessage(e));
     }
   }
 
   Future<ApiResponse<Map<String, dynamic>>> submitExam(
       int examResultId, List<Map<String, dynamic>> answers) async {
     log('submitExam() for result $examResultId');
+
+    // ✅ FIXED: Handle offline with queue
+    if (isOffline) {
+      offlineQueueManager.addItem(
+        type: AppConstants.queueActionSubmitExam,
+        data: {
+          'exam_result_id': examResultId,
+          'answers': answers,
+          'timestamp': DateTime.now().toIso8601String(),
+        },
+      );
+      return ApiResponse.queued(
+        message: 'Exam saved offline. Will submit when online.',
+      );
+    }
+
     setLoading();
     try {
-      if (isOffline) {
-        offlineQueueManager.addItem(
-          type: AppConstants.queueActionSubmitExam,
-          data: {
-            'exam_result_id': examResultId,
-            'answers': answers,
-            'timestamp': DateTime.now().toIso8601String(),
-          },
-        );
-        setLoaded();
-        return ApiResponse.queued(
-          message: 'Exam saved offline. Will submit when online.',
-        );
-      }
-
       final response = await apiService.submitExam(examResultId, answers);
 
       if (response.success) {
@@ -741,34 +752,36 @@ class ExamProvider extends ChangeNotifier
       return response;
     } catch (e) {
       setLoaded();
-      setError(e.toString());
-      return ApiResponse.error(message: 'Failed to submit exam: $e');
+      setError(getUserFriendlyErrorMessage(e));
+      return ApiResponse.error(message: getUserFriendlyErrorMessage(e));
     }
   }
 
   Future<ApiResponse<Map<String, dynamic>>> saveExamProgress(
       int examResultId, List<Map<String, dynamic>> answers) async {
     log('saveExamProgress() for result $examResultId');
-    try {
-      if (isOffline) {
-        offlineQueueManager.addItem(
-          type: AppConstants.queueActionSaveExamProgress,
-          data: {
-            'exam_result_id': examResultId,
-            'answers': answers,
-            'timestamp': DateTime.now().toIso8601String(),
-          },
-        );
-        return ApiResponse.queued(
-          message: 'Progress saved offline.',
-        );
-      }
 
+    // ✅ FIXED: Handle offline with queue
+    if (isOffline) {
+      offlineQueueManager.addItem(
+        type: AppConstants.queueActionSaveExamProgress,
+        data: {
+          'exam_result_id': examResultId,
+          'answers': answers,
+          'timestamp': DateTime.now().toIso8601String(),
+        },
+      );
+      return ApiResponse.queued(
+        message: 'Progress saved offline.',
+      );
+    }
+
+    try {
       final response = await apiService.saveExamProgress(examResultId, answers);
       return response;
     } catch (e) {
       log('Error saving exam progress: $e');
-      return ApiResponse.error(message: 'Failed to save progress: $e');
+      return ApiResponse.error(message: getUserFriendlyErrorMessage(e));
     }
   }
 
@@ -783,7 +796,20 @@ class ExamProvider extends ChangeNotifier
     }
   }
 
+  // ✅ FIXED: Background refresh with rate limiting
+  Map<dynamic, dynamic> _lastBackgroundRefreshForCourse = {};
+  static const Duration _minBackgroundInterval = Duration(minutes: 2);
+
   Future<void> _refreshCourseExamsInBackground(int courseId) async {
+    // Rate limit background refreshes per course
+    if (_lastBackgroundRefreshForCourse[courseId] != null &&
+        DateTime.now().difference(_lastBackgroundRefreshForCourse[courseId]!) <
+            _minBackgroundInterval) {
+      log('⏱️ Background refresh rate limited for course $courseId');
+      return;
+    }
+    _lastBackgroundRefreshForCourse[courseId] = DateTime.now();
+
     if (isOffline) return;
 
     try {
@@ -822,7 +848,18 @@ class ExamProvider extends ChangeNotifier
     }
   }
 
+  DateTime? _lastResultsBackgroundRefresh;
+
   Future<void> _refreshExamResultsInBackground() async {
+    // Rate limit background refreshes
+    if (_lastResultsBackgroundRefresh != null &&
+        DateTime.now().difference(_lastResultsBackgroundRefresh!) <
+            _minBackgroundInterval) {
+      log('⏱️ Results background refresh rate limited');
+      return;
+    }
+    _lastResultsBackgroundRefresh = DateTime.now();
+
     if (isOffline) return;
 
     try {
@@ -944,6 +981,7 @@ class ExamProvider extends ChangeNotifier
     }
   }
 
+  // ✅ FIXED: Clear user data with proper stream recreation
   Future<void> clearUserData() async {
     final session = UserSession();
     if (!session.shouldClearCacheOnLogout()) return;
@@ -968,16 +1006,24 @@ class ExamProvider extends ChangeNotifier
     _myExamResults = [];
     _hasLoadedExams = false;
     _hasLoadedResults = false;
+    _lastBackgroundRefreshForCourse.clear();
+    _lastResultsBackgroundRefresh = null;
     stopBackgroundRefresh();
 
+    // ✅ FIXED: Properly recreate stream controllers
+    await _examsUpdateController.close();
+    await _resultsUpdateController.close();
+    _examsUpdateController = StreamController<List<Exam>>.broadcast();
+    _resultsUpdateController = StreamController<List<ExamResult>>.broadcast();
     _examsUpdateController.add([]);
     _resultsUpdateController.add([]);
+
     safeNotify();
   }
 
   @override
   void clearError() {
-    clearError();
+    super.clearError();
   }
 
   @override

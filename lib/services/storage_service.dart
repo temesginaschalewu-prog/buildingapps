@@ -1,5 +1,5 @@
 // lib/services/storage_service.dart
-// COMPLETE FIXED VERSION - USE EXISTING BOXES
+// PRODUCTION-READY FINAL VERSION
 
 import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -93,13 +93,13 @@ class StorageService {
     }
   }
 
-  // ===== USER MANAGEMENT - USE EXISTING BOXES =====
+  // ===== USER MANAGEMENT =====
   Future<void> saveUser(User user) async {
     await ensureInitialized();
     final userJson = json.encode(user.toJson());
     await _prefs.setString(AppConstants.userDataKey, userJson);
 
-    // ✅ USE EXISTING BOX - DON'T TRY TO OPEN
+    // USE EXISTING BOX
     if (Hive.isBoxOpen(AppConstants.hiveUserBox)) {
       final userBox = Hive.box<dynamic>(AppConstants.hiveUserBox);
       await userBox.put('user_${user.id}_profile', user);
@@ -121,7 +121,7 @@ class StorageService {
   Future<User?> getUser() async {
     await ensureInitialized();
 
-    // ✅ USE EXISTING BOX
+    // USE EXISTING BOX
     try {
       final userId = await getCurrentUserId();
       if (userId != null && Hive.isBoxOpen(AppConstants.hiveUserBox)) {

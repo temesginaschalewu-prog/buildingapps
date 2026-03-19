@@ -1,5 +1,5 @@
 // lib/services/api_service.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// PRODUCTION FINAL - REDUCED TIMEOUTS & RETRY
 
 import 'dart:async';
 import 'dart:convert';
@@ -36,7 +36,7 @@ import '../models/video_model.dart';
 import '../models/chatbot_model.dart';
 import '../utils/api_response.dart';
 
-/// FINAL PRODUCTION API SERVICE WITH FULL OFFLINE QUEUE SUPPORT
+/// PRODUCTION-READY API SERVICE - OPTIMIZED TIMEOUTS
 class ApiService {
   late Dio _dio;
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
@@ -45,8 +45,8 @@ class ApiService {
   final Map<String, Future<Response<dynamic>>> _inFlightGetRequests = {};
 
   final Map<String, int> _retryCounts = {};
-  static const int _maxRetries = 3;
-  static const int _baseRetryDelaySeconds = 2;
+  static const int _maxRetries = 2; // Reduced from 3
+  static const int _baseRetryDelaySeconds = 1; // Reduced from 2
 
   final StreamController<Map<String, dynamic>> _deviceDeactivationController =
       StreamController<Map<String, dynamic>>.broadcast();
@@ -60,16 +60,20 @@ class ApiService {
 
   Dio get dio => _dio;
 
-  // Base URL with /api/v1 prefix for all endpoints
+  // OPTIMIZED TIMEOUTS - Reduced from 30 seconds
+  static const int _connectTimeout = 8;
+  static const int _receiveTimeout = 8;
+  static const int _sendTimeout = 8;
+
   static const String _apiPrefix = '/api/v1';
 
   ApiService() {
     _dio = Dio(
       BaseOptions(
         baseUrl: AppConstants.apiBaseUrl,
-        connectTimeout: const Duration(seconds: 60),
-        receiveTimeout: const Duration(seconds: 60),
-        sendTimeout: const Duration(seconds: 60),
+        connectTimeout: Duration(seconds: _connectTimeout),
+        receiveTimeout: Duration(seconds: _receiveTimeout),
+        sendTimeout: Duration(seconds: _sendTimeout),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -131,9 +135,6 @@ class ApiService {
     final deviceId = await _getDeviceId();
     if (deviceId != null && deviceId.isNotEmpty) {
       options.headers['X-Device-ID'] = deviceId;
-      if (kDebugMode) {
-        debugLog('ApiService', '📱 Device ID: $deviceId');
-      }
     }
 
     final userData = _prefs.getString(AppConstants.userDataKey);
@@ -144,6 +145,9 @@ class ApiService {
         if (userId != null) options.headers['X-User-ID'] = userId.toString();
       } catch (e) {}
     }
+
+    // Initialize retry count
+    options.extra['retryCount'] = 0;
 
     if (kDebugMode) {
       debugLog('ApiService', '${options.method} ${options.path}');
@@ -162,33 +166,29 @@ class ApiService {
       DioException error, ErrorInterceptorHandler handler) async {
     debugLog('ApiService', '${error.type} - ${error.message}');
 
+    // RETRY LOGIC for timeouts
     if (error.type == DioExceptionType.connectionTimeout ||
         error.type == DioExceptionType.receiveTimeout ||
         error.type == DioExceptionType.sendTimeout) {
-      final path = error.requestOptions.path;
-      final currentRetryCount = _retryCounts[path] ?? 0;
+      final options = error.requestOptions;
+      final retryCount = options.extra['retryCount'] as int? ?? 0;
 
-      if (currentRetryCount < 2) {
-        _retryCounts[path] = currentRetryCount + 1;
-        debugLog(
-            'ApiService', '⏱️ Timeout, retrying (${currentRetryCount + 1}/2)');
+      if (retryCount < _maxRetries) {
+        options.extra['retryCount'] = retryCount + 1;
+        final delaySeconds = _baseRetryDelaySeconds * (retryCount + 1);
 
-        await Future.delayed(Duration(seconds: 2 * (currentRetryCount + 1)));
+        debugLog('ApiService',
+            '⏱️ Timeout, retrying (${retryCount + 1}/$_maxRetries) in ${delaySeconds}s');
+
+        await Future.delayed(Duration(seconds: delaySeconds));
 
         try {
-          final response = await _dio.request(
-            error.requestOptions.path,
-            data: error.requestOptions.data,
-            queryParameters: error.requestOptions.queryParameters,
-            options: Options(
-              method: error.requestOptions.method,
-              headers: error.requestOptions.headers,
-            ),
-          );
+          final response = await _dio.fetch(options);
           handler.resolve(response);
           return;
         } catch (retryError) {
-          debugLog('ApiService', 'Retry failed after timeout: $retryError');
+          debugLog('ApiService', 'Retry failed: $retryError');
+          // Continue to error handling
         }
       }
 
@@ -197,8 +197,8 @@ class ApiService {
         statusCode: -1,
         data: {
           'success': false,
-          'message':
-              'Request timed out. Please check your connection and try again.',
+          'message': getUserFriendlyErrorMessage(
+              'Request timed out. Please check your connection and try again.'),
           'timeout': true,
         },
       ));
@@ -228,7 +228,8 @@ class ApiService {
         statusCode: -1,
         data: {
           'success': false,
-          'message': 'Network error. Please check your internet connection.',
+          'message': getUserFriendlyErrorMessage(
+              'Network error. Please check your internet connection.'),
           'offline': true,
         },
       ));
@@ -539,7 +540,8 @@ class ApiService {
           e.type == DioExceptionType.connectionTimeout) {
         return ApiResponse<Map<String, dynamic>>(
           success: false,
-          message: 'Network error. Please check your internet connection.',
+          message: getUserFriendlyErrorMessage(
+              'Network error. Please check your internet connection.'),
         );
       }
       return ApiResponse<Map<String, dynamic>>(
@@ -607,7 +609,8 @@ class ApiService {
           e.type == DioExceptionType.connectionTimeout) {
         return ApiResponse<Map<String, dynamic>>(
           success: false,
-          message: 'Network error. Please check your internet connection.',
+          message: getUserFriendlyErrorMessage(
+              'Network error. Please check your internet connection.'),
         );
       }
 
@@ -615,7 +618,8 @@ class ApiService {
           e.type == DioExceptionType.sendTimeout) {
         return ApiResponse<Map<String, dynamic>>(
           success: false,
-          message: 'Request timed out. Please try again.',
+          message: getUserFriendlyErrorMessage(
+              'Request timed out. Please try again.'),
         );
       }
 
@@ -669,7 +673,8 @@ class ApiService {
           e.type == DioExceptionType.connectionTimeout) {
         return ApiResponse<Map<String, dynamic>>(
           success: false,
-          message: 'Network error. Please check your internet connection.',
+          message: getUserFriendlyErrorMessage(
+              'Network error. Please check your internet connection.'),
         );
       }
       return ApiResponse<Map<String, dynamic>>(
@@ -890,7 +895,7 @@ class ApiService {
     }
   }
 
-  // ===== SETTINGS - FIXED =====
+  // ===== SETTINGS =====
   Future<ApiResponse<List<Setting>>> getAllSettings() async {
     try {
       debugPrint('🔍 [ApiService] getAllSettings: START');
@@ -1072,7 +1077,7 @@ class ApiService {
     }
   }
 
-  // ===== CHAPTERS - FIXED =====
+  // ===== CHAPTERS =====
   Future<ApiResponse<List<Chapter>>> getChaptersByCourse(int courseId) async {
     try {
       debugPrint(
@@ -1487,7 +1492,7 @@ class ApiService {
     }
   }
 
-  // ===== EXAM RESULTS - FIXED =====
+  // ===== EXAM RESULTS =====
   Future<ApiResponse<List<ExamResult>>> getUserExamResults(int userId) async {
     try {
       debugPrint(
@@ -1617,6 +1622,41 @@ class ApiService {
         message: e.response?.data['message'] ?? 'Failed to fetch subscriptions',
         data: [],
       );
+    }
+  }
+
+  // ===== BATCH SUBSCRIPTION CHECK =====
+  Future<Map<int, bool>> checkMultipleSubscriptions(
+      List<int> categoryIds) async {
+    try {
+      debugPrint(
+          '🔍 [ApiService] checkMultipleSubscriptions: START for ${categoryIds.length} categories');
+
+      final response = await _dio.post(
+        '$_apiPrefix/subscriptions/check-multiple',
+        data: {'category_ids': categoryIds},
+        options: Options(
+          sendTimeout: const Duration(seconds: 15),
+          receiveTimeout: const Duration(seconds: 15),
+        ),
+      );
+
+      debugPrint(
+          '🔍 [ApiService] checkMultipleSubscriptions: statusCode=${response.statusCode}');
+
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        final Map<String, dynamic> results = response.data['data'] ?? {};
+        debugPrint(
+            '🔍 [ApiService] checkMultipleSubscriptions: got ${results.length} results');
+
+        return results
+            .map((key, value) => MapEntry(int.parse(key), value == true));
+      }
+
+      return {};
+    } on DioException catch (e) {
+      debugPrint('🔍 [ApiService] checkMultipleSubscriptions: ERROR: $e');
+      return {};
     }
   }
 
@@ -2193,7 +2233,7 @@ class ApiService {
     }
   }
 
-  // ===== CHATBOT - FIXED =====
+  // ===== CHATBOT =====
   Future<ApiResponse<Map<String, dynamic>>> getChatbotUsage() async {
     try {
       debugPrint('🔍 [ApiService] getChatbotUsage: START');
@@ -2490,7 +2530,7 @@ class ApiService {
       debugPrint('🔍 [ApiService] uploadProfileImage: Uploading $fileName');
 
       final response = await _dio.post(
-        '$_apiPrefix/upload/profile', // New endpoint
+        '$_apiPrefix/upload/profile',
         data: formData,
         options: Options(
           headers: {'Content-Type': 'multipart/form-data'},
@@ -2548,8 +2588,6 @@ class ApiService {
       );
     }
   }
-
-// Also update the updateMyProfile method - COMPLETE METHOD
 
   Future<ApiResponse<Map<String, dynamic>>> updateMyProfile(
       {String? email, String? phone, String? profileImage}) async {

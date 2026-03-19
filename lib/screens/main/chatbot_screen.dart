@@ -1,5 +1,5 @@
 // lib/screens/main/chatbot_screen.dart
-// FIXED - Using updated provider with hasInitialData
+// COMPLETE FIXED VERSION - NULL SAFETY IN INITSTATE
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -11,6 +11,7 @@ import '../../models/chatbot_model.dart';
 import '../../providers/chatbot_provider.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
+import '../../services/offline_queue_manager.dart';
 import '../../utils/helpers.dart';
 import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
@@ -52,6 +53,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   int _pendingCount = 0;
 
   StreamSubscription? _connectivitySubscription;
+  bool _isMounted = false; // ✅ Track mounted state manually
 
   @override
   bool get wantKeepAlive => true;
@@ -59,7 +61,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   @override
   void initState() {
     super.initState();
-    _connectivitySubscription?.cancel();
+    _isMounted = true;
+
     _slideController = AnimationController(
       vsync: this,
       duration: AppThemes.animationMedium,
@@ -69,13 +72,17 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _slideController, curve: Curves.easeOut));
 
+    // ✅ DON'T access context here - use post frame callback
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initialize();
+      if (_isMounted) {
+        _initialize();
+      }
     });
   }
 
   @override
   void dispose() {
+    _isMounted = false; // ✅ Mark as unmounted immediately
     WidgetsBinding.instance.removeObserver(this);
     _connectivitySubscription?.cancel();
     _messageController.dispose();
@@ -87,6 +94,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   Future<void> _initialize() async {
+    if (!_isMounted) return;
+
     await _checkConnectivity();
     _setupConnectivityListener();
     _setGreeting();
@@ -95,27 +104,34 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   void _setupConnectivityListener() {
+    if (!_isMounted) return;
+
+    // ✅ Safe to access context now (after first frame)
     final connectivityService = context.read<ConnectivityService>();
-    _connectivitySubscription?.cancel(); // Cancel existing first
+    _connectivitySubscription?.cancel();
     _connectivitySubscription =
         connectivityService.onConnectivityChanged.listen((isOnline) {
-      // ✅ CRITICAL: Check mounted before ANY setState
-      if (!mounted) return;
+      if (!_isMounted) return;
 
       setState(() {
         _isOffline = !isOnline;
-        _pendingCount = connectivityService.pendingActionsCount;
+        final queueManager = context.read<OfflineQueueManager>();
+        _pendingCount = queueManager.pendingCount;
       });
     });
   }
 
   Future<void> _checkConnectivity() async {
+    if (!_isMounted) return;
+
     final connectivityService = context.read<ConnectivityService>();
     await connectivityService.checkConnectivity();
-    if (!mounted) return;
+    if (!_isMounted) return;
+
     setState(() {
       _isOffline = !connectivityService.isOnline;
-      _pendingCount = connectivityService.pendingActionsCount;
+      final queueManager = context.read<OfflineQueueManager>();
+      _pendingCount = queueManager.pendingCount;
     });
   }
 
@@ -132,7 +148,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   void _setupScreenSize() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!_isMounted) return;
       if (ScreenSize.isTablet(context) || ScreenSize.isDesktop(context)) {
         setState(() => _showConversationList = true);
         _slideController.forward();
@@ -144,7 +160,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_scrollController.hasClients) return;
+      if (!_isMounted || !_scrollController.hasClients) return;
       _scrollController.animateTo(
         _scrollController.position.maxScrollExtent,
         duration: const Duration(milliseconds: 300),
@@ -154,12 +170,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   Future<void> _manualRefresh() async {
-    if (_isRefreshing) return;
+    if (_isRefreshing || !_isMounted) return;
 
     final connectivityService = context.read<ConnectivityService>();
     if (!connectivityService.isOnline) {
       _refreshController.refreshFailed();
-      if (mounted) {
+      if (_isMounted) {
         SnackbarService().showOffline(context, action: 'refresh');
       }
       return;
@@ -173,7 +189,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         forceRefresh: true,
         isManualRefresh: true,
       );
-      if (!mounted) return;
+      if (!_isMounted) return;
 
       if (widget.conversationId != null) {
         await chatbotProvider.loadMessages(
@@ -189,25 +205,25 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         );
       }
 
-      if (!mounted) return;
+      if (!_isMounted) return;
 
       setState(() => _isOffline = false);
       SnackbarService().showSuccess(context, 'Chat updated');
       _refreshController.refreshCompleted();
     } catch (e) {
-      if (mounted) {
+      if (_isMounted) {
         setState(() => _isOffline = true);
         SnackbarService().showError(context, 'Refresh failed');
       }
       _refreshController.refreshFailed();
     } finally {
-      if (mounted) setState(() => _isRefreshing = false);
+      if (_isMounted) setState(() => _isRefreshing = false);
     }
   }
 
   Future<void> _sendMessage() async {
     final message = _messageController.text.trim();
-    if (message.isEmpty || _isSending) return;
+    if (message.isEmpty || _isSending || !_isMounted) return;
 
     final chatbotProvider = context.read<ChatbotProvider>();
 
@@ -221,7 +237,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
             widget.conversationId ?? chatbotProvider.currentConversation?.id,
       );
 
-      if (!mounted) return;
+      if (!_isMounted) return;
 
       if (result.success) {
         _scrollToBottom();
@@ -239,11 +255,11 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         );
       }
     } catch (e) {
-      if (mounted) {
+      if (_isMounted) {
         SnackbarService().showError(context, getUserFriendlyErrorMessage(e));
       }
     } finally {
-      if (mounted) setState(() => _isSending = false);
+      if (_isMounted) setState(() => _isSending = false);
     }
 
     _focusNode.requestFocus();
@@ -254,12 +270,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     super.build(context);
 
     final chatbotProvider = Provider.of<ChatbotProvider>(context);
-
-    // ✅ Using hasInitialData like ProgressScreen
     final bool isLoading = chatbotProvider.isLoadingConversations &&
         !chatbotProvider.hasInitialData;
 
-    // 1. LOADING STATE - Only on first load with no data
     if (isLoading) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
@@ -286,7 +299,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       );
     }
 
-    // 2. OFFLINE EMPTY STATE
     if (_isOffline &&
         chatbotProvider.conversations.isEmpty &&
         chatbotProvider.messages.isEmpty) {
@@ -308,7 +320,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       );
     }
 
-    // 3. MAIN CONTENT
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: AppColors.getBackground(context),
@@ -346,8 +357,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                 showOfflineIndicator: _isOffline,
               ),
             ),
-
-            // Pending count banner
             if (_isOffline && _pendingCount > 0)
               SliverToBoxAdapter(
                 child: Container(
@@ -383,8 +392,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                   ),
                 ),
               ),
-
-            // Chat area
             SliverFillRemaining(
               child: Row(
                 children: [

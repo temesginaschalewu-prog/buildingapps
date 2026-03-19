@@ -1,5 +1,5 @@
 // lib/providers/chapter_provider.dart
-// COMPLETE PRODUCTION-READY FINAL VERSION - FIXED INSTANT CACHE LOADING
+// PRODUCTION-READY FINAL VERSION - FIXED STREAM RECREATION
 
 import 'dart:async';
 import 'package:familyacademyclient/services/offline_queue_manager.dart';
@@ -38,15 +38,16 @@ class ChapterProvider extends ChangeNotifier
   Box? _chaptersBox;
   int _apiCallCount = 0;
 
-  final StreamController<Map<int, List<Chapter>>> _chaptersUpdateController =
-      StreamController<Map<int, List<Chapter>>>.broadcast();
+  // ✅ FIXED: Proper stream declaration with late
+  late StreamController<Map<int, List<Chapter>>> _chaptersUpdateController;
 
   ChapterProvider({
     required this.apiService,
     required this.deviceService,
     required this.connectivityService,
     required this.hiveService,
-  }) {
+  }) : _chaptersUpdateController =
+            StreamController<Map<int, List<Chapter>>>.broadcast() {
     log('ChapterProvider constructor called');
     initializeOfflineAware(
       connectivity: connectivityService,
@@ -172,7 +173,7 @@ class ChapterProvider extends ChangeNotifier
     return null;
   }
 
-  // ===== LOAD CHAPTERS - FIXED WITH INSTANT CACHE =====
+  // ===== LOAD CHAPTERS =====
   Future<void> loadChaptersByCourse(
     int courseId, {
     bool forceRefresh = false,
@@ -397,7 +398,20 @@ class ChapterProvider extends ChangeNotifier
     }
   }
 
+  // ✅ FIXED: Background refresh with rate limiting
+  Map<dynamic, dynamic> _lastBackgroundRefreshForCourse = {};
+  static const Duration _minBackgroundInterval = Duration(minutes: 2);
+
   Future<void> _refreshInBackground(int courseId) async {
+    // Rate limit background refreshes per course
+    if (_lastBackgroundRefreshForCourse[courseId] != null &&
+        DateTime.now().difference(_lastBackgroundRefreshForCourse[courseId]!) <
+            _minBackgroundInterval) {
+      log('⏱️ Background refresh rate limited for course $courseId');
+      return;
+    }
+    _lastBackgroundRefreshForCourse[courseId] = DateTime.now();
+
     if (isOffline) return;
 
     try {
@@ -519,6 +533,7 @@ class ChapterProvider extends ChangeNotifier
     }
   }
 
+  // ✅ FIXED: Clear user data with proper stream recreation
   Future<void> clearUserData() async {
     final session = UserSession();
     if (!session.shouldClearCacheOnLogout()) return;
@@ -537,8 +552,15 @@ class ChapterProvider extends ChangeNotifier
     _chaptersByCourse.clear();
     _hasLoadedForCourse.clear();
     _isLoadingForCourse.clear();
+    _lastBackgroundRefreshForCourse.clear();
     stopBackgroundRefresh();
+
+    // ✅ FIXED: Properly recreate stream controller
+    await _chaptersUpdateController.close();
+    _chaptersUpdateController =
+        StreamController<Map<int, List<Chapter>>>.broadcast();
     _chaptersUpdateController.add({});
+
     safeNotify();
   }
 

@@ -1,5 +1,5 @@
 // lib/utils/helpers.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// COMPLETE PRODUCTION-READY FILE - WITH ERROR HELPER
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -7,7 +7,6 @@ import 'package:intl/intl.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 /// PRODUCTION-READY HELPER FUNCTIONS
-/// Clean, no deprecated methods, only what we actually use
 
 // ===== LOGGING =====
 void debugLog(String tag, String message) {
@@ -71,8 +70,19 @@ String getUserFriendlyErrorMessage(dynamic error) {
   if (message.contains('Network error')) {
     return 'Network error. Please check your internet connection.';
   }
+  if (message.contains('timeout')) {
+    return 'Request timed out. Please try again.';
+  }
+  if (message.contains('offline')) {
+    return 'You are offline. Please check your internet connection.';
+  }
 
-  return message;
+  // Return the original message if it's already user-friendly
+  if (message.length < 100 && !message.contains('Exception')) {
+    return message;
+  }
+
+  return 'An error occurred. Please try again.';
 }
 
 /// Format exception for logging
@@ -201,8 +211,7 @@ Function throttle(Function func, [int delay = 1000]) {
   };
 }
 
-// ===== DIALOG HELPERS (Use AppDialog instead) =====
-// Keeping only for backward compatibility - prefer AppDialog
+// ===== DIALOG HELPERS =====
 Future<void> showConfirmDialog(
   BuildContext context,
   String title,

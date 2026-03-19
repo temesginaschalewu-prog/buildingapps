@@ -1,5 +1,5 @@
 // lib/screens/exam/exam_screen.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// COMPLETE PRODUCTION-READY FILE - FIXED PENDING COUNT & QUEUE ACTIONS
 
 import 'dart:async';
 import 'package:collection/collection.dart';
@@ -100,18 +100,17 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       if (mounted) {
         setState(() {
           _isOffline = !isOnline;
-          _pendingCount = connectivityService.pendingActionsCount;
+          final queueManager = context.read<OfflineQueueManager>();
+          _pendingCount = queueManager.pendingCount;
         });
       }
     });
   }
 
   Future<void> _updatePendingCount() async {
-    final connectivityService = context.read<ConnectivityService>();
+    final queueManager = context.read<OfflineQueueManager>();
     if (mounted) {
-      setState(() {
-        _pendingCount = connectivityService.pendingActionsCount;
-      });
+      setState(() => _pendingCount = queueManager.pendingCount);
     }
   }
 
@@ -126,7 +125,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       _initializeExamSettings();
       _checkExamAccess();
     } else {
-      _loadExamFromProvider(); // TIER 1 & 2: Load from cache first
+      _loadExamFromProvider();
     }
   }
 
@@ -139,11 +138,10 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
         _exam.status == 'max_attempts_reached';
 
     if (!_hasReachedMaxAttempts) {
-      _loadCachedProgress(); // TIER 2: Load saved progress
+      _loadCachedProgress();
     }
   }
 
-  // TIER 2: Load cached progress
   Future<void> _loadCachedProgress() async {
     if (_currentUserId == null) return;
 
@@ -178,7 +176,8 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     await connectivityService.checkConnectivity();
     setState(() {
       _isOffline = !connectivityService.isOnline;
-      _pendingCount = connectivityService.pendingActionsCount;
+      final queueManager = context.read<OfflineQueueManager>();
+      _pendingCount = queueManager.pendingCount;
     });
   }
 
@@ -200,12 +199,11 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     try {
       if (_exam.requiresPayment) {
         if (!_isOffline) {
-          _hasAccess =
-              await subscriptionProvider.checkHasActiveSubscriptionForCategory(
-                  _exam.categoryId); // TIER 3 if online, TIER 2 if cached
+          _hasAccess = await subscriptionProvider
+              .checkHasActiveSubscriptionForCategory(_exam.categoryId);
         } else {
           _hasAccess = subscriptionProvider
-              .hasActiveSubscriptionForCategory(_exam.categoryId); // TIER 2
+              .hasActiveSubscriptionForCategory(_exam.categoryId);
         }
       } else {
         _hasAccess = true;
@@ -236,19 +234,17 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     if (mounted) {
       setState(() => _checkingAccess = false);
       if (_hasAccess && !_hasLoadedQuestions && !_hasReachedMaxAttempts) {
-        await _loadExamQuestions(); // TIER 1,2,3
+        await _loadExamQuestions();
         if (!mounted) return;
         _hasLoadedQuestions = true;
       }
     }
   }
 
-  // TIER 1 & 2: Load exam from cache first
   Future<void> _loadExamFromProvider() async {
     final examProvider = context.read<ExamProvider>();
 
     try {
-      // TIER 1: Check memory cache first
       Exam? cachedExam;
       if (widget.courseId != null) {
         final cachedExams = examProvider.getExamsByCourse(widget.courseId!);
@@ -267,7 +263,6 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
         await _checkExamAccess();
         if (!mounted) return;
       } else {
-        // TIER 3: If not in cache, load from API
         if (widget.courseId != null) {
           await examProvider.loadExamsByCourse(widget.courseId!,
               forceRefresh: true);
@@ -299,12 +294,10 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     }
   }
 
-  // TIER 1,2,3: Load exam questions
   Future<void> _loadExamQuestions() async {
     final provider = context.read<ExamQuestionProvider>();
     try {
-      await provider
-          .loadExamQuestions(_exam.id); // Provider handles 3-tier caching
+      await provider.loadExamQuestions(_exam.id);
       if (!mounted) return;
     } catch (e) {
       setState(() => _isOffline = true);
@@ -323,7 +316,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
           if (_remainingTime.inSeconds > 0) {
             _remainingTime = _remainingTime - const Duration(seconds: 1);
             if (_remainingTime.inSeconds % 30 == 0) {
-              _saveProgressToCache(); // TIER 2
+              _saveProgressToCache();
             }
           } else {
             timer.cancel();
@@ -360,7 +353,6 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     });
   }
 
-  // TIER 2: Save progress to cache
   Future<void> _saveProgressToCache() async {
     if (_hasReachedMaxAttempts || _currentUserId == null) return;
 
@@ -395,7 +387,6 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       if (_currentQuestionIndex < questions.length) {
         final question = questions[_currentQuestionIndex];
         _answers[question.id] = answer;
-        // Also save answer offline immediately
         provider.saveAnswerOffline(_exam.id, question.id, answer ?? '');
       }
     });
@@ -442,7 +433,6 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
 
     final connectivityService = context.read<ConnectivityService>();
     if (!connectivityService.isOnline) {
-      // Queue for offline submission (TIER 2)
       final confirmed = await AppDialog.confirm(
         context: context,
         title: AppStrings.submitExamOffline,
@@ -451,7 +441,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       );
 
       if (confirmed == true) {
-        await _queueExamOffline(); // TIER 2
+        await _queueExamOffline();
         if (!mounted) return;
       }
       return;
@@ -464,11 +454,10 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       confirmText: AppStrings.submit,
     );
 
-    if (confirmed == true) await _doSubmitExam(); // TIER 3
+    if (confirmed == true) await _doSubmitExam();
     if (!mounted) return;
   }
 
-  // TIER 2: Queue exam offline
   Future<void> _queueExamOffline() async {
     setState(() => _isSubmitting = true);
 
@@ -483,10 +472,9 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
         };
       }).toList();
 
-      // Use OfflineQueueManager for better queue management
       final queueManager = context.read<OfflineQueueManager>();
       queueManager.addItem(
-        type: 'submit_exam',
+        type: AppConstants.queueActionSubmitExam, // ✅ FIXED: Using constant
         data: {
           'exam_id': _exam.id,
           'answers': answerList,
@@ -494,7 +482,6 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
         },
       );
 
-      // Also save to DeviceService as backup
       provider.deviceService.saveCacheItem(
         'offline_exam_submission_${_exam.id}_$_currentUserId',
         {
@@ -506,7 +493,6 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
         isUserSpecific: true,
       );
 
-      // Clear progress cache
       await provider.deviceService.removeCacheItem(
         'exam_progress_${_exam.id}_$_currentUserId',
         isUserSpecific: true,
@@ -533,7 +519,6 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     AppDialog.hideLoading(context);
   }
 
-  // TIER 3: Submit exam to API
   Future<void> _doSubmitExam() async {
     if (!mounted) return;
 
@@ -1366,12 +1351,10 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     final authProvider = context.read<AuthProvider>();
     final questionProvider = context.read<ExamQuestionProvider>();
 
-    // 1. RESULTS SCREEN
     if (_showResults && _submittedResult != null) {
       return _buildResultsScreen(context);
     }
 
-    // 2. MAX ATTEMPTS REACHED
     if (_hasReachedMaxAttempts && _submittedResult == null) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
@@ -1432,7 +1415,6 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       );
     }
 
-    // 3. NOT AUTHENTICATED
     if (!authProvider.isAuthenticated) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
@@ -1491,7 +1473,6 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       );
     }
 
-    // 4. CHECKING ACCESS
     if (_checkingAccess) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
@@ -1528,7 +1509,6 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       );
     }
 
-    // 5. PAYMENT REQUIRED
     if (!_hasAccess && _exam.requiresPayment) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
@@ -1600,10 +1580,8 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       );
     }
 
-    // 6. INSTRUCTIONS SCREEN
     if (_showInstructions) return _buildInstructionsScreen(context);
 
-    // 7. LOADING QUESTIONS
     if (questionProvider.isLoading) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
@@ -1640,7 +1618,6 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       );
     }
 
-    // 8. NO QUESTIONS
     final questions = questionProvider.getQuestionsByExam(_exam.id);
     if (questions.isEmpty) {
       return Scaffold(
@@ -1670,7 +1647,6 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       );
     }
 
-    // 9. EXAM INTERFACE
     if (_currentQuestionIndex >= questions.length) _currentQuestionIndex = 0;
     return _buildExamInterface(context, questions);
   }

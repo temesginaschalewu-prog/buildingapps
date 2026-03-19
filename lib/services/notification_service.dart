@@ -1,12 +1,12 @@
 // lib/services/notification_service.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// PRODUCTION-READY FINAL VERSION
 
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:familyacademyclient/services/api_service.dart';
 import 'package:familyacademyclient/services/connectivity_service.dart';
-import 'package:familyacademyclient/utils/platform_helper.dart'; // ✅ CHANGED
+import 'package:familyacademyclient/utils/platform_helper.dart';
 import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/utils/constants.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -17,7 +17,7 @@ import 'package:timezone/data/latest.dart' as tz;
 import 'package:hive/hive.dart';
 import '../utils/helpers.dart';
 
-/// PRODUCTION-READY Notification Service with Offline Support
+/// PRODUCTION-READY Notification Service
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
   factory NotificationService() => _instance;
@@ -72,7 +72,6 @@ class NotificationService {
       await _initLocalNotifications();
 
       if (PlatformHelper.isMobile) {
-        // ✅ Using PlatformHelper
         try {
           if (Firebase.apps.isEmpty) {
             await Firebase.initializeApp();
@@ -87,7 +86,6 @@ class NotificationService {
       }
 
       if (PlatformHelper.isMobile) {
-        // ✅ Using PlatformHelper
         await _initFirebaseMessaging();
         await _requestPermissions();
         _setupTokenRefreshListener();
@@ -135,7 +133,7 @@ class NotificationService {
       );
 
       await _localNotifications.initialize(
-        initializationSettings,
+        settings: initializationSettings,
         onDidReceiveNotificationResponse: _onDidReceiveNotificationResponse,
         onDidReceiveBackgroundNotificationResponse:
             _onDidReceiveNotificationResponse,
@@ -148,7 +146,6 @@ class NotificationService {
   Future<void> _initFirebaseMessaging() async {
     try {
       if (PlatformHelper.isMobile) {
-        // ✅ Using PlatformHelper
         _firebaseMessaging = FirebaseMessaging.instance;
         _fcmToken = await _firebaseMessaging!.getToken();
         if (_fcmToken != null) {
@@ -162,8 +159,7 @@ class NotificationService {
         if (!_fcmAuthFailureLogged) {
           debugLog(
             'NotificationService',
-            'Firebase messaging auth failed in this environment. '
-                'Push token unavailable; in-app notifications will still work.',
+            'Firebase messaging auth failed in this environment. Push token unavailable; in-app notifications will still work.',
           );
           _fcmAuthFailureLogged = true;
         }
@@ -176,7 +172,6 @@ class NotificationService {
   Future<void> _setupMessageListeners() async {
     try {
       if (PlatformHelper.isMobile && _firebaseMessaging != null) {
-        // ✅ Using PlatformHelper
         FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
         FirebaseMessaging.onMessageOpenedApp.listen(_handleMessageOpenedApp);
 
@@ -194,7 +189,6 @@ class NotificationService {
   Future<void> _requestPermissions() async {
     try {
       if (PlatformHelper.isMobile && _firebaseMessaging != null) {
-        // ✅ Using PlatformHelper
         await _firebaseMessaging!.requestPermission();
       }
     } catch (e) {
@@ -204,7 +198,6 @@ class NotificationService {
 
   void _setupTokenRefreshListener() {
     if (_firebaseMessaging != null && PlatformHelper.isMobile) {
-      // ✅ Using PlatformHelper
       _firebaseMessaging!.onTokenRefresh.listen((newToken) async {
         _fcmToken = newToken;
         await _saveFCMToken(newToken);
@@ -228,7 +221,7 @@ class NotificationService {
   }
 
   Future<void> sendFcmTokenToBackendIfAuthenticated() async {
-    if (!PlatformHelper.isMobile) return; // ✅ Using PlatformHelper
+    if (!PlatformHelper.isMobile) return;
 
     try {
       if (_fcmToken == null) return;
@@ -258,7 +251,7 @@ class NotificationService {
   }
 
   Future<void> syncPendingFcmToken() async {
-    if (!PlatformHelper.isMobile) return; // ✅ Using PlatformHelper
+    if (!PlatformHelper.isMobile) return;
 
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -476,12 +469,8 @@ class NotificationService {
       );
 
       final notificationDetails = NotificationDetails(
-        android: PlatformHelper.isMobile
-            ? androidDetails
-            : null, // ✅ Using PlatformHelper
-        iOS: PlatformHelper.isMobile
-            ? iosDetails
-            : null, // ✅ Using PlatformHelper
+        android: PlatformHelper.isMobile ? androidDetails : null,
+        iOS: PlatformHelper.isMobile ? iosDetails : null,
         linux: linuxDetails,
       );
 
@@ -489,10 +478,10 @@ class NotificationService {
           id ?? (title.hashCode + body.hashCode) & 0x7fffffff;
 
       await _localNotifications.show(
-        notificationId,
-        title,
-        body,
-        notificationDetails,
+        id: notificationId,
+        title: title,
+        body: body,
+        notificationDetails: notificationDetails,
         payload: payload,
       );
     } catch (e) {
@@ -502,7 +491,6 @@ class NotificationService {
 
   Future<String?> getFCMToken() async {
     if (_fcmToken == null && PlatformHelper.isMobile) {
-      // ✅ Using PlatformHelper
       try {
         _fcmToken = await _firebaseMessaging?.getToken();
         if (_fcmToken != null) await _saveFCMToken(_fcmToken!);

@@ -1,5 +1,5 @@
 // lib/providers/payment_provider.dart
-// COMPLETE PRODUCTION-READY FINAL VERSION - FIXED SLOW API CALLS
+// PRODUCTION-READY FINAL VERSION - INCREASED TIMEOUT TO 20 SECONDS
 
 import 'dart:async';
 import 'dart:convert';
@@ -43,12 +43,10 @@ class PaymentProvider extends ChangeNotifier
 
   int _apiCallCount = 0;
 
-  // Flag to track if we've loaded initial data
   bool _hasLoadedPayments = false;
   bool _hasInitialData = false;
 
-  StreamController<List<Payment>> _paymentsUpdateController =
-      StreamController<List<Payment>>.broadcast();
+  late StreamController<List<Payment>> _paymentsUpdateController;
 
   PaymentProvider({
     required this.apiService,
@@ -56,7 +54,7 @@ class PaymentProvider extends ChangeNotifier
     required this.connectivityService,
     required this.hiveService,
     required this.offlineQueueManager,
-  }) {
+  }) : _paymentsUpdateController = StreamController<List<Payment>>.broadcast() {
     log('PaymentProvider constructor called');
     initializeOfflineAware(
       connectivity: connectivityService,
@@ -67,7 +65,6 @@ class PaymentProvider extends ChangeNotifier
   }
 
   void _registerQueueProcessors() {
-    // Register processor for payment submissions
     offlineQueueManager.registerProcessor(
       AppConstants.queueActionSubmitPayment,
       _processPaymentSubmission,
@@ -89,7 +86,6 @@ class PaymentProvider extends ChangeNotifier
       );
 
       if (response.success) {
-        // Refresh payments after successful submission
         await loadPayments(forceRefresh: true);
       }
 
@@ -200,10 +196,10 @@ class PaymentProvider extends ChangeNotifier
     log('loadPayments() CALL #$callId');
 
     if (isManualRefresh && isOffline) {
-      throw Exception('Network error. Please check your internet connection.');
+      throw Exception(getUserFriendlyErrorMessage(
+          'Network error. Please check your internet connection.'));
     }
 
-    // Return cached data immediately if already loaded
     if (_hasLoadedPayments && !forceRefresh && !isManualRefresh) {
       log('✅ Already have payments, returning cached');
       _paymentsUpdateController.add(_payments);
@@ -318,10 +314,10 @@ class PaymentProvider extends ChangeNotifier
         return;
       }
 
-      // STEP 4: Fetch from API with timeout
+      // STEP 4: Fetch from API with increased timeout
       log('STEP 4: Fetching from API');
       final response = await apiService.getMyPayments().timeout(
-        const Duration(seconds: 8), // Reduced timeout to 8 seconds
+        const Duration(seconds: 20), // ✅ INCREASED from 15 to 20 seconds
         onTimeout: () {
           log('⏱️ API timeout in loadPayments - using cached data');
           if (_payments.isNotEmpty) {
@@ -361,7 +357,7 @@ class PaymentProvider extends ChangeNotifier
         _paymentsUpdateController.add(_payments);
         log('✅ Success! Payments loaded');
       } else {
-        setError(response.message);
+        setError(getUserFriendlyErrorMessage(response.message));
         log('❌ API error: ${response.message}');
         setLoaded();
 
@@ -372,7 +368,7 @@ class PaymentProvider extends ChangeNotifier
     } catch (e, stackTrace) {
       log('❌ Error loading payments: $e');
 
-      setError(e.toString());
+      setError(getUserFriendlyErrorMessage(e));
       setLoaded();
 
       if (_payments.isEmpty) {
@@ -389,12 +385,23 @@ class PaymentProvider extends ChangeNotifier
     }
   }
 
+  DateTime? _lastBackgroundRefresh;
+  static const Duration _minBackgroundInterval = Duration(minutes: 2);
+
   Future<void> _refreshInBackground() async {
     if (isOffline) return;
 
+    if (_lastBackgroundRefresh != null &&
+        DateTime.now().difference(_lastBackgroundRefresh!) <
+            _minBackgroundInterval) {
+      log('⏱️ Background refresh rate limited');
+      return;
+    }
+    _lastBackgroundRefresh = DateTime.now();
+
     try {
       final response = await apiService.getMyPayments().timeout(
-        const Duration(seconds: 8),
+        const Duration(seconds: 20),
         onTimeout: () {
           log('⏱️ Background refresh timeout for payments');
           return ApiResponse<List<Payment>>(
@@ -481,32 +488,31 @@ class PaymentProvider extends ChangeNotifier
     }
   }
 
-  // ===== UPLOAD PAYMENT PROOF =====
   Future<ApiResponse<String>> uploadPaymentProof(File imageFile) async {
     log('uploadPaymentProof()');
+
+    if (isOffline) {
+      log('📴 Cannot upload payment proof offline');
+      return ApiResponse.offline(
+        message:
+            'Cannot upload payment proof while offline. Please connect and try again.',
+      );
+    }
 
     setLoading();
 
     try {
-      if (isOffline) {
-        setLoaded();
-        return ApiResponse.offline(
-          message: 'You are offline. Please connect to upload.',
-        );
-      }
-
       final response = await apiService.uploadPaymentProof(imageFile);
       setLoaded();
       return response;
     } catch (e) {
       setLoaded();
-      setError(e.toString());
+      setError(getUserFriendlyErrorMessage(e));
       log('❌ Error uploading proof: $e');
-      return ApiResponse.error(message: 'Failed to upload proof: $e');
+      return ApiResponse.error(message: getUserFriendlyErrorMessage(e));
     }
   }
 
-  // ===== SUBMIT PAYMENT =====
   Future<ApiResponse<Map<String, dynamic>>> submitPayment({
     required int categoryId,
     required String paymentType,
@@ -517,26 +523,26 @@ class PaymentProvider extends ChangeNotifier
   }) async {
     log('submitPayment() for category $categoryId');
 
+    if (isOffline) {
+      log('📴 Offline - queuing payment');
+      await _queuePaymentOffline({
+        'categoryId': categoryId,
+        'paymentType': paymentType,
+        'paymentMethod': paymentMethod,
+        'amount': amount,
+        'accountHolderName': accountHolderName,
+        'proofImagePath': proofImagePath,
+      });
+
+      setLoaded();
+      return ApiResponse.queued(
+        message: 'Payment saved offline. Will submit when online.',
+      );
+    }
+
     setLoading();
 
     try {
-      if (isOffline) {
-        log('📝 Offline - queuing payment');
-        await _queuePaymentOffline({
-          'categoryId': categoryId,
-          'paymentType': paymentType,
-          'paymentMethod': paymentMethod,
-          'amount': amount,
-          'accountHolderName': accountHolderName,
-          'proofImagePath': proofImagePath,
-        });
-
-        setLoaded();
-        return ApiResponse.queued(
-          message: 'Payment saved offline. Will submit when online.',
-        );
-      }
-
       final response = await apiService.submitPayment(
         categoryId: categoryId,
         paymentType: paymentType,
@@ -549,7 +555,6 @@ class PaymentProvider extends ChangeNotifier
       if (response.success) {
         log('✅ Payment submitted successfully');
 
-        // Clear cache and refresh
         await deviceService.removeCacheItem(
           AppConstants.paymentsCacheKey,
           isUserSpecific: true,
@@ -567,9 +572,9 @@ class PaymentProvider extends ChangeNotifier
       return response;
     } catch (e) {
       setLoaded();
-      setError(e.toString());
+      setError(getUserFriendlyErrorMessage(e));
       log('❌ Error submitting payment: $e');
-      return ApiResponse.error(message: 'Failed to submit payment: $e');
+      return ApiResponse.error(message: getUserFriendlyErrorMessage(e));
     }
   }
 
@@ -595,7 +600,6 @@ class PaymentProvider extends ChangeNotifier
 
   @override
   Future<void> onBackgroundRefresh() async {
-    log('Background refresh triggered');
     if (!isOffline && _payments.isNotEmpty) {
       await _refreshInBackground();
     }
@@ -604,7 +608,7 @@ class PaymentProvider extends ChangeNotifier
   @override
   Future<void> onOnlineRefresh() async {
     log('Online - refreshing payments');
-    await loadPayments(forceRefresh: true);
+    await loadPayments();
   }
 
   Future<void> clearUserData() async {
@@ -629,6 +633,7 @@ class PaymentProvider extends ChangeNotifier
     await _paymentsUpdateController.close();
     _paymentsUpdateController = StreamController<List<Payment>>.broadcast();
     _paymentsUpdateController.add(_payments);
+
     safeNotify();
   }
 

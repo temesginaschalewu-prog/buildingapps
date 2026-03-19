@@ -1,5 +1,5 @@
 // lib/utils/platform_helper.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// PRODUCTION-READY FINAL VERSION - FIXED DOUBLE INIT
 
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -31,8 +31,11 @@ class PlatformHelper {
   static bool _isLowEndDevice = false;
   static bool _hasHardwareAcceleration = true;
 
+  // ✅ FIXED: Prevent double logging
+  static bool _platformInfoLogged = false;
+
   static Future<void> initialize() async {
-    if (_isInitialized) return;
+    if (_isInitialized) return; // ✅ CRITICAL: Prevent double initialization
 
     try {
       // Get screen metrics
@@ -110,8 +113,10 @@ class PlatformHelper {
     }
   }
 
-  // NEW: Log platform info (matches what was in platform_service.dart)
+  // Log platform info - only once
   static void logPlatformInfo() {
+    if (_platformInfoLogged) return; // ✅ FIXED: Prevent double logging
+
     debugPrint('''
 ═══════════════════════════════════════
 📱 PLATFORM INFORMATION
@@ -127,9 +132,11 @@ class PlatformHelper {
 🎮 Hardware Acceleration: $_hasHardwareAcceleration
 ═══════════════════════════════════════
 ''');
+
+    _platformInfoLogged = true;
   }
 
-  // NEW: Get platform name as string
+  // Get platform name as string
   static String get platformName {
     if (isAndroid) return 'Android';
     if (isIOS) return 'iOS';

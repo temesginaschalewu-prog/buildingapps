@@ -1,5 +1,5 @@
 // lib/providers/device_provider.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// PRODUCTION-READY FINAL VERSION
 
 import 'dart:async';
 import 'package:familyacademyclient/services/offline_queue_manager.dart';
@@ -12,9 +12,10 @@ import '../services/user_session.dart';
 import '../services/connectivity_service.dart';
 import '../services/hive_service.dart';
 import '../utils/constants.dart';
+import '../utils/helpers.dart';
 import 'base_provider.dart';
 
-/// PRODUCTION-READY Device Provider with Full Offline Support
+/// PRODUCTION-READY Device Provider
 class DeviceProvider extends ChangeNotifier
     with BaseProvider<DeviceProvider>, OfflineAwareProvider<DeviceProvider> {
   @override
@@ -98,7 +99,7 @@ class DeviceProvider extends ChangeNotifier
       markInitialized();
       log('✅ DeviceProvider initialized');
     } catch (e) {
-      setError(e.toString());
+      setError(getUserFriendlyErrorMessage(e));
       log('❌ Initialization error: $e');
     }
   }
@@ -211,7 +212,8 @@ class DeviceProvider extends ChangeNotifier
     if (!isInitialized) await initialize();
 
     if (isOffline) {
-      setError('You are offline. Please connect to pair device.');
+      setError(getUserFriendlyErrorMessage(
+          'You are offline. Please connect to pair device.'));
       safeNotify();
       return;
     }
@@ -231,7 +233,7 @@ class DeviceProvider extends ChangeNotifier
 
       log('✅ Paired TV device, code: $code');
     } catch (e) {
-      setError(e.toString());
+      setError(getUserFriendlyErrorMessage(e));
       setLoaded();
       safeNotify();
       rethrow;
@@ -243,7 +245,8 @@ class DeviceProvider extends ChangeNotifier
     if (!isInitialized) await initialize();
 
     if (isOffline) {
-      setError('You are offline. Please connect to verify pairing.');
+      setError(getUserFriendlyErrorMessage(
+          'You are offline. Please connect to verify pairing.'));
       safeNotify();
       return;
     }
@@ -269,7 +272,7 @@ class DeviceProvider extends ChangeNotifier
       safeNotify();
       log('✅ Verified TV pairing');
     } catch (e) {
-      setError(e.toString());
+      setError(getUserFriendlyErrorMessage(e));
       setLoaded();
       safeNotify();
       rethrow;
@@ -281,7 +284,8 @@ class DeviceProvider extends ChangeNotifier
     if (!isInitialized) await initialize();
 
     if (isOffline) {
-      setError('You are offline. Please connect to unpair device.');
+      setError(getUserFriendlyErrorMessage(
+          'You are offline. Please connect to unpair device.'));
       safeNotify();
       return;
     }
@@ -303,7 +307,7 @@ class DeviceProvider extends ChangeNotifier
       safeNotify();
       log('✅ Unpaired TV device');
     } catch (e) {
-      setError(e.toString());
+      setError(getUserFriendlyErrorMessage(e));
       setLoaded();
       safeNotify();
       rethrow;

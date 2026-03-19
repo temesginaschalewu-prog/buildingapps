@@ -1,5 +1,7 @@
 // lib/utils/api_response.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// PRODUCTION-READY FINAL VERSION
+
+import '../utils/helpers.dart';
 
 class ApiResponse<T> {
   final bool success;
@@ -68,7 +70,8 @@ class ApiResponse<T> {
   }) {
     return ApiResponse<T>(
       success: false,
-      message: message ?? 'You are offline. Showing cached data.',
+      message: message ??
+          getUserFriendlyErrorMessage('You are offline. Showing cached data.'),
       isOffline: true,
       isQueued: isQueued,
       data: data,
@@ -116,7 +119,6 @@ class ApiResponse<T> {
     }
   }
 
-  // FIXED: The when method - no boolean negation issues
   R? when<R>({
     R? Function(T data)? onSuccess,
     R? Function(String message)? onError,
@@ -232,7 +234,8 @@ class ApiError implements Exception {
 
   factory ApiError.networkError({String? requestId}) {
     return ApiError(
-        message: 'Network error. Please check your connection.',
+        message: getUserFriendlyErrorMessage(
+            'Network error. Please check your connection.'),
         statusCode: 0,
         isOffline: true,
         requestId: requestId);
@@ -240,21 +243,25 @@ class ApiError implements Exception {
 
   factory ApiError.timeoutError({String? requestId}) {
     return ApiError(
-        message: 'Request timeout. Please try again.',
+        message:
+            getUserFriendlyErrorMessage('Request timeout. Please try again.'),
         statusCode: 408,
         requestId: requestId);
   }
 
   factory ApiError.unauthorized({String? requestId}) {
     return ApiError(
-        message: 'Unauthorized. Please login again.',
+        message:
+            getUserFriendlyErrorMessage('Unauthorized. Please login again.'),
         statusCode: 401,
         requestId: requestId);
   }
 
   factory ApiError.notFound({String? requestId}) {
     return ApiError(
-        message: 'Resource not found.', statusCode: 404, requestId: requestId);
+        message: getUserFriendlyErrorMessage('Resource not found.'),
+        statusCode: 404,
+        requestId: requestId);
   }
 
   factory ApiError.queued({String? requestId}) {
@@ -295,12 +302,21 @@ class ApiError implements Exception {
       return 'Action saved offline. Will sync when online.';
     }
     if (isNetworkError) {
-      return 'Network error. Please check your internet connection.';
+      return getUserFriendlyErrorMessage(
+          'Network error. Please check your internet connection.');
     }
-    if (isTimeout) return 'Request took too long. Please try again.';
-    if (isUnauthorized) return 'Your session has expired. Please login again.';
-    if (isNotFound) return 'The requested resource was not found.';
-    if (isServerError) return 'Server error. Please try again later.';
+    if (isTimeout)
+      return getUserFriendlyErrorMessage(
+          'Request took too long. Please try again.');
+    if (isUnauthorized)
+      return getUserFriendlyErrorMessage(
+          'Your session has expired. Please login again.');
+    if (isNotFound)
+      return getUserFriendlyErrorMessage(
+          'The requested resource was not found.');
+    if (isServerError)
+      return getUserFriendlyErrorMessage(
+          'Server error. Please try again later.');
     return message;
   }
 

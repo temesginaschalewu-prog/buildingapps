@@ -1,5 +1,5 @@
 // lib/screens/auth/device_change_screen.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// COMPLETE FIXED VERSION - CORRECT APPEMPTYSTATE PARAMETERS
 
 import 'dart:async';
 import 'dart:io';
@@ -12,6 +12,7 @@ import '../../services/user_session.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
 import '../../services/device_service.dart';
+import '../../services/offline_queue_manager.dart';
 import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_text_field.dart';
@@ -24,7 +25,7 @@ import '../../providers/subscription_provider.dart';
 import '../../providers/category_provider.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
-import '../../utils/responsive_values.dart';
+import '../../utils/responsive_values.dart' hide EmptyStateType;
 import '../../utils/helpers.dart';
 import '../../utils/api_response.dart';
 import '../../utils/router.dart';
@@ -51,6 +52,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
   bool _isInitializing = true;
   bool _isOffline = false;
   int _pendingCount = 0;
+  bool _isMounted = false;
 
   late String _username;
   late String _deviceId;
@@ -64,18 +66,22 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
   @override
   void initState() {
     super.initState();
+    _isMounted = true;
 
     _pulseAnimationController =
         AnimationController(vsync: this, duration: 1.seconds)
           ..repeat(reverse: true);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initialize();
+      if (_isMounted) {
+        _initialize();
+      }
     });
   }
 
   @override
   void dispose() {
+    _isMounted = false;
     _passwordController.dispose();
     _pulseAnimationController.dispose();
     _connectivitySubscription?.cancel();
@@ -83,6 +89,8 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
   }
 
   Future<void> _initialize() async {
+    if (!_isMounted) return;
+
     await _checkConnectivity();
     _setupConnectivityListener();
     _checkPendingCount();
@@ -90,33 +98,39 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
   }
 
   void _setupConnectivityListener() {
+    if (!_isMounted) return;
+
     final connectivityService = context.read<ConnectivityService>();
     _connectivitySubscription =
         connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (mounted) {
-        setState(() {
-          _isOffline = !isOnline;
-          _pendingCount = connectivityService.pendingActionsCount;
-        });
-      }
+      if (!_isMounted) return;
+
+      setState(() {
+        _isOffline = !isOnline;
+        final queueManager = context.read<OfflineQueueManager>();
+        _pendingCount = queueManager.pendingCount;
+      });
     });
   }
 
   Future<void> _checkConnectivity() async {
+    if (!_isMounted) return;
+
     final connectivityService = context.read<ConnectivityService>();
     await connectivityService.checkConnectivity();
-    if (mounted) {
-      setState(() {
-        _isOffline = !connectivityService.isOnline;
-        _pendingCount = connectivityService.pendingActionsCount;
-      });
-    }
+    if (!_isMounted) return;
+
+    setState(() {
+      _isOffline = !connectivityService.isOnline;
+      final queueManager = context.read<OfflineQueueManager>();
+      _pendingCount = queueManager.pendingCount;
+    });
   }
 
   Future<void> _checkPendingCount() async {
-    final connectivity = ConnectivityService();
-    if (mounted) {
-      setState(() => _pendingCount = connectivity.pendingActionsCount);
+    final queueManager = context.read<OfflineQueueManager>();
+    if (_isMounted) {
+      setState(() => _pendingCount = queueManager.pendingCount);
     }
   }
 
@@ -124,8 +138,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     try {
       final deviceService = context.read<DeviceService>();
       final userId = await UserSession().getCurrentUserId();
-      if (userId != null && mounted) {
-        // ✅ FIXED: changed _mounted to mounted
+      if (userId != null && _isMounted) {
         deviceService.saveCacheItem(
           'device_change_$userId',
           _args,
@@ -142,14 +155,12 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     try {
       final deviceService = context.read<DeviceService>();
       final userId = await UserSession().getCurrentUserId();
-      if (userId != null && mounted) {
-        // ✅ FIXED: changed _mounted to mounted
+      if (userId != null && _isMounted) {
         final cached = await deviceService.getCacheItem<Map<String, dynamic>>(
           'device_change_$userId',
           isUserSpecific: true,
         );
-        if (cached != null && cached.isNotEmpty && mounted) {
-          // ✅ FIXED: changed _mounted to mounted
+        if (cached != null && cached.isNotEmpty && _isMounted) {
           setState(() {
             _args = cached;
             _hasArgs = true;
@@ -163,7 +174,6 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
   }
 
   void _extractArgsFromMap(Map<String, dynamic> args) {
-    // Try multiple possible paths to find the username
     _username = args['username']?.toString() ?? '';
 
     if (_username.isEmpty && args['data'] != null) {
@@ -176,7 +186,6 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
       _username = user?['username']?.toString() ?? '';
     }
 
-    // Try to get from auth provider as last resort
     if (_username.isEmpty) {
       try {
         final authProvider = context.read<AuthProvider>();
@@ -211,16 +220,14 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     debugLog('DeviceChangeScreen', 'Device ID: $_deviceId');
     debugLog('DeviceChangeScreen', 'Current Device: $_currentDeviceId');
 
-    if (password.isNotEmpty && mounted) {
-      _passwordController.text =
-          password; // ✅ FIXED: changed _mounted to mounted
+    if (password.isNotEmpty && _isMounted) {
+      _passwordController.text = password;
     }
   }
 
   void _initializeArgs() {
     Map<String, dynamic>? routeArgs;
 
-    // Try to get args from GoRouter
     try {
       final goRouter = GoRouter.of(context);
       final state = goRouter.routerDelegate.currentConfiguration;
@@ -230,7 +237,6 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
       }
     } catch (e) {}
 
-    // Try to get args from ModalRoute
     if (routeArgs == null || routeArgs.isEmpty) {
       try {
         final modalRoute = ModalRoute.of(context);
@@ -244,7 +250,6 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
       } catch (e) {}
     }
 
-    // Try to get args from AuthProvider last login result
     if (routeArgs == null || routeArgs.isEmpty) {
       try {
         final authProvider = context.read<AuthProvider>();
@@ -257,8 +262,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
       } catch (e) {}
     }
 
-    if (routeArgs != null && routeArgs.isNotEmpty && mounted) {
-      // ✅ FIXED: changed _mounted to mounted
+    if (routeArgs != null && routeArgs.isNotEmpty && _isMounted) {
       _args = routeArgs;
       _hasArgs = true;
       _extractArgsFromMap(_args);
@@ -269,34 +273,28 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
 
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         await _initializeDeviceInfo();
-        if (mounted) {
-          setState(() =>
-              _isInitializing = false); // ✅ FIXED: changed _mounted to mounted
+        if (_isMounted) {
+          setState(() => _isInitializing = false);
         }
       });
     } else {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         await _loadDeviceChangeFromCache();
-        if (_hasArgs && mounted) {
-          // ✅ FIXED: changed _mounted to mounted
+        if (_hasArgs && _isMounted) {
           WidgetsBinding.instance.addPostFrameCallback((_) async {
             await _initializeDeviceInfo();
-            if (mounted) {
-              setState(() => _isInitializing =
-                  false); // ✅ FIXED: changed _mounted to mounted
+            if (_isMounted) {
+              setState(() => _isInitializing = false);
             }
           });
         } else {
-          if (mounted) {
-            // ✅ FIXED: changed _mounted to mounted
+          if (_isMounted) {
             debugLog('DeviceChangeScreen', 'No args found anywhere!');
 
-            // Try to get username from auth provider as last resort
             try {
               final authProvider = context.read<AuthProvider>();
               final currentUser = authProvider.currentUser;
-              if (currentUser != null && mounted) {
-                // ✅ FIXED: changed _mounted to mounted
+              if (currentUser != null && _isMounted) {
                 debugLog('DeviceChangeScreen',
                     'Using current user as fallback: ${currentUser.username}');
                 setState(() {
@@ -308,8 +306,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
               }
             } catch (e) {}
 
-            if (mounted) {
-              // ✅ FIXED: changed _mounted to mounted
+            if (_isMounted) {
               SnackbarService()
                   .showError(context, 'Invalid device change request');
               context.go('/auth/login');
@@ -325,15 +322,12 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
       final deviceService = context.read<DeviceService>();
       await deviceService.init();
       final deviceId = await deviceService.getDeviceId();
-      if (mounted) {
-        setState(() =>
-            _newDeviceId = deviceId); // ✅ FIXED: changed _mounted to mounted
+      if (_isMounted) {
+        setState(() => _newDeviceId = deviceId);
       }
     } catch (e) {
       debugLog('DeviceChangeScreen', 'Error initializing device: $e');
-      if (mounted) {
-        // ✅ FIXED: changed _mounted to mounted
-        // Use fallback device ID
+      if (_isMounted) {
         setState(() {
           _newDeviceId = 'fallback_${DateTime.now().millisecondsSinceEpoch}';
         });
@@ -379,16 +373,13 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     final password = _passwordController.text;
 
     try {
-      // CRITICAL FIX: Ensure username is not empty
       if (_username.isEmpty) {
-        // Try to get username from auth provider
         final currentUser = authProvider.currentUser;
         if (currentUser != null) {
           _username = currentUser.username;
           debugLog('DeviceChangeScreen',
               'Got username from currentUser: $_username');
         } else {
-          // Try to get from storage
           final userId = await UserSession().getCurrentUserId();
           if (userId != null) {
             debugLog(
@@ -403,7 +394,6 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
           'Approving device change for username: "$_username"');
       debugLog('DeviceChangeScreen', 'Device ID: ${_newDeviceId ?? _deviceId}');
 
-      // Use AuthProvider instead of direct API call
       final approveResponse = await authProvider.approveDeviceChange(
         username: _username,
         password: password,
@@ -429,21 +419,18 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
         await deviceProvider.initialize();
 
         final userId = await UserSession().getCurrentUserId();
-        if (userId != null && mounted) {
-          // ✅ FIXED: changed _mounted to mounted
+        if (userId != null && _isMounted) {
           await deviceProvider.deviceService
               .removeCacheItem('device_change_$userId', isUserSpecific: true);
         }
 
-        if (mounted) {
-          // ✅ FIXED: changed _mounted to mounted
+        if (_isMounted) {
           SnackbarService()
               .showSuccess(context, 'Device change approved successfully!');
 
-          // Navigation with proper delay and flags
           await Future.delayed(const Duration(milliseconds: 300));
 
-          if (!mounted) return; // ✅ FIXED: changed _mounted to mounted
+          if (!_isMounted) return;
 
           if (authProvider.currentUser?.schoolId == null) {
             appRouter.setNavigatingToSchoolSelection(true);
@@ -454,8 +441,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
           }
         }
       } else {
-        if (mounted) {
-          // ✅ FIXED: changed _mounted to mounted
+        if (_isMounted) {
           setState(() => _error =
               loginResult['message'] ?? 'Login after device change failed');
           SnackbarService().showError(context, _error!);
@@ -476,15 +462,13 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
         errorMessage = 'Device change failed. Please try again.';
       }
 
-      if (mounted) {
-        // ✅ FIXED: changed _mounted to mounted
+      if (_isMounted) {
         setState(() => _error = errorMessage);
         SnackbarService().showError(context, errorMessage);
       }
     } finally {
-      if (mounted) {
-        setState(
-            () => _isLoading = false); // ✅ FIXED: changed _mounted to mounted
+      if (_isMounted) {
+        setState(() => _isLoading = false);
       }
     }
   }
@@ -498,8 +482,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
       confirmText: 'Yes, Cancel',
       cancelText: 'No, Stay',
     ).then((confirmed) {
-      if (confirmed == true && mounted) {
-        // ✅ FIXED: changed _mounted to mounted
+      if (confirmed == true && _isMounted) {
         context.read<AuthProvider>().clearDeviceChangeRequirement();
         context.go('/auth/login');
       }
@@ -653,10 +636,9 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
               height: ResponsiveValues.iconSizeM(context),
               child: Checkbox(
                 value: _confirmChange,
-                onChanged: (value) =>
-                    mounted // ✅ FIXED: changed _mounted to mounted
-                        ? setState(() => _confirmChange = value ?? false)
-                        : null,
+                onChanged: (value) => _isMounted
+                    ? setState(() => _confirmChange = value ?? false)
+                    : null,
                 activeColor: AppColors.telegramBlue,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(
@@ -740,7 +722,6 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
 
   @override
   Widget build(BuildContext context) {
-    // 1. OFFLINE STATE
     if (_isOffline) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
@@ -755,18 +736,21 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
             onPressed: () => context.go('/auth/login'),
           ),
         ),
-        body: AppEmptyState.offline(
+        body: AppEmptyState(
+          icon: Icons.wifi_off_rounded,
+          title: 'Offline',
           message: 'You are offline. Please connect to complete device change.',
-          onRetry: () {
+          actionText: 'Retry',
+          onAction: () {
             setState(() => _isOffline = false);
             _checkConnectivity();
           },
           pendingCount: _pendingCount,
+          type: EmptyStateType.offline,
         ),
       );
     }
 
-    // 2. INITIALIZING STATE
     if (_isInitializing) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
@@ -803,7 +787,6 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
       );
     }
 
-    // 3. NO ARGS STATE
     if (!_hasArgs && _username.isEmpty) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
@@ -818,15 +801,17 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
             onPressed: () => context.go('/auth/login'),
           ),
         ),
-        body: AppEmptyState.error(
+        body: AppEmptyState(
+          icon: Icons.error_outline_rounded,
           title: 'Invalid Request',
           message: 'No device change data provided.',
-          onRetry: () => context.go('/auth/login'),
+          actionText: 'Go to Login',
+          onAction: () => context.go('/auth/login'),
+          type: EmptyStateType.error,
         ),
       );
     }
 
-    // 4. MAIN CONTENT
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: AppBar(

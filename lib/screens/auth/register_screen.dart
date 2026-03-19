@@ -1,5 +1,5 @@
 // lib/screens/auth/register_screen.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// COMPLETE PRODUCTION-READY FILE - FIXED PENDING COUNT
 
 import 'dart:async';
 import 'dart:io';
@@ -13,6 +13,7 @@ import '../../services/device_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
+import '../../services/offline_queue_manager.dart';
 import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_text_field.dart';
@@ -77,7 +78,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (mounted) {
         setState(() {
           _isOffline = !isOnline;
-          _pendingCount = connectivityService.pendingActionsCount;
+          final queueManager = context.read<OfflineQueueManager>();
+          _pendingCount = queueManager.pendingCount;
         });
       }
     });
@@ -89,7 +91,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (mounted) {
       setState(() {
         _isOffline = !connectivityService.isOnline;
-        _pendingCount = connectivityService.pendingActionsCount;
+        final queueManager = context.read<OfflineQueueManager>();
+        _pendingCount = queueManager.pendingCount;
       });
     }
   }
@@ -223,7 +226,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        // Logo
                         Center(
                           child: AppBrandLogo(
                             size: ResponsiveValues.avatarSizeLarge(context),
@@ -231,8 +233,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           ),
                         ),
                         SizedBox(height: ResponsiveValues.spacingXL(context)),
-
-                        // Welcome Text
                         Text(
                           AppStrings.createAccount,
                           style: AppTextStyles.headlineMedium(context)
@@ -247,8 +247,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           ),
                           textAlign: TextAlign.center,
                         ),
-
-                        // Offline Warning
                         if (_isOffline && _pendingCount > 0)
                           Padding(
                             padding: EdgeInsets.only(
@@ -288,10 +286,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               ),
                             ),
                           ),
-
                         SizedBox(height: ResponsiveValues.spacingXXL(context)),
-
-                        // Username Field
                         AppTextField(
                           controller: _usernameController,
                           label: AppStrings.username,
@@ -301,8 +296,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           validator: _validateUsername,
                         ),
                         SizedBox(height: ResponsiveValues.spacingL(context)),
-
-                        // Password Field
                         AppTextField.password(
                           controller: _passwordController,
                           label: AppStrings.password,
@@ -311,8 +304,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           validator: _validatePassword,
                         ),
                         SizedBox(height: ResponsiveValues.spacingL(context)),
-
-                        // Confirm Password Field
                         AppTextField.password(
                           controller: _confirmPasswordController,
                           label: AppStrings.confirmPassword,
@@ -321,8 +312,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           validator: _validateConfirmPassword,
                         ),
                         SizedBox(height: ResponsiveValues.spacingXL(context)),
-
-                        // Register Button
                         AppButton.primary(
                           label: _deviceId == null
                               ? AppStrings.loading
@@ -337,8 +326,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           expanded: true,
                         ),
                         SizedBox(height: ResponsiveValues.spacingL(context)),
-
-                        // Login Link
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [

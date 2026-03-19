@@ -1,5 +1,5 @@
 // lib/providers/user_provider.dart
-// COMPLETE PRODUCTION-READY FINAL VERSION - INSTANT CACHE LOADING
+// PRODUCTION-READY FINAL VERSION - WITH ALL FIXES
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -14,6 +14,7 @@ import '../services/offline_queue_manager.dart';
 import '../models/user_model.dart';
 import '../utils/constants.dart';
 import '../utils/api_response.dart';
+import '../utils/helpers.dart';
 import 'base_provider.dart';
 
 class UserProvider extends ChangeNotifier
@@ -43,8 +44,8 @@ class UserProvider extends ChangeNotifier
 
   Box? _userBox;
 
-  final StreamController<User?> _userUpdateController =
-      StreamController<User?>.broadcast();
+  // ✅ FIXED: Proper stream declaration
+  late StreamController<User?> _userUpdateController;
 
   UserProvider({
     required this.apiService,
@@ -52,7 +53,7 @@ class UserProvider extends ChangeNotifier
     required this.connectivityService,
     required this.hiveService,
     required this.offlineQueueManager,
-  }) {
+  }) : _userUpdateController = StreamController<User?>.broadcast() {
     log('UserProvider constructor called');
     initializeOfflineAware(
       connectivity: connectivityService,
@@ -211,7 +212,7 @@ class UserProvider extends ChangeNotifier
 
   Stream<User?> get userUpdates => _userUpdateController.stream;
 
-  // ===== LOAD USER PROFILE - FIXED FOR INSTANT CACHE =====
+  // ===== LOAD USER PROFILE =====
   Future<void> loadUserProfile({
     bool forceRefresh = false,
     bool isManualRefresh = false,
@@ -222,7 +223,8 @@ class UserProvider extends ChangeNotifier
     log('loadUserProfile() CALL #$callId');
 
     if (isManualRefresh && isOffline) {
-      throw Exception('Network error. Please check your internet connection.');
+      throw Exception(getUserFriendlyErrorMessage(
+          'Network error. Please check your internet connection.'));
     }
 
     // ✅ CRITICAL: Return cached data IMMEDIATELY if we have it
@@ -334,16 +336,16 @@ class UserProvider extends ChangeNotifier
           return;
         }
 
-        setError('You are offline. No cached profile available.');
+        setError(getUserFriendlyErrorMessage(
+            'You are offline. No cached profile available.'));
         _hasLoadedProfile = true;
         _isLoadingProfile = false;
         setLoaded();
         _userUpdateController.add(null);
 
         if (isManualRefresh) {
-          throw Exception(
-            'Network error. Please check your internet connection.',
-          );
+          throw Exception(getUserFriendlyErrorMessage(
+              'Network error. Please check your internet connection.'));
         }
         return;
       }
@@ -416,7 +418,7 @@ class UserProvider extends ChangeNotifier
         throw Exception('Failed to load profile: ${response.message}');
       }
     } catch (e) {
-      setError(e.toString());
+      setError(getUserFriendlyErrorMessage(e));
       _hasLoadedProfile = true;
       _isLoadingProfile = false;
       setLoaded();
@@ -623,17 +625,10 @@ class UserProvider extends ChangeNotifier
       }
     } catch (e) {
       setLoaded();
-      setError(e.toString());
+      setError(getUserFriendlyErrorMessage(e));
       log('❌ Profile update error: $e');
 
-      String errorMessage = 'Failed to update profile';
-      if (e.toString().contains('Email already in use')) {
-        errorMessage = 'Email already in use by another user';
-      } else if (e.toString().contains('phone')) {
-        errorMessage = 'Phone number already in use by another user';
-      } else if (e.toString().contains('timed out')) {
-        errorMessage = 'Request timed out. Please try again.';
-      }
+      String errorMessage = getUserFriendlyErrorMessage(e);
 
       return ApiResponse<Map<String, dynamic>>(
         success: false,
@@ -676,6 +671,7 @@ class UserProvider extends ChangeNotifier
     }
   }
 
+  // ✅ FIXED: Clear user data with proper stream recreation
   Future<void> clearUserData() async {
     final session = UserSession();
     if (!session.shouldClearCacheOnLogout()) return;
@@ -700,7 +696,11 @@ class UserProvider extends ChangeNotifier
     _hasInitialData = false;
     _lastProfileFetch = null;
 
+    // FIX: Properly recreate stream controller
+    await _userUpdateController.close();
+    _userUpdateController = StreamController<User?>.broadcast();
     _userUpdateController.add(null);
+
     safeNotify();
   }
 

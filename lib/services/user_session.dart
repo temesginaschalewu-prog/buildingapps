@@ -1,12 +1,12 @@
 // lib/services/user_session.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// PRODUCTION-READY FINAL VERSION
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hive/hive.dart';
 import '../utils/constants.dart';
 import '../utils/helpers.dart';
 
-/// UPDATED: Now uses Hive for better session persistence
+/// PRODUCTION-READY User Session Management
 class UserSession {
   static final UserSession _instance = UserSession._internal();
   factory UserSession() => _instance;

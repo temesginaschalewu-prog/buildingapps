@@ -1,5 +1,5 @@
 // lib/screens/category/category_detail_screen.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// COMPLETE PRODUCTION-READY FILE - FIXED PENDING COUNT
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -14,6 +14,7 @@ import '../../models/payment_model.dart';
 import '../../services/device_service.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
+import '../../services/offline_queue_manager.dart';
 import '../../providers/category_provider.dart';
 import '../../providers/course_provider.dart';
 import '../../providers/subscription_provider.dart';
@@ -86,9 +87,10 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     await _loadFromCache();
 
     if (_category != null && _hasCachedData) {
-      await _loadCourses();
-      if (!mounted) return;
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+      unawaited(_loadCourses());
       if (!_isOffline) {
         unawaited(_refreshInBackground());
       }
@@ -104,7 +106,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
       if (mounted) {
         setState(() {
           _isOffline = !isOnline;
-          _pendingCount = connectivityService.pendingActionsCount;
+          final queueManager = context.read<OfflineQueueManager>();
+          _pendingCount = queueManager.pendingCount;
         });
         if (isOnline && !_isRefreshing && _category != null) {
           unawaited(_refreshInBackground());
@@ -136,7 +139,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     if (mounted) {
       setState(() {
         _isOffline = !connectivityService.isOnline;
-        _pendingCount = connectivityService.pendingActionsCount;
+        final queueManager = context.read<OfflineQueueManager>();
+        _pendingCount = queueManager.pendingCount;
       });
     }
   }
@@ -165,14 +169,17 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
       if (_category == null) throw Exception(AppStrings.categoryNotFound);
 
       await _checkAccessStatus();
-      await _loadPaymentInfo();
       await _loadCourses();
+
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
 
       await Future.delayed(const Duration(milliseconds: 100));
       await _saveToCache();
 
-      if (mounted) {
-        setState(() => _isLoading = false);
+      if (!_isOffline) {
+        unawaited(_refreshPaymentInfoInBackground());
       }
     } catch (e) {
       debugLog('CategoryDetail', 'Error loading fresh data: $e');
@@ -329,14 +336,11 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
           forceRefresh: forceRefresh && !_isOffline,
           isManualRefresh: isManualRefresh);
       final pendingPayments = paymentProvider.getPendingPayments();
-      _hasPendingPayment = pendingPayments.any(
-        (payment) =>
-            payment.categoryName.toLowerCase() == _category!.name.toLowerCase(),
-      );
+      _hasPendingPayment = pendingPayments.any(_matchesPaymentToCategory);
 
       final rejectedPayments = paymentProvider.getRejectedPayments();
       final recentRejected = rejectedPayments.firstWhere(
-        (p) => p.categoryName.toLowerCase() == _category!.name.toLowerCase(),
+        _matchesPaymentToCategory,
         orElse: () => Payment(
           id: 0,
           paymentType: '',
@@ -352,6 +356,22 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     } catch (e) {
       debugLog('CategoryDetail', 'Error loading payment info: $e');
     }
+  }
+
+  bool _matchesPaymentToCategory(Payment payment) {
+    if (_category == null) return false;
+    if (payment.categoryId != null && payment.categoryId == _category!.id) {
+      return true;
+    }
+
+    return payment.categoryName.toLowerCase() == _category!.name.toLowerCase();
+  }
+
+  Future<void> _refreshPaymentInfoInBackground() async {
+    await _loadPaymentInfo();
+    if (!mounted) return;
+    setState(() {});
+    unawaited(_saveToCache());
   }
 
   Future<void> _loadCourses(
@@ -691,14 +711,14 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     final courses = courseProvider.getCoursesByCategory(widget.categoryId);
     final isLoadingCourses =
         courseProvider.isLoadingCategory(widget.categoryId);
+    final hasLoadedCourses =
+        courseProvider.hasLoadedCategory(widget.categoryId);
     final hasVisibleContent = courses.isNotEmpty || _hasCachedData;
 
-    // 1. LOADING STATE
     if (_isLoading && !_hasCachedData) {
       return _buildSkeletonLoader();
     }
 
-    // 2. NO CATEGORY STATE
     if (_category == null) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
@@ -721,16 +741,6 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
       );
     }
 
-    // 3. CHECK IF WE HAVE CACHED DATA BUT STILL LOADING
-    if (_hasCachedData && _isLoading) {
-      // We have cached data but still loading fresh data - show cached content
-      // This prevents shimmering when we have cached data available
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
-
-    // 3. MAIN CONTENT
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: CustomAppBar(
@@ -790,13 +800,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
           child: CustomScrollView(
             physics: const BouncingScrollPhysics(),
             slivers: [
-              // Header
               SliverToBoxAdapter(child: _buildHeader()),
-
-              // Access Banner
               SliverToBoxAdapter(child: _buildAccessBanner()),
-
-              // Pending count banner (if offline with pending actions)
               if (_isOffline && _pendingCount > 0)
                 SliverToBoxAdapter(
                   child: Container(
@@ -822,7 +827,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                         SizedBox(width: ResponsiveValues.spacingM(context)),
                         Expanded(
                           child: Text(
-                            '$_pendingCount pending change${_pendingCount > 1 ? 's' : ''}',
+                            AppStrings.pendingChangesLabel(_pendingCount),
                             style: AppTextStyles.bodySmall(context)
                                 .copyWith(color: AppColors.info),
                           ),
@@ -831,8 +836,6 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                     ),
                   ),
                 ),
-
-              // Courses Title
               SliverPadding(
                 padding: ResponsiveValues.screenPadding(context),
                 sliver: SliverToBoxAdapter(
@@ -843,15 +846,16 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                   ),
                 ),
               ),
-
-              // Courses List
               SliverPadding(
                 padding: ResponsiveValues.screenPadding(context),
                 sliver: SliverList(
                   delegate: SliverChildBuilderDelegate(
                     (context, index) {
-                      // Loading shimmer
-                      if ((_isLoading || isLoadingCourses) && courses.isEmpty) {
+                      if ((_isLoading || isLoadingCourses) &&
+                          courses.isEmpty &&
+                          !hasLoadedCourses &&
+                          !_hasCachedData &&
+                          !_isOffline) {
                         return Padding(
                           padding: EdgeInsets.only(
                               bottom: ResponsiveValues.spacingL(context)),
@@ -860,7 +864,6 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                         );
                       }
 
-                      // Course card
                       if (index < courses.length) {
                         final course = courses[index];
                         return Padding(
@@ -880,7 +883,6 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                         );
                       }
 
-                      // Empty state
                       if (!(_isLoading || isLoadingCourses) &&
                           courses.isEmpty &&
                           index == 0) {

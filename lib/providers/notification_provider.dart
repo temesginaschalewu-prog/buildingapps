@@ -1,5 +1,5 @@
 // lib/providers/notification_provider.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// PRODUCTION-READY FINAL VERSION
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -13,9 +13,10 @@ import '../services/offline_queue_manager.dart';
 import '../models/notification_model.dart' as notification_model;
 import '../utils/api_response.dart';
 import '../utils/constants.dart';
+import '../utils/helpers.dart';
 import 'base_provider.dart';
 
-/// PRODUCTION-READY Notification Provider with Full Offline Support
+/// PRODUCTION-READY Notification Provider
 class NotificationProvider extends ChangeNotifier
     with
         BaseProvider<NotificationProvider>,
@@ -31,7 +32,6 @@ class NotificationProvider extends ChangeNotifier
 
   List<notification_model.Notification> _notifications = [];
   int _unreadCount = 0;
-  // ignore: unused_field
   DateTime? _lastLoadTime;
   DateTime? _lastUnreadRefreshAt;
   Completer<void>? _unreadRefreshCompleter;
@@ -45,9 +45,13 @@ class NotificationProvider extends ChangeNotifier
 
   int _apiCallCount = 0;
 
-  final StreamController<List<notification_model.Notification>>
-      _notificationsUpdateController =
-      StreamController<List<notification_model.Notification>>.broadcast();
+  // ✅ FIXED: Proper stream declaration
+  late StreamController<List<notification_model.Notification>>
+      _notificationsUpdateController;
+
+  // ✅ FIXED: Rate limiting
+  DateTime? _lastBackgroundRefresh;
+  static const Duration _minBackgroundInterval = Duration(minutes: 2);
 
   NotificationProvider({
     required this.apiService,
@@ -55,7 +59,8 @@ class NotificationProvider extends ChangeNotifier
     required this.connectivityService,
     required this.hiveService,
     required this.offlineQueueManager,
-  }) {
+  }) : _notificationsUpdateController = StreamController<
+            List<notification_model.Notification>>.broadcast() {
     log('NotificationProvider constructor called');
     initializeOfflineAware(
       connectivity: connectivityService,
@@ -190,7 +195,8 @@ class NotificationProvider extends ChangeNotifier
     log('loadNotifications() CALL #$callId');
 
     if (isManualRefresh && isOffline) {
-      throw Exception('Network error. Please check your internet connection.');
+      throw Exception(getUserFriendlyErrorMessage(
+          'Network error. Please check your internet connection.'));
     }
 
     // If already loaded and not forcing refresh, return cached data
@@ -296,8 +302,8 @@ class NotificationProvider extends ChangeNotifier
         _notificationsUpdateController.add(_notifications);
 
         if (isManualRefresh) {
-          throw Exception(
-              'Network error. Please check your internet connection.');
+          throw Exception(getUserFriendlyErrorMessage(
+              'Network error. Please check your internet connection.'));
         }
         log('ℹ️ Offline with no notifications, showing empty state');
         return;
@@ -328,7 +334,7 @@ class NotificationProvider extends ChangeNotifier
         log('✅ Success! Notifications loaded');
       } else {
         // Even if API fails, mark as loaded with existing data or empty
-        setError(response.message);
+        setError(getUserFriendlyErrorMessage(response.message));
         setLoaded();
         log('❌ API error: ${response.message}');
         _notificationsUpdateController.add(_notifications);
@@ -340,7 +346,7 @@ class NotificationProvider extends ChangeNotifier
     } catch (e) {
       log('❌ Error loading notifications: $e');
 
-      setError(e.toString());
+      setError(getUserFriendlyErrorMessage(e));
       setLoaded();
 
       if (_notifications.isEmpty) {
@@ -357,11 +363,21 @@ class NotificationProvider extends ChangeNotifier
     }
   }
 
+  // ✅ FIXED: Rate limited background refresh
   Future<void> _refreshFromApi() async {
     if (!connectivityService.isOnline) {
       log('Offline, skipping background refresh');
       return;
     }
+
+    // Rate limiting
+    if (_lastBackgroundRefresh != null &&
+        DateTime.now().difference(_lastBackgroundRefresh!) <
+            _minBackgroundInterval) {
+      log('⏱️ Background refresh rate limited');
+      return;
+    }
+    _lastBackgroundRefresh = DateTime.now();
 
     try {
       final response = await apiService.getMyNotifications();
@@ -698,6 +714,7 @@ class NotificationProvider extends ChangeNotifier
     await loadNotifications(forceRefresh: true);
   }
 
+  // ✅ FIXED: Clear user data with proper stream recreation
   Future<void> clearUserData() async {
     final session = UserSession();
     if (!session.shouldClearCacheOnLogout()) return;
@@ -713,19 +730,23 @@ class NotificationProvider extends ChangeNotifier
     }
 
     stopBackgroundRefresh();
+    _lastBackgroundRefresh = null;
     _notifications.clear();
     _unreadCount = 0;
     _lastLoadTime = null;
 
+    // FIX: Properly recreate stream controller
+    await _notificationsUpdateController.close();
+    _notificationsUpdateController =
+        StreamController<List<notification_model.Notification>>.broadcast();
     _notificationsUpdateController.add(_notifications);
-    safeNotify();
 
-    log('🧹 Cleared user notification data');
+    safeNotify();
   }
 
   @override
   void clearError() {
-    clearError();
+    super.clearError();
   }
 
   @override

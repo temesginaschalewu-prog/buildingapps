@@ -1,5 +1,5 @@
 // lib/providers/settings_provider.dart
-// COMPLETE PRODUCTION-READY FINAL VERSION - INSTANT CACHE + BACKGROUND REFRESH
+// PRODUCTION-READY FINAL VERSION - FIXED LOG SPAM
 
 import 'dart:async';
 import 'package:familyacademyclient/services/offline_queue_manager.dart';
@@ -14,9 +14,10 @@ import '../models/setting_model.dart';
 import '../utils/api_response.dart';
 import '../utils/constants.dart';
 import '../utils/app_enums.dart';
+import '../utils/helpers.dart';
 import 'base_provider.dart';
 
-/// PRODUCTION-READY Settings Provider with Full Offline Support
+/// PRODUCTION-READY Settings Provider
 class SettingsProvider extends ChangeNotifier
     with
         BaseProvider<SettingsProvider>,
@@ -47,15 +48,24 @@ class SettingsProvider extends ChangeNotifier
 
   int _apiCallCount = 0;
 
-  StreamController<List<Setting>> _settingsUpdateController =
-      StreamController<List<Setting>>.broadcast();
+  // ✅ FIXED: Proper stream declaration
+  late StreamController<List<Setting>> _settingsUpdateController;
+
+  // ✅ FIXED: Rate limiting
+  DateTime? _lastBackgroundRefresh;
+  static const Duration _minBackgroundInterval = Duration(minutes: 2);
+
+  // ✅ FIXED: Cache for contact info to prevent log spam
+  List<ContactInfo> _cachedContacts = [];
+  DateTime? _lastContactsFetch;
+  static const Duration _contactsCacheDuration = Duration(seconds: 5);
 
   SettingsProvider({
     required this.apiService,
     required this.deviceService,
     required this.connectivityService,
     required this.hiveService,
-  }) {
+  }) : _settingsUpdateController = StreamController<List<Setting>>.broadcast() {
     log('SettingsProvider constructor called');
     initializeOfflineAware(
       connectivity: connectivityService,
@@ -140,6 +150,11 @@ class SettingsProvider extends ChangeNotifier
       }
       _settingsByCategory[setting.category]!.add(setting);
     }
+
+    // Clear contact cache when settings change
+    _cachedContacts.clear();
+    _lastContactsFetch = null;
+
     log('Rebuilt maps: ${_settingsMap.length} keys, ${_settingsByCategory.length} categories');
   }
 
@@ -227,7 +242,7 @@ class SettingsProvider extends ChangeNotifier
     return _settingsMap[key]?.displayName;
   }
 
-  // ===== LOAD ALL SETTINGS - INSTANT CACHE + BACKGROUND REFRESH =====
+  // ===== LOAD ALL SETTINGS =====
   Future<void> getAllSettings({
     bool forceRefresh = false,
     bool isManualRefresh = false,
@@ -251,7 +266,8 @@ class SettingsProvider extends ChangeNotifier
     }
 
     if (isManualRefresh && isOffline) {
-      throw Exception('Network error. Please check your internet connection.');
+      throw Exception(getUserFriendlyErrorMessage(
+          'Network error. Please check your internet connection.'));
     }
 
     if (isLoading && !forceRefresh) {
@@ -346,18 +362,19 @@ class SettingsProvider extends ChangeNotifier
           return;
         }
 
-        setError('You are offline. No cached settings available.');
+        setError(getUserFriendlyErrorMessage(
+            'You are offline. No cached settings available.'));
         setLoaded();
         _settingsUpdateController.add(_allSettings);
 
         if (isManualRefresh) {
-          throw Exception(
-              'Network error. Please check your internet connection.');
+          throw Exception(getUserFriendlyErrorMessage(
+              'Network error. Please check your internet connection.'));
         }
         return;
       }
 
-      // STEP 4: Fetch from API (only if online and we need fresh data)
+      // STEP 4: Fetch from API
       log('STEP 4: Fetching from API');
       final response = await apiService.getAllSettings().timeout(
         const Duration(seconds: 10),
@@ -410,7 +427,7 @@ class SettingsProvider extends ChangeNotifier
         }
       }
     } catch (e) {
-      setError(e.toString());
+      setError(getUserFriendlyErrorMessage(e));
       setLoaded();
       log('❌ Error loading settings: $e');
 
@@ -428,8 +445,18 @@ class SettingsProvider extends ChangeNotifier
     }
   }
 
+  // ✅ FIXED: Rate limited background refresh
   Future<void> _refreshInBackground() async {
     if (isOffline) return;
+
+    // Rate limiting
+    if (_lastBackgroundRefresh != null &&
+        DateTime.now().difference(_lastBackgroundRefresh!) <
+            _minBackgroundInterval) {
+      log('⏱️ Background refresh rate limited');
+      return;
+    }
+    _lastBackgroundRefresh = DateTime.now();
 
     try {
       final response = await apiService.getAllSettings().timeout(
@@ -516,7 +543,7 @@ class SettingsProvider extends ChangeNotifier
     }
   }
 
-  // ===== LOAD CONTACT SETTINGS - FIXED WITH BACKGROUND REFRESH =====
+  // ===== LOAD CONTACT SETTINGS =====
   Future<void> loadContactSettings({bool? forceRefresh}) async {
     log('loadContactSettings()');
 
@@ -576,6 +603,10 @@ class SettingsProvider extends ChangeNotifier
         for (final setting in settings) {
           _settingsMap[setting.settingKey] = setting;
         }
+
+        // Clear contact cache
+        _cachedContacts.clear();
+        _lastContactsFetch = null;
 
         // Update Hive cache
         if (_settingsBox != null) {
@@ -726,7 +757,7 @@ class SettingsProvider extends ChangeNotifier
 
       completer.complete(true);
     } catch (e) {
-      setError(e.toString());
+      setError(getUserFriendlyErrorMessage(e));
       log('Error loading category $category: $e');
       completer.complete(false);
     } finally {
@@ -745,8 +776,18 @@ class SettingsProvider extends ChangeNotifier
     await loadSettingsByCategory('system');
   }
 
-  // ===== CONTACT INFO METHODS =====
+  // ===== CONTACT INFO METHODS - FIXED WITH CACHING =====
   List<ContactInfo> getContactInfoList() {
+    // ✅ FIXED: Return cached version if still fresh
+    if (_cachedContacts.isNotEmpty &&
+        _lastContactsFetch != null &&
+        DateTime.now().difference(_lastContactsFetch!) <
+            _contactsCacheDuration) {
+      return _cachedContacts;
+    }
+
+    log('Building contact info list (cache miss)');
+
     final contacts = <ContactInfo>[];
     final contactSettings = _settingsByCategory['contact'] ?? [];
 
@@ -851,6 +892,10 @@ class SettingsProvider extends ChangeNotifier
       if (orderCompare != 0) return orderCompare;
       return a.title.compareTo(b.title);
     });
+
+    // ✅ FIXED: Cache the results
+    _cachedContacts = contacts;
+    _lastContactsFetch = DateTime.now();
 
     log('getContactInfoList: ${contacts.length} contacts');
     return contacts;
@@ -971,6 +1016,7 @@ class SettingsProvider extends ChangeNotifier
     await getAllSettings(isManualRefresh: true);
   }
 
+  // ✅ FIXED: Clear user data with proper stream recreation
   Future<void> clearUserData() async {
     final session = UserSession();
     if (!session.shouldClearCacheOnLogout()) return;
@@ -978,6 +1024,9 @@ class SettingsProvider extends ChangeNotifier
     await deviceService.clearCacheByPrefix('settings');
     await deviceService.clearCacheByPrefix('all_settings');
     stopBackgroundRefresh();
+    _lastBackgroundRefresh = null;
+    _cachedContacts.clear();
+    _lastContactsFetch = null;
 
     _allSettings.clear();
     _settingsMap.clear();
@@ -986,12 +1035,12 @@ class SettingsProvider extends ChangeNotifier
     _ongoingLoads.clear();
     _hasInitialized = false;
 
+    // FIX: Properly recreate stream controller
     await _settingsUpdateController.close();
     _settingsUpdateController = StreamController<List<Setting>>.broadcast();
     _settingsUpdateController.add(_allSettings);
-    safeNotify();
 
-    log('🧹 Cleared settings data');
+    safeNotify();
   }
 
   @override

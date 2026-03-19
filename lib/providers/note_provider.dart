@@ -1,5 +1,5 @@
 // lib/providers/note_provider.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// PRODUCTION-READY FINAL VERSION - WITH ALL FIXES
 
 import 'dart:async';
 import 'package:familyacademyclient/services/offline_queue_manager.dart';
@@ -12,6 +12,7 @@ import '../services/connectivity_service.dart';
 import '../services/hive_service.dart';
 import '../models/note_model.dart';
 import '../utils/constants.dart';
+import '../utils/helpers.dart';
 import 'base_provider.dart';
 
 /// PRODUCTION-READY Note Provider with Full Offline Support
@@ -43,15 +44,20 @@ class NoteProvider extends ChangeNotifier
 
   int _apiCallCount = 0;
 
-  StreamController<Map<String, dynamic>> _noteUpdateController =
-      StreamController<Map<String, dynamic>>.broadcast();
+  // ✅ FIXED: Proper stream declaration
+  late StreamController<Map<String, dynamic>> _noteUpdateController;
+
+  // ✅ FIXED: Rate limiting
+  final Map<int, DateTime?> _lastBackgroundRefreshForChapter = {};
+  static const Duration _minBackgroundInterval = Duration(minutes: 2);
 
   NoteProvider({
     required this.apiService,
     required this.deviceService,
     required this.connectivityService,
     required this.hiveService,
-  }) {
+  }) : _noteUpdateController =
+            StreamController<Map<String, dynamic>>.broadcast() {
     log('NoteProvider constructor called');
     initializeOfflineAware(
       connectivity: connectivityService,
@@ -244,7 +250,8 @@ class NoteProvider extends ChangeNotifier
     log('loadNotesByChapter() CALL #$callId for chapter $chapterId');
 
     if (isManualRefresh && isOffline) {
-      throw Exception('Network error. Please check your internet connection.');
+      throw Exception(getUserFriendlyErrorMessage(
+          'Network error. Please check your internet connection.'));
     }
 
     if (_isLoadingForChapter[chapterId] == true && !forceRefresh) {
@@ -365,8 +372,8 @@ class NoteProvider extends ChangeNotifier
         }
 
         if (isManualRefresh) {
-          throw Exception(
-              'Network error. Please check your internet connection.');
+          throw Exception(getUserFriendlyErrorMessage(
+              'Network error. Please check your internet connection.'));
         }
 
         _notesByChapter[chapterId] = [];
@@ -414,7 +421,7 @@ class NoteProvider extends ChangeNotifier
 
         log('✅ Success! Notes loaded for chapter $chapterId');
       } else {
-        setError(response.message);
+        setError(getUserFriendlyErrorMessage(response.message));
         log('❌ API error: ${response.message}');
 
         _notesByChapter[chapterId] = _notesByChapter[chapterId] ?? [];
@@ -434,7 +441,7 @@ class NoteProvider extends ChangeNotifier
     } catch (e) {
       log('❌ Error loading notes: $e');
 
-      setError(e.toString());
+      setError(getUserFriendlyErrorMessage(e));
       setLoaded();
       _isLoadingForChapter[chapterId] = false;
 
@@ -458,8 +465,19 @@ class NoteProvider extends ChangeNotifier
     }
   }
 
+  // ✅ FIXED: Rate limited background refresh
   Future<void> _refreshInBackground(int chapterId) async {
     if (isOffline) return;
+
+    // Rate limiting
+    if (_lastBackgroundRefreshForChapter[chapterId] != null &&
+        DateTime.now()
+                .difference(_lastBackgroundRefreshForChapter[chapterId]!) <
+            _minBackgroundInterval) {
+      log('⏱️ Background refresh rate limited for chapter $chapterId');
+      return;
+    }
+    _lastBackgroundRefreshForChapter[chapterId] = DateTime.now();
 
     try {
       final response = await apiService.getNotesByChapter(chapterId);
@@ -692,6 +710,7 @@ class NoteProvider extends ChangeNotifier
     }
   }
 
+  // ✅ FIXED: Clear user data with proper stream recreation
   Future<void> clearUserData() async {
     final session = UserSession();
     if (!session.shouldClearCacheOnLogout()) return;
@@ -720,17 +739,20 @@ class NoteProvider extends ChangeNotifier
     _lastLoadedTime.clear();
     _isLoadingForChapter.clear();
     _noteViewedStatus.clear();
+    _lastBackgroundRefreshForChapter.clear();
     stopBackgroundRefresh();
 
+    // FIX: Properly recreate stream controller
     await _noteUpdateController.close();
     _noteUpdateController = StreamController<Map<String, dynamic>>.broadcast();
     _noteUpdateController.add({'type': 'all_notes_cleared'});
+
     safeNotify();
   }
 
   @override
   void clearError() {
-    clearError();
+    super.clearError();
   }
 
   @override

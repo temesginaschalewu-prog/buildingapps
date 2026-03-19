@@ -1,5 +1,5 @@
 // lib/main.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// PRODUCTION-READY FINAL VERSION
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -32,7 +32,7 @@ import 'package:familyacademyclient/services/notification_service.dart';
 import 'package:familyacademyclient/services/connectivity_service.dart';
 import 'package:familyacademyclient/services/hive_service.dart';
 import 'package:familyacademyclient/services/offline_queue_manager.dart';
-import 'package:familyacademyclient/utils/platform_helper.dart'; // ✅ CHANGED
+import 'package:familyacademyclient/utils/platform_helper.dart';
 import 'package:familyacademyclient/utils/screen_protection.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -46,7 +46,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 void main() async {
   debugPrint('🚀 APP STARTING - PRODUCTION MODE WITH FULL OFFLINE SUPPORT');
-  PlatformHelper.logPlatformInfo(); // ✅ Using PlatformHelper
+  PlatformHelper.logPlatformInfo();
 
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -89,7 +89,6 @@ void main() async {
 
   // Initialize Firebase for mobile platforms
   if (PlatformHelper.isMobile) {
-    // ✅ Using PlatformHelper
     try {
       await Firebase.initializeApp();
       debugPrint('✅ Firebase initialized');
@@ -102,7 +101,6 @@ void main() async {
 
   // Initialize screen protection for mobile
   if (PlatformHelper.isMobile) {
-    // ✅ Using PlatformHelper
     try {
       await ScreenProtectionService.initialize();
       debugPrint('✅ Screen protection initialized');

@@ -1,5 +1,5 @@
 // lib/screens/settings/parent_link_screen.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// COMPLETE PRODUCTION-READY FILE - FIXED PENDING COUNT & REFRESH INDICATOR
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -15,8 +15,10 @@ import '../../providers/auth_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
+import '../../services/offline_queue_manager.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_button.dart';
+import '../../widgets/common/app_empty_state.dart';
 import '../../widgets/common/app_shimmer.dart';
 import '../../widgets/common/app_dialog.dart';
 import '../../widgets/common/app_bar.dart';
@@ -49,6 +51,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
   late AnimationController _pulseAnimationController;
 
   bool _hasCachedData = false;
+  String? _errorMessage;
 
   @override
   void initState() {
@@ -88,7 +91,8 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
       if (mounted) {
         setState(() {
           _isOffline = !isOnline;
-          _pendingCount = connectivityService.pendingActionsCount;
+          final queueManager = context.read<OfflineQueueManager>();
+          _pendingCount = queueManager.pendingCount;
         });
       }
     });
@@ -100,15 +104,16 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
     if (mounted) {
       setState(() {
         _isOffline = !connectivityService.isOnline;
-        _pendingCount = connectivityService.pendingActionsCount;
+        final queueManager = context.read<OfflineQueueManager>();
+        _pendingCount = queueManager.pendingCount;
       });
     }
   }
 
   Future<void> _checkPendingCount() async {
-    final connectivityService = context.read<ConnectivityService>();
+    final queueManager = context.read<OfflineQueueManager>();
     if (mounted) {
-      setState(() => _pendingCount = connectivityService.pendingActionsCount);
+      setState(() => _pendingCount = queueManager.pendingCount);
     }
   }
 
@@ -127,21 +132,20 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
     }
   }
 
-  // TIER 1 & 2: Initialize from cache
   Future<void> _initializeData() async {
     final parentLinkProvider = context.read<ParentLinkProvider>();
 
-    // ✅ FIXED: Changed hasLoaded to isLoaded (from BaseProvider)
     _hasCachedData = parentLinkProvider.isLoaded;
 
     try {
-      await parentLinkProvider.getParentLinkStatus(); // TIER 1 & 2
+      await parentLinkProvider.getParentLinkStatus();
+    } catch (e) {
+      _errorMessage = getUserFriendlyErrorMessage(e);
     } finally {
       if (mounted) setState(() => _isInitialized = true);
     }
   }
 
-  // Manual refresh with connectivity check
   Future<void> _manualRefresh() async {
     if (_isRefreshing) return;
 
@@ -159,13 +163,18 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
       final parentLinkProvider = context.read<ParentLinkProvider>();
       await parentLinkProvider.clearCache();
       await parentLinkProvider.getParentLinkStatus(forceRefresh: true);
-      setState(() => _isOffline = false);
+      setState(() {
+        _isOffline = false;
+        _errorMessage = null;
+      });
       SnackbarService().showSuccess(context, AppStrings.statusUpdated);
+      _refreshController.refreshCompleted();
     } catch (e) {
+      _errorMessage = getUserFriendlyErrorMessage(e);
       SnackbarService().showError(context, AppStrings.refreshFailed);
+      _refreshController.refreshFailed();
     } finally {
       setState(() => _isRefreshing = false);
-      _refreshController.refreshCompleted();
     }
   }
 
@@ -185,13 +194,13 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
         SnackbarService().showSuccess(context, AppStrings.statusUpdated);
       }
     } catch (e) {
+      _errorMessage = getUserFriendlyErrorMessage(e);
       _refreshController.refreshFailed();
     } finally {
       if (mounted) setState(() => _isRefreshing = false);
     }
   }
 
-  // Generate token (online only)
   Future<void> _generateToken() async {
     final connectivityService = context.read<ConnectivityService>();
     if (!connectivityService.isOnline) {
@@ -214,7 +223,6 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
     }
   }
 
-  // Unlink parent (online only)
   Future<void> _unlinkParent() async {
     final connectivityService = context.read<ConnectivityService>();
     if (!connectivityService.isOnline) {
@@ -267,7 +275,6 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
     );
   }
 
-  // Token dialog with proper copy functionality
   void _showTokenDialog(String token) {
     if (_dialogOpen) return;
     _dialogOpen = true;
@@ -284,7 +291,6 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Header
                 Row(
                   children: [
                     Container(
@@ -309,8 +315,6 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                   ],
                 ),
                 SizedBox(height: ResponsiveValues.spacingL(context)),
-
-                // Token display
                 Container(
                   padding: ResponsiveValues.cardPadding(context),
                   decoration: BoxDecoration(
@@ -339,8 +343,6 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                   ),
                 ),
                 SizedBox(height: ResponsiveValues.spacingM(context)),
-
-                // Expiry timer
                 Container(
                   padding: EdgeInsets.symmetric(
                     horizontal: ResponsiveValues.spacingM(context),
@@ -380,8 +382,6 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                   ),
                 ),
                 SizedBox(height: ResponsiveValues.spacingXL(context)),
-
-                // Action buttons
                 Row(
                   children: [
                     Expanded(
@@ -569,7 +569,6 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
         ? AppColors.telegramRed
         : (isExpiringSoon ? AppColors.telegramOrange : AppColors.telegramBlue);
 
-    // If token is expired, show not linked state
     if (isExpired) {
       return _buildNotLinkedState();
     }
@@ -922,7 +921,26 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
     final parentLinkProvider = context.watch<ParentLinkProvider>();
     final authProvider = context.watch<AuthProvider>();
 
-    // 1. LOADING STATE
+    if (_errorMessage != null) {
+      return Scaffold(
+        backgroundColor: AppColors.getBackground(context),
+        appBar: CustomAppBar(
+          title: AppStrings.parentLink,
+          subtitle: AppStrings.error,
+          leading: AppButton.icon(
+              icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
+          showOfflineIndicator: _isOffline,
+        ),
+        body: Center(
+          child: AppEmptyState.error(
+            title: AppStrings.error,
+            message: _errorMessage!,
+            onRetry: _manualRefresh,
+          ),
+        ),
+      );
+    }
+
     if (!_isInitialized && !_hasCachedData) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
@@ -937,7 +955,6 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
       );
     }
 
-    // 2. MAIN CONTENT
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: CustomAppBar(
@@ -963,7 +980,6 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
               sliver: SliverToBoxAdapter(
                 child: Column(
                   children: [
-                    // Pending count banner (if offline with pending actions)
                     if (_isOffline && _pendingCount > 0)
                       Container(
                         margin: EdgeInsets.only(
@@ -997,7 +1013,6 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                           ],
                         ),
                       ),
-
                     if (parentLinkProvider.isLinked)
                       _buildLinkedState(parentLinkProvider)
                     else if (parentLinkProvider.parentToken != null &&

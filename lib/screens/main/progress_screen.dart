@@ -1,5 +1,5 @@
 // lib/screens/main/progress_screen.dart
-// COMPLETE PRODUCTION-READY FINAL VERSION - FIXED TYPE CAST ERROR
+// COMPLETE FIXED VERSION - NULL SAFETY IN INITSTATE
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -14,6 +14,7 @@ import '../../providers/category_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
+import '../../services/offline_queue_manager.dart';
 import '../../widgets/common/app_bar.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_shimmer.dart';
@@ -26,7 +27,6 @@ import '../../themes/app_themes.dart';
 import '../../utils/helpers.dart';
 import '../../utils/constants.dart';
 
-/// PRODUCTION-READY PROGRESS SCREEN with 3-Tier Caching
 class ProgressScreen extends StatefulWidget {
   const ProgressScreen({super.key});
 
@@ -48,6 +48,7 @@ class _ProgressScreenState extends State<ProgressScreen>
   int _pendingCount = 0;
   bool _hasInitialData = false;
   DateTime? _lastRefreshTime;
+  bool _isMounted = false; // ✅ Track mounted state
 
   final Map<String, bool> _loadingSections = {
     'stats': true,
@@ -62,15 +63,20 @@ class _ProgressScreenState extends State<ProgressScreen>
   @override
   void initState() {
     super.initState();
+    _isMounted = true;
+
     _connectivitySubscription?.cancel();
     WidgetsBinding.instance.addObserver(this);
 
+    // ✅ DON'T access context here - use post frame callback
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initialize();
+      if (_isMounted) {
+        _initialize();
+      }
     });
 
     _backgroundRefreshTimer = Timer.periodic(const Duration(minutes: 5), (_) {
-      if (mounted && !_isRefreshing && !_isOffline) {
+      if (_isMounted && !_isRefreshing && !_isOffline) {
         _refreshDataInBackground();
       }
     });
@@ -78,6 +84,7 @@ class _ProgressScreenState extends State<ProgressScreen>
 
   @override
   void dispose() {
+    _isMounted = false; // ✅ Mark as unmounted immediately
     WidgetsBinding.instance.removeObserver(this);
     _backgroundRefreshTimer?.cancel();
     _debounceTimer?.cancel();
@@ -90,6 +97,8 @@ class _ProgressScreenState extends State<ProgressScreen>
   }
 
   Future<void> _initialize() async {
+    if (!_isMounted) return;
+
     await _checkConnectivity();
     _setupConnectivityListener();
     _setupStreamListeners();
@@ -97,15 +106,18 @@ class _ProgressScreenState extends State<ProgressScreen>
   }
 
   void _setupConnectivityListener() {
+    if (!_isMounted) return;
+
     final connectivityService = context.read<ConnectivityService>();
     _connectivitySubscription?.cancel();
     _connectivitySubscription =
         connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (!mounted) return;
+      if (!_isMounted) return;
 
       setState(() {
         _isOffline = !isOnline;
-        _pendingCount = connectivityService.pendingActionsCount;
+        final queueManager = context.read<OfflineQueueManager>();
+        _pendingCount = queueManager.pendingCount;
       });
 
       if (isOnline && !_isRefreshing && _hasInitialData) {
@@ -115,32 +127,38 @@ class _ProgressScreenState extends State<ProgressScreen>
   }
 
   void _setupStreamListeners() {
+    if (!_isMounted) return;
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_isMounted) return;
+
       final progressProvider = context.read<ProgressProvider>();
       final authProvider = context.read<AuthProvider>();
 
       _progressSubscription = progressProvider.progressUpdates.listen((
         progress,
       ) {
-        if (mounted) {
+        if (_isMounted) {
           _debounceTimer?.cancel();
           _debounceTimer = Timer(const Duration(milliseconds: 300), () {
-            if (mounted) setState(() => _updateLoadingStates(progressProvider));
+            if (_isMounted)
+              setState(() => _updateLoadingStates(progressProvider));
           });
         }
       });
 
       _statsSubscription = progressProvider.overallStatsUpdates.listen((stats) {
-        if (mounted) {
+        if (_isMounted) {
           _debounceTimer?.cancel();
           _debounceTimer = Timer(const Duration(milliseconds: 300), () {
-            if (mounted) setState(() => _updateLoadingStates(progressProvider));
+            if (_isMounted)
+              setState(() => _updateLoadingStates(progressProvider));
           });
         }
       });
 
       _authSubscription = authProvider.userChanges.listen((user) {
-        if (mounted && user != null && !_isOffline) {
+        if (_isMounted && user != null && !_isOffline) {
           _refreshDataInBackground();
         }
       });
@@ -155,18 +173,19 @@ class _ProgressScreenState extends State<ProgressScreen>
   }
 
   Future<void> _checkConnectivity() async {
+    if (!_isMounted) return;
+
     final connectivityService = context.read<ConnectivityService>();
     await connectivityService.checkConnectivity();
-    if (!mounted) return;
-    if (mounted) {
-      setState(() {
-        _isOffline = !connectivityService.isOnline;
-        _pendingCount = connectivityService.pendingActionsCount;
-      });
-    }
+    if (!_isMounted) return;
+
+    setState(() {
+      _isOffline = !connectivityService.isOnline;
+      final queueManager = context.read<OfflineQueueManager>();
+      _pendingCount = queueManager.pendingCount;
+    });
   }
 
-  // TIER 1 & 2: Initialize from cache
   Future<void> _initializeData() async {
     try {
       final streakProvider = context.read<StreakProvider>();
@@ -182,14 +201,14 @@ class _ProgressScreenState extends State<ProgressScreen>
       ]);
 
       await _loadNotifications();
-      if (!mounted) return;
+      if (!_isMounted) return;
 
       _hasInitialData = progressProvider.hasLoadedOverall ||
           progressProvider.hasLoadedProgress ||
           examProvider.myExamResults.isNotEmpty ||
           streakProvider.streak != null;
 
-      if (mounted) {
+      if (_isMounted) {
         setState(() {
           _updateLoadingStates(progressProvider);
         });
@@ -199,9 +218,8 @@ class _ProgressScreenState extends State<ProgressScreen>
     }
   }
 
-  // TIER 3: Background refresh
   Future<void> _refreshDataInBackground() async {
-    if (_isRefreshing) return;
+    if (_isRefreshing || !_isMounted) return;
     if (_lastRefreshTime != null &&
         DateTime.now().difference(_lastRefreshTime!) <
             const Duration(seconds: 30)) {
@@ -222,11 +240,11 @@ class _ProgressScreenState extends State<ProgressScreen>
       ]);
 
       await _loadNotifications();
-      if (!mounted) return;
+      if (!_isMounted) return;
 
       _lastRefreshTime = DateTime.now();
 
-      if (mounted) {
+      if (_isMounted) {
         setState(() => _updateLoadingStates(progressProvider));
       }
     } catch (e) {
@@ -236,9 +254,8 @@ class _ProgressScreenState extends State<ProgressScreen>
     }
   }
 
-  // Manual refresh with connectivity check
   Future<void> _manualRefresh() async {
-    if (_isRefreshing) return;
+    if (_isRefreshing || !_isMounted) return;
 
     final connectivityService = context.read<ConnectivityService>();
     if (!connectivityService.isOnline) {
@@ -267,7 +284,7 @@ class _ProgressScreenState extends State<ProgressScreen>
       ]);
 
       await _loadNotifications();
-      if (!mounted) return;
+      if (!_isMounted) return;
 
       _lastRefreshTime = DateTime.now();
       setState(() => _isOffline = false);
@@ -287,7 +304,7 @@ class _ProgressScreenState extends State<ProgressScreen>
         SnackbarService().showError(context, AppStrings.refreshFailed);
       }
     } finally {
-      if (mounted) setState(() => _isRefreshing = false);
+      if (_isMounted) setState(() => _isRefreshing = false);
     }
   }
 
@@ -1179,7 +1196,6 @@ class _ProgressScreenState extends State<ProgressScreen>
         categoryProvider,
         child,
       ) {
-        // FIXED: Safe cast for stats
         final statsData = progressProvider.overallStats['stats'];
         final Map<String, dynamic> stats =
             statsData is Map ? Map<String, dynamic>.from(statsData) : {};
@@ -1194,7 +1210,6 @@ class _ProgressScreenState extends State<ProgressScreen>
         final examResults = examProvider.myExamResults;
         final achievements = progressProvider.achievements;
 
-        // 1. OFFLINE EMPTY STATE
         if (_isOffline &&
             !progressProvider.hasLoadedOverall &&
             !progressProvider.hasLoadedProgress &&
@@ -1221,7 +1236,6 @@ class _ProgressScreenState extends State<ProgressScreen>
           );
         }
 
-        // 2. MAIN CONTENT
         return Scaffold(
           backgroundColor: AppColors.getBackground(context),
           body: RefreshIndicator(
@@ -1240,8 +1254,6 @@ class _ProgressScreenState extends State<ProgressScreen>
                     showOfflineIndicator: _isOffline,
                   ),
                 ),
-
-                // Pending count banner
                 if (_isOffline && _pendingCount > 0)
                   SliverToBoxAdapter(
                     child: Container(
@@ -1285,7 +1297,6 @@ class _ProgressScreenState extends State<ProgressScreen>
                       ),
                     ),
                   ),
-
                 SliverPadding(
                   padding: EdgeInsets.all(
                     ResponsiveValues.sectionPadding(context),

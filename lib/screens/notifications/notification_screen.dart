@@ -1,5 +1,5 @@
 // lib/screens/notifications/notification_screen.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// COMPLETE PRODUCTION-READY FILE - FIXED PENDING COUNT
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -17,6 +17,7 @@ import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_shimmer.dart';
 import '../../widgets/common/app_empty_state.dart';
 import '../../widgets/common/app_dialog.dart';
+import '../../widgets/common/app_bar.dart';
 import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
@@ -24,7 +25,6 @@ import '../../utils/responsive_values.dart';
 import '../../utils/helpers.dart';
 import '../../utils/constants.dart';
 
-/// PRODUCTION-READY NOTIFICATION SCREEN with 3-Tier Caching
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
 
@@ -98,8 +98,20 @@ class _NotificationsScreenState extends State<NotificationsScreen>
   Future<void> _initialize() async {
     await _checkConnectivity();
     _setupConnectivityListener();
-    _checkPendingCount();
-    _loadNotifications();
+    unawaited(_checkPendingCount());
+    final provider = context.read<NotificationProvider>();
+    if (provider.notifications.isNotEmpty) {
+      setState(() {
+        _isInitialLoad = false;
+        _hasMore = provider.notifications.length >= _pageSize;
+      });
+      if (!_isOffline) {
+        unawaited(provider.loadNotifications());
+      }
+      return;
+    }
+
+    unawaited(_loadNotifications());
   }
 
   void _setupConnectivityListener() {
@@ -109,7 +121,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       if (mounted) {
         setState(() {
           _isOffline = !isOnline;
-          _pendingCount = connectivityService.pendingActionsCount;
+          final queueManager = context.read<OfflineQueueManager>();
+          _pendingCount = queueManager.pendingCount;
         });
 
         if (isOnline) {
@@ -130,15 +143,16 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     if (mounted) {
       setState(() {
         _isOffline = !connectivityService.isOnline;
-        _pendingCount = connectivityService.pendingActionsCount;
+        final queueManager = context.read<OfflineQueueManager>();
+        _pendingCount = queueManager.pendingCount;
       });
     }
   }
 
   Future<void> _checkPendingCount() async {
-    final connectivityService = context.read<ConnectivityService>();
+    final queueManager = context.read<OfflineQueueManager>();
     if (mounted) {
-      setState(() => _pendingCount = connectivityService.pendingActionsCount);
+      setState(() => _pendingCount = queueManager.pendingCount);
     }
   }
 
@@ -149,26 +163,31 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     }
   }
 
-  // TIER 1 & 2: Load from cache
   Future<void> _loadNotifications() async {
     final provider = context.read<NotificationProvider>();
-    if (_isInitialLoad) {
-      setState(() => _isRefreshing = true);
-      try {
-        await provider.loadNotifications();
+
+    if (provider.isLoaded && provider.notifications.isNotEmpty) {
+      setState(() {
+        _isInitialLoad = false;
         _hasMore = provider.notifications.length >= _pageSize;
-      } finally {
-        if (mounted) {
-          setState(() {
-            _isInitialLoad = false;
-            _isRefreshing = false;
-          });
-        }
+      });
+      return;
+    }
+
+    setState(() => _isRefreshing = true);
+    try {
+      await provider.loadNotifications();
+      _hasMore = provider.notifications.length >= _pageSize;
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isInitialLoad = false;
+          _isRefreshing = false;
+        });
       }
     }
   }
 
-  // Manual refresh with connectivity check
   Future<void> _refreshNotifications() async {
     if (_isRefreshing) return;
 
@@ -208,7 +227,6 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     setState(() => _isLoadingMore = true);
     try {
       await Future.delayed(const Duration(milliseconds: 500));
-      // Provider would handle pagination here
     } finally {
       if (mounted) setState(() => _isLoadingMore = false);
     }
@@ -515,10 +533,10 @@ class _NotificationsScreenState extends State<NotificationsScreen>
   Widget _buildSkeletonLoader() {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
-      appBar: AppBar(
-        title: const AppShimmer(type: ShimmerType.textLine, customWidth: 200),
-        backgroundColor: AppColors.getBackground(context),
-        elevation: 0,
+      appBar: CustomAppBar(
+        title: AppStrings.notifications,
+        subtitle: AppStrings.loading,
+        showOfflineIndicator: _isOffline,
       ),
       body: ListView.builder(
         padding: ResponsiveValues.screenPadding(context),
@@ -535,18 +553,28 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     return Padding(
       padding: EdgeInsets.fromLTRB(
         ResponsiveValues.spacingL(context),
-        ResponsiveValues.spacingL(context),
+        ResponsiveValues.spacingXL(context),
         ResponsiveValues.spacingL(context),
         ResponsiveValues.spacingS(context),
       ),
       child: Row(
         children: [
-          Text(
-            title,
-            style: AppTextStyles.labelLarge(context)
-                .copyWith(color: AppColors.getTextSecondary(context)),
+          Container(
+            width: 4,
+            height: ResponsiveValues.spacingXL(context),
+            decoration: BoxDecoration(
+              color: AppColors.telegramBlue,
+              borderRadius: BorderRadius.circular(999),
+            ),
           ),
           SizedBox(width: ResponsiveValues.spacingM(context)),
+          Text(
+            title,
+            style: AppTextStyles.titleLarge(context).copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          SizedBox(width: ResponsiveValues.spacingS(context)),
           AppCard.glass(
             child: Container(
               padding: EdgeInsets.symmetric(
@@ -559,6 +587,121 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                     color: AppColors.telegramBlue, fontWeight: FontWeight.w600),
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeroCard(NotificationProvider provider) {
+    final unreadCount = provider.unreadNotifications.length;
+    final totalCount = provider.notifications.length;
+    final readCount = totalCount - unreadCount;
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        ResponsiveValues.spacingL(context),
+        ResponsiveValues.spacingM(context),
+        ResponsiveValues.spacingL(context),
+        ResponsiveValues.spacingL(context),
+      ),
+      child: AppCard.glass(
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.telegramBlue.withValues(alpha: 0.1),
+                AppColors.telegramPurple.withValues(alpha: 0.06),
+                Colors.transparent,
+              ],
+            ),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Stay on top of updates.',
+                style: AppTextStyles.displaySmall(context).copyWith(
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.3,
+                ),
+              ),
+              SizedBox(height: ResponsiveValues.spacingS(context)),
+              Text(
+                'Important account activity, study updates, and payment status all live here.',
+                style: AppTextStyles.bodyMedium(context).copyWith(
+                  color: AppColors.getTextSecondary(context),
+                ),
+              ),
+              SizedBox(height: ResponsiveValues.spacingL(context)),
+              Wrap(
+                spacing: ResponsiveValues.spacingM(context),
+                runSpacing: ResponsiveValues.spacingM(context),
+                children: [
+                  _buildHeroMetric(
+                    label: 'Unread',
+                    value: '$unreadCount',
+                    icon: Icons.mark_email_unread_rounded,
+                    color: AppColors.telegramBlue,
+                  ),
+                  _buildHeroMetric(
+                    label: 'Read',
+                    value: '$readCount',
+                    icon: Icons.done_all_rounded,
+                    color: AppColors.telegramGreen,
+                  ),
+                  _buildHeroMetric(
+                    label: 'Sync',
+                    value:
+                        _isOffline ? AppStrings.offlineMode : AppStrings.active,
+                    icon: _isOffline
+                        ? Icons.wifi_off_rounded
+                        : Icons.cloud_done_rounded,
+                    color:
+                        _isOffline ? AppColors.warning : AppColors.telegramTeal,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeroMetric({
+    required String label,
+    required String value,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 110),
+      padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
+        border: Border.all(color: color.withValues(alpha: 0.14)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: ResponsiveValues.iconSizeS(context)),
+          SizedBox(height: ResponsiveValues.spacingS(context)),
+          Text(
+            value,
+            style: AppTextStyles.titleLarge(context).copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          Text(
+            label,
+            style: AppTextStyles.labelMedium(context).copyWith(color: color),
           ),
         ],
       ),
@@ -885,7 +1028,6 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         controller: _scrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
-          // Pending count banner (if offline with pending actions)
           if (_isOffline && _pendingCount > 0)
             SliverToBoxAdapter(
               child: Container(
@@ -911,7 +1053,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                     SizedBox(width: ResponsiveValues.spacingM(context)),
                     Expanded(
                       child: Text(
-                        '$_pendingCount pending action${_pendingCount > 1 ? 's' : ''} will sync when online',
+                        AppStrings.pendingActionsSyncLabel(_pendingCount),
                         style: AppTextStyles.bodySmall(context)
                             .copyWith(color: AppColors.info),
                       ),
@@ -920,7 +1062,6 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                 ),
               ),
             ),
-
           if (unreadNotifications.isNotEmpty) ...[
             SliverToBoxAdapter(
                 child: _buildSectionHeader(
@@ -993,23 +1134,30 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     final provider = context.watch<NotificationProvider>();
     final hasUnread = provider.notifications.any((n) => !n.isRead);
 
-    // 1. LOADING STATE
-    if (_isInitialLoad && provider.isLoading) {
+    final hasCachedData =
+        provider.isLoaded && provider.notifications.isNotEmpty;
+
+    if (_isInitialLoad && provider.isLoading && !hasCachedData) {
       return _buildSkeletonLoader();
     }
 
-    // 2. MAIN CONTENT
+    if (hasCachedData && _isInitialLoad) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() => _isInitialLoad = false);
+        }
+      });
+    }
+
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
-      appBar: AppBar(
-        title: Text(AppStrings.notifications,
-            style: AppTextStyles.appBarTitle(context)),
-        centerTitle: false,
-        backgroundColor: AppColors.getBackground(context),
-        elevation: 0,
-        surfaceTintColor: Colors.transparent,
+      appBar: CustomAppBar(
+        title: AppStrings.notifications,
+        subtitle:
+            _isOffline ? AppStrings.offlineMode : 'Inbox, alerts, and updates',
         leading: AppButton.icon(
             icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
+        showOfflineIndicator: _isOffline,
         actions: [
           if (hasUnread)
             Container(

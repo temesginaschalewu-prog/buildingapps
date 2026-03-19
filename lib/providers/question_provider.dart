@@ -1,5 +1,5 @@
 // lib/providers/question_provider.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// PRODUCTION-READY FINAL VERSION - FIXED BOX ERROR
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -13,6 +13,7 @@ import '../services/offline_queue_manager.dart';
 import '../models/question_model.dart';
 import '../utils/constants.dart';
 import '../utils/api_response.dart';
+import '../utils/helpers.dart';
 import 'base_provider.dart';
 
 /// PRODUCTION-READY Question Provider with Full Offline Support
@@ -41,15 +42,17 @@ class QuestionProvider extends ChangeNotifier
   @override
   Duration get refreshInterval => const Duration(minutes: 5);
 
-  Box<Map<String, List<Question>>>? _questionsBox;
+  // ✅ FIXED: Use dynamic box as fallback
+  Box? _questionsBox;
   Box<Map<String, dynamic>>? _answersBox;
 
   int _apiCallCount = 0;
 
-  StreamController<Map<String, dynamic>> _questionUpdateController =
-      StreamController<Map<String, dynamic>>.broadcast();
-  StreamController<Map<String, dynamic>> _answerUpdateController =
-      StreamController<Map<String, dynamic>>.broadcast();
+  late StreamController<Map<String, dynamic>> _questionUpdateController;
+  late StreamController<Map<String, dynamic>> _answerUpdateController;
+
+  final Map<int, DateTime?> _lastBackgroundRefreshForChapter = {};
+  static const Duration _minBackgroundInterval = Duration(minutes: 2);
 
   QuestionProvider({
     required this.apiService,
@@ -57,7 +60,10 @@ class QuestionProvider extends ChangeNotifier
     required this.connectivityService,
     required this.hiveService,
     required this.offlineQueueManager,
-  }) {
+  })  : _questionUpdateController =
+            StreamController<Map<String, dynamic>>.broadcast(),
+        _answerUpdateController =
+            StreamController<Map<String, dynamic>>.broadcast() {
     log('QuestionProvider constructor called');
     initializeOfflineAware(
       connectivity: connectivityService,
@@ -68,7 +74,6 @@ class QuestionProvider extends ChangeNotifier
   }
 
   void _registerQueueProcessors() {
-    // Register processor for answer checking
     offlineQueueManager.registerProcessor(
       AppConstants.queueActionSaveAnswer,
       _processAnswerCheck,
@@ -102,15 +107,40 @@ class QuestionProvider extends ChangeNotifier
     log('_init() END');
   }
 
+  // ✅ FIXED: Enhanced box opening with fallback
   Future<void> _openHiveBoxes() async {
     try {
-      _questionsBox = await Hive.openBox<Map<String, List<Question>>>(
-        AppConstants.hiveQuestionsBox,
-      );
-      _answersBox = await Hive.openBox<Map<String, dynamic>>('answers_box');
-      log('✅ Hive boxes opened');
+      // Handle questions box - may be open with wrong type
+      if (Hive.isBoxOpen(AppConstants.hiveQuestionsBox)) {
+        log('Questions box already open, attempting to use it');
+        try {
+          // Try to get as typed box
+          _questionsBox = Hive.box<Map<String, List<Question>>>(
+              AppConstants.hiveQuestionsBox);
+          log('✅ Using existing questions box with correct type');
+        } catch (e) {
+          // Type mismatch - use dynamic box and handle manually
+          log('⚠️ Questions box type mismatch, using dynamic access');
+          _questionsBox = Hive.box(AppConstants.hiveQuestionsBox);
+        }
+      } else {
+        _questionsBox = await Hive.openBox<Map<String, List<Question>>>(
+          AppConstants.hiveQuestionsBox,
+        );
+        log('✅ Opened new questions box');
+      }
+
+      // Answers box - always dynamic
+      if (Hive.isBoxOpen('answers_box')) {
+        _answersBox = Hive.box<Map<String, dynamic>>('answers_box');
+        log('✅ Using existing answers box');
+      } else {
+        _answersBox = await Hive.openBox<Map<String, dynamic>>('answers_box');
+        log('✅ Opened new answers box');
+      }
     } catch (e) {
       log('⚠️ Error opening Hive boxes: $e');
+      // Continue with null boxes - app will fall back to other caches
     }
   }
 
@@ -119,16 +149,41 @@ class QuestionProvider extends ChangeNotifier
       final userId = await UserSession().getCurrentUserId();
       if (userId == null || _questionsBox == null) return;
 
-      final cachedData = _questionsBox!.get('user_${userId}_all_questions');
+      final dynamic cachedData =
+          _questionsBox!.get('user_${userId}_all_questions');
       if (cachedData != null) {
-        // Convert string keys to int keys
         final Map<int, List<Question>> convertedData = {};
-        cachedData.forEach((key, value) {
-          final intKey = int.tryParse(key);
-          if (intKey != null) {
-            convertedData[intKey] = value;
-          }
-        });
+
+        // Handle different map types
+        if (cachedData is Map) {
+          cachedData.forEach((key, value) {
+            final intKey = int.tryParse(key.toString());
+            if (intKey != null && value is List) {
+              final List<Question> questions = [];
+              for (final item in value) {
+                if (item is Question) {
+                  questions.add(item);
+                } else if (item is Map<String, dynamic>) {
+                  questions.add(Question.fromJson(item));
+                } else if (item is Map) {
+                  try {
+                    final Map<String, dynamic> stringMap = {};
+                    item.forEach((k, v) {
+                      stringMap[k.toString()] = v;
+                    });
+                    questions.add(Question.fromJson(stringMap));
+                  } catch (e) {
+                    log('Error converting question map: $e');
+                  }
+                }
+              }
+              if (questions.isNotEmpty) {
+                convertedData[intKey] = questions;
+              }
+            }
+          });
+        }
+
         _questionsByChapter.addAll(convertedData);
         for (final chapterId in _questionsByChapter.keys) {
           _hasLoadedForChapter[chapterId] = true;
@@ -194,7 +249,6 @@ class QuestionProvider extends ChangeNotifier
     try {
       final userId = await UserSession().getCurrentUserId();
       if (userId != null && _questionsBox != null) {
-        // Convert int keys to string keys for Hive storage
         final Map<String, List<Question>> stringKeyData = {};
         _questionsByChapter.forEach((key, value) {
           stringKeyData[key.toString()] = value;
@@ -294,7 +348,6 @@ class QuestionProvider extends ChangeNotifier
     return null;
   }
 
-  // ===== LOAD PRACTICE QUESTIONS =====
   Future<void> loadPracticeQuestions(
     int chapterId, {
     bool forceRefresh = false,
@@ -306,7 +359,8 @@ class QuestionProvider extends ChangeNotifier
     log('loadPracticeQuestions() CALL #$callId for chapter $chapterId');
 
     if (isManualRefresh && isOffline) {
-      throw Exception('Network error. Please check your internet connection.');
+      throw Exception(getUserFriendlyErrorMessage(
+          'Network error. Please check your internet connection.'));
     }
 
     if (_isLoadingForChapter[chapterId] == true && !forceRefresh) {
@@ -319,42 +373,63 @@ class QuestionProvider extends ChangeNotifier
     safeNotify();
 
     try {
-      // STEP 1: Try Hive first
       if (!forceRefresh) {
         log('STEP 1: Checking Hive cache for chapter $chapterId');
         final userId = await UserSession().getCurrentUserId();
         if (userId != null && _questionsBox != null) {
-          final cachedData = _questionsBox!
+          final dynamic cachedData = _questionsBox!
               .get('user_${userId}_chapter_${chapterId}_questions');
 
-          if (cachedData != null && cachedData[chapterId.toString()] != null) {
-            final questionList = cachedData[chapterId.toString()]!;
+          if (cachedData != null) {
+            // Handle different map types
+            if (cachedData is Map && cachedData[chapterId.toString()] != null) {
+              final dynamic questionData = cachedData[chapterId.toString()];
+              if (questionData is List) {
+                final List<Question> questionList = [];
+                for (final item in questionData) {
+                  if (item is Question) {
+                    questionList.add(item);
+                  } else if (item is Map<String, dynamic>) {
+                    questionList.add(Question.fromJson(item));
+                  } else if (item is Map) {
+                    try {
+                      final Map<String, dynamic> stringMap = {};
+                      item.forEach((k, v) {
+                        stringMap[k.toString()] = v;
+                      });
+                      questionList.add(Question.fromJson(stringMap));
+                    } catch (e) {
+                      log('Error converting question: $e');
+                    }
+                  }
+                }
 
-            _questionsByChapter[chapterId] = questionList;
-            _hasLoadedForChapter[chapterId] = true;
-            setLoaded();
-            _isLoadingForChapter[chapterId] = false;
-            _lastLoadedTime[chapterId] = DateTime.now();
+                _questionsByChapter[chapterId] = questionList;
+                _hasLoadedForChapter[chapterId] = true;
+                setLoaded();
+                _isLoadingForChapter[chapterId] = false;
+                _lastLoadedTime[chapterId] = DateTime.now();
 
-            await _loadAnswerResults(chapterId, questionList);
+                await _loadAnswerResults(chapterId, questionList);
 
-            _questionUpdateController.add({
-              'type': 'questions_loaded_cached',
-              'chapter_id': chapterId,
-              'count': questionList.length,
-            });
+                _questionUpdateController.add({
+                  'type': 'questions_loaded_cached',
+                  'chapter_id': chapterId,
+                  'count': questionList.length,
+                });
 
-            log('✅ Loaded ${questionList.length} questions from Hive for chapter $chapterId');
+                log('✅ Loaded ${questionList.length} questions from Hive for chapter $chapterId');
 
-            if (!isOffline && !isManualRefresh) {
-              unawaited(_refreshInBackground(chapterId));
+                if (!isOffline && !isManualRefresh) {
+                  unawaited(_refreshInBackground(chapterId));
+                }
+                return;
+              }
             }
-            return;
           }
         }
       }
 
-      // STEP 2: Try DeviceService
       if (!forceRefresh) {
         log('STEP 2: Checking DeviceService cache for chapter $chapterId');
         final cachedQuestions = await deviceService.getCacheItem<List<dynamic>>(
@@ -369,7 +444,6 @@ class QuestionProvider extends ChangeNotifier
               if (questionJson is Map<String, dynamic>) {
                 questionList.add(Question.fromJson(questionJson));
               } else if (questionJson is Map<dynamic, dynamic>) {
-                // Convert Map<dynamic, dynamic> to Map<String, dynamic>
                 final stringMap = questionJson
                     .map((key, value) => MapEntry(key.toString(), value));
                 questionList.add(Question.fromJson(stringMap));
@@ -406,7 +480,6 @@ class QuestionProvider extends ChangeNotifier
         }
       }
 
-      // STEP 3: Check offline status
       if (isOffline) {
         log('STEP 3: Offline mode for chapter $chapterId');
         if (_questionsByChapter.containsKey(chapterId)) {
@@ -423,8 +496,8 @@ class QuestionProvider extends ChangeNotifier
         }
 
         if (isManualRefresh) {
-          throw Exception(
-              'Network error. Please check your internet connection.');
+          throw Exception(getUserFriendlyErrorMessage(
+              'Network error. Please check your internet connection.'));
         }
 
         _questionsByChapter[chapterId] = [];
@@ -439,7 +512,6 @@ class QuestionProvider extends ChangeNotifier
         return;
       }
 
-      // STEP 4: Fetch from API
       log('STEP 4: Fetching from API for chapter $chapterId');
       final response = await apiService.getPracticeQuestions(chapterId);
 
@@ -472,7 +544,7 @@ class QuestionProvider extends ChangeNotifier
 
         log('✅ Success! Questions loaded for chapter $chapterId');
       } else {
-        setError(response.message);
+        setError(getUserFriendlyErrorMessage(response.message));
         log('❌ API error: ${response.message}');
 
         _questionsByChapter[chapterId] = _questionsByChapter[chapterId] ?? [];
@@ -492,7 +564,7 @@ class QuestionProvider extends ChangeNotifier
     } catch (e) {
       log('❌ Error loading questions: $e');
 
-      setError(e.toString());
+      setError(getUserFriendlyErrorMessage(e));
       setLoaded();
       _isLoadingForChapter[chapterId] = false;
 
@@ -518,6 +590,15 @@ class QuestionProvider extends ChangeNotifier
 
   Future<void> _refreshInBackground(int chapterId) async {
     if (isOffline) return;
+
+    if (_lastBackgroundRefreshForChapter[chapterId] != null &&
+        DateTime.now()
+                .difference(_lastBackgroundRefreshForChapter[chapterId]!) <
+            _minBackgroundInterval) {
+      log('⏱️ Background refresh rate limited for chapter $chapterId');
+      return;
+    }
+    _lastBackgroundRefreshForChapter[chapterId] = DateTime.now();
 
     try {
       final response = await apiService.getPracticeQuestions(chapterId);
@@ -607,30 +688,51 @@ class QuestionProvider extends ChangeNotifier
     final userId = await UserSession().getCurrentUserId();
     if (userId == null) return;
 
-    // Try Hive first
     if (_questionsBox != null) {
       try {
-        final cachedData =
+        final dynamic cachedData =
             _questionsBox!.get('user_${userId}_chapter_${chapterId}_questions');
-        if (cachedData != null && cachedData[chapterId.toString()] != null) {
-          final questionList = cachedData[chapterId.toString()]!;
-          _questionsByChapter[chapterId] = questionList;
-          _hasLoadedForChapter[chapterId] = true;
-          _lastLoadedTime[chapterId] = DateTime.now();
-          _questionUpdateController.add({
-            'type': 'questions_loaded_cached',
-            'chapter_id': chapterId,
-            'count': questionList.length,
-          });
-          log('✅ Recovered ${questionList.length} questions from Hive after error');
-          return;
+
+        if (cachedData != null &&
+            cachedData is Map &&
+            cachedData[chapterId.toString()] != null) {
+          final dynamic questionData = cachedData[chapterId.toString()];
+          if (questionData is List) {
+            final List<Question> questionList = [];
+            for (final item in questionData) {
+              if (item is Question) {
+                questionList.add(item);
+              } else if (item is Map<String, dynamic>) {
+                questionList.add(Question.fromJson(item));
+              } else if (item is Map) {
+                try {
+                  final Map<String, dynamic> stringMap = {};
+                  item.forEach((k, v) {
+                    stringMap[k.toString()] = v;
+                  });
+                  questionList.add(Question.fromJson(stringMap));
+                } catch (e) {
+                  log('Error converting question: $e');
+                }
+              }
+            }
+            _questionsByChapter[chapterId] = questionList;
+            _hasLoadedForChapter[chapterId] = true;
+            _lastLoadedTime[chapterId] = DateTime.now();
+            _questionUpdateController.add({
+              'type': 'questions_loaded_cached',
+              'chapter_id': chapterId,
+              'count': questionList.length,
+            });
+            log('✅ Recovered ${questionList.length} questions from Hive after error');
+            return;
+          }
         }
       } catch (e) {
         log('Error recovering from Hive: $e');
       }
     }
 
-    // Try DeviceService
     try {
       final cachedQuestions = await deviceService.getCacheItem<List<dynamic>>(
         AppConstants.questionsChapterKey(chapterId),
@@ -660,7 +762,6 @@ class QuestionProvider extends ChangeNotifier
     }
   }
 
-  // ===== CHECK ANSWER =====
   Future<ApiResponse<Map<String, dynamic>>> checkAnswer(
       int questionId, String selectedOption) async {
     log('checkAnswer() for question $questionId');
@@ -729,9 +830,9 @@ class QuestionProvider extends ChangeNotifier
       return response;
     } catch (e) {
       setLoaded();
-      setError(e.toString());
+      setError(getUserFriendlyErrorMessage(e));
       log('❌ Error checking answer: $e');
-      return ApiResponse.error(message: 'Failed to check answer: $e');
+      return ApiResponse.error(message: getUserFriendlyErrorMessage(e));
     }
   }
 
@@ -762,7 +863,6 @@ class QuestionProvider extends ChangeNotifier
     }
   }
 
-  // ===== CLEAR METHODS =====
   Future<void> clearQuestionsForChapter(int chapterId) async {
     log('clearQuestionsForChapter() for chapter $chapterId');
 
@@ -860,6 +960,7 @@ class QuestionProvider extends ChangeNotifier
     _isLoadingForChapter.clear();
     _answerResults.clear();
     _selectedAnswers.clear();
+    _lastBackgroundRefreshForChapter.clear();
     stopBackgroundRefresh();
 
     await deviceService.clearCacheByPrefix('questions_');
@@ -876,12 +977,13 @@ class QuestionProvider extends ChangeNotifier
 
     _questionUpdateController.add({'type': 'all_questions_cleared'});
     _answerUpdateController.add({'type': 'all_answers_cleared'});
+
     safeNotify();
   }
 
   @override
   void clearError() {
-    clearError();
+    super.clearError();
   }
 
   @override

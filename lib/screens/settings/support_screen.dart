@@ -1,5 +1,5 @@
 // lib/screens/settings/support_screen.dart
-// COMPLETE PRODUCTION-READY FINAL VERSION - FIXED DOUBLE SHIMMER
+// COMPLETE FIXED VERSION - NULL SAFETY IN INITSTATE
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -14,6 +14,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
+import '../../services/offline_queue_manager.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_shimmer.dart';
@@ -28,7 +29,6 @@ import '../../utils/responsive_values.dart';
 import '../../utils/helpers.dart';
 import '../../utils/constants.dart';
 
-/// PRODUCTION-READY SUPPORT SCREEN with 3-Tier Caching
 class SupportScreen extends StatefulWidget {
   const SupportScreen({super.key});
 
@@ -47,12 +47,14 @@ class _SupportScreenState extends State<SupportScreen>
   bool _isOffline = false;
   int _pendingCount = 0;
   StreamSubscription? _connectivitySubscription;
+  bool _isMounted = false; // ✅ Track mounted state
 
   late AnimationController _pulseAnimationController;
 
   @override
   void initState() {
     super.initState();
+    _isMounted = true;
 
     _pulseAnimationController =
         AnimationController(vsync: this, duration: 1.seconds)
@@ -63,13 +65,17 @@ class _SupportScreenState extends State<SupportScreen>
     _refreshControllers.addAll(
         [RefreshController(), RefreshController(), RefreshController()]);
 
+    // ✅ DON'T access context here - use post frame callback
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initialize();
+      if (_isMounted) {
+        _initialize();
+      }
     });
   }
 
   @override
   void dispose() {
+    _isMounted = false; // ✅ Mark as unmounted immediately
     _tabController.dispose();
     _pulseAnimationController.dispose();
     for (var controller in _refreshControllers) {
@@ -80,6 +86,8 @@ class _SupportScreenState extends State<SupportScreen>
   }
 
   Future<void> _initialize() async {
+    if (!_isMounted) return;
+
     await _checkConnectivity();
     _setupConnectivityListener();
     _checkPendingCount();
@@ -87,39 +95,44 @@ class _SupportScreenState extends State<SupportScreen>
   }
 
   void _setupConnectivityListener() {
+    if (!_isMounted) return;
+
     final connectivityService = context.read<ConnectivityService>();
     _connectivitySubscription =
         connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (mounted) {
-        setState(() {
-          _isOffline = !isOnline;
-          _pendingCount = connectivityService.pendingActionsCount;
-        });
-      }
+      if (!_isMounted) return;
+
+      setState(() {
+        _isOffline = !isOnline;
+        final queueManager = context.read<OfflineQueueManager>();
+        _pendingCount = queueManager.pendingCount;
+      });
     });
   }
 
   Future<void> _checkConnectivity() async {
+    if (!_isMounted) return;
+
     final connectivityService = context.read<ConnectivityService>();
     await connectivityService.checkConnectivity();
-    if (mounted) {
-      setState(() {
-        _isOffline = !connectivityService.isOnline;
-        _pendingCount = connectivityService.pendingActionsCount;
-      });
-    }
+    if (!_isMounted) return;
+
+    setState(() {
+      _isOffline = !connectivityService.isOnline;
+      final queueManager = context.read<OfflineQueueManager>();
+      _pendingCount = queueManager.pendingCount;
+    });
   }
 
   Future<void> _checkPendingCount() async {
-    final connectivityService = context.read<ConnectivityService>();
-    if (mounted) {
-      setState(() => _pendingCount = connectivityService.pendingActionsCount);
+    final queueManager = context.read<OfflineQueueManager>();
+    if (_isMounted) {
+      setState(() => _pendingCount = queueManager.pendingCount);
     }
   }
 
-  // TIER 1 & 2 & 3: Load contact settings
   Future<void> _loadContactSettings() async {
-    if (_isLoading) return;
+    if (_isLoading || !_isMounted) return;
 
     setState(() {
       _isLoading = true;
@@ -130,10 +143,10 @@ class _SupportScreenState extends State<SupportScreen>
     try {
       final settingsProvider = context.read<SettingsProvider>();
 
-      await settingsProvider.getAllSettings(); // TIER 1 & 2 & 3
-      if (!mounted) return;
-      await settingsProvider.loadContactSettings(forceRefresh: true); // TIER 3
-      if (!mounted) return;
+      await settingsProvider.getAllSettings();
+      if (!_isMounted) return;
+      await settingsProvider.loadContactSettings(forceRefresh: true);
+      if (!_isMounted) return;
 
       setState(() {
         _isLoading = false;
@@ -147,9 +160,8 @@ class _SupportScreenState extends State<SupportScreen>
     }
   }
 
-  // Manual refresh with connectivity check
   Future<void> _manualRefresh(int tabIndex) async {
-    if (_isRefreshing) return;
+    if (_isRefreshing || !_isMounted) return;
 
     final connectivityService = context.read<ConnectivityService>();
     if (!connectivityService.isOnline) {
@@ -162,10 +174,10 @@ class _SupportScreenState extends State<SupportScreen>
 
     try {
       final settingsProvider = context.read<SettingsProvider>();
-      await settingsProvider.getAllSettings(); // TIER 3
-      if (!mounted) return;
-      await settingsProvider.loadContactSettings(forceRefresh: true); // TIER 3
-      if (!mounted) return;
+      await settingsProvider.getAllSettings();
+      if (!_isMounted) return;
+      await settingsProvider.loadContactSettings(forceRefresh: true);
+      if (!_isMounted) return;
 
       _refreshControllers[tabIndex].refreshCompleted();
       setState(() {
@@ -183,7 +195,7 @@ class _SupportScreenState extends State<SupportScreen>
       _refreshControllers[tabIndex].refreshFailed();
       SnackbarService().showError(context, '${AppStrings.refreshFailed}: $e');
     } finally {
-      if (mounted) {
+      if (_isMounted) {
         setState(() => _isRefreshing = false);
       }
     }
@@ -250,7 +262,7 @@ class _SupportScreenState extends State<SupportScreen>
     try {
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
-        if (!mounted) return;
+        if (!_isMounted) return;
       } else {
         if (type == ContactType.other || type == ContactType.website) {
           _showCopyDialog(context, value);
@@ -570,7 +582,6 @@ class _SupportScreenState extends State<SupportScreen>
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
-        // Pending count banner (if offline with pending actions)
         if (_isOffline && _pendingCount > 0)
           SliverToBoxAdapter(
             child: Container(
@@ -605,7 +616,6 @@ class _SupportScreenState extends State<SupportScreen>
               ),
             ),
           ),
-
         SliverPadding(
           padding: EdgeInsets.symmetric(
             horizontal: ResponsiveValues.spacingL(context),
@@ -668,7 +678,6 @@ class _SupportScreenState extends State<SupportScreen>
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
-        // Pending count banner (if offline with pending actions)
         if (_isOffline && _pendingCount > 0)
           SliverToBoxAdapter(
             child: Container(
@@ -703,7 +712,6 @@ class _SupportScreenState extends State<SupportScreen>
               ),
             ),
           ),
-
         SliverPadding(
           padding: EdgeInsets.symmetric(
             horizontal: ResponsiveValues.spacingL(context),
@@ -754,7 +762,6 @@ class _SupportScreenState extends State<SupportScreen>
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
-        // Pending count banner (if offline with pending actions)
         if (_isOffline && _pendingCount > 0)
           SliverToBoxAdapter(
             child: Container(
@@ -789,7 +796,6 @@ class _SupportScreenState extends State<SupportScreen>
               ),
             ),
           ),
-
         SliverPadding(
           padding: EdgeInsets.symmetric(
             horizontal: ResponsiveValues.spacingL(context),
@@ -1174,12 +1180,10 @@ class _SupportScreenState extends State<SupportScreen>
 
   @override
   Widget build(BuildContext context) {
-    // 1. LOADING STATE
     if (_isLoading && !_isRefreshing && !_hasError) {
       return _buildSkeletonLoader();
     }
 
-    // 2. ERROR STATE
     if (_hasError) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
@@ -1201,7 +1205,6 @@ class _SupportScreenState extends State<SupportScreen>
       );
     }
 
-    // 3. MAIN CONTENT
     return ResponsiveLayout(
       mobile: _buildMobileLayout(context),
       tablet: _buildDesktopLayout(context),

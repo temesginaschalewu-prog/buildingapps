@@ -1,5 +1,5 @@
 // lib/providers/parent_link_provider.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// PRODUCTION-READY FINAL VERSION
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -13,9 +13,10 @@ import '../services/offline_queue_manager.dart';
 import '../models/parent_link_model.dart';
 import '../utils/constants.dart';
 import '../utils/api_response.dart';
+import '../utils/helpers.dart';
 import 'base_provider.dart';
 
-/// PRODUCTION-READY Parent Link Provider with Full Offline Support
+/// PRODUCTION-READY Parent Link Provider
 class ParentLinkProvider extends ChangeNotifier
     with
         BaseProvider<ParentLinkProvider>,
@@ -49,10 +50,13 @@ class ParentLinkProvider extends ChangeNotifier
 
   int _apiCallCount = 0;
 
-  final StreamController<ParentLink?> _parentLinkUpdateController =
-      StreamController<ParentLink?>.broadcast();
-  final StreamController<bool> _linkStatusUpdateController =
-      StreamController<bool>.broadcast();
+  // ✅ FIXED: Proper stream declarations
+  late StreamController<ParentLink?> _parentLinkUpdateController;
+  late StreamController<bool> _linkStatusUpdateController;
+
+  // ✅ FIXED: Rate limiting
+  DateTime? _lastBackgroundRefresh;
+  static const Duration _minBackgroundInterval = Duration(minutes: 2);
 
   ParentLinkProvider({
     required this.apiService,
@@ -60,7 +64,8 @@ class ParentLinkProvider extends ChangeNotifier
     required this.connectivityService,
     required this.hiveService,
     required this.offlineQueueManager,
-  }) {
+  })  : _parentLinkUpdateController = StreamController<ParentLink?>.broadcast(),
+        _linkStatusUpdateController = StreamController<bool>.broadcast() {
     log('ParentLinkProvider constructor called');
     initializeOfflineAware(
       connectivity: connectivityService,
@@ -310,7 +315,8 @@ class ParentLinkProvider extends ChangeNotifier
     }
 
     if (isOffline) {
-      setError('You are offline. Please connect to generate token.');
+      setError(getUserFriendlyErrorMessage(
+          'You are offline. Please connect to generate token.'));
       safeNotify();
       return;
     }
@@ -385,11 +391,11 @@ class ParentLinkProvider extends ChangeNotifier
 
       log('✅ Generated parent token');
     } on ApiError catch (e) {
-      setError(e.userFriendlyMessage);
+      setError(getUserFriendlyErrorMessage(e.userFriendlyMessage));
       setLoaded();
       log('❌ API Error: ${e.userFriendlyMessage}');
     } catch (e) {
-      setError(e.toString());
+      setError(getUserFriendlyErrorMessage(e));
       setLoaded();
       log('❌ Error: $e');
     } finally {
@@ -408,7 +414,8 @@ class ParentLinkProvider extends ChangeNotifier
     log('getParentLinkStatus() CALL #$callId');
 
     if (isManualRefresh && isOffline) {
-      throw Exception('Network error. Please check your internet connection.');
+      throw Exception(getUserFriendlyErrorMessage(
+          'Network error. Please check your internet connection.'));
     }
 
     if (isLoading && !forceRefresh) {
@@ -439,8 +446,8 @@ class ParentLinkProvider extends ChangeNotifier
               log('✅ Using cached parent link data from Hive');
 
               if (isManualRefresh && isOffline) {
-                throw Exception(
-                    'Network error. Please check your internet connection.');
+                throw Exception(getUserFriendlyErrorMessage(
+                    'Network error. Please check your internet connection.'));
               }
               return;
             } else if (cachedData is Map) {
@@ -452,8 +459,8 @@ class ParentLinkProvider extends ChangeNotifier
                 log('✅ Using cached parent link data from Hive (converted)');
 
                 if (isManualRefresh && isOffline) {
-                  throw Exception(
-                      'Network error. Please check your internet connection.');
+                  throw Exception(getUserFriendlyErrorMessage(
+                      'Network error. Please check your internet connection.'));
                 }
                 return;
               } catch (e) {
@@ -479,8 +486,8 @@ class ParentLinkProvider extends ChangeNotifier
           await _saveToHive();
 
           if (isManualRefresh && isOffline) {
-            throw Exception(
-                'Network error. Please check your internet connection.');
+            throw Exception(getUserFriendlyErrorMessage(
+                'Network error. Please check your internet connection.'));
           }
           return;
         }
@@ -495,12 +502,13 @@ class ParentLinkProvider extends ChangeNotifier
           return;
         }
 
-        setError('You are offline. No cached parent link data available.');
+        setError(getUserFriendlyErrorMessage(
+            'You are offline. No cached parent link data available.'));
         setLoaded();
 
         if (isManualRefresh) {
-          throw Exception(
-              'Network error. Please check your internet connection.');
+          throw Exception(getUserFriendlyErrorMessage(
+              'Network error. Please check your internet connection.'));
         }
         return;
       }
@@ -543,7 +551,7 @@ class ParentLinkProvider extends ChangeNotifier
       _linkStatusUpdateController.add(_isLinked);
       safeNotify();
     } on ApiError catch (e) {
-      setError(e.userFriendlyMessage);
+      setError(getUserFriendlyErrorMessage(e.userFriendlyMessage));
       setLoaded();
       log('❌ API Error: ${e.userFriendlyMessage}');
 
@@ -551,7 +559,7 @@ class ParentLinkProvider extends ChangeNotifier
         rethrow;
       }
     } catch (e) {
-      setError(e.toString());
+      setError(getUserFriendlyErrorMessage(e));
       setLoaded();
       log('❌ Error getting parent link status: $e');
 
@@ -615,7 +623,8 @@ class ParentLinkProvider extends ChangeNotifier
     }
 
     if (isOffline) {
-      setError('You are offline. Please connect to unlink parent.');
+      setError(getUserFriendlyErrorMessage(
+          'You are offline. Please connect to unlink parent.'));
       safeNotify();
       return;
     }
@@ -660,12 +669,12 @@ class ParentLinkProvider extends ChangeNotifier
         throw Exception(response.message);
       }
     } on ApiError catch (e) {
-      setError(e.userFriendlyMessage);
+      setError(getUserFriendlyErrorMessage(e.userFriendlyMessage));
       setLoaded();
       log('❌ API Error: ${e.userFriendlyMessage}');
       rethrow;
     } catch (e) {
-      setError(e.toString());
+      setError(getUserFriendlyErrorMessage(e));
       setLoaded();
       log('❌ Error: $e');
       rethrow;
@@ -678,6 +687,15 @@ class ParentLinkProvider extends ChangeNotifier
   Future<void> onBackgroundRefresh() async {
     log('Background refresh triggered');
     if (!isOffline && _hasData) {
+      // Rate limiting
+      if (_lastBackgroundRefresh != null &&
+          DateTime.now().difference(_lastBackgroundRefresh!) <
+              _minBackgroundInterval) {
+        log('⏱️ Background refresh rate limited');
+        return;
+      }
+      _lastBackgroundRefresh = DateTime.now();
+
       await getParentLinkStatus(forceRefresh: true);
     }
   }
@@ -718,13 +736,18 @@ class ParentLinkProvider extends ChangeNotifier
     _tokenExpiresAt = null;
     _parentName = null;
     _serverTimeOffset = null;
+    _lastBackgroundRefresh = null;
+    stopBackgroundRefresh();
 
+    // FIX: Properly recreate stream controllers
+    await _parentLinkUpdateController.close();
+    await _linkStatusUpdateController.close();
+    _parentLinkUpdateController = StreamController<ParentLink?>.broadcast();
+    _linkStatusUpdateController = StreamController<bool>.broadcast();
     _parentLinkUpdateController.add(null);
     _linkStatusUpdateController.add(false);
-    stopBackgroundRefresh();
-    safeNotify();
 
-    log('🧹 Cleared user parent link data');
+    safeNotify();
   }
 
   @override

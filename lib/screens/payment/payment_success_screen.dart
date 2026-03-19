@@ -1,5 +1,5 @@
 // lib/screens/payment/payment_success_screen.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
+// COMPLETE PRODUCTION-READY FILE - FIXED PENDING COUNT
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -10,6 +10,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../models/category_model.dart';
 import '../../services/device_service.dart';
 import '../../services/connectivity_service.dart';
+import '../../services/offline_queue_manager.dart';
 import '../../providers/category_provider.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_button.dart';
@@ -98,7 +99,8 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
         connectivityService.onConnectivityChanged.listen((isOnline) {
       if (mounted) {
         setState(() {
-          _pendingCount = connectivityService.pendingActionsCount;
+          final queueManager = context.read<OfflineQueueManager>();
+          _pendingCount = queueManager.pendingCount;
         });
       }
     });
@@ -109,24 +111,23 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
     await connectivityService.checkConnectivity();
     if (mounted) {
       setState(() {
-        _pendingCount = connectivityService.pendingActionsCount;
+        final queueManager = context.read<OfflineQueueManager>();
+        _pendingCount = queueManager.pendingCount;
       });
     }
   }
 
   Future<void> _checkPendingCount() async {
-    final connectivityService = context.read<ConnectivityService>();
+    final queueManager = context.read<OfflineQueueManager>();
     if (mounted) {
-      setState(() => _pendingCount = connectivityService.pendingActionsCount);
+      setState(() => _pendingCount = queueManager.pendingCount);
     }
   }
 
-  // TIER 1 & 2: Load data from args or cache
   Future<void> _loadData() async {
     try {
       final args = widget.extra;
       if (args != null && args.isNotEmpty) {
-        // TIER 1: Load from passed arguments
         _paymentType = args['payment_type'] as String? ?? 'first_time';
         _amount = (args['amount'] as num?)?.toDouble() ?? 0.0;
         _paymentMethod = args['payment_method'] as String? ?? 'unknown';
@@ -149,7 +150,6 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
             _isLoading = false;
           });
         } else if (categoryId != null) {
-          // TIER 1: Try to get from provider memory
           final categoryProvider = context.read<CategoryProvider>();
           final cat = categoryProvider.getCategoryById(categoryId);
           setState(() {
@@ -160,7 +160,6 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
           setState(() => _isLoading = false);
         }
       } else {
-        // TIER 2: Try to load from cache
         await _tryToLoadFromCache();
       }
 
@@ -200,7 +199,6 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
     if (context.mounted) context.go('/');
   }
 
-  // TIER 2: Load from cache
   Future<void> _tryToLoadFromCache() async {
     try {
       final deviceService = context.read<DeviceService>();
@@ -210,7 +208,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
       if (cachedPaymentData != null) {
         final categoryId = cachedPaymentData['categoryId'];
         final categoryProvider = context.read<CategoryProvider>();
-        final category = categoryProvider.getCategoryById(categoryId); // TIER 1
+        final category = categoryProvider.getCategoryById(categoryId);
 
         setState(() {
           _category = category;
@@ -629,7 +627,6 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
           padding: ResponsiveValues.screenPadding(context),
           child: Column(
             children: [
-              // Pending count banner (if offline with pending actions)
               if (_pendingCount > 0)
                 Container(
                   margin: EdgeInsets.only(
@@ -663,7 +660,6 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                     ],
                   ),
                 ),
-
               _buildSuccessIcon(context),
               SizedBox(height: ResponsiveValues.spacingXXL(context)),
               _buildSuccessContent(context),
@@ -690,7 +686,6 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Pending count banner (if offline with pending actions)
                   if (_pendingCount > 0)
                     Container(
                       margin: EdgeInsets.only(
@@ -724,7 +719,6 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                         ],
                       ),
                     ),
-
                   _buildSuccessIcon(context),
                   SizedBox(height: ResponsiveValues.spacingXXL(context)),
                   _buildSuccessContent(context),
@@ -741,13 +735,8 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
 
   @override
   Widget build(BuildContext context) {
-    // 1. LOADING STATE
     if (_isLoading) return _buildSkeletonLoader();
-
-    // 2. ERROR STATE
     if (_hasError) return _buildErrorScreen(context);
-
-    // 3. MAIN CONTENT
     return ResponsiveLayout(
       mobile: _buildMobileLayout(context),
       tablet: _buildDesktopLayout(context),
