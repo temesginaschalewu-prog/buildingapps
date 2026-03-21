@@ -1,5 +1,5 @@
 // lib/providers/chatbot_provider.dart
-// PRODUCTION-READY FINAL VERSION - WITH ALL FIXES
+// PRODUCTION-READY FINAL VERSION - WITH AUTO LOAD ON OPEN
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -32,7 +32,6 @@ class ChatbotProvider extends ChangeNotifier
   bool _isLoadingMessages = false;
   bool _isLoadingConversations = false;
 
-  // ✅ Following ProgressProvider pattern
   bool _hasLoadedConversations = false;
   bool _hasLoadedMessages = false;
   bool _hasInitialData = false;
@@ -58,7 +57,6 @@ class ChatbotProvider extends ChangeNotifier
   Box? _conversationsBox;
   Box? _usageBox;
 
-  // ✅ FIXED: Rate limiting
   DateTime? _lastBackgroundRefreshConversations;
   final Map<int, DateTime?> _lastBackgroundRefreshMessages = {};
   static const Duration _minBackgroundInterval = Duration(minutes: 2);
@@ -105,34 +103,46 @@ class ChatbotProvider extends ChangeNotifier
     await _openHiveBoxes();
     await _loadCachedData();
 
-    // ✅ Mark that we have initial data if anything is cached
-    _hasInitialData = _conversations.isNotEmpty || _messages.isNotEmpty;
+    // ✅ CRITICAL: Always load conversations when screen opens
+    if (!_hasLoadedConversations && !isOffline) {
+      log('🔄 Loading conversations on init');
+      await loadConversations(forceRefresh: false);
+    }
+
+    // ✅ If we have cached data, notify listeners
+    if (_hasInitialData) {
+      safeNotify();
+    }
 
     log('_init() END');
   }
 
   Future<void> _openHiveBoxes() async {
     try {
-      if (!Hive.isBoxOpen(AppConstants.hiveChatbotMessagesBox)) {
-        _messagesBox = await Hive.openBox(AppConstants.hiveChatbotMessagesBox);
-      } else {
+      if (Hive.isBoxOpen(AppConstants.hiveChatbotMessagesBox)) {
         _messagesBox = Hive.box(AppConstants.hiveChatbotMessagesBox);
+        log('✅ Using existing messages box');
+      } else {
+        _messagesBox = await Hive.openBox(AppConstants.hiveChatbotMessagesBox);
+        log('✅ Opened messages box');
       }
 
-      if (!Hive.isBoxOpen(AppConstants.hiveChatbotConversationsBox)) {
+      if (Hive.isBoxOpen(AppConstants.hiveChatbotConversationsBox)) {
+        _conversationsBox = Hive.box(AppConstants.hiveChatbotConversationsBox);
+        log('✅ Using existing conversations box');
+      } else {
         _conversationsBox =
             await Hive.openBox(AppConstants.hiveChatbotConversationsBox);
-      } else {
-        _conversationsBox = Hive.box(AppConstants.hiveChatbotConversationsBox);
+        log('✅ Opened conversations box');
       }
 
-      if (!Hive.isBoxOpen('chatbot_usage_box')) {
-        _usageBox = await Hive.openBox('chatbot_usage_box');
-      } else {
+      if (Hive.isBoxOpen('chatbot_usage_box')) {
         _usageBox = Hive.box('chatbot_usage_box');
+        log('✅ Using existing usage box');
+      } else {
+        _usageBox = await Hive.openBox('chatbot_usage_box');
+        log('✅ Opened usage box');
       }
-
-      log('✅ Hive boxes opened');
     } catch (e) {
       log('⚠️ Error opening Hive boxes: $e');
     }
@@ -146,9 +156,16 @@ class ChatbotProvider extends ChangeNotifier
   }
 
   Future<void> _loadCachedData() async {
+    log('_loadCachedData() START');
+
     try {
       final userId = await UserSession().getCurrentUserId();
-      if (userId == null) return;
+      if (userId == null) {
+        log('No userId, skipping cache load');
+        return;
+      }
+
+      bool hasAnyData = false;
 
       // Load conversations from Hive
       if (_conversationsBox != null) {
@@ -166,6 +183,7 @@ class ChatbotProvider extends ChangeNotifier
           if (conversations.isNotEmpty) {
             _conversations = conversations;
             _hasLoadedConversations = true;
+            hasAnyData = true;
             log('✅ Loaded ${_conversations.length} conversations from Hive');
           }
         }
@@ -184,6 +202,7 @@ class ChatbotProvider extends ChangeNotifier
             _currentConversation =
                 ChatbotConversation.fromJson(currentConv.first);
           }
+          if (_currentConversation != null) hasAnyData = true;
         }
       }
 
@@ -204,6 +223,7 @@ class ChatbotProvider extends ChangeNotifier
           if (messages.isNotEmpty) {
             _messages = messages;
             _hasLoadedMessages = true;
+            hasAnyData = true;
             log('✅ Loaded ${_messages.length} messages from Hive');
           }
         }
@@ -232,11 +252,21 @@ class ChatbotProvider extends ChangeNotifier
           _totalMessages = Parsers.parseInt(usageMap['total_messages']);
           _totalConversations =
               Parsers.parseInt(usageMap['total_conversations']);
+          hasAnyData = true;
           log('✅ Loaded usage stats from Hive');
         }
       }
+
+      _hasInitialData = hasAnyData;
+
+      if (_hasInitialData) {
+        log('✅ hasInitialData set to TRUE');
+      } else {
+        log('ℹ️ No cached data found');
+      }
     } catch (e) {
       log('Error loading cache: $e');
+      _hasInitialData = false;
     }
   }
 
@@ -290,7 +320,6 @@ class ChatbotProvider extends ChangeNotifier
   bool get isLoadingMessages => _isLoadingMessages;
   bool get isLoadingConversations => _isLoadingConversations;
 
-  // ✅ Following ProgressProvider pattern
   bool get hasLoadedConversations => _hasLoadedConversations;
   bool get hasLoadedMessages => _hasLoadedMessages;
   bool get hasInitialData => _hasInitialData;
@@ -373,14 +402,13 @@ class ChatbotProvider extends ChangeNotifier
     _apiCallCount++;
     final callId = _apiCallCount;
 
-    log('loadConversations() CALL #$callId');
+    log('loadConversations() CALL #$callId - forceRefresh: $forceRefresh, isManualRefresh: $isManualRefresh');
 
     if (isManualRefresh && isOffline) {
       throw Exception(getUserFriendlyErrorMessage(
           'Network error. Please check your internet connection.'));
     }
 
-    // ✅ Return cached data immediately if already loaded
     if (_hasLoadedConversations && !forceRefresh && !isManualRefresh) {
       log('✅ Already have conversations, returning cached');
       safeNotify();
@@ -397,8 +425,8 @@ class ChatbotProvider extends ChangeNotifier
     safeNotify();
 
     try {
-      // STEP 1: Try Hive for first page
-      if (!forceRefresh && _currentPage == 1 && _conversations.isEmpty) {
+      // STEP 1: Try Hive cache first
+      if (!forceRefresh && _conversations.isEmpty) {
         log('STEP 1: Checking Hive cache');
         final userId = await UserSession().getCurrentUserId();
         if (userId != null && _conversationsBox != null) {
@@ -484,7 +512,6 @@ class ChatbotProvider extends ChangeNotifier
       setError(getUserFriendlyErrorMessage('Failed to load conversations'));
       log('Error loading conversations: $e');
 
-      // ✅ Always mark as loaded even on error
       _hasLoadedConversations = true;
 
       if (isManualRefresh) {
@@ -497,11 +524,9 @@ class ChatbotProvider extends ChangeNotifier
     }
   }
 
-  // ✅ FIXED: Rate limited background refresh
   Future<void> _refreshConversationsInBackground() async {
     if (isOffline) return;
 
-    // Rate limiting
     if (_lastBackgroundRefreshConversations != null &&
         DateTime.now().difference(_lastBackgroundRefreshConversations!) <
             _minBackgroundInterval) {
@@ -552,7 +577,6 @@ class ChatbotProvider extends ChangeNotifier
           'Network error. Please check your internet connection.'));
     }
 
-    // ✅ Return cached data immediately if already loaded
     if (_hasLoadedMessages &&
         !forceRefresh &&
         !isManualRefresh &&
@@ -566,7 +590,6 @@ class ChatbotProvider extends ChangeNotifier
     safeNotify();
 
     try {
-      // STEP 1: Try Hive first
       if (!forceRefresh) {
         log('STEP 1: Checking Hive cache');
         final userId = await UserSession().getCurrentUserId();
@@ -611,7 +634,6 @@ class ChatbotProvider extends ChangeNotifier
         }
       }
 
-      // STEP 2: Check offline status
       if (isOffline) {
         log('STEP 2: Offline mode');
         _hasLoadedMessages = true;
@@ -624,7 +646,6 @@ class ChatbotProvider extends ChangeNotifier
         return;
       }
 
-      // STEP 3: Fetch from API
       log('STEP 3: Fetching from API');
       final response =
           await apiService.getChatbotConversationMessages(conversationId);
@@ -662,7 +683,6 @@ class ChatbotProvider extends ChangeNotifier
       setError(getUserFriendlyErrorMessage('Failed to load messages'));
       log('Error loading messages: $e');
 
-      // ✅ Always mark as loaded even on error
       _hasLoadedMessages = true;
 
       if (isManualRefresh) {
@@ -674,11 +694,9 @@ class ChatbotProvider extends ChangeNotifier
     }
   }
 
-  // ✅ FIXED: Rate limited background refresh
   Future<void> _refreshMessagesInBackground(int conversationId) async {
     if (isOffline) return;
 
-    // Rate limiting
     if (_lastBackgroundRefreshMessages[conversationId] != null &&
         DateTime.now()
                 .difference(_lastBackgroundRefreshMessages[conversationId]!) <
@@ -733,7 +751,6 @@ class ChatbotProvider extends ChangeNotifier
       );
     }
 
-    // Add user message immediately for better UX
     final tempUserMessage = ChatbotMessage(
       id: DateTime.now().millisecondsSinceEpoch,
       role: 'user',
@@ -803,7 +820,6 @@ class ChatbotProvider extends ChangeNotifier
 
         if (conversationId == null &&
             response.data!['conversation_id'] != null) {
-          // Refresh conversations in background
           unawaited(loadConversations(forceRefresh: true));
         }
 
@@ -962,7 +978,6 @@ class ChatbotProvider extends ChangeNotifier
     await loadUsageStats();
   }
 
-  // ✅ FIXED: Clear user data with proper cleanup
   @override
   void dispose() {
     _messagesBox?.close();

@@ -22,8 +22,10 @@ class ParentLinkProvider extends ChangeNotifier
         BaseProvider<ParentLinkProvider>,
         OfflineAwareProvider<ParentLinkProvider>,
         BackgroundRefreshMixin<ParentLinkProvider> {
+  final ConnectivityService _connectivityService;
+
   @override
-  final ConnectivityService connectivityService;
+  ConnectivityService get connectivityService => _connectivityService;
 
   final ApiService apiService;
   final DeviceService deviceService;
@@ -41,6 +43,7 @@ class ParentLinkProvider extends ChangeNotifier
   Duration? _serverTimeOffset;
 
   Timer? _countdownTimer;
+  DateTime? _lastNotifiedTokenExpiry;
 
   @override
   Duration get refreshInterval => const Duration(minutes: 5);
@@ -61,10 +64,11 @@ class ParentLinkProvider extends ChangeNotifier
   ParentLinkProvider({
     required this.apiService,
     required this.deviceService,
-    required this.connectivityService,
+    required ConnectivityService connectivityService,
     required this.hiveService,
     required this.offlineQueueManager,
-  })  : _parentLinkUpdateController = StreamController<ParentLink?>.broadcast(),
+  })  : _connectivityService = connectivityService,
+        _parentLinkUpdateController = StreamController<ParentLink?>.broadcast(),
         _linkStatusUpdateController = StreamController<bool>.broadcast() {
     log('ParentLinkProvider constructor called');
     initializeOfflineAware(
@@ -260,27 +264,41 @@ class ParentLinkProvider extends ChangeNotifier
   }
 
   void _startCountdownTimer() {
-    _stopCountdownTimer();
-    log('Starting countdown timer');
-
-    if (_tokenExpiresAt != null && !isTokenExpired) {
-      _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-        if (isTokenExpired) {
-          log('Token expired, stopping timer');
-          _stopCountdownTimer();
-          unawaited(getParentLinkStatus(forceRefresh: true));
-          safeNotify();
-        } else {
-          safeNotify();
-        }
-      });
+    if (_tokenExpiresAt == null || isTokenExpired) {
+      _stopCountdownTimer();
+      return;
     }
+
+    final hasMatchingTimer = _countdownTimer != null &&
+        _lastNotifiedTokenExpiry == _tokenExpiresAt;
+    if (hasMatchingTimer) {
+      return;
+    }
+
+    _stopCountdownTimer(logStop: false);
+    log('Starting countdown timer');
+    _lastNotifiedTokenExpiry = _tokenExpiresAt;
+
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (isTokenExpired) {
+        log('Token expired, stopping timer');
+        _stopCountdownTimer();
+        unawaited(getParentLinkStatus(forceRefresh: true));
+        safeNotify();
+      } else {
+        safeNotify();
+      }
+    });
   }
 
-  void _stopCountdownTimer() {
+  void _stopCountdownTimer({bool logStop = true}) {
+    final hadTimer = _countdownTimer != null;
     _countdownTimer?.cancel();
     _countdownTimer = null;
-    log('Countdown timer stopped');
+    _lastNotifiedTokenExpiry = null;
+    if (hadTimer && logStop) {
+      log('Countdown timer stopped');
+    }
   }
 
   // ===== CLEAR CACHE =====
@@ -478,12 +496,16 @@ class ParentLinkProvider extends ChangeNotifier
           AppConstants.parentLinkStatusKey,
         );
         if (cached != null) {
-          _parentLinkData = ParentLink.fromJson(cached);
+          final cachedParentLink = ParentLink.fromJson(cached);
+          final hasChanged = !_isSameParentLink(_parentLinkData, cachedParentLink);
+          _parentLinkData = cachedParentLink;
           _updateFromParentLink(_parentLinkData!);
           setLoaded();
           log('✅ Using cached parent link data from DeviceService');
 
-          await _saveToHive();
+          if (hasChanged) {
+            await _saveToHive();
+          }
 
           if (isManualRefresh && isOffline) {
             throw Exception(getUserFriendlyErrorMessage(
@@ -573,7 +595,6 @@ class ParentLinkProvider extends ChangeNotifier
 
   void _updateFromParentLink(ParentLink parentLink) {
     log('_updateFromParentLink()');
-    _stopCountdownTimer();
 
     _isLinked = parentLink.isLinked;
     _parentTelegramUsername = parentLink.parentTelegramUsername;
@@ -591,10 +612,17 @@ class ParentLinkProvider extends ChangeNotifier
         log('Token active, expires at: $_tokenExpiresAt');
       }
     } else {
+      _stopCountdownTimer();
       _parentToken = null;
       _tokenExpiresAt = null;
       log('Parent linked, token cleared');
     }
+  }
+
+  bool _isSameParentLink(ParentLink? first, ParentLink? second) {
+    if (identical(first, second)) return true;
+    if (first == null || second == null) return false;
+    return first.toJson().toString() == second.toJson().toString();
   }
 
   Future<void> refreshParentLinkStatus() async {

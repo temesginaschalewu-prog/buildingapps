@@ -13,6 +13,7 @@ import '../common/app_card.dart';
 class CategoryCard extends StatelessWidget {
   final Category category;
   final bool hasSubscription;
+  final bool hasPendingPayment;
   final VoidCallback? onTap;
   final int index;
 
@@ -20,6 +21,7 @@ class CategoryCard extends StatelessWidget {
     super.key,
     required this.category,
     required this.hasSubscription,
+    this.hasPendingPayment = false,
     this.onTap,
     required this.index,
   });
@@ -29,7 +31,6 @@ class CategoryCard extends StatelessWidget {
     final isComingSoon = category.isComingSoon;
     final isFree = category.isFree;
     final hasAccess = isFree || hasSubscription;
-    const hasPendingPayment = false; // This would come from provider
 
     // Use UiHelpers to get access status
     final accessColor = UiHelpers.getCategoryAccessColor(

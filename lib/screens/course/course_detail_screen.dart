@@ -1,5 +1,5 @@
 // lib/screens/course/course_detail_screen.dart
-// COMPLETE PRODUCTION-READY FILE - FIXED PENDING COUNT
+// COMPLETE FINAL VERSION - PROPER SHIMMER & LOADING
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -20,17 +20,14 @@ import '../../providers/course_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../providers/payment_provider.dart';
 import '../../services/device_service.dart';
-import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
-import '../../services/offline_queue_manager.dart';
+import '../../widgets/common/base_screen_mixin.dart';
 import '../../widgets/chapter/chapter_card.dart';
 import '../../widgets/common/access_banner.dart';
 import '../../widgets/exam/exam_card.dart';
 import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_shimmer.dart';
-import '../../widgets/common/app_empty_state.dart';
 import '../../widgets/common/app_dialog.dart';
-import '../../widgets/common/app_bar.dart';
 import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
@@ -57,7 +54,7 @@ class CourseDetailScreen extends StatefulWidget {
 }
 
 class _CourseDetailScreenState extends State<CourseDetailScreen>
-    with TickerProviderStateMixin {
+    with BaseScreenMixin<CourseDetailScreen>, TickerProviderStateMixin {
   late TabController _tabController;
   final RefreshController _refreshController = RefreshController();
 
@@ -68,18 +65,52 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
   String? _rejectionReason;
 
   bool _hasCachedData = false;
-  bool _isOffline = false;
-  bool _isRefreshing = false;
   bool _isLoading = true;
-  int _pendingCount = 0;
+  bool _hasLoadedOnce = false;
 
   bool _chaptersLoaded = false;
   bool _examsLoaded = false;
   bool _chaptersLoading = false;
   bool _examsLoading = false;
 
-  StreamSubscription? _subscriptionListener;
-  StreamSubscription? _connectivitySubscription;
+  late CourseProvider _courseProvider;
+  late ChapterProvider _chapterProvider;
+  late ExamProvider _examProvider;
+  late SubscriptionProvider _subscriptionProvider;
+  late PaymentProvider _paymentProvider;
+  late CategoryProvider _categoryProvider;
+
+  @override
+  String get screenTitle => _course?.name ?? AppStrings.course;
+
+  @override
+  String? get screenSubtitle =>
+      isOffline ? AppStrings.offlineMode : AppStrings.courseContent;
+
+  // ✅ CRITICAL: Only show loading if no cached data AND loading
+  @override
+  bool get isLoading => _isLoading && !_hasCachedData;
+
+  @override
+  bool get hasCachedData => _hasCachedData;
+
+  @override
+  dynamic get errorMessage =>
+      _course == null ? AppStrings.courseNotFound : null;
+
+  // ✅ Shimmer type for course detail (chapters)
+  @override
+  ShimmerType get shimmerType => ShimmerType.chapterCard;
+
+  @override
+  int get shimmerItemCount => 5;
+
+  @override
+  Widget? get appBarLeading => IconButton(
+        icon: Icon(Icons.arrow_back_rounded,
+            color: AppColors.getTextPrimary(context)),
+        onPressed: () => context.pop(),
+      );
 
   @override
   void initState() {
@@ -91,80 +122,45 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _setupListeners();
+    _courseProvider = Provider.of<CourseProvider>(context);
+    _chapterProvider = Provider.of<ChapterProvider>(context);
+    _examProvider = Provider.of<ExamProvider>(context);
+    _subscriptionProvider = Provider.of<SubscriptionProvider>(context);
+    _paymentProvider = Provider.of<PaymentProvider>(context);
+    _categoryProvider = Provider.of<CategoryProvider>(context);
+
+    _subscriptionProvider.subscriptionUpdates.listen((_) {
+      if (isMounted && _category != null) _updateAccessStatus();
+    });
+
+    // Mark as loaded if we have data
+    if (_course != null && _hasCachedData) {
+      _hasLoadedOnce = true;
+    }
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     _refreshController.dispose();
-    _subscriptionListener?.cancel();
-    _connectivitySubscription?.cancel();
     super.dispose();
   }
 
   Future<void> _initialize() async {
-    await _checkConnectivity();
-    _setupConnectivityListener();
     await _loadFromCache();
 
     if (_course != null && _hasCachedData) {
-      if (mounted) {
-        setState(() => _isLoading = false);
+      if (isMounted) {
+        setState(() {
+          _isLoading = false;
+          _hasLoadedOnce = true;
+        });
       }
       unawaited(_loadChapters());
       unawaited(_loadExams());
-      if (!_isOffline) {
-        unawaited(_refreshInBackground());
-      }
+      if (!isOffline) unawaited(_refreshInBackground());
     } else {
       await _loadFreshData();
-    }
-  }
-
-  void _setupConnectivityListener() {
-    final connectivityService = context.read<ConnectivityService>();
-    _connectivitySubscription =
-        connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (mounted) {
-        setState(() {
-          _isOffline = !isOnline;
-          final queueManager = context.read<OfflineQueueManager>();
-          _pendingCount = queueManager.pendingCount;
-        });
-        if (isOnline && !_isRefreshing && _course != null) {
-          unawaited(_refreshInBackground());
-        }
-      }
-    });
-  }
-
-  void _setupListeners() {
-    final subscriptionProvider = context.read<SubscriptionProvider>();
-    _subscriptionListener?.cancel();
-    _subscriptionListener =
-        subscriptionProvider.subscriptionUpdates.listen((_) {
-      if (mounted && _category != null) _updateAccessStatus();
-    });
-  }
-
-  bool _looksLikeNetworkError(Object error) {
-    final message = error.toString().toLowerCase();
-    return message.contains('network error') ||
-        message.contains('socket') ||
-        message.contains('connection') ||
-        message.contains('offline');
-  }
-
-  Future<void> _checkConnectivity() async {
-    final connectivityService = context.read<ConnectivityService>();
-    await connectivityService.checkConnectivity();
-    if (mounted) {
-      setState(() {
-        _isOffline = !connectivityService.isOnline;
-        final queueManager = context.read<OfflineQueueManager>();
-        _pendingCount = queueManager.pendingCount;
-      });
     }
   }
 
@@ -201,75 +197,55 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
   }
 
   Future<void> _loadFreshData() async {
-    final connectivityService = context.read<ConnectivityService>();
+    if (!isOffline) {
+      try {
+        if (_categoryProvider.categories.isEmpty) {
+          await _categoryProvider.loadCategories();
+        }
 
-    if (!connectivityService.isOnline) {
-      setState(() {
-        _isOffline = true;
-        _isLoading = false;
-      });
-      return;
-    }
+        _course ??= await _findCourse();
+        if (_course == null && !isOffline) {
+          await _categoryProvider.loadCategories(forceRefresh: true);
+          _course = await _findCourse(forceRefreshCourses: true);
+        }
+        if (_course == null) throw Exception(AppStrings.courseNotFound);
 
-    try {
-      final courseProvider = context.read<CourseProvider>();
-      final categoryProvider = context.read<CategoryProvider>();
-      if (categoryProvider.categories.isEmpty) {
-        await categoryProvider.loadCategories();
+        if (_category == null && _course!.categoryId > 0) {
+          _category = _categoryProvider.getCategoryById(_course!.categoryId);
+        }
+
+        await _checkAccessStatus();
+        await Future.wait([_loadChapters(), _loadExams()]);
+        await _saveToCache();
+
+        if (isMounted) {
+          setState(() {
+            _isLoading = false;
+            _hasLoadedOnce = true;
+          });
+        }
+        if (!isOffline) unawaited(_refreshPaymentInfoInBackground());
+      } catch (e) {
+        debugLog('CourseDetailScreen', 'Error loading fresh data: $e');
+        if (isMounted) setState(() => _isLoading = false);
       }
-
-      _course ??= await _findCourse(courseProvider, categoryProvider);
-      if (_course == null && !_isOffline) {
-        await categoryProvider.loadCategories(forceRefresh: true);
-        _course = await _findCourse(
-          courseProvider,
-          categoryProvider,
-          forceRefreshCourses: true,
-        );
-      }
-      if (_course == null) throw Exception(AppStrings.courseNotFound);
-
-      if (_category == null && _course!.categoryId > 0) {
-        _category = categoryProvider.getCategoryById(_course!.categoryId);
-      }
-
-      await _checkAccessStatus();
-
-      await Future.wait([
-        _loadChapters(),
-        _loadExams(),
-      ]);
-
-      await _saveToCache();
-
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-
-      if (!_isOffline) {
-        unawaited(_refreshPaymentInfoInBackground());
-      }
-    } catch (e) {
-      debugLog('CourseDetailScreen', 'Error loading fresh data: $e');
-      if (!mounted) return;
+    } else {
       setState(() => _isLoading = false);
     }
   }
 
-  Future<Course?> _findCourse(
-      CourseProvider courseProvider, CategoryProvider categoryProvider,
-      {bool forceRefreshCourses = false}) async {
-    for (final category in categoryProvider.categories) {
-      if (!courseProvider.hasLoadedCategory(category.id) ||
+  Future<Course?> _findCourse({bool forceRefreshCourses = false}) async {
+    for (final category in _categoryProvider.categories) {
+      if (!_courseProvider.hasLoadedCategory(category.id) ||
           forceRefreshCourses) {
-        await courseProvider.loadCoursesByCategory(
+        await _courseProvider.loadCoursesByCategory(
           category.id,
           forceRefresh: forceRefreshCourses,
           hasAccess: widget.hasAccess ?? _hasAccess,
         );
       }
 
-      final courses = courseProvider.getCoursesByCategory(category.id);
+      final courses = _courseProvider.getCoursesByCategory(category.id);
       final foundCourse = courses.firstWhere(
         (c) => c.id == widget.courseId,
         orElse: () => Course(id: 0, name: '', categoryId: 0, chapterCount: 0),
@@ -283,109 +259,76 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
   }
 
   Future<void> _refreshInBackground() async {
-    if (_isRefreshing) return;
-    if (mounted) setState(() => _isRefreshing = true);
+    if (isRefreshing) return;
 
     try {
-      final courseProvider = context.read<CourseProvider>();
       if (_course != null && _category != null) {
-        await courseProvider.refreshCoursesWithAccessCheck(
+        await _courseProvider.refreshCoursesWithAccessCheck(
             _category!.id, _hasAccess);
       }
 
-      if (!mounted) return;
-
+      if (!isMounted) return;
       await _checkAccessStatus(forceCheck: true);
-      if (!mounted) return;
+      if (!isMounted) return;
 
       unawaited(_refreshPaymentInfoInBackground(forceRefresh: true));
       unawaited(_loadChapters(forceRefresh: true));
       unawaited(_loadExams(forceRefresh: true));
-
       await _saveToCache();
-    } finally {
-      if (mounted) setState(() => _isRefreshing = false);
+    } catch (e) {
+      debugLog('CourseDetailScreen', 'Background refresh error: $e');
     }
   }
 
-  Future<void> _manualRefresh() async {
-    if (_isRefreshing) return;
-
-    final connectivityService = context.read<ConnectivityService>();
-
-    if (!connectivityService.isOnline) {
+  @override
+  Future<void> onRefresh() async {
+    if (isOffline) {
       _refreshController.refreshFailed();
       SnackbarService().showOffline(context, action: AppStrings.refresh);
-      setState(() => _isOffline = true);
       return;
     }
 
-    setState(() => _isRefreshing = true);
-    var didFail = false;
-
     try {
-      final courseProvider = context.read<CourseProvider>();
       if (_course != null && _category != null) {
-        await courseProvider.refreshCoursesWithAccessCheck(
+        await _courseProvider.refreshCoursesWithAccessCheck(
             _category!.id, _hasAccess);
       }
 
-      if (!mounted) return;
-
+      if (!isMounted) return;
       await _checkAccessStatus(forceCheck: true);
-      if (!mounted) return;
+      if (!isMounted) return;
 
       await _loadPaymentInfo(forceRefresh: true);
-      if (!mounted) return;
+      if (!isMounted) return;
 
-      await Future.wait([
-        _loadChapters(forceRefresh: true),
-        _loadExams(forceRefresh: true),
-      ]);
-
+      await Future.wait(
+          [_loadChapters(forceRefresh: true), _loadExams(forceRefresh: true)]);
       await _saveToCache();
-      setState(() => _isOffline = false);
-
-      SnackbarService().showSuccess(context, AppStrings.courseUpdated);
+      _refreshController.refreshCompleted();
+      setState(() => _hasLoadedOnce = true);
     } catch (e) {
-      if (!mounted) return;
-      if (_looksLikeNetworkError(e)) {
-        setState(() => _isOffline = true);
-        _refreshController.refreshFailed();
-        SnackbarService().showOffline(context, action: AppStrings.refresh);
-      } else {
-        setState(() => _isOffline = false);
-        _refreshController.refreshFailed();
-        SnackbarService().showError(context, AppStrings.refreshFailed);
-      }
-      didFail = true;
-    } finally {
-      if (mounted) setState(() => _isRefreshing = false);
-      if (!didFail) {
-        _refreshController.refreshCompleted();
-      }
+      _refreshController.refreshFailed();
+      rethrow;
     }
   }
 
   Future<void> _checkAccessStatus({bool forceCheck = false}) async {
     if (_category == null) return;
-    final subscriptionProvider = context.read<SubscriptionProvider>();
 
-    if (!_isOffline && forceCheck) {
-      _hasAccess = await subscriptionProvider
+    if (!isOffline && forceCheck) {
+      _hasAccess = await _subscriptionProvider
           .checkHasActiveSubscriptionForCategory(_category!.id);
     } else {
       _hasAccess =
-          subscriptionProvider.hasActiveSubscriptionForCategory(_category!.id);
+          _subscriptionProvider.hasActiveSubscriptionForCategory(_category!.id);
     }
   }
 
   Future<void> _updateAccessStatus() async {
     if (_category == null) return;
-    final subscriptionProvider = context.read<SubscriptionProvider>();
     final newAccess =
-        subscriptionProvider.hasActiveSubscriptionForCategory(_category!.id);
-    if (newAccess != _hasAccess && mounted) {
+        _subscriptionProvider.hasActiveSubscriptionForCategory(_category!.id);
+    if (newAccess != _hasAccess && isMounted) {
       setState(() => _hasAccess = newAccess);
       unawaited(_saveToCache());
     }
@@ -393,14 +336,13 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
 
   Future<void> _loadPaymentInfo({bool forceRefresh = false}) async {
     if (_category == null) return;
-    final paymentProvider = context.read<PaymentProvider>();
     try {
-      await paymentProvider.loadPayments(
-          forceRefresh: forceRefresh && !_isOffline);
-      final pendingPayments = paymentProvider.getPendingPayments();
+      await _paymentProvider.loadPayments(
+          forceRefresh: forceRefresh && !isOffline);
+      final pendingPayments = _paymentProvider.getPendingPayments();
       _hasPendingPayment = pendingPayments.any(_matchesPaymentToCategory);
 
-      final rejectedPayments = paymentProvider.getRejectedPayments();
+      final rejectedPayments = _paymentProvider.getRejectedPayments();
       final recentRejected = rejectedPayments.firstWhere(
         _matchesPaymentToCategory,
         orElse: () => Payment(
@@ -422,17 +364,15 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
 
   bool _matchesPaymentToCategory(Payment payment) {
     if (_category == null) return false;
-    if (payment.categoryId != null && payment.categoryId == _category!.id) {
+    if (payment.categoryId != null && payment.categoryId == _category!.id)
       return true;
-    }
-
     return payment.categoryName.toLowerCase() == _category!.name.toLowerCase();
   }
 
   Future<void> _refreshPaymentInfoInBackground(
       {bool forceRefresh = false}) async {
     await _loadPaymentInfo(forceRefresh: forceRefresh);
-    if (!mounted) return;
+    if (!isMounted) return;
     setState(() {});
     unawaited(_saveToCache());
   }
@@ -440,21 +380,17 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
   Future<void> _loadChapters({bool forceRefresh = false}) async {
     if (_course == null) return;
 
-    setState(() {
-      _chaptersLoading = true;
-    });
-
-    final chapterProvider = context.read<ChapterProvider>();
+    setState(() => _chaptersLoading = true);
 
     try {
-      if (_isOffline) {
-        await chapterProvider.loadChaptersByCourse(_course!.id);
+      if (isOffline) {
+        await _chapterProvider.loadChaptersByCourse(_course!.id);
       } else {
-        await chapterProvider.loadChaptersByCourse(_course!.id,
+        await _chapterProvider.loadChaptersByCourse(_course!.id,
             forceRefresh: forceRefresh);
       }
     } finally {
-      if (mounted) {
+      if (isMounted) {
         setState(() {
           _chaptersLoading = false;
           _chaptersLoaded = true;
@@ -466,21 +402,17 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
   Future<void> _loadExams({bool forceRefresh = false}) async {
     if (_course == null) return;
 
-    setState(() {
-      _examsLoading = true;
-    });
-
-    final examProvider = context.read<ExamProvider>();
+    setState(() => _examsLoading = true);
 
     try {
-      if (_isOffline) {
-        await examProvider.loadExamsByCourse(_course!.id);
+      if (isOffline) {
+        await _examProvider.loadExamsByCourse(_course!.id);
       } else {
-        await examProvider.loadExamsByCourse(_course!.id,
+        await _examProvider.loadExamsByCourse(_course!.id,
             forceRefresh: forceRefresh);
       }
     } finally {
-      if (mounted) {
+      if (isMounted) {
         setState(() {
           _examsLoading = false;
           _examsLoaded = true;
@@ -512,7 +444,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
   }
 
   void _handleChapterTap(Chapter chapter) {
-    if (_isOffline) {
+    if (isOffline) {
       SnackbarService().showOffline(context, action: AppStrings.openChapter);
       return;
     }
@@ -532,7 +464,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
   }
 
   void _handleExamTap(Exam exam) {
-    if (_isOffline) {
+    if (isOffline) {
       SnackbarService().showOffline(context, action: AppStrings.startExam);
       return;
     }
@@ -562,12 +494,12 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
           '${AppStrings.purchase} "${_category!.name}" ${AppStrings.toAccessAllContent}',
       confirmText: AppStrings.purchaseAccess,
     ).then((confirmed) {
-      if (confirmed == true && !_isOffline) {
+      if (confirmed == true && !isOffline) {
         context.push('/payment', extra: {
           'category': _category,
           'paymentType': _hasAccess ? 'repayment' : 'first_time',
         });
-      } else if (_isOffline) {
+      } else if (isOffline) {
         SnackbarService().showOffline(context, action: AppStrings.makePayment);
       }
     });
@@ -581,7 +513,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
           ? '${AppStrings.reason}: $_rejectionReason'
           : AppStrings.yourPaymentWasRejected,
     ).then((_) {
-      if (!_isOffline) {
+      if (!isOffline) {
         context.push('/payment', extra: {
           'category': _category,
           'paymentType': 'first_time',
@@ -602,316 +534,52 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
   Widget _buildAccessBanner() {
     if (_category == null) return const SizedBox.shrink();
 
-    if (_category!.isFree) {
-      return AccessBanner.freeCategory();
-    }
-
-    if (_hasAccess) {
-      return AccessBanner.fullAccess();
-    }
-
-    if (_hasPendingPayment) {
-      return AccessBanner.paymentPending();
-    }
-
+    if (_category!.isFree) return AccessBanner.freeCategory();
+    if (_hasAccess) return AccessBanner.fullAccess();
+    if (_hasPendingPayment) return AccessBanner.paymentPending();
     if (_rejectionReason != null) {
       return AccessBanner.paymentRejected(
         reason: _rejectionReason!,
         onPayNow: _showPaymentDialog,
       );
     }
-
-    return AccessBanner.limitedAccess(
-      onPurchase: _showPaymentDialog,
-    );
+    return AccessBanner.limitedAccess(onPurchase: _showPaymentDialog);
   }
 
-  Widget _buildHeroMetric(
-      {required IconData icon, required String label, required String value}) {
-    return Expanded(
-      child: Container(
-        padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.1),
-          borderRadius:
-              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon,
-                color: Colors.white70,
-                size: ResponsiveValues.iconSizeS(context)),
+  Widget _buildHeader() {
+    return Container(
+      padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _course!.name,
+            style: AppTextStyles.headlineMedium(context).copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          if (_course!.description?.isNotEmpty == true) ...[
             SizedBox(height: ResponsiveValues.spacingS(context)),
             Text(
-              value,
-              style: AppTextStyles.titleMedium(context).copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
+              _course!.description!,
+              style: AppTextStyles.bodyMedium(context).copyWith(
+                color: AppColors.getTextSecondary(context),
               ),
             ),
-            SizedBox(height: ResponsiveValues.spacingXXS(context)),
-            Text(
-              label,
-              style: AppTextStyles.bodySmall(context)
-                  .copyWith(color: Colors.white70),
-            ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeroChip({required IconData icon, required String label}) {
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: ResponsiveValues.spacingM(context),
-        vertical: ResponsiveValues.spacingXS(context),
-      ),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.1),
-        borderRadius:
-            BorderRadius.circular(ResponsiveValues.radiusFull(context)),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon,
-              color: Colors.white70,
-              size: ResponsiveValues.iconSizeXS(context)),
-          SizedBox(width: ResponsiveValues.spacingXS(context)),
-          Text(
-            label,
-            style: AppTextStyles.labelSmall(context).copyWith(
-              color: Colors.white,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
         ],
       ),
     );
   }
 
-  Widget _buildCourseHero(List<Chapter> chapters, List<Exam> exams) {
-    final course = _course!;
-    final categoryPrice = _category?.price;
-    final billingLabel = _category?.isFree == true
-        ? AppStrings.free
-        : '${categoryPrice?.toStringAsFixed(0) ?? '0'} ${AppStrings.etb}';
-
-    return Container(
-      margin: EdgeInsets.fromLTRB(
-        ResponsiveValues.spacingM(context),
-        ResponsiveValues.spacingM(context),
-        ResponsiveValues.spacingM(context),
-        ResponsiveValues.spacingS(context),
-      ),
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF0B5FFF),
-              Color(0xFF118AB2),
-              Color(0xFF0F172A),
-            ],
-          ),
-          borderRadius:
-              BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF0B5FFF).withValues(alpha: 0.16),
-              blurRadius: 26,
-              offset: const Offset(0, 12),
-            ),
-          ],
-        ),
-        child: Padding(
-          padding: ResponsiveValues.cardPadding(context),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Wrap(
-                spacing: ResponsiveValues.spacingS(context),
-                runSpacing: ResponsiveValues.spacingS(context),
-                children: [
-                  _buildHeroChip(
-                    icon: Icons.category_rounded,
-                    label: _category?.name ?? AppStrings.category,
-                  ),
-                  _buildHeroChip(
-                    icon: _hasAccess
-                        ? Icons.verified_rounded
-                        : Icons.lock_outline_rounded,
-                    label: _hasAccess
-                        ? AppStrings.fullAccess
-                        : (_hasPendingPayment
-                            ? AppStrings.paymentPending
-                            : AppStrings.limitedAccess),
-                  ),
-                ],
-              ),
-              SizedBox(height: ResponsiveValues.spacingL(context)),
-              Text(
-                course.name,
-                style: AppTextStyles.headlineSmall(context).copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.8,
-                ),
-              ),
-              if ((course.description ?? '').trim().isNotEmpty) ...[
-                SizedBox(height: ResponsiveValues.spacingM(context)),
-                Text(
-                  course.description!,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTextStyles.bodyMedium(context).copyWith(
-                    color: Colors.white.withValues(alpha: 0.82),
-                    height: 1.5,
-                  ),
-                ),
-              ],
-              SizedBox(height: ResponsiveValues.spacingXL(context)),
-              Row(
-                children: [
-                  _buildHeroMetric(
-                    icon: Icons.menu_book_rounded,
-                    label: AppStrings.chapters,
-                    value: chapters.length.toString(),
-                  ),
-                  SizedBox(width: ResponsiveValues.spacingM(context)),
-                  _buildHeroMetric(
-                    icon: Icons.quiz_rounded,
-                    label: AppStrings.exams,
-                    value: exams.length.toString(),
-                  ),
-                  SizedBox(width: ResponsiveValues.spacingM(context)),
-                  _buildHeroMetric(
-                    icon: Icons.payments_rounded,
-                    label: AppStrings.price,
-                    value: billingLabel,
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSectionIntro({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-  }) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        ResponsiveValues.spacingM(context),
-        ResponsiveValues.spacingM(context),
-        ResponsiveValues.spacingM(context),
-        ResponsiveValues.spacingS(context),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  AppColors.telegramBlue.withValues(alpha: 0.18),
-                  AppColors.info.withValues(alpha: 0.10),
-                ],
-              ),
-              borderRadius:
-                  BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-            ),
-            child: Icon(icon, color: AppColors.telegramBlue),
-          ),
-          SizedBox(width: ResponsiveValues.spacingM(context)),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: AppTextStyles.titleMedium(context).copyWith(
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.4,
-                  ),
-                ),
-                SizedBox(height: ResponsiveValues.spacingXXS(context)),
-                Text(
-                  subtitle,
-                  style: AppTextStyles.bodySmall(context).copyWith(
-                    color: AppColors.getTextSecondary(context),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTabShell({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required Widget child,
-  }) {
-    return Column(
-      children: [
-        _buildSectionIntro(icon: icon, title: title, subtitle: subtitle),
-        Expanded(child: child),
-      ],
-    );
-  }
-
-  Widget _buildChaptersList(List<Chapter> chapters) {
-    final chapterProvider = context.watch<ChapterProvider>();
+  Widget _buildChaptersList() {
+    final chapters = _chapterProvider.getChaptersByCourse(_course!.id);
     final isLoading =
-        _chaptersLoading || chapterProvider.isLoadingForCourse(_course!.id);
-    final hasLoaded =
-        _chaptersLoaded || chapterProvider.hasLoadedForCourse(_course!.id);
+        _chaptersLoading || _chapterProvider.isLoadingForCourse(_course!.id);
 
-    if (isLoading &&
-        chapters.isEmpty &&
-        !hasLoaded &&
-        !_hasCachedData &&
-        !_isOffline) {
-      return ListView.builder(
-        padding: ResponsiveValues.screenPadding(context),
-        itemCount: 5,
-        itemBuilder: (context, index) => Padding(
-          padding: EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
-          child: AppShimmer(type: ShimmerType.chapterCard, index: index),
-        ),
-      );
-    }
-
-    if (hasLoaded && chapters.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-              vertical: ResponsiveValues.spacingXXL(context)),
-          child: AppEmptyState.noData(
-            dataType: AppStrings.chapters,
-            customMessage: _isOffline
-                ? 'No cached chapters available'
-                : 'No chapters available for this course',
-            onRefresh: _manualRefresh,
-            isOffline: _isOffline,
-            pendingCount: _pendingCount,
-          ),
-        ),
-      );
+    // Show shimmer only if loading and no chapters AND no cached data
+    if (isLoading && chapters.isEmpty && !_hasCachedData && !isOffline) {
+      return buildLoadingShimmer();
     }
 
     if (chapters.isEmpty) {
@@ -919,14 +587,12 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         child: Padding(
           padding: EdgeInsets.symmetric(
               vertical: ResponsiveValues.spacingXXL(context)),
-          child: AppEmptyState.noData(
+          child: buildEmptyWidget(
             dataType: AppStrings.chapters,
-            customMessage: _isOffline
-                ? AppStrings.noCachedChapters
-                : AppStrings.chaptersWillAppearHere,
-            onRefresh: _manualRefresh,
-            isOffline: _isOffline,
-            pendingCount: _pendingCount,
+            customMessage: isOffline
+                ? 'No cached chapters available'
+                : 'No chapters available for this course',
+            isOffline: isOffline,
           ),
         ),
       );
@@ -952,44 +618,14 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     );
   }
 
-  Widget _buildExamsList(List<Exam> exams) {
-    final examProvider = context.watch<ExamProvider>();
+  Widget _buildExamsList() {
+    final exams = _examProvider.getExamsByCourse(_course!.id);
     final isLoading =
-        _examsLoading || examProvider.isLoadingForCourse(_course!.id);
-    final hasLoaded =
-        _examsLoaded || examProvider.hasLoadedForCourse(_course!.id);
+        _examsLoading || _examProvider.isLoadingForCourse(_course!.id);
 
-    if (isLoading &&
-        exams.isEmpty &&
-        !hasLoaded &&
-        !_hasCachedData &&
-        !_isOffline) {
-      return ListView.builder(
-        padding: ResponsiveValues.screenPadding(context),
-        itemCount: 5,
-        itemBuilder: (context, index) => Padding(
-          padding: EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
-          child: AppShimmer(type: ShimmerType.examCard, index: index),
-        ),
-      );
-    }
-
-    if (hasLoaded && exams.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-              vertical: ResponsiveValues.spacingXXL(context)),
-          child: AppEmptyState.noData(
-            dataType: AppStrings.exams,
-            customMessage: _isOffline
-                ? 'No cached exams available'
-                : 'No exams available for this course',
-            onRefresh: _manualRefresh,
-            isOffline: _isOffline,
-            pendingCount: _pendingCount,
-          ),
-        ),
-      );
+    // Show shimmer only if loading and no exams AND no cached data
+    if (isLoading && exams.isEmpty && !_hasCachedData && !isOffline) {
+      return buildLoadingShimmer();
     }
 
     if (exams.isEmpty) {
@@ -997,14 +633,12 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         child: Padding(
           padding: EdgeInsets.symmetric(
               vertical: ResponsiveValues.spacingXXL(context)),
-          child: AppEmptyState.noData(
+          child: buildEmptyWidget(
             dataType: AppStrings.exams,
-            customMessage: _isOffline
-                ? AppStrings.noCachedExams
-                : AppStrings.examsWillAppearHere,
-            onRefresh: _manualRefresh,
-            isOffline: _isOffline,
-            pendingCount: _pendingCount,
+            customMessage: isOffline
+                ? 'No cached exams available'
+                : 'No exams available for this course',
+            isOffline: isOffline,
           ),
         ),
       );
@@ -1027,112 +661,34 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     );
   }
 
-  Widget _buildSkeletonLoader() {
-    return Scaffold(
-      backgroundColor: AppColors.getBackground(context),
-      appBar: CustomAppBar(
-        title: AppStrings.course,
-        subtitle: AppStrings.loading,
-        leading: AppButton.icon(
-            icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
-      ),
-      body: Column(
-        children: [
-          Container(
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(
-                    color: AppColors.getDivider(context).withValues(alpha: 0.5),
-                    width: 0.5),
-              ),
-            ),
-            child: TabBar(
-              controller: _tabController,
-              tabs: [
-                Tab(
-                    icon: Icon(Icons.menu_book_rounded),
-                    text: AppStrings.chapters),
-                Tab(icon: Icon(Icons.quiz_rounded), text: AppStrings.exams),
-              ],
-              labelStyle: AppTextStyles.labelMedium(context),
-              unselectedLabelStyle: AppTextStyles.labelMedium(context),
-              indicatorColor: AppColors.telegramBlue,
-              indicatorWeight: 3,
-              labelColor: AppColors.telegramBlue,
-              unselectedLabelColor: AppColors.getTextSecondary(context),
-            ),
-          ),
-          Expanded(
-            child: Padding(
-              padding: ResponsiveValues.screenPadding(context),
-              child: ListView.separated(
-                itemCount: 5,
-                separatorBuilder: (_, __) =>
-                    SizedBox(height: ResponsiveValues.spacingL(context)),
-                itemBuilder: (context, index) => AppShimmer(
-                  type: index % 2 == 0
-                      ? ShimmerType.chapterCard
-                      : ShimmerType.examCard,
-                  index: index,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
-  Widget build(BuildContext context) {
-    final chapterProvider = context.watch<ChapterProvider>();
-    final examProvider = context.watch<ExamProvider>();
-
-    final chapters = _course != null
-        ? chapterProvider.getChaptersByCourse(_course!.id)
-        : <Chapter>[];
-    final exams =
-        _course != null ? examProvider.getExamsByCourse(_course!.id) : <Exam>[];
-
-    if (_isLoading && !_hasCachedData) {
-      return _buildSkeletonLoader();
-    }
-
-    if (_course == null) {
-      return Scaffold(
-        backgroundColor: AppColors.getBackground(context),
-        appBar: CustomAppBar(
-          title: AppStrings.course,
-          subtitle: AppStrings.notFound,
-          leading: AppButton.icon(
-              icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
-          showOfflineIndicator: _isOffline,
-        ),
-        body: Center(
-          child: AppEmptyState.error(
-            title: AppStrings.courseNotFound,
-            message: _isOffline
-                ? AppStrings.noCachedDataAvailable
-                : AppStrings.courseDoesNotExist,
-            onRetry: _manualRefresh,
-          ),
-        ),
+  Widget buildContent(BuildContext context) {
+    if (_course == null && !_hasCachedData) {
+      return buildErrorWidget(
+        isOffline
+            ? AppStrings.noCachedDataAvailable
+            : AppStrings.courseDoesNotExist,
+        onRetry: onRefresh,
       );
     }
 
-    return Scaffold(
-      backgroundColor: AppColors.getBackground(context),
-      appBar: CustomAppBar(
-        title: _course!.name,
-        subtitle:
-            _isOffline ? AppStrings.offlineMode : AppStrings.courseContent,
-        leading: AppButton.icon(
-            icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
-        showOfflineIndicator: _isOffline,
+    return SmartRefresher(
+      controller: _refreshController,
+      onRefresh: handleRefresh,
+      header: WaterDropHeader(
+        waterDropColor: AppColors.telegramBlue,
+        refresh: SizedBox(
+          width: ResponsiveValues.iconSizeL(context),
+          height: ResponsiveValues.iconSizeL(context),
+          child: const CircularProgressIndicator(
+            strokeWidth: 2,
+            valueColor: AlwaysStoppedAnimation(AppColors.telegramBlue),
+          ),
+        ),
       ),
-      body: Column(
+      child: Column(
         children: [
-          if (_isOffline && _pendingCount > 0)
+          if (isOffline && pendingCount > 0)
             Container(
               margin: EdgeInsets.all(ResponsiveValues.spacingM(context)),
               padding: ResponsiveValues.cardPadding(context),
@@ -1156,7 +712,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
                   SizedBox(width: ResponsiveValues.spacingM(context)),
                   Expanded(
                     child: Text(
-                      '$_pendingCount pending change${_pendingCount > 1 ? 's' : ''}',
+                      '$pendingCount pending change${pendingCount > 1 ? 's' : ''}',
                       style: AppTextStyles.bodySmall(context)
                           .copyWith(color: AppColors.info),
                     ),
@@ -1165,21 +721,21 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
               ),
             ),
           _buildAccessBanner(),
+          _buildHeader(),
           Container(
             decoration: BoxDecoration(
               border: Border(
                 bottom: BorderSide(
-                    color: AppColors.getDivider(context).withValues(alpha: 0.5),
-                    width: 0.5),
+                  color: AppColors.getDivider(context).withValues(alpha: 0.5),
+                  width: 0.5,
+                ),
               ),
             ),
             child: TabBar(
               controller: _tabController,
-              tabs: [
-                Tab(
-                    icon: Icon(Icons.menu_book_rounded),
-                    text: AppStrings.chapters),
-                Tab(icon: Icon(Icons.quiz_rounded), text: AppStrings.exams),
+              tabs: const [
+                Tab(text: AppStrings.chapters),
+                Tab(text: AppStrings.exams),
               ],
               labelStyle: AppTextStyles.labelMedium(context),
               unselectedLabelStyle: AppTextStyles.labelMedium(context),
@@ -1190,31 +746,25 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
             ),
           ),
           Expanded(
-            child: SmartRefresher(
-              controller: _refreshController,
-              onRefresh: _manualRefresh,
-              header: WaterDropHeader(
-                waterDropColor: AppColors.telegramBlue,
-                refresh: SizedBox(
-                  width: ResponsiveValues.iconSizeL(context),
-                  height: ResponsiveValues.iconSizeL(context),
-                  child: const CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation(AppColors.telegramBlue),
-                  ),
-                ),
-              ),
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  _buildChaptersList(chapters),
-                  _buildExamsList(exams),
-                ],
-              ),
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildChaptersList(),
+                _buildExamsList(),
+              ],
             ),
           ),
         ],
       ),
-    ).animate().fadeIn(duration: AppThemes.animationMedium);
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return buildScreen(
+      content: buildContent(context),
+      showAppBar: true,
+      showRefreshIndicator: false,
+    );
   }
 }

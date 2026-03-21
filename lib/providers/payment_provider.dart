@@ -165,6 +165,65 @@ class PaymentProvider extends ChangeNotifier
     }
   }
 
+  Future<void> _cachePendingPaymentFromSubmission({
+    required int categoryId,
+    required String paymentType,
+    required double amount,
+    required String paymentMethod,
+    String? accountHolderName,
+    Map<String, dynamic>? responseData,
+  }) async {
+    try {
+      final pendingPayment = Payment(
+        id: responseData?['id'] is num
+            ? (responseData!['id'] as num).toInt()
+            : DateTime.now().millisecondsSinceEpoch,
+        paymentType: responseData?['payment_type']?.toString() ?? paymentType,
+        amount: responseData?['amount'] != null
+            ? (responseData!['amount'] as num).toDouble()
+            : amount,
+        paymentMethod:
+            responseData?['payment_method']?.toString() ?? paymentMethod,
+        accountHolderName:
+            responseData?['account_holder_name']?.toString() ??
+                accountHolderName,
+        status: responseData?['status']?.toString() ?? 'pending',
+        createdAt: DateTime.tryParse(
+              responseData?['created_at']?.toString() ?? '',
+            ) ??
+            DateTime.now(),
+        categoryName: responseData?['category_name']?.toString() ?? '',
+        verifiedAt: DateTime.tryParse(
+          responseData?['verified_at']?.toString() ?? '',
+        ),
+        rejectionReason: responseData?['rejection_reason']?.toString(),
+        categoryId: responseData?['category_id'] is num
+            ? (responseData!['category_id'] as num).toInt()
+            : categoryId,
+      );
+
+      _payments.removeWhere((payment) =>
+          payment.categoryId == categoryId &&
+          (payment.isPending || payment.isRejected));
+      _payments.insert(0, pendingPayment);
+      _hasLoadedPayments = true;
+      _hasInitialData = true;
+
+      await _saveToHive();
+      deviceService.saveCacheItem(
+        AppConstants.paymentsCacheKey,
+        _payments.map((p) => p.toJson()).toList(),
+        ttl: _cacheDuration,
+        isUserSpecific: true,
+      );
+      _paymentsUpdateController.add(_payments);
+      safeNotify();
+      log('💾 Cached submitted payment locally as pending');
+    } catch (e) {
+      log('⚠️ Failed to cache submitted payment locally: $e');
+    }
+  }
+
   // ===== GETTERS =====
   List<Payment> get payments => List.unmodifiable(_payments);
 
@@ -523,6 +582,13 @@ class PaymentProvider extends ChangeNotifier
   }) async {
     log('submitPayment() for category $categoryId');
 
+    if (isLoading) {
+      log('⏳ Payment submission already in progress');
+      return ApiResponse.error(
+        message: 'Payment is already being processed. Please wait.',
+      );
+    }
+
     if (isOffline) {
       log('📴 Offline - queuing payment');
       await _queuePaymentOffline({
@@ -554,16 +620,14 @@ class PaymentProvider extends ChangeNotifier
 
       if (response.success) {
         log('✅ Payment submitted successfully');
-
-        await deviceService.removeCacheItem(
-          AppConstants.paymentsCacheKey,
-          isUserSpecific: true,
+        await _cachePendingPaymentFromSubmission(
+          categoryId: categoryId,
+          paymentType: paymentType,
+          amount: amount,
+          paymentMethod: paymentMethod,
+          accountHolderName: accountHolderName,
+          responseData: response.data,
         );
-
-        final userId = await UserSession().getCurrentUserId();
-        if (userId != null && _paymentsBox != null) {
-          await _paymentsBox!.delete('user_${userId}_payments');
-        }
 
         await loadPayments(forceRefresh: true);
       }

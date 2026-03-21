@@ -1,5 +1,5 @@
 // lib/screens/main/profile_screen.dart
-// COMPLETE PRODUCTION-READY FINAL VERSION - FIXED PENDING COUNT
+// PRODUCTION STANDARD - FIXED LATE INITIALIZATION ERROR
 
 import 'dart:async';
 import 'dart:io';
@@ -18,17 +18,16 @@ import '../../providers/user_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../providers/school_provider.dart';
 import '../../services/api_service.dart';
-import '../../services/device_service.dart';
 import '../../services/connectivity_service.dart';
+import '../../services/device_service.dart';
 import '../../services/snackbar_service.dart';
 import '../../services/offline_queue_manager.dart';
+import '../../widgets/common/base_screen_mixin.dart';
 import '../../themes/app_themes.dart';
-import '../../widgets/common/app_bar.dart';
 import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_text_field.dart';
 import '../../widgets/common/app_shimmer.dart';
-import '../../widgets/common/app_empty_state.dart';
 import '../../widgets/common/app_dialog.dart';
 import '../../utils/helpers.dart';
 import '../../utils/responsive_values.dart';
@@ -44,16 +43,11 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen>
-    with
-        WidgetsBindingObserver,
-        TickerProviderStateMixin,
-        AutomaticKeepAliveClientMixin {
+    with BaseScreenMixin<ProfileScreen>, TickerProviderStateMixin {
   final _picker = ImagePicker();
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
-  final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey =
-      GlobalKey<RefreshIndicatorState>();
 
   File? _profileImageFile;
   bool _isEditing = false;
@@ -61,184 +55,96 @@ class _ProfileScreenState extends State<ProfileScreen>
   bool _isSaving = false;
   String? _schoolName;
   bool _notificationsEnabled = true;
-  bool _isOffline = false;
-  bool _isRefreshing = false;
 
   User? _cachedUser;
-  int _pendingCount = 0;
-
-  Timer? _refreshTimer;
-  StreamSubscription? _connectivitySubscription;
 
   late AnimationController _headerAnimationController;
+  late UserProvider _userProvider;
+  late SchoolProvider _schoolProvider;
+  late ThemeProvider _themeProvider;
 
   @override
-  bool get wantKeepAlive => true;
+  String get screenTitle => AppStrings.profile;
+
+  @override
+  String? get screenSubtitle =>
+      isOffline ? AppStrings.offlineMode : AppStrings.manageAccount;
+
+  @override
+  bool get isLoading =>
+      _userProvider.isLoadingProfile && !_userProvider.hasInitialData;
+
+  @override
+  bool get hasCachedData => _userProvider.hasInitialData;
+
+  @override
+  dynamic get errorMessage => _cachedUser == null ? 'No user data' : null;
 
   @override
   void initState() {
     super.initState();
-    _connectivitySubscription?.cancel();
-    WidgetsBinding.instance.addObserver(this);
 
     _headerAnimationController = AnimationController(
       vsync: this,
       duration: AppThemes.animationMedium,
     );
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initialize();
-    });
+    _loadData();
   }
 
   @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _connectivitySubscription?.cancel();
-    _refreshTimer?.cancel();
-    _emailController.dispose();
-    _phoneController.dispose();
-    _headerAnimationController.dispose();
-    super.dispose();
-  }
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _userProvider = Provider.of<UserProvider>(context);
+    _schoolProvider = Provider.of<SchoolProvider>(context);
+    _themeProvider = Provider.of<ThemeProvider>(context);
 
-  Future<void> _initialize() async {
-    await _checkConnectivity();
-    _setupConnectivityListener();
-    _checkPendingCount();
-    await _loadData();
-    _headerAnimationController.forward();
-  }
-
-  void _setupConnectivityListener() {
-    final connectivityService = context.read<ConnectivityService>();
-    _connectivitySubscription?.cancel();
-    _connectivitySubscription =
-        connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (!mounted) return;
-
-      setState(() {
-        _isOffline = !isOnline;
-        final queueManager = context.read<OfflineQueueManager>();
-        _pendingCount = queueManager.pendingCount;
-      });
-
-      if (isOnline && !_isRefreshing && _cachedUser != null) {
-        unawaited(_refreshInBackground());
-      }
-    });
-  }
-
-  Future<void> _checkConnectivity() async {
-    final connectivityService = context.read<ConnectivityService>();
-    await connectivityService.checkConnectivity();
-    if (!mounted) return;
-    setState(() {
-      _isOffline = !connectivityService.isOnline;
-      final queueManager = context.read<OfflineQueueManager>();
-      _pendingCount = queueManager.pendingCount;
-    });
-  }
-
-  Future<void> _checkPendingCount() async {
-    final queueManager = context.read<OfflineQueueManager>();
-    if (mounted) {
-      setState(() => _pendingCount = queueManager.pendingCount);
-    }
-  }
-
-  Future<void> _loadData() async {
-    final userProvider = context.read<UserProvider>();
-    final authProvider = context.read<AuthProvider>();
-
-    _cachedUser = userProvider.currentUser ?? authProvider.currentUser;
+    // ✅ FIXED: Get current user from UserProvider or AuthProvider
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    _cachedUser = _userProvider.currentUser ?? authProvider.currentUser;
 
     if (_cachedUser != null) {
       _emailController.text = _cachedUser!.email ?? '';
       _phoneController.text = _cachedUser!.phone ?? '';
 
       if (_cachedUser!.schoolId != null) {
-        await _loadSchoolName(_cachedUser!.schoolId);
+        _loadSchoolName(_cachedUser!.schoolId);
       }
     }
 
+    _loadNotificationSettings();
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _phoneController.dispose();
+    _headerAnimationController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadData() async {
+    _headerAnimationController.forward();
     await _loadNotificationSettings();
-
-    if (!_isOffline && userProvider.hasLoadedProfile) {
-      unawaited(_refreshInBackground());
-    }
   }
 
-  Future<void> _refreshInBackground() async {
-    if (_isRefreshing || _isOffline) return;
+  @override
+  Future<void> onRefresh() async {
+    await _userProvider.loadUserProfile(
+        forceRefresh: true, isManualRefresh: true);
 
-    final userProvider = context.read<UserProvider>();
-    await userProvider.loadUserProfile(forceRefresh: true);
-
-    if (!mounted) return;
-
-    final updatedUser = userProvider.currentUser;
-    if (updatedUser != null && !_isEditing) {
+    // ✅ FIXED: Get user from provider directly
+    final user = _userProvider.currentUser;
+    if (user != null) {
       setState(() {
-        _cachedUser = updatedUser;
-        _emailController.text = updatedUser.email ?? '';
-        _phoneController.text = updatedUser.phone ?? '';
+        _cachedUser = user;
+        _emailController.text = user.email ?? '';
+        _phoneController.text = user.phone ?? '';
       });
-      if (updatedUser.schoolId != null) {
-        await _loadSchoolName(updatedUser.schoolId);
+      if (user.schoolId != null) {
+        await _loadSchoolName(user.schoolId, forceRefresh: true);
       }
-      await _saveToCache(updatedUser);
-    }
-  }
-
-  Future<void> _manualRefresh() async {
-    if (_isRefreshing) return;
-
-    setState(() => _isRefreshing = true);
-
-    final connectivity = ConnectivityService();
-    if (!connectivity.isOnline) {
-      setState(() => _isRefreshing = false);
-      if (mounted) {
-        SnackbarService().showOffline(context, action: AppStrings.refresh);
-      }
-      return;
-    }
-
-    try {
-      final userProvider = context.read<UserProvider>();
-      await userProvider.loadUserProfile(
-        forceRefresh: true,
-        isManualRefresh: true,
-      );
-
-      final authProvider = context.read<AuthProvider>();
-      final user = authProvider.currentUser ?? userProvider.currentUser;
-
-      if (user != null && mounted) {
-        setState(() {
-          _cachedUser = user;
-          _emailController.text = user.email ?? '';
-          _phoneController.text = user.phone ?? '';
-          _isOffline = false;
-        });
-        if (user.schoolId != null) {
-          await _loadSchoolName(user.schoolId, forceRefresh: true);
-        }
-        await _saveToCache(user);
-      }
-
-      if (mounted) {
-        SnackbarService().showSuccess(context, AppStrings.profileUpdated);
-      }
-    } catch (e) {
-      if (mounted) {
-        SnackbarService().showError(context, AppStrings.refreshFailed);
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isRefreshing = false);
-      }
+      await _saveToCache(user);
     }
   }
 
@@ -256,56 +162,51 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
-  Future<void> _loadSchoolName(
-    int? schoolId, {
-    bool forceRefresh = false,
-  }) async {
+  Future<void> _loadSchoolName(int? schoolId,
+      {bool forceRefresh = false}) async {
     if (schoolId == null) {
       setState(() => _schoolName = null);
       return;
     }
 
     try {
-      final schoolProvider = context.read<SchoolProvider>();
-
-      final cachedName = schoolProvider.getSchoolNameById(schoolId);
+      final cachedName = _schoolProvider.getSchoolNameById(schoolId);
       if (cachedName != null && !forceRefresh) {
-        if (mounted) {
-          setState(() => _schoolName = cachedName);
-        }
+        if (isMounted) setState(() => _schoolName = cachedName);
         return;
       }
 
-      if (forceRefresh || schoolProvider.schools.isEmpty) {
-        await schoolProvider.loadSchools(
-          forceRefresh: forceRefresh && !_isOffline,
-        );
+      if (forceRefresh || _schoolProvider.schools.isEmpty) {
+        await _schoolProvider.loadSchools(
+            forceRefresh: forceRefresh && !isOffline);
       }
 
-      final school = schoolProvider.getSchoolById(schoolId);
-      if (mounted) {
-        setState(() => _schoolName = school?.name);
-      }
+      final school = _schoolProvider.getSchoolById(schoolId);
+      if (isMounted) setState(() => _schoolName = school?.name);
     } catch (e) {
       debugLog('ProfileScreen', 'Error loading school name: $e');
     }
   }
 
+  // ✅ FIXED: Get storage service from AuthProvider via Provider
   Future<void> _loadNotificationSettings() async {
     try {
-      final storageService = context.read<AuthProvider>().storageService;
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final storageService = authProvider.storageService;
       final enabled = await storageService.getNotificationPreferences();
-      if (mounted) setState(() => _notificationsEnabled = enabled);
+      if (isMounted) setState(() => _notificationsEnabled = enabled);
     } catch (e) {
       debugLog('ProfileScreen', 'Error loading notification settings: $e');
     }
   }
 
+  // ✅ FIXED: Get storage service from AuthProvider via Provider
   Future<void> _toggleNotifications(bool value) async {
     try {
-      final storageService = context.read<AuthProvider>().storageService;
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final storageService = authProvider.storageService;
       await storageService.saveNotificationPreferences(value);
-      if (!mounted) return;
+      if (!isMounted) return;
 
       setState(() => _notificationsEnabled = value);
       SnackbarService().showSuccess(
@@ -316,10 +217,8 @@ class _ProfileScreenState extends State<ProfileScreen>
       );
     } catch (e) {
       debugLog('ProfileScreen', 'Error toggling notifications: $e');
-      SnackbarService().showError(
-        context,
-        AppStrings.failedToUpdateNotifications,
-      );
+      SnackbarService()
+          .showError(context, AppStrings.failedToUpdateNotifications);
     }
   }
 
@@ -347,7 +246,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Future<void> _pickProfileImage() async {
-    if (!_isEditing || _isOffline) return;
+    if (!_isEditing || isOffline) return;
 
     try {
       final image = await _picker.pickImage(
@@ -358,7 +257,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       );
 
       if (image != null) {
-        if (!mounted) return;
+        if (!isMounted) return;
         final imageFile = File(image.path);
         final fileSize = imageFile.lengthSync();
 
@@ -383,9 +282,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               }
             } catch (e) {
               debugLog(
-                'ProfileScreen',
-                'Compression failed, using original: $e',
-              );
+                  'ProfileScreen', 'Compression failed, using original: $e');
             }
           }
 
@@ -393,11 +290,9 @@ class _ProfileScreenState extends State<ProfileScreen>
           await _uploadProfileImage(fileToUpload);
         } catch (e) {
           debugLog('ProfileScreen', 'Error processing image: $e');
-          if (mounted) {
-            SnackbarService().showError(
-              context,
-              AppStrings.failedToProcessImage,
-            );
+          if (isMounted) {
+            SnackbarService()
+                .showError(context, AppStrings.failedToProcessImage);
           }
           setState(() {
             _profileImageFile = null;
@@ -426,23 +321,22 @@ class _ProfileScreenState extends State<ProfileScreen>
       final apiService = context.read<ApiService>();
       final response = await apiService.uploadProfileImage(imageFile);
 
-      if (!mounted) return;
+      if (!isMounted) return;
 
       if (response.success && response.data != null) {
         final imageUrl = response.data!;
         debugPrint('✅ Profile image uploaded: $imageUrl');
 
-        final userProvider = context.read<UserProvider>();
         final updateResponse =
-            await userProvider.updateProfile(profileImage: imageUrl);
+            await _userProvider.updateProfile(profileImage: imageUrl);
 
-        if (!mounted) return;
+        if (!isMounted) return;
 
         if (updateResponse.success) {
-          await userProvider.loadUserProfile(forceRefresh: true);
+          await _userProvider.loadUserProfile(forceRefresh: true);
 
           setState(() {
-            _cachedUser = userProvider.currentUser;
+            _cachedUser = _userProvider.currentUser;
             _profileImageFile = null;
             _isUploadingImage = false;
           });
@@ -465,7 +359,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       }
     } catch (e) {
       debugLog('ProfileScreen', 'Error uploading image: $e');
-      if (mounted) {
+      if (isMounted) {
         setState(() {
           _profileImageFile = null;
           _isUploadingImage = false;
@@ -494,16 +388,15 @@ class _ProfileScreenState extends State<ProfileScreen>
           },
         );
 
-        if (!mounted) return;
+        if (!isMounted) return;
 
         SnackbarService().showQueued(context, action: AppStrings.profileUpdate);
         setState(() {
           _isEditing = false;
           _isSaving = false;
-          _pendingCount++;
         });
       } catch (e) {
-        if (mounted) {
+        if (isMounted) {
           SnackbarService().showError(context, AppStrings.failedToQueueUpdate);
         }
         setState(() => _isSaving = false);
@@ -517,9 +410,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       final email = _emailController.text.trim();
       final phone = _phoneController.text.trim();
 
-      final userProvider = context.read<UserProvider>();
-
-      final response = await userProvider
+      final response = await _userProvider
           .updateProfile(
             email: email.isNotEmpty ? email : null,
             phone: phone.isNotEmpty ? phone : null,
@@ -529,15 +420,15 @@ class _ProfileScreenState extends State<ProfileScreen>
             onTimeout: () => throw Exception('Request timed out'),
           );
 
-      if (!mounted) return;
+      if (!isMounted) return;
 
       if (response.success) {
-        await userProvider.loadUserProfile(forceRefresh: true);
+        await _userProvider.loadUserProfile(forceRefresh: true);
 
         setState(() {
-          _cachedUser = userProvider.currentUser;
-          _emailController.text = userProvider.currentUser?.email ?? '';
-          _phoneController.text = userProvider.currentUser?.phone ?? '';
+          _cachedUser = _userProvider.currentUser;
+          _emailController.text = _userProvider.currentUser?.email ?? '';
+          _phoneController.text = _userProvider.currentUser?.phone ?? '';
           _isEditing = false;
           _isSaving = false;
         });
@@ -554,7 +445,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       }
     } catch (e) {
       debugLog('ProfileScreen', 'Error saving profile: $e');
-      if (mounted) {
+      if (isMounted) {
         String errorMessage = getUserFriendlyErrorMessage(e);
         if (errorMessage.contains('timed out')) {
           errorMessage = 'Request timed out. Please try again.';
@@ -575,8 +466,8 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   Widget _buildEditButton() {
     return AppButton.icon(
-      icon: _isOffline ? Icons.wifi_off_rounded : Icons.edit_rounded,
-      onPressed: _isOffline
+      icon: isOffline ? Icons.wifi_off_rounded : Icons.edit_rounded,
+      onPressed: isOffline
           ? null
           : (_isEditing ? null : () => setState(() => _isEditing = true)),
     );
@@ -606,7 +497,10 @@ class _ProfileScreenState extends State<ProfileScreen>
     return AppButton.icon(icon: Icons.save_rounded, onPressed: _saveProfile);
   }
 
-  Widget _buildProfileHeader(User user) {
+  Widget _buildProfileHeader() {
+    final user = _cachedUser;
+    if (user == null) return const SizedBox.shrink();
+
     final avatarSize = ResponsiveValues.avatarSizeLarge(context);
 
     return Column(
@@ -615,7 +509,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           alignment: Alignment.center,
           children: [
             GestureDetector(
-              onTap: (_isEditing && !_isOffline) ? _pickProfileImage : null,
+              onTap: (_isEditing && !isOffline) ? _pickProfileImage : null,
               behavior: HitTestBehavior.opaque,
               child: Container(
                 width: avatarSize,
@@ -652,15 +546,13 @@ class _ProfileScreenState extends State<ProfileScreen>
                               ),
                               errorWidget: (context, url, error) =>
                                   _buildInitialsAvatar(
-                                user.username,
-                                avatarSize,
-                              ),
+                                      user.username, avatarSize),
                             )
                           : _buildInitialsAvatar(user.username, avatarSize)),
                 ),
               ),
             ),
-            if (_isEditing && !_isUploadingImage && !_isOffline)
+            if (_isEditing && !_isUploadingImage && !isOffline)
               Positioned(
                 bottom: 0,
                 right: 0,
@@ -670,19 +562,14 @@ class _ProfileScreenState extends State<ProfileScreen>
                     width: ResponsiveValues.iconSizeXL(context) * 1.2,
                     height: ResponsiveValues.iconSizeXL(context) * 1.2,
                     decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: AppColors.telegramGradient,
-                      ),
+                      gradient:
+                          LinearGradient(colors: AppColors.telegramGradient),
                       shape: BoxShape.circle,
                       border: Border.fromBorderSide(
-                        BorderSide(color: Colors.white, width: 3),
-                      ),
+                          BorderSide(color: Colors.white, width: 3)),
                     ),
-                    child: const Icon(
-                      Icons.edit_rounded,
-                      size: 18,
-                      color: Colors.white,
-                    ),
+                    child: const Icon(Icons.edit_rounded,
+                        size: 18, color: Colors.white),
                   ),
                 ),
               ),
@@ -712,40 +599,33 @@ class _ProfileScreenState extends State<ProfileScreen>
           children: [
             Text(
               user.username,
-              style: AppTextStyles.headlineSmall(
-                context,
-              ).copyWith(fontWeight: FontWeight.w700),
+              style: AppTextStyles.headlineSmall(context)
+                  .copyWith(fontWeight: FontWeight.w700),
               textAlign: TextAlign.center,
             ),
-            if (_isOffline)
+            if (isOffline)
               Padding(
-                padding: EdgeInsets.only(
-                  left: ResponsiveValues.spacingXS(context),
-                ),
+                padding:
+                    EdgeInsets.only(left: ResponsiveValues.spacingXS(context)),
                 child: Icon(
                   Icons.wifi_off_rounded,
                   size: ResponsiveValues.iconSizeXS(context),
                   color: AppColors.warning,
                 ),
               ),
-            if (_pendingCount > 0)
+            if (pendingCount > 0)
               Padding(
-                padding: EdgeInsets.only(
-                  left: ResponsiveValues.spacingXS(context),
-                ),
+                padding:
+                    EdgeInsets.only(left: ResponsiveValues.spacingXS(context)),
                 child: Container(
                   padding: const EdgeInsets.all(2),
                   decoration: const BoxDecoration(
-                    color: AppColors.info,
-                    shape: BoxShape.circle,
-                  ),
-                  constraints: const BoxConstraints(
-                    minWidth: 16,
-                    minHeight: 16,
-                  ),
+                      color: AppColors.info, shape: BoxShape.circle),
+                  constraints:
+                      const BoxConstraints(minWidth: 16, minHeight: 16),
                   child: Center(
                     child: Text(
-                      _pendingCount > 9 ? '9+' : _pendingCount.toString(),
+                      pendingCount > 9 ? '9+' : pendingCount.toString(),
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: ResponsiveValues.fontBadgeSmall(context),
@@ -761,9 +641,8 @@ class _ProfileScreenState extends State<ProfileScreen>
           SizedBox(height: ResponsiveValues.spacingXS(context)),
           Text(
             _schoolName!,
-            style: AppTextStyles.bodySmall(
-              context,
-            ).copyWith(color: AppColors.getTextSecondary(context)),
+            style: AppTextStyles.bodySmall(context)
+                .copyWith(color: AppColors.getTextSecondary(context)),
             textAlign: TextAlign.center,
           ),
         ],
@@ -775,9 +654,8 @@ class _ProfileScreenState extends State<ProfileScreen>
           ),
           decoration: BoxDecoration(
             color: AppColors.getStatusBackground(user.accountStatus, context),
-            borderRadius: BorderRadius.circular(
-              ResponsiveValues.radiusFull(context),
-            ),
+            borderRadius:
+                BorderRadius.circular(ResponsiveValues.radiusFull(context)),
           ),
           child: Text(
             user.accountStatus.toUpperCase(),
@@ -795,8 +673,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   Widget _buildInitialsAvatar(String username, double size) {
     return Container(
       decoration: const BoxDecoration(
-        gradient: LinearGradient(colors: AppColors.purpleGradient),
-      ),
+          gradient: LinearGradient(colors: AppColors.purpleGradient)),
       child: Center(
         child: Text(
           username.substring(0, 2).toUpperCase(),
@@ -822,7 +699,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                 controller: _emailController,
                 label: AppStrings.email,
                 hint: AppStrings.enterEmail,
-                enabled: !_isOffline,
+                enabled: !isOffline,
                 validator: (value) {
                   if (value != null &&
                       value.isNotEmpty &&
@@ -837,7 +714,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                 controller: _phoneController,
                 label: AppStrings.phone,
                 hint: AppStrings.enterPhone,
-                enabled: !_isOffline,
+                enabled: !isOffline,
                 validator: (value) {
                   if (value != null &&
                       value.isNotEmpty &&
@@ -860,9 +737,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                   SizedBox(width: ResponsiveValues.spacingM(context)),
                   Expanded(
                     child: AppButton.primary(
-                      label: _isOffline
-                          ? AppStrings.queueChanges
-                          : AppStrings.save,
+                      label:
+                          isOffline ? AppStrings.queueChanges : AppStrings.save,
                       onPressed: _isSaving ? null : _saveProfile,
                       isLoading: _isSaving,
                       expanded: true,
@@ -877,7 +753,10 @@ class _ProfileScreenState extends State<ProfileScreen>
     ).animate().slideY(begin: 0.1, end: 0).fadeIn();
   }
 
-  Widget _buildInfoSection(User user) {
+  Widget _buildInfoSection() {
+    final user = _cachedUser;
+    if (user == null) return const SizedBox.shrink();
+
     return AppCard.glass(
       child: Padding(
         padding: ResponsiveValues.cardPadding(context),
@@ -909,9 +788,8 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   Widget _buildInfoItem(IconData icon, String label, String value) {
     return Padding(
-      padding: EdgeInsets.symmetric(
-        vertical: ResponsiveValues.spacingXS(context),
-      ),
+      padding:
+          EdgeInsets.symmetric(vertical: ResponsiveValues.spacingXS(context)),
       child: SizedBox(
         height: 56,
         child: Row(
@@ -940,9 +818,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                   ),
                   Text(
                     value,
-                    style: AppTextStyles.bodyMedium(
-                      context,
-                    ).copyWith(fontWeight: FontWeight.w500),
+                    style: AppTextStyles.bodyMedium(context)
+                        .copyWith(fontWeight: FontWeight.w500),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -966,14 +843,16 @@ class _ProfileScreenState extends State<ProfileScreen>
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(
-            ResponsiveValues.radiusMedium(context),
-          ),
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+          splashColor: AppColors.telegramBlue.withValues(alpha: 0.1),
+          highlightColor: Colors.transparent,
           child: Container(
+            width: double.infinity,
+            constraints: const BoxConstraints(minHeight: 56),
             padding: EdgeInsets.symmetric(
-              horizontal: ResponsiveValues.spacingL(context),
-            ),
-            height: 56,
+                horizontal: ResponsiveValues.spacingL(context)),
+            alignment: Alignment.center,
             child: Row(
               children: [
                 Container(
@@ -982,29 +861,23 @@ class _ProfileScreenState extends State<ProfileScreen>
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
-                        (iconColor ?? AppColors.telegramBlue).withValues(
-                          alpha: 0.2,
-                        ),
-                        (iconColor ?? AppColors.telegramBlue).withValues(
-                          alpha: 0.1,
-                        ),
+                        (iconColor ?? AppColors.telegramBlue)
+                            .withValues(alpha: 0.2),
+                        (iconColor ?? AppColors.telegramBlue)
+                            .withValues(alpha: 0.1),
                       ],
                     ),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(
-                    icon,
-                    size: 20,
-                    color: iconColor ?? AppColors.telegramBlue,
-                  ),
+                  child: Icon(icon,
+                      size: 20, color: iconColor ?? AppColors.telegramBlue),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     title,
-                    style: AppTextStyles.bodyMedium(
-                      context,
-                    ).copyWith(fontWeight: FontWeight.w500),
+                    style: AppTextStyles.bodyMedium(context)
+                        .copyWith(fontWeight: FontWeight.w500),
                   ),
                 ),
                 Icon(
@@ -1104,9 +977,8 @@ class _ProfileScreenState extends State<ProfileScreen>
             Expanded(
               child: Text(
                 title,
-                style: AppTextStyles.bodyMedium(
-                  context,
-                ).copyWith(fontWeight: FontWeight.w500),
+                style: AppTextStyles.bodyMedium(context)
+                    .copyWith(fontWeight: FontWeight.w500),
               ),
             ),
             Switch.adaptive(
@@ -1122,8 +994,6 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _buildSettingsSection() {
-    final themeProvider = context.read<ThemeProvider>();
-
     return AppCard.glass(
       child: Padding(
         padding: ResponsiveValues.cardPadding(context),
@@ -1134,16 +1004,15 @@ class _ProfileScreenState extends State<ProfileScreen>
               icon: Icons.notifications_outlined,
               title: AppStrings.notifications,
               value: _notificationsEnabled,
-              onChanged: _isOffline ? null : _toggleNotifications,
+              onChanged: isOffline ? null : _toggleNotifications,
             ),
             const Divider(height: 1),
             _buildSettingCard(
               icon: Icons.dark_mode_outlined,
               title: AppStrings.darkMode,
-              value: themeProvider.themeMode == ThemeMode.dark,
-              onChanged: (value) => themeProvider.setTheme(
-                value ? ThemeMode.dark : ThemeMode.light,
-              ),
+              value: _themeProvider.themeMode == ThemeMode.dark,
+              onChanged: (value) => _themeProvider
+                  .setTheme(value ? ThemeMode.dark : ThemeMode.light),
             ),
           ],
         ),
@@ -1156,7 +1025,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       context: context,
       title: AppStrings.familyAcademy,
       message:
-          '${AppStrings.version} 1.4.0+1\n\n${AppStrings.empoweringStudents}\n\n© 2024 Family Academy',
+          '${AppStrings.version} 1.5.0+1\n\n${AppStrings.empoweringStudents}\n\n© 2025 Family Academy',
     );
   }
 
@@ -1171,6 +1040,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Future<void> _showLogoutConfirmation() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final confirmed = await AppDialog.confirm(
       context: context,
       title: AppStrings.logout,
@@ -1178,111 +1048,28 @@ class _ProfileScreenState extends State<ProfileScreen>
       confirmText: AppStrings.logout,
     );
 
-    if (confirmed == true && mounted) {
-      final authProvider = context.read<AuthProvider>();
+    if (confirmed == true && isMounted) {
       await authProvider.logout();
-      if (mounted) context.go('/auth/login');
+      if (isMounted) context.go('/auth/login');
     }
   }
 
-  Widget _buildSkeletonLoader() {
-    return Scaffold(
-      backgroundColor: AppColors.getBackground(context),
-      body: CustomScrollView(
-        physics: const BouncingScrollPhysics(),
-        slivers: [
-          const SliverToBoxAdapter(
-            child: CustomAppBar(
-              title: AppStrings.profile,
-              subtitle: AppStrings.loadingProfile,
-            ),
-          ),
-          SliverList(
-            delegate: SliverChildListDelegate([
-              Container(
-                padding: ResponsiveValues.screenPadding(context),
-                child: const Column(
-                  children: [
-                    AppShimmer(type: ShimmerType.circle),
-                    SizedBox(height: 16),
-                    AppShimmer(type: ShimmerType.textLine, customWidth: 150),
-                  ],
-                ),
-              ),
-              AppCard.glass(
-                child: Container(
-                  margin: ResponsiveValues.screenPadding(context),
-                  padding: ResponsiveValues.cardPadding(context),
-                  child: Column(
-                    children: List.generate(
-                      3,
-                      (index) => Padding(
-                        padding: EdgeInsets.symmetric(
-                          vertical: ResponsiveValues.spacingM(context),
-                        ),
-                        child: const Row(
-                          children: [
-                            AppShimmer(
-                              type: ShimmerType.circle,
-                              customWidth: 40,
-                              customHeight: 40,
-                            ),
-                            SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  AppShimmer(
-                                    type: ShimmerType.textLine,
-                                    customWidth: 100,
-                                  ),
-                                  SizedBox(height: 4),
-                                  AppShimmer(
-                                    type: ShimmerType.textLine,
-                                    customWidth: double.infinity,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ]),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildContent(User user) {
-    final userProvider = context.watch<UserProvider>();
-    final isLoading =
-        userProvider.isLoadingProfile && !userProvider.hasInitialData;
-
-    if (isLoading) {
-      return _buildSkeletonLoader();
+  @override
+  Widget buildContent(BuildContext context) {
+    final user = _cachedUser;
+    if (user == null) {
+      return buildErrorWidget('No user data available');
     }
 
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
         SliverToBoxAdapter(
-          child: CustomAppBar(
-            title: AppStrings.profile,
-            subtitle:
-                _isOffline ? AppStrings.offlineMode : AppStrings.manageAccount,
-            customTrailing:
-                _isEditing ? _buildSaveButton() : _buildEditButton(),
-            showOfflineIndicator: _isOffline,
-          ),
+          child: buildAppBar(),
         ),
         SliverList(
           delegate: SliverChildListDelegate([
-            if (_isOffline && _pendingCount > 0)
+            if (isOffline && pendingCount > 0)
               Container(
                 margin: const EdgeInsets.all(8),
                 padding: const EdgeInsets.all(12),
@@ -1290,25 +1077,21 @@ class _ProfileScreenState extends State<ProfileScreen>
                   gradient: LinearGradient(
                     colors: [
                       AppColors.info.withValues(alpha: 0.2),
-                      AppColors.info.withValues(alpha: 0.1),
+                      AppColors.info.withValues(alpha: 0.1)
                     ],
                   ),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: AppColors.info.withValues(alpha: 0.3),
-                  ),
+                  border:
+                      Border.all(color: AppColors.info.withValues(alpha: 0.3)),
                 ),
                 child: Row(
                   children: [
-                    const Icon(
-                      Icons.schedule_rounded,
-                      color: AppColors.info,
-                      size: 20,
-                    ),
+                    const Icon(Icons.schedule_rounded,
+                        color: AppColors.info, size: 20),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        '$_pendingCount pending change${_pendingCount > 1 ? 's' : ''}',
+                        '$pendingCount pending change${pendingCount > 1 ? 's' : ''}',
                         style: const TextStyle(color: AppColors.info),
                       ),
                     ),
@@ -1316,14 +1099,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ),
               ),
             Container(
-              alignment: Alignment.center,
-              child: _buildProfileHeader(user),
-            ),
+                alignment: Alignment.center, child: _buildProfileHeader()),
             const SizedBox(height: 24),
-            if (_isEditing)
-              _buildEditProfileForm()
-            else
-              _buildInfoSection(user),
+            if (_isEditing) _buildEditProfileForm() else _buildInfoSection(),
             const SizedBox(height: 24),
             _buildMenuSection(),
             const SizedBox(height: 24),
@@ -1339,58 +1117,6 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   @override
   Widget build(BuildContext context) {
-    super.build(context);
-
-    final authProvider = context.watch<AuthProvider>();
-    final userProvider = context.watch<UserProvider>();
-    final schoolProvider = context.watch<SchoolProvider>();
-
-    final User? user = userProvider.currentUser ?? authProvider.currentUser;
-
-    if (user?.schoolId != null && _schoolName == null) {
-      _schoolName = schoolProvider.getSchoolNameById(user!.schoolId!);
-    }
-
-    final bool isLoading =
-        userProvider.isLoadingProfile && !userProvider.hasInitialData;
-
-    if (isLoading) {
-      return _buildSkeletonLoader();
-    }
-
-    if (user == null) {
-      return Scaffold(
-        backgroundColor: AppColors.getBackground(context),
-        appBar: CustomAppBar(
-          title: AppStrings.error,
-          subtitle: AppStrings.failedToLoadProfile,
-          leading: AppButton.icon(
-            icon: Icons.arrow_back_rounded,
-            onPressed: () => context.pop(),
-          ),
-          showOfflineIndicator: _isOffline,
-        ),
-        body: Center(
-          child: AppEmptyState.error(
-            title: AppStrings.failedToLoadProfile,
-            message: _isOffline
-                ? AppStrings.noCachedProfile
-                : AppStrings.tryAgainLater,
-            onRetry: _manualRefresh,
-          ),
-        ),
-      );
-    }
-
-    return Scaffold(
-      backgroundColor: AppColors.getBackground(context),
-      body: RefreshIndicator(
-        key: _refreshIndicatorKey,
-        onRefresh: _manualRefresh,
-        color: AppColors.telegramBlue,
-        backgroundColor: AppColors.getSurface(context),
-        child: _buildContent(user),
-      ),
-    ).animate().fadeIn(duration: AppThemes.animationMedium);
+    return buildScreen(content: buildContent(context), showAppBar: false);
   }
 }

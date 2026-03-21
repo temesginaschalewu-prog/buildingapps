@@ -940,7 +940,8 @@ class ApiService {
       debugPrint(
           '🔍 [ApiService] getCategories: Requesting $_apiPrefix/categories');
 
-      final response = await _getWithInFlightDedup('$_apiPrefix/categories');
+      // ✅ FIXED: Remove deduplication - use direct call
+      final response = await _dio.get('$_apiPrefix/categories');
 
       debugPrint(
           '🔍 [ApiService] getCategories: Response received, statusCode=${response.statusCode}');
@@ -1003,6 +1004,11 @@ class ApiService {
 
       debugPrint(
           '🔍 [ApiService] getCategories: Parsed ${categories.length} categories');
+
+      // ✅ Log success
+      debugPrint(
+          '🔍 [ApiService] getCategories: ✅ SUCCESS - returning ${categories.length} categories');
+
       return ApiResponse<List<Category>>(
         success: success,
         message: message,

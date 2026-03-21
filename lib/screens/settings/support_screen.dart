@@ -1,5 +1,5 @@
 // lib/screens/settings/support_screen.dart
-// COMPLETE FIXED VERSION - NULL SAFETY IN INITSTATE
+// ADDED BACK BUTTON & SHIMMER TYPE
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -12,19 +12,13 @@ import 'package:pull_to_refresh/pull_to_refresh.dart' hide RefreshIndicator;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../providers/settings_provider.dart';
-import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
-import '../../services/offline_queue_manager.dart';
+import '../../widgets/common/base_screen_mixin.dart';
 import '../../widgets/common/app_card.dart';
-import '../../widgets/common/app_button.dart';
-import '../../widgets/common/app_shimmer.dart';
-import '../../widgets/common/app_bar.dart';
 import '../../widgets/common/app_dialog.dart';
-import '../../widgets/common/app_empty_state.dart';
 import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
-import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
 import '../../utils/helpers.dart';
 import '../../utils/constants.dart';
@@ -37,156 +31,120 @@ class SupportScreen extends StatefulWidget {
 }
 
 class _SupportScreenState extends State<SupportScreen>
-    with TickerProviderStateMixin {
+    with BaseScreenMixin<SupportScreen>, TickerProviderStateMixin {
   late TabController _tabController;
-  bool _isLoading = false;
   bool _hasError = false;
   String? _errorMessage;
   final List<RefreshController> _refreshControllers = [];
-  bool _isRefreshing = false;
-  bool _isOffline = false;
-  int _pendingCount = 0;
-  StreamSubscription? _connectivitySubscription;
-  bool _isMounted = false; // ✅ Track mounted state
 
   late AnimationController _pulseAnimationController;
+  late SettingsProvider _settingsProvider;
+  bool _didInitialize = false;
+
+  @override
+  String get screenTitle => AppStrings.support;
+
+  @override
+  String? get screenSubtitle => isRefreshing
+      ? AppStrings.refreshing
+      : (isOffline ? AppStrings.offlineMode : AppStrings.getHelp);
+
+  @override
+  bool get isLoading => false;
+
+  @override
+  bool get hasCachedData => true;
+
+  @override
+  dynamic get errorMessage => _hasError ? _errorMessage : null;
+
+  // ✅ Shimmer type for support screen
+  @override
+  ShimmerType get shimmerType => ShimmerType.contactCard;
+
+  @override
+  int get shimmerItemCount => 3;
+
+  @override
+  Widget? get appBarLeading => IconButton(
+        icon: Icon(
+          Icons.arrow_back_rounded,
+          color: AppColors.getTextPrimary(context),
+        ),
+        onPressed: () => context.pop(),
+      );
 
   @override
   void initState() {
     super.initState();
-    _isMounted = true;
 
-    _pulseAnimationController =
-        AnimationController(vsync: this, duration: 1.seconds)
-          ..repeat(reverse: true);
+    _pulseAnimationController = AnimationController(
+      vsync: this,
+      duration: 1.seconds,
+    )..repeat(reverse: true);
 
     _tabController = TabController(length: 3, vsync: this);
+    _refreshControllers.addAll([
+      RefreshController(),
+      RefreshController(),
+      RefreshController(),
+    ]);
+  }
 
-    _refreshControllers.addAll(
-        [RefreshController(), RefreshController(), RefreshController()]);
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_didInitialize) return;
 
-    // ✅ DON'T access context here - use post frame callback
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_isMounted) {
-        _initialize();
+    _settingsProvider = context.read<SettingsProvider>();
+    _didInitialize = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+
+      try {
+        await _settingsProvider.loadContactSettings();
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _hasError = true;
+          _errorMessage = getUserFriendlyErrorMessage(e);
+        });
       }
     });
   }
 
   @override
   void dispose() {
-    _isMounted = false; // ✅ Mark as unmounted immediately
     _tabController.dispose();
     _pulseAnimationController.dispose();
     for (var controller in _refreshControllers) {
       controller.dispose();
     }
-    _connectivitySubscription?.cancel();
     super.dispose();
   }
 
-  Future<void> _initialize() async {
-    if (!_isMounted) return;
-
-    await _checkConnectivity();
-    _setupConnectivityListener();
-    _checkPendingCount();
-    _loadContactSettings();
+  @override
+  Future<void> onRefresh() async {
+    await _refreshTab(_tabController.index);
   }
 
-  void _setupConnectivityListener() {
-    if (!_isMounted) return;
-
-    final connectivityService = context.read<ConnectivityService>();
-    _connectivitySubscription =
-        connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (!_isMounted) return;
-
-      setState(() {
-        _isOffline = !isOnline;
-        final queueManager = context.read<OfflineQueueManager>();
-        _pendingCount = queueManager.pendingCount;
-      });
-    });
-  }
-
-  Future<void> _checkConnectivity() async {
-    if (!_isMounted) return;
-
-    final connectivityService = context.read<ConnectivityService>();
-    await connectivityService.checkConnectivity();
-    if (!_isMounted) return;
-
-    setState(() {
-      _isOffline = !connectivityService.isOnline;
-      final queueManager = context.read<OfflineQueueManager>();
-      _pendingCount = queueManager.pendingCount;
-    });
-  }
-
-  Future<void> _checkPendingCount() async {
-    final queueManager = context.read<OfflineQueueManager>();
-    if (_isMounted) {
-      setState(() => _pendingCount = queueManager.pendingCount);
-    }
-  }
-
-  Future<void> _loadContactSettings() async {
-    if (_isLoading || !_isMounted) return;
-
-    setState(() {
-      _isLoading = true;
-      _hasError = false;
-      _errorMessage = null;
-    });
-
-    try {
-      final settingsProvider = context.read<SettingsProvider>();
-
-      await settingsProvider.getAllSettings();
-      if (!_isMounted) return;
-      await settingsProvider.loadContactSettings(forceRefresh: true);
-      if (!_isMounted) return;
-
-      setState(() {
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-        _hasError = true;
-        _errorMessage = getUserFriendlyErrorMessage(e);
-      });
-    }
-  }
-
-  Future<void> _manualRefresh(int tabIndex) async {
-    if (_isRefreshing || !_isMounted) return;
-
-    final connectivityService = context.read<ConnectivityService>();
-    if (!connectivityService.isOnline) {
-      setState(() => _isOffline = true);
+  Future<void> _refreshTab(int tabIndex) async {
+    if (isOffline) {
       SnackbarService().showOffline(context);
+      _refreshControllers[tabIndex].refreshFailed();
       return;
     }
 
-    setState(() => _isRefreshing = true);
-
     try {
-      final settingsProvider = context.read<SettingsProvider>();
-      await settingsProvider.getAllSettings();
-      if (!_isMounted) return;
-      await settingsProvider.loadContactSettings(forceRefresh: true);
-      if (!_isMounted) return;
+      await _settingsProvider.getAllSettings();
+      await _settingsProvider.loadContactSettings(forceRefresh: true);
 
       _refreshControllers[tabIndex].refreshCompleted();
       setState(() {
         _hasError = false;
         _errorMessage = null;
-        _isOffline = false;
       });
-
-      SnackbarService().showSuccess(context, AppStrings.supportInfoRefreshed);
     } catch (e) {
       setState(() {
         _hasError = true;
@@ -194,15 +152,10 @@ class _SupportScreenState extends State<SupportScreen>
       });
       _refreshControllers[tabIndex].refreshFailed();
       SnackbarService().showError(context, '${AppStrings.refreshFailed}: $e');
-    } finally {
-      if (_isMounted) {
-        setState(() => _isRefreshing = false);
-      }
     }
   }
 
-  Future<void> _handleContactTap(
-      ContactType type, String value, BuildContext context) async {
+  Future<void> _handleContactTap(ContactType type, String value) async {
     final Uri uri;
 
     switch (type) {
@@ -253,7 +206,7 @@ class _SupportScreenState extends State<SupportScreen>
           final url = value.startsWith('http') ? value : 'https://$value';
           uri = Uri.parse(url);
         } else {
-          _showCopyDialog(context, value);
+          _showCopyDialog(value);
           return;
         }
         break;
@@ -262,21 +215,22 @@ class _SupportScreenState extends State<SupportScreen>
     try {
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
-        if (!_isMounted) return;
       } else {
         if (type == ContactType.other || type == ContactType.website) {
-          _showCopyDialog(context, value);
+          _showCopyDialog(value);
         } else {
-          SnackbarService()
-              .showError(context, '${AppStrings.cannotOpen} $value');
+          SnackbarService().showError(
+            context,
+            '${AppStrings.cannotOpen} $value',
+          );
         }
       }
     } catch (e) {
-      _showCopyDialog(context, value);
+      _showCopyDialog(value);
     }
   }
 
-  void _showCopyDialog(BuildContext context, String value) {
+  void _showCopyDialog(String value) {
     AppDialog.input(
       context: context,
       title: AppStrings.copyToClipboard,
@@ -289,11 +243,16 @@ class _SupportScreenState extends State<SupportScreen>
     });
   }
 
-  Widget _buildContactCard(BuildContext context, String title, String value,
-      IconData icon, ContactType type,
-      {Color? iconColor, int index = 0}) {
+  Widget _buildContactCard(
+    String title,
+    String value,
+    IconData icon,
+    ContactType type, {
+    Color? iconColor,
+    int index = 0,
+  }) {
     final canTap = type != ContactType.hours;
-    final color = iconColor ?? _getIconColorForType(type, context);
+    final color = iconColor ?? _getIconColorForType(type);
 
     return Container(
       margin: EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
@@ -302,11 +261,12 @@ class _SupportScreenState extends State<SupportScreen>
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            onTap: canTap && !_isOffline
-                ? () => _handleContactTap(type, value, context)
+            onTap: canTap && !isOffline
+                ? () => _handleContactTap(type, value)
                 : null,
-            borderRadius:
-                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
+            borderRadius: BorderRadius.circular(
+              ResponsiveValues.radiusXLarge(context),
+            ),
             splashColor: color.withValues(alpha: 0.1),
             highlightColor: Colors.transparent,
             child: Padding(
@@ -320,17 +280,20 @@ class _SupportScreenState extends State<SupportScreen>
                       gradient: LinearGradient(
                         colors: [
                           color.withValues(alpha: 0.2),
-                          color.withValues(alpha: 0.05)
+                          color.withValues(alpha: 0.05),
                         ],
                       ),
                       borderRadius: BorderRadius.circular(
-                          ResponsiveValues.radiusMedium(context)),
+                        ResponsiveValues.radiusMedium(context),
+                      ),
                       border: Border.all(color: color, width: 1.5),
                     ),
                     child: Center(
-                      child: Icon(icon,
-                          size: ResponsiveValues.iconSizeL(context),
-                          color: _isOffline ? AppColors.warning : color),
+                      child: Icon(
+                        icon,
+                        size: ResponsiveValues.iconSizeL(context),
+                        color: isOffline ? AppColors.warning : color,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -349,12 +312,13 @@ class _SupportScreenState extends State<SupportScreen>
                         const SizedBox(height: 4),
                         Text(
                           value,
-                          style: AppTextStyles.bodyMedium(context)
-                              .copyWith(fontWeight: FontWeight.w500),
+                          style: AppTextStyles.bodyMedium(
+                            context,
+                          ).copyWith(fontWeight: FontWeight.w500),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        if (canTap && !_isOffline) ...[
+                        if (canTap && !isOffline) ...[
                           const SizedBox(height: 8),
                           Row(
                             children: [
@@ -364,8 +328,9 @@ class _SupportScreenState extends State<SupportScreen>
                                     : type == ContactType.other
                                         ? AppStrings.tapToCopy
                                         : AppStrings.tapToContact,
-                                style: AppTextStyles.caption(context)
-                                    .copyWith(color: color),
+                                style: AppTextStyles.caption(
+                                  context,
+                                ).copyWith(color: color),
                               ),
                               const SizedBox(width: 4),
                               Icon(
@@ -381,7 +346,7 @@ class _SupportScreenState extends State<SupportScreen>
                       ],
                     ),
                   ),
-                  if (canTap && !_isOffline)
+                  if (canTap && !isOffline)
                     Icon(
                       Icons.chevron_right_rounded,
                       size: ResponsiveValues.iconSizeS(context),
@@ -397,22 +362,29 @@ class _SupportScreenState extends State<SupportScreen>
         .animate()
         .fadeIn(duration: AppThemes.animationMedium, delay: (index * 50).ms)
         .slideX(
-            begin: 0.1,
-            end: 0,
-            duration: AppThemes.animationMedium,
-            delay: (index * 50).ms);
+          begin: 0.1,
+          end: 0,
+          duration: AppThemes.animationMedium,
+          delay: (index * 50).ms,
+        );
   }
 
-  Widget _buildQuickActionCard(BuildContext context, String title,
-      String subtitle, IconData icon, VoidCallback onTap, Color color,
-      {int index = 0}) {
+  Widget _buildQuickActionCard(
+    String title,
+    String subtitle,
+    IconData icon,
+    VoidCallback onTap,
+    Color color, {
+    int index = 0,
+  }) {
     return AppCard.glass(
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: _isOffline ? null : onTap,
-          borderRadius:
-              BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
+          onTap: isOffline ? null : onTap,
+          borderRadius: BorderRadius.circular(
+            ResponsiveValues.radiusXLarge(context),
+          ),
           splashColor: color.withValues(alpha: 0.1),
           highlightColor: Colors.transparent,
           child: Container(
@@ -428,24 +400,28 @@ class _SupportScreenState extends State<SupportScreen>
                     gradient: LinearGradient(
                       colors: [
                         color.withValues(alpha: 0.2),
-                        color.withValues(alpha: 0.05)
+                        color.withValues(alpha: 0.05),
                       ],
                     ),
                     borderRadius: BorderRadius.circular(
-                        ResponsiveValues.radiusMedium(context)),
+                      ResponsiveValues.radiusMedium(context),
+                    ),
                     border: Border.all(color: color, width: 1.5),
                   ),
                   child: Center(
-                    child: Icon(icon,
-                        size: ResponsiveValues.iconSizeS(context),
-                        color: _isOffline ? AppColors.warning : color),
+                    child: Icon(
+                      icon,
+                      size: ResponsiveValues.iconSizeS(context),
+                      color: isOffline ? AppColors.warning : color,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   title,
-                  style: AppTextStyles.titleSmall(context)
-                      .copyWith(fontWeight: FontWeight.w600),
+                  style: AppTextStyles.titleSmall(
+                    context,
+                  ).copyWith(fontWeight: FontWeight.w600),
                   textAlign: TextAlign.center,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -453,8 +429,9 @@ class _SupportScreenState extends State<SupportScreen>
                 const SizedBox(height: 2),
                 Text(
                   subtitle,
-                  style: AppTextStyles.caption(context)
-                      .copyWith(color: AppColors.getTextSecondary(context)),
+                  style: AppTextStyles.caption(
+                    context,
+                  ).copyWith(color: AppColors.getTextSecondary(context)),
                   textAlign: TextAlign.center,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -468,14 +445,14 @@ class _SupportScreenState extends State<SupportScreen>
         .animate()
         .fadeIn(duration: AppThemes.animationMedium, delay: (index * 50).ms)
         .scale(
-            begin: const Offset(0.95, 0.95),
-            end: const Offset(1, 1),
-            duration: AppThemes.animationMedium,
-            delay: (index * 50).ms);
+          begin: const Offset(0.95, 0.95),
+          end: const Offset(1, 1),
+          duration: AppThemes.animationMedium,
+          delay: (index * 50).ms,
+        );
   }
 
-  Widget _buildFAQItem(BuildContext context, String question, String answer,
-      {int index = 0}) {
+  Widget _buildFAQItem(String question, String answer, {int index = 0}) {
     return Container(
       margin: EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
       child: AppCard.glass(
@@ -500,19 +477,22 @@ class _SupportScreenState extends State<SupportScreen>
                 gradient: LinearGradient(
                   colors: [
                     AppColors.telegramBlue.withValues(alpha: 0.2),
-                    AppColors.telegramPurple.withValues(alpha: 0.1)
+                    AppColors.telegramPurple.withValues(alpha: 0.1),
                   ],
                 ),
                 shape: BoxShape.circle,
               ),
-              child: Icon(Icons.help_rounded,
-                  size: ResponsiveValues.iconSizeXS(context),
-                  color: AppColors.telegramBlue),
+              child: Icon(
+                Icons.help_rounded,
+                size: ResponsiveValues.iconSizeXS(context),
+                color: AppColors.telegramBlue,
+              ),
             ),
             title: Text(
               question,
-              style: AppTextStyles.titleSmall(context)
-                  .copyWith(fontWeight: FontWeight.w500),
+              style: AppTextStyles.titleSmall(
+                context,
+              ).copyWith(fontWeight: FontWeight.w500),
             ),
             children: [
               Padding(
@@ -520,7 +500,9 @@ class _SupportScreenState extends State<SupportScreen>
                 child: Text(
                   answer,
                   style: AppTextStyles.bodyMedium(context).copyWith(
-                      color: AppColors.getTextSecondary(context), height: 1.6),
+                    color: AppColors.getTextSecondary(context),
+                    height: 1.6,
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
@@ -532,10 +514,11 @@ class _SupportScreenState extends State<SupportScreen>
         .animate()
         .fadeIn(duration: AppThemes.animationMedium, delay: (index * 50).ms)
         .slideY(
-            begin: 0.1,
-            end: 0,
-            duration: AppThemes.animationMedium,
-            delay: (index * 50).ms);
+          begin: 0.1,
+          end: 0,
+          duration: AppThemes.animationMedium,
+          delay: (index * 50).ms,
+        );
   }
 
   Widget _buildSectionHeader(String title) {
@@ -546,13 +529,14 @@ class _SupportScreenState extends State<SupportScreen>
       ),
       child: Text(
         title,
-        style: AppTextStyles.titleLarge(context)
-            .copyWith(fontWeight: FontWeight.w700),
+        style: AppTextStyles.titleLarge(
+          context,
+        ).copyWith(fontWeight: FontWeight.w700),
       ),
     );
   }
 
-  Color _getIconColorForType(ContactType type, BuildContext context) {
+  Color _getIconColorForType(ContactType type) {
     switch (type) {
       case ContactType.phone:
         return AppColors.telegramGreen;
@@ -575,14 +559,13 @@ class _SupportScreenState extends State<SupportScreen>
     }
   }
 
-  Widget _buildContactTab(BuildContext context) {
-    final settingsProvider = context.watch<SettingsProvider>();
-    final contactInfo = settingsProvider.getContactInfoList();
+  Widget _buildContactTab() {
+    final contactInfo = _settingsProvider.getContactInfoList();
 
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
-        if (_isOffline && _pendingCount > 0)
+        if (isOffline && pendingCount > 0)
           SliverToBoxAdapter(
             child: Container(
               margin: EdgeInsets.all(ResponsiveValues.spacingM(context)),
@@ -591,25 +574,30 @@ class _SupportScreenState extends State<SupportScreen>
                 gradient: LinearGradient(
                   colors: [
                     AppColors.info.withValues(alpha: 0.2),
-                    AppColors.info.withValues(alpha: 0.1)
+                    AppColors.info.withValues(alpha: 0.1),
                   ],
                 ),
                 borderRadius: BorderRadius.circular(
-                    ResponsiveValues.radiusMedium(context)),
-                border:
-                    Border.all(color: AppColors.info.withValues(alpha: 0.3)),
+                  ResponsiveValues.radiusMedium(context),
+                ),
+                border: Border.all(
+                  color: AppColors.info.withValues(alpha: 0.3),
+                ),
               ),
               child: Row(
                 children: [
-                  Icon(Icons.schedule_rounded,
-                      color: AppColors.info,
-                      size: ResponsiveValues.iconSizeS(context)),
+                  Icon(
+                    Icons.schedule_rounded,
+                    color: AppColors.info,
+                    size: ResponsiveValues.iconSizeS(context),
+                  ),
                   SizedBox(width: ResponsiveValues.spacingM(context)),
                   Expanded(
                     child: Text(
-                      '$_pendingCount pending action${_pendingCount > 1 ? 's' : ''}',
-                      style: AppTextStyles.bodySmall(context)
-                          .copyWith(color: AppColors.info),
+                      '$pendingCount pending action${pendingCount > 1 ? 's' : ''}',
+                      style: AppTextStyles.bodySmall(
+                        context,
+                      ).copyWith(color: AppColors.info),
                     ),
                   ),
                 ],
@@ -639,13 +627,15 @@ class _SupportScreenState extends State<SupportScreen>
                         Text(
                           AppStrings.noContactInfo,
                           style: AppTextStyles.bodyLarge(context).copyWith(
-                              color: AppColors.getTextSecondary(context)),
+                            color: AppColors.getTextSecondary(context),
+                          ),
                         ),
                         const SizedBox(height: 12),
                         Text(
                           AppStrings.contactMethodsWillAppear,
                           style: AppTextStyles.bodySmall(context).copyWith(
-                              color: AppColors.getTextSecondary(context)),
+                            color: AppColors.getTextSecondary(context),
+                          ),
                           textAlign: TextAlign.center,
                         ),
                       ],
@@ -653,17 +643,18 @@ class _SupportScreenState extends State<SupportScreen>
                   ),
                 )
               else
-                ...contactInfo.asMap().entries.map((entry) => _buildContactCard(
-                      context,
-                      entry.value.title,
-                      entry.value.value,
-                      entry.value.icon,
-                      entry.value.type,
-                      index: entry.key,
-                    )),
+                ...contactInfo.asMap().entries.map(
+                      (entry) => _buildContactCard(
+                        entry.value.title,
+                        entry.value.value,
+                        entry.value.icon,
+                        entry.value.type,
+                        index: entry.key,
+                      ),
+                    ),
               const SizedBox(height: 24),
               _buildSectionHeader(AppStrings.responseTime),
-              _buildResponseTimeCard(context),
+              _buildResponseTimeCard(),
               const SizedBox(height: 32),
             ]),
           ),
@@ -672,13 +663,13 @@ class _SupportScreenState extends State<SupportScreen>
     );
   }
 
-  Widget _buildFAQTab(BuildContext context) {
+  Widget _buildFAQTab() {
     const faqs = AppStrings.faqd;
 
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
-        if (_isOffline && _pendingCount > 0)
+        if (isOffline && pendingCount > 0)
           SliverToBoxAdapter(
             child: Container(
               margin: EdgeInsets.all(ResponsiveValues.spacingM(context)),
@@ -687,25 +678,30 @@ class _SupportScreenState extends State<SupportScreen>
                 gradient: LinearGradient(
                   colors: [
                     AppColors.info.withValues(alpha: 0.2),
-                    AppColors.info.withValues(alpha: 0.1)
+                    AppColors.info.withValues(alpha: 0.1),
                   ],
                 ),
                 borderRadius: BorderRadius.circular(
-                    ResponsiveValues.radiusMedium(context)),
-                border:
-                    Border.all(color: AppColors.info.withValues(alpha: 0.3)),
+                  ResponsiveValues.radiusMedium(context),
+                ),
+                border: Border.all(
+                  color: AppColors.info.withValues(alpha: 0.3),
+                ),
               ),
               child: Row(
                 children: [
-                  Icon(Icons.schedule_rounded,
-                      color: AppColors.info,
-                      size: ResponsiveValues.iconSizeS(context)),
+                  Icon(
+                    Icons.schedule_rounded,
+                    color: AppColors.info,
+                    size: ResponsiveValues.iconSizeS(context),
+                  ),
                   SizedBox(width: ResponsiveValues.spacingM(context)),
                   Expanded(
                     child: Text(
-                      '$_pendingCount pending action${_pendingCount > 1 ? 's' : ''}',
-                      style: AppTextStyles.bodySmall(context)
-                          .copyWith(color: AppColors.info),
+                      '$pendingCount pending action${pendingCount > 1 ? 's' : ''}',
+                      style: AppTextStyles.bodySmall(
+                        context,
+                      ).copyWith(color: AppColors.info),
                     ),
                   ),
                 ],
@@ -720,9 +716,13 @@ class _SupportScreenState extends State<SupportScreen>
           sliver: SliverList(
             delegate: SliverChildListDelegate([
               _buildSectionHeader(AppStrings.frequentlyAskedQuestions),
-              ...faqs.asMap().entries.map((entry) => _buildFAQItem(
-                  context, entry.value['question']!, entry.value['answer']!,
-                  index: entry.key)),
+              ...faqs.asMap().entries.map(
+                    (entry) => _buildFAQItem(
+                      entry.value['question']!,
+                      entry.value['answer']!,
+                      index: entry.key,
+                    ),
+                  ),
               const SizedBox(height: 24),
               _buildSectionHeader(AppStrings.stillNeedHelp),
               AppCard.glass(
@@ -730,20 +730,24 @@ class _SupportScreenState extends State<SupportScreen>
                   padding: ResponsiveValues.cardPadding(context),
                   child: Column(
                     children: [
-                      Icon(Icons.support_agent_rounded,
-                          size: ResponsiveValues.iconSizeXXXXL(context),
-                          color: AppColors.telegramBlue),
+                      Icon(
+                        Icons.support_agent_rounded,
+                        size: ResponsiveValues.iconSizeXXXXL(context),
+                        color: AppColors.telegramBlue,
+                      ),
                       const SizedBox(height: 16),
                       Text(
                         AppStrings.contactUsDirectly,
-                        style: AppTextStyles.titleMedium(context)
-                            .copyWith(fontWeight: FontWeight.w600),
+                        style: AppTextStyles.titleMedium(
+                          context,
+                        ).copyWith(fontWeight: FontWeight.w600),
                       ),
                       const SizedBox(height: 8),
                       Text(
                         AppStrings.ifQuestionNotAnswered,
-                        style: AppTextStyles.bodyMedium(context).copyWith(
-                            color: AppColors.getTextSecondary(context)),
+                        style: AppTextStyles.bodyMedium(
+                          context,
+                        ).copyWith(color: AppColors.getTextSecondary(context)),
                         textAlign: TextAlign.center,
                       ),
                     ],
@@ -758,11 +762,11 @@ class _SupportScreenState extends State<SupportScreen>
     );
   }
 
-  Widget _buildActionsTab(BuildContext context) {
+  Widget _buildActionsTab() {
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
-        if (_isOffline && _pendingCount > 0)
+        if (isOffline && pendingCount > 0)
           SliverToBoxAdapter(
             child: Container(
               margin: EdgeInsets.all(ResponsiveValues.spacingM(context)),
@@ -771,25 +775,30 @@ class _SupportScreenState extends State<SupportScreen>
                 gradient: LinearGradient(
                   colors: [
                     AppColors.info.withValues(alpha: 0.2),
-                    AppColors.info.withValues(alpha: 0.1)
+                    AppColors.info.withValues(alpha: 0.1),
                   ],
                 ),
                 borderRadius: BorderRadius.circular(
-                    ResponsiveValues.radiusMedium(context)),
-                border:
-                    Border.all(color: AppColors.info.withValues(alpha: 0.3)),
+                  ResponsiveValues.radiusMedium(context),
+                ),
+                border: Border.all(
+                  color: AppColors.info.withValues(alpha: 0.3),
+                ),
               ),
               child: Row(
                 children: [
-                  Icon(Icons.schedule_rounded,
-                      color: AppColors.info,
-                      size: ResponsiveValues.iconSizeS(context)),
+                  Icon(
+                    Icons.schedule_rounded,
+                    color: AppColors.info,
+                    size: ResponsiveValues.iconSizeS(context),
+                  ),
                   SizedBox(width: ResponsiveValues.spacingM(context)),
                   Expanded(
                     child: Text(
-                      '$_pendingCount pending action${_pendingCount > 1 ? 's' : ''}',
-                      style: AppTextStyles.bodySmall(context)
-                          .copyWith(color: AppColors.info),
+                      '$pendingCount pending action${pendingCount > 1 ? 's' : ''}',
+                      style: AppTextStyles.bodySmall(
+                        context,
+                      ).copyWith(color: AppColors.info),
                     ),
                   ),
                 ],
@@ -804,13 +813,13 @@ class _SupportScreenState extends State<SupportScreen>
           sliver: SliverList(
             delegate: SliverChildListDelegate([
               _buildSectionHeader(AppStrings.quickActions),
-              _buildQuickActionGrid(context),
+              _buildQuickActionGrid(),
               const SizedBox(height: 24),
               _buildSectionHeader(AppStrings.supportHours),
-              _buildSupportHoursCard(context),
+              _buildSupportHoursCard(),
               const SizedBox(height: 24),
               _buildSectionHeader(AppStrings.responseTime),
-              _buildResponseTimeCard(context),
+              _buildResponseTimeCard(),
               const SizedBox(height: 32),
             ]),
           ),
@@ -819,7 +828,7 @@ class _SupportScreenState extends State<SupportScreen>
     );
   }
 
-  Widget _buildQuickActionGrid(BuildContext context) {
+  Widget _buildQuickActionGrid() {
     return GridView.count(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -828,16 +837,16 @@ class _SupportScreenState extends State<SupportScreen>
       mainAxisSpacing: ResponsiveValues.gridRunSpacing(context),
       children: [
         _buildQuickActionCard(
-          context,
           AppStrings.chatWithUs,
           AppStrings.startLiveChat,
           Icons.chat_rounded,
-          () => SnackbarService()
-              .showInfo(context, AppStrings.liveChatComingSoon),
+          () => SnackbarService().showInfo(
+            context,
+            AppStrings.liveChatComingSoon,
+          ),
           AppColors.telegramGreen,
         ),
         _buildQuickActionCard(
-          context,
           AppStrings.faq,
           AppStrings.frequentlyAskedQuestions,
           Icons.help_rounded,
@@ -849,7 +858,7 @@ class _SupportScreenState extends State<SupportScreen>
     );
   }
 
-  Widget _buildResponseTimeCard(BuildContext context) {
+  Widget _buildResponseTimeCard() {
     return AppCard.glass(
       child: Padding(
         padding: ResponsiveValues.cardPadding(context),
@@ -861,9 +870,13 @@ class _SupportScreenState extends State<SupportScreen>
                 return Transform.scale(
                   scale: 1 + _pulseAnimationController.value * 0.05,
                   child: badges.Badge(
-                    badgeContent: Text(AppStrings.hours24,
-                        style: AppTextStyles.caption(context).copyWith(
-                            color: Colors.white, fontWeight: FontWeight.w600)),
+                    badgeContent: Text(
+                      AppStrings.hours24,
+                      style: AppTextStyles.caption(context).copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                     badgeStyle: badges.BadgeStyle(
                       badgeColor: AppColors.telegramGreen,
                       padding: EdgeInsets.symmetric(
@@ -871,9 +884,11 @@ class _SupportScreenState extends State<SupportScreen>
                         vertical: ResponsiveValues.spacingXS(context),
                       ),
                     ),
-                    child: Icon(Icons.timer_rounded,
-                        size: ResponsiveValues.iconSizeXXXL(context),
-                        color: AppColors.telegramGreen),
+                    child: Icon(
+                      Icons.timer_rounded,
+                      size: ResponsiveValues.iconSizeXXXL(context),
+                      color: AppColors.telegramGreen,
+                    ),
                   ),
                 );
               },
@@ -881,14 +896,16 @@ class _SupportScreenState extends State<SupportScreen>
             const SizedBox(height: 16),
             Text(
               AppStrings.quickResponse,
-              style: AppTextStyles.titleMedium(context)
-                  .copyWith(fontWeight: FontWeight.w600),
+              style: AppTextStyles.titleMedium(
+                context,
+              ).copyWith(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 8),
             Text(
               AppStrings.respondWithin24Hours,
-              style: AppTextStyles.bodyMedium(context)
-                  .copyWith(color: AppColors.getTextSecondary(context)),
+              style: AppTextStyles.bodyMedium(
+                context,
+              ).copyWith(color: AppColors.getTextSecondary(context)),
               textAlign: TextAlign.center,
             ),
           ],
@@ -897,9 +914,8 @@ class _SupportScreenState extends State<SupportScreen>
     ).animate().fadeIn(duration: AppThemes.animationMedium);
   }
 
-  Widget _buildSupportHoursCard(BuildContext context) {
-    final settingsProvider = context.read<SettingsProvider>();
-    final hours = settingsProvider.getOfficeHours();
+  Widget _buildSupportHoursCard() {
+    final hours = _settingsProvider.getOfficeHours();
 
     return AppCard.glass(
       child: Padding(
@@ -909,22 +925,26 @@ class _SupportScreenState extends State<SupportScreen>
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.access_time_rounded,
-                    color: AppColors.telegramBlue,
-                    size: ResponsiveValues.iconSizeS(context)),
+                Icon(
+                  Icons.access_time_rounded,
+                  color: AppColors.telegramBlue,
+                  size: ResponsiveValues.iconSizeS(context),
+                ),
                 const SizedBox(width: 8),
                 Text(
                   AppStrings.supportHours,
-                  style: AppTextStyles.titleSmall(context)
-                      .copyWith(fontWeight: FontWeight.w600),
+                  style: AppTextStyles.titleSmall(
+                    context,
+                  ).copyWith(fontWeight: FontWeight.w600),
                 ),
               ],
             ),
             const SizedBox(height: 16),
             Text(
               hours,
-              style: AppTextStyles.bodyMedium(context)
-                  .copyWith(color: AppColors.getTextSecondary(context)),
+              style: AppTextStyles.bodyMedium(
+                context,
+              ).copyWith(color: AppColors.getTextSecondary(context)),
               textAlign: TextAlign.center,
             ),
           ],
@@ -933,14 +953,15 @@ class _SupportScreenState extends State<SupportScreen>
     ).animate().fadeIn(duration: AppThemes.animationMedium);
   }
 
-  Widget _buildHeroSection(BuildContext context) {
+  Widget _buildHeroSection() {
     return AppCard.glass(
       child: Container(
         padding: ResponsiveValues.dialogPadding(context),
         decoration: BoxDecoration(
           gradient: const LinearGradient(colors: AppColors.telegramGradient),
-          borderRadius:
-              BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
+          borderRadius: BorderRadius.circular(
+            ResponsiveValues.radiusXLarge(context),
+          ),
         ),
         child: Row(
           children: [
@@ -948,12 +969,16 @@ class _SupportScreenState extends State<SupportScreen>
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  shape: BoxShape.circle),
+                color: Colors.white.withValues(alpha: 0.2),
+                shape: BoxShape.circle,
+              ),
               child: Center(
-                  child: Icon(Icons.support_agent_rounded,
-                      color: Colors.white,
-                      size: ResponsiveValues.iconSizeL(context))),
+                child: Icon(
+                  Icons.support_agent_rounded,
+                  color: Colors.white,
+                  size: ResponsiveValues.iconSizeL(context),
+                ),
+              ),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -963,13 +988,16 @@ class _SupportScreenState extends State<SupportScreen>
                   Text(
                     AppStrings.weAreHereToHelp,
                     style: AppTextStyles.titleLarge(context).copyWith(
-                        color: Colors.white, fontWeight: FontWeight.w700),
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     AppStrings.getHelpWith,
-                    style: AppTextStyles.bodyMedium(context)
-                        .copyWith(color: Colors.white.withValues(alpha: 0.9)),
+                    style: AppTextStyles.bodyMedium(
+                      context,
+                    ).copyWith(color: Colors.white.withValues(alpha: 0.9)),
                   ),
                 ],
               ),
@@ -980,235 +1008,64 @@ class _SupportScreenState extends State<SupportScreen>
     );
   }
 
-  Widget _buildSkeletonLoader() {
-    return Scaffold(
-      backgroundColor: AppColors.getBackground(context),
-      body: CustomScrollView(
-        physics: const NeverScrollableScrollPhysics(),
-        slivers: [
-          SliverToBoxAdapter(
-            child: CustomAppBar(
-              title: AppStrings.support,
-              subtitle: AppStrings.loading,
-              leading: AppButton.icon(
-                  icon: Icons.arrow_back_rounded,
-                  onPressed: () => GoRouter.of(context).pop()),
-              showOfflineIndicator: _isOffline,
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: ResponsiveValues.spacingL(context),
-                vertical: ResponsiveValues.spacingL(context),
-              ),
-              child: AppCard.glass(
-                child: Container(
-                  height: 120,
-                  padding: ResponsiveValues.cardPadding(context),
-                  child: const Row(
-                    children: [
-                      AppShimmer(
-                          type: ShimmerType.circle,
-                          customWidth: 44,
-                          customHeight: 44),
-                      SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            AppShimmer(
-                                type: ShimmerType.textLine, customWidth: 150),
-                            SizedBox(height: 8),
-                            AppShimmer(
-                                type: ShimmerType.textLine, customWidth: 250),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.symmetric(
-                  horizontal: ResponsiveValues.spacingL(context)),
-              child: const AppShimmer(
-                  type: ShimmerType.rectangle, customHeight: 48),
-            ),
-          ),
-          SliverPadding(
-            padding: EdgeInsets.symmetric(
-              horizontal: ResponsiveValues.spacingL(context),
-              vertical: ResponsiveValues.spacingL(context),
-            ),
-            sliver: SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) => Padding(
-                  padding: EdgeInsets.only(
-                      bottom: ResponsiveValues.spacingL(context)),
-                  child:
-                      AppShimmer(type: ShimmerType.contactCard, index: index),
-                ),
-                childCount: 3,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  @override
+  Widget buildContent(BuildContext context) {
+    if (_hasError) {
+      return Center(
+        child: buildErrorWidget(
+          _errorMessage ?? AppStrings.unableToLoadSupportInfo,
+          onRetry: () => _refreshTab(_tabController.index),
+        ),
+      );
+    }
 
-  Widget _buildMobileLayout(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.getBackground(context),
-      appBar: CustomAppBar(
-        title: AppStrings.support,
-        subtitle: _isRefreshing
-            ? AppStrings.refreshing
-            : (_isOffline ? AppStrings.offlineMode : AppStrings.getHelp),
-        leading: AppButton.icon(
-            icon: Icons.arrow_back_rounded,
-            onPressed: () => GoRouter.of(context).pop()),
-        showOfflineIndicator: _isOffline,
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: ResponsiveValues.spacingL(context),
-              vertical: ResponsiveValues.spacingM(context),
-            ),
-            child: _buildHeroSection(context),
+    return Column(
+      children: [
+        Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: ResponsiveValues.spacingL(context),
+            vertical: ResponsiveValues.spacingM(context),
           ),
-          TabBar(
-            controller: _tabController,
-            indicatorColor: AppColors.telegramBlue,
-            indicatorWeight: 3,
-            labelColor: AppColors.telegramBlue,
-            unselectedLabelColor: AppColors.getTextSecondary(context),
-            labelStyle: AppTextStyles.labelMedium(context),
-            unselectedLabelStyle: AppTextStyles.labelMedium(context),
-            tabs: [
-              const Tab(text: AppStrings.contact),
-              const Tab(text: AppStrings.faq),
-              const Tab(text: AppStrings.actions)
-            ],
-          ),
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: () => _manualRefresh(_tabController.index),
-              color: AppColors.telegramBlue,
-              backgroundColor: AppColors.getSurface(context),
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  _buildContactTab(context),
-                  _buildFAQTab(context),
-                  _buildActionsTab(context)
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDesktopLayout(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.getBackground(context),
-      appBar: CustomAppBar(
-        title: AppStrings.support,
-        subtitle: _isRefreshing
-            ? AppStrings.refreshing
-            : (_isOffline ? AppStrings.offlineMode : AppStrings.getHelp),
-        leading: AppButton.icon(
-            icon: Icons.arrow_back_rounded,
-            onPressed: () => GoRouter.of(context).pop()),
-        showOfflineIndicator: _isOffline,
-      ),
-      body: RefreshIndicator(
-        onRefresh: () => _manualRefresh(_tabController.index),
-        color: AppColors.telegramBlue,
-        backgroundColor: AppColors.getSurface(context),
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          child: Padding(
-            padding: EdgeInsets.all(ResponsiveValues.spacingXXL(context)),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          child: _buildHeroSection(),
+        ),
+        TabBar(
+          controller: _tabController,
+          indicatorColor: AppColors.telegramBlue,
+          indicatorWeight: 3,
+          labelColor: AppColors.telegramBlue,
+          unselectedLabelColor: AppColors.getTextSecondary(context),
+          labelStyle: AppTextStyles.labelMedium(context),
+          unselectedLabelStyle: AppTextStyles.labelMedium(context),
+          tabs: const [
+            Tab(text: AppStrings.contact),
+            Tab(text: AppStrings.faq),
+            Tab(text: AppStrings.actions),
+          ],
+        ),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: () => _refreshTab(_tabController.index),
+            color: AppColors.telegramBlue,
+            backgroundColor: AppColors.getSurface(context),
+            child: TabBarView(
+              controller: _tabController,
               children: [
-                _buildHeroSection(context),
-                const SizedBox(height: 32),
-                TabBar(
-                  controller: _tabController,
-                  indicatorColor: AppColors.telegramBlue,
-                  indicatorWeight: 3,
-                  labelColor: AppColors.telegramBlue,
-                  unselectedLabelColor: AppColors.getTextSecondary(context),
-                  labelStyle: AppTextStyles.labelMedium(context),
-                  unselectedLabelStyle: AppTextStyles.labelMedium(context),
-                  tabs: [
-                    const Tab(text: AppStrings.contact),
-                    const Tab(text: AppStrings.faq),
-                    const Tab(text: AppStrings.actions)
-                  ],
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  height: 600,
-                  child: TabBarView(
-                    controller: _tabController,
-                    children: [
-                      _buildContactTab(context),
-                      _buildFAQTab(context),
-                      _buildActionsTab(context)
-                    ],
-                  ),
-                ),
+                _buildContactTab(),
+                _buildFAQTab(),
+                _buildActionsTab(),
               ],
             ),
           ),
         ),
-      ),
+      ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading && !_isRefreshing && !_hasError) {
-      return _buildSkeletonLoader();
-    }
-
-    if (_hasError) {
-      return Scaffold(
-        backgroundColor: AppColors.getBackground(context),
-        appBar: CustomAppBar(
-          title: AppStrings.support,
-          subtitle: AppStrings.errorLoading,
-          leading: AppButton.icon(
-              icon: Icons.arrow_back_rounded,
-              onPressed: () => GoRouter.of(context).pop()),
-          showOfflineIndicator: _isOffline,
-        ),
-        body: Center(
-          child: AppEmptyState.error(
-            title: AppStrings.failedToLoad,
-            message: _errorMessage ?? AppStrings.unableToLoadSupportInfo,
-            onRetry: _loadContactSettings,
-          ),
-        ),
-      );
-    }
-
-    return ResponsiveLayout(
-      mobile: _buildMobileLayout(context),
-      tablet: _buildDesktopLayout(context),
-      desktop: _buildDesktopLayout(context),
+    return buildScreen(
+      content: buildContent(context),
+      showRefreshIndicator: false,
     );
   }
 }

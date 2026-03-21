@@ -1,5 +1,5 @@
 // lib/screens/main/main_navigation.dart
-// FIXED - Updated for Profile Screen and proper state handling
+// FIXED - Removed duplicate category loading
 
 import 'dart:async';
 import 'dart:ui';
@@ -14,7 +14,6 @@ import '../../utils/helpers.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/subscription_provider.dart';
-import '../../providers/category_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../services/connectivity_service.dart';
 import '../../themes/app_colors.dart';
@@ -122,6 +121,7 @@ class _MainNavigationState extends State<MainNavigation>
     if (mounted) setState(() {});
   }
 
+  // ✅ FIXED: Removed category loading - only subscriptions and user profile
   Future<void> _initializeUserDataInBackground() async {
     if (_isInitializing || _dataLoadedInBackground) return;
 
@@ -131,8 +131,6 @@ class _MainNavigationState extends State<MainNavigation>
     final userProvider = Provider.of<UserProvider>(context, listen: false);
     final subscriptionProvider =
         Provider.of<SubscriptionProvider>(context, listen: false);
-    final categoryProvider =
-        Provider.of<CategoryProvider>(context, listen: false);
     final notificationProvider =
         Provider.of<NotificationProvider>(context, listen: false);
 
@@ -142,11 +140,9 @@ class _MainNavigationState extends State<MainNavigation>
         await userProvider.loadUserProfile();
         if (!mounted) return;
 
-        // Load other data in parallel
-        await Future.wait([
-          subscriptionProvider.loadSubscriptions(),
-          categoryProvider.loadCategories()
-        ]);
+        // ✅ FIXED: ONLY load subscriptions, NOT categories
+        // Categories are loaded by HomeScreen when needed
+        await subscriptionProvider.loadSubscriptions();
 
         // Load notifications in background
         unawaited(notificationProvider.loadNotifications());
@@ -198,7 +194,6 @@ class _MainNavigationState extends State<MainNavigation>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && !_isOffline) {
-      // Refresh data when app returns to foreground
       _initializeUserDataInBackground();
     }
   }
@@ -981,17 +976,14 @@ class _MainNavigationState extends State<MainNavigation>
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
 
-    // Update current index when route changes
     WidgetsBinding.instance
         .addPostFrameCallback((_) => _updateCurrentIndexFromRoute());
 
-    // Check session periodically
     if (authProvider.isAuthenticated && authProvider.isInitialized) {
       WidgetsBinding.instance
           .addPostFrameCallback((_) => authProvider.checkSession());
     }
 
-    // Choose layout based on screen size
     if (ScreenSize.isMobile(context)) {
       return _buildMobileNavigation();
     } else if (ScreenSize.isTablet(context)) {

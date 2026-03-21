@@ -23,8 +23,10 @@ class SettingsProvider extends ChangeNotifier
         BaseProvider<SettingsProvider>,
         OfflineAwareProvider<SettingsProvider>,
         BackgroundRefreshMixin<SettingsProvider> {
+  final ConnectivityService _connectivityService;
+
   @override
-  final ConnectivityService connectivityService;
+  ConnectivityService get connectivityService => _connectivityService;
 
   final ApiService apiService;
   final DeviceService deviceService;
@@ -63,9 +65,10 @@ class SettingsProvider extends ChangeNotifier
   SettingsProvider({
     required this.apiService,
     required this.deviceService,
-    required this.connectivityService,
+    required ConnectivityService connectivityService,
     required this.hiveService,
-  }) : _settingsUpdateController = StreamController<List<Setting>>.broadcast() {
+  })  : _connectivityService = connectivityService,
+        _settingsUpdateController = StreamController<List<Setting>>.broadcast() {
     log('SettingsProvider constructor called');
     initializeOfflineAware(
       connectivity: connectivityService,
@@ -566,19 +569,37 @@ class SettingsProvider extends ChangeNotifier
     // If we have no settings at all, load them first (without force)
     if (_allSettings.isEmpty) {
       _isLoadingContactSettings = true;
-      await getAllSettings();
-      _isLoadingContactSettings = false;
+      try {
+        await getAllSettings(forceRefresh: shouldForce);
+      } finally {
+        _isLoadingContactSettings = false;
+      }
+
+      if (_settingsByCategory.containsKey('contact') &&
+          _settingsByCategory['contact']!.isNotEmpty) {
+        return;
+      }
+    }
+
+    if (isOffline) {
+      log('Offline, skipping contact settings API fetch');
       return;
     }
 
-    // If we're forcing refresh, do it in background (no spinner)
-    if (shouldForce && !isOffline) {
+    if (shouldForce) {
       _isLoadingContactSettings = true;
       unawaited(_refreshContactSettingsInBackground());
-      // Don't set loading to false immediately - let background task run
       Future.delayed(const Duration(milliseconds: 100), () {
         _isLoadingContactSettings = false;
       });
+      return;
+    }
+
+    _isLoadingContactSettings = true;
+    try {
+      await loadSettingsByCategory('contact');
+    } finally {
+      _isLoadingContactSettings = false;
     }
   }
 

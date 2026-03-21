@@ -1,5 +1,5 @@
 // lib/screens/exam/exam_screen.dart
-// COMPLETE PRODUCTION-READY FILE - FIXED PENDING COUNT & QUEUE ACTIONS
+// COMPLETE FINAL VERSION - PROPER SHIMMER & LOADING
 
 import 'dart:async';
 import 'package:collection/collection.dart';
@@ -14,14 +14,13 @@ import '../../providers/auth_provider.dart';
 import '../../providers/exam_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../providers/exam_question_provider.dart';
-import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
 import '../../services/offline_queue_manager.dart';
+import '../../widgets/common/base_screen_mixin.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_dialog.dart';
 import '../../widgets/common/app_shimmer.dart';
-import '../../widgets/common/app_empty_state.dart';
 import '../../widgets/exam/question_widget.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
@@ -30,7 +29,6 @@ import '../../utils/helpers.dart';
 import '../../utils/api_response.dart';
 import '../../utils/constants.dart';
 
-/// PRODUCTION-READY EXAM SCREEN
 class ExamScreen extends StatefulWidget {
   final int examId;
   final Exam? exam;
@@ -47,7 +45,8 @@ class ExamScreen extends StatefulWidget {
   State<ExamScreen> createState() => _ExamScreenState();
 }
 
-class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
+class _ExamScreenState extends State<ExamScreen>
+    with BaseScreenMixin<ExamScreen>, TickerProviderStateMixin {
   late Exam _exam;
   int _currentQuestionIndex = 0;
   Map<int, String?> _answers = {};
@@ -59,8 +58,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
   bool _hasAccess = false;
   bool _checkingAccess = true;
   bool _hasLoadedQuestions = false;
-  bool _isOffline = false;
-  int _pendingCount = 0;
+  bool _hasLoadedOnce = false;
 
   ExamResult? _submittedResult;
   final Map<int, Map<String, dynamic>> _answerDetails = {};
@@ -68,19 +66,59 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
   bool _hasReachedMaxAttempts = false;
 
   String? _currentUserId;
-  StreamSubscription? _connectivitySubscription;
+
+  late ExamProvider _examProvider;
+  late ExamQuestionProvider _questionProvider;
+  late SubscriptionProvider _subscriptionProvider;
+  late AuthProvider _authProvider;
+  late OfflineQueueManager _queueManager;
+
+  @override
+  String get screenTitle => _exam.title;
+
+  @override
+  String? get screenSubtitle => null;
+
+  // ✅ Only show loading if no cached data AND loading
+  @override
+  bool get isLoading =>
+      _checkingAccess || (_questionProvider.isLoading && !_hasLoadedQuestions);
+
+  @override
+  bool get hasCachedData => _hasLoadedQuestions;
+
+  @override
+  dynamic get errorMessage => null;
+
+  // ✅ Shimmer type for exam screen
+  @override
+  ShimmerType get shimmerType => ShimmerType.rectangle;
+
+  @override
+  int get shimmerItemCount => 5;
+
+  @override
+  Widget? get appBarLeading => IconButton(
+        icon: Icon(Icons.arrow_back_rounded,
+            color: AppColors.getTextPrimary(context)),
+        onPressed: () => context.pop(),
+      );
 
   @override
   void initState() {
     super.initState();
     _initializeExam();
-    _setupConnectivityListener();
-    _updatePendingCount();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _examProvider = Provider.of<ExamProvider>(context);
+    _questionProvider = Provider.of<ExamQuestionProvider>(context);
+    _subscriptionProvider = Provider.of<SubscriptionProvider>(context);
+    _authProvider = Provider.of<AuthProvider>(context);
+    _queueManager = Provider.of<OfflineQueueManager>(context);
+
     _getCurrentUserId();
 
     if (widget.exam == null) {
@@ -91,32 +129,33 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
         _checkExamAccess();
       }
     }
-  }
 
-  void _setupConnectivityListener() {
-    final connectivityService = context.read<ConnectivityService>();
-    _connectivitySubscription =
-        connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (mounted) {
-        setState(() {
-          _isOffline = !isOnline;
-          final queueManager = context.read<OfflineQueueManager>();
-          _pendingCount = queueManager.pendingCount;
-        });
-      }
-    });
-  }
-
-  Future<void> _updatePendingCount() async {
-    final queueManager = context.read<OfflineQueueManager>();
-    if (mounted) {
-      setState(() => _pendingCount = queueManager.pendingCount);
+    // Mark as loaded if we have data
+    if (_hasLoadedQuestions) {
+      _hasLoadedOnce = true;
     }
   }
 
+  @override
+  void dispose() {
+    _stopTimer();
+    if (!_hasReachedMaxAttempts && _currentUserId != null) {
+      Future.microtask(() async {
+        try {
+          await _saveProgressToCache();
+        } catch (e) {}
+      });
+    }
+    super.dispose();
+  }
+
+  @override
+  Future<void> onRefresh() async {
+    // No pull-to-refresh needed for exam screen
+  }
+
   Future<void> _getCurrentUserId() async {
-    final authProvider = context.read<AuthProvider>();
-    _currentUserId = authProvider.currentUser?.id.toString();
+    _currentUserId = _authProvider.currentUser?.id.toString();
   }
 
   void _initializeExam() {
@@ -146,20 +185,20 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     if (_currentUserId == null) return;
 
     try {
-      final questionProvider = context.read<ExamQuestionProvider>();
-      final progressData = await questionProvider.deviceService
+      final progressData = await _questionProvider.deviceService
           .getCacheItem<Map<String, dynamic>>(
         'exam_progress_${_exam.id}_$_currentUserId',
         isUserSpecific: true,
       );
 
-      if (progressData != null && mounted && !_hasReachedMaxAttempts) {
+      if (progressData != null && isMounted && !_hasReachedMaxAttempts) {
         setState(() {
           _currentQuestionIndex = progressData['current_index'] ?? 0;
           final answers = progressData['answers'] ?? {};
           if (answers is Map) {
             _answers = Map<int, String?>.from(answers.map(
-                (k, v) => MapEntry(int.parse(k.toString()), v?.toString())));
+              (k, v) => MapEntry(int.parse(k.toString()), v?.toString()),
+            ));
           }
           final remainingSeconds =
               progressData['remaining_time'] ?? _remainingTime.inSeconds;
@@ -171,24 +210,8 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     }
   }
 
-  Future<void> _checkConnectivity() async {
-    final connectivityService = context.read<ConnectivityService>();
-    await connectivityService.checkConnectivity();
-    setState(() {
-      _isOffline = !connectivityService.isOnline;
-      final queueManager = context.read<OfflineQueueManager>();
-      _pendingCount = queueManager.pendingCount;
-    });
-  }
-
   Future<void> _checkExamAccess() async {
-    await _checkConnectivity();
-    if (!mounted) return;
-
-    final subscriptionProvider = context.read<SubscriptionProvider>();
-    final authProvider = context.read<AuthProvider>();
-
-    if (!authProvider.isAuthenticated) {
+    if (!_authProvider.isAuthenticated) {
       setState(() {
         _checkingAccess = false;
         _hasAccess = false;
@@ -198,20 +221,19 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
 
     try {
       if (_exam.requiresPayment) {
-        if (!_isOffline) {
-          _hasAccess = await subscriptionProvider
+        if (!isOffline) {
+          _hasAccess = await _subscriptionProvider
               .checkHasActiveSubscriptionForCategory(_exam.categoryId);
         } else {
-          _hasAccess = subscriptionProvider
+          _hasAccess = _subscriptionProvider
               .hasActiveSubscriptionForCategory(_exam.categoryId);
         }
       } else {
         _hasAccess = true;
       }
 
-      final examProvider = context.read<ExamProvider>();
       final ExamResult? existingResult =
-          examProvider.myExamResults.firstWhereOrNull(
+          _examProvider.myExamResults.firstWhereOrNull(
         (result) => result.examId == _exam.id && result.status == 'completed',
       );
 
@@ -228,31 +250,29 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       }
     } catch (e) {
       _hasAccess = false;
-      _isOffline = true;
     }
 
-    if (mounted) {
+    if (isMounted) {
       setState(() => _checkingAccess = false);
       if (_hasAccess && !_hasLoadedQuestions && !_hasReachedMaxAttempts) {
         await _loadExamQuestions();
-        if (!mounted) return;
+        if (!isMounted) return;
         _hasLoadedQuestions = true;
+        _hasLoadedOnce = true;
       }
     }
   }
 
   Future<void> _loadExamFromProvider() async {
-    final examProvider = context.read<ExamProvider>();
-
     try {
       Exam? cachedExam;
       if (widget.courseId != null) {
-        final cachedExams = examProvider.getExamsByCourse(widget.courseId!);
+        final cachedExams = _examProvider.getExamsByCourse(widget.courseId!);
         try {
           cachedExam = cachedExams.firstWhere((e) => e.id == widget.examId);
         } catch (_) {}
       } else {
-        cachedExam = examProvider.getExamById(widget.examId);
+        cachedExam = _examProvider.getExamById(widget.examId);
       }
 
       if (cachedExam != null) {
@@ -261,23 +281,23 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
           _initializeExamSettings();
         });
         await _checkExamAccess();
-        if (!mounted) return;
+        if (!isMounted) return;
       } else {
         if (widget.courseId != null) {
-          await examProvider.loadExamsByCourse(widget.courseId!,
+          await _examProvider.loadExamsByCourse(widget.courseId!,
               forceRefresh: true);
         }
 
-        if (!mounted) return;
+        if (!isMounted) return;
 
-        final loadedExam = examProvider.getExamById(widget.examId);
-        if (loadedExam != null && mounted) {
+        final loadedExam = _examProvider.getExamById(widget.examId);
+        if (loadedExam != null && isMounted) {
           setState(() {
             _exam = loadedExam;
             _initializeExamSettings();
           });
           await _checkExamAccess();
-          if (!mounted) return;
+          if (!isMounted) return;
         } else {
           setState(() {
             _checkingAccess = false;
@@ -289,18 +309,15 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       setState(() {
         _checkingAccess = false;
         _hasAccess = false;
-        _isOffline = true;
       });
     }
   }
 
   Future<void> _loadExamQuestions() async {
-    final provider = context.read<ExamQuestionProvider>();
     try {
-      await provider.loadExamQuestions(_exam.id);
-      if (!mounted) return;
+      await _questionProvider.loadExamQuestions(_exam.id);
     } catch (e) {
-      setState(() => _isOffline = true);
+      // Error handled by provider
     }
   }
 
@@ -311,7 +328,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     _remainingTime = _userTimeLimit ?? Duration(minutes: _exam.duration);
 
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (mounted) {
+      if (isMounted) {
         setState(() {
           if (_remainingTime.inSeconds > 0) {
             _remainingTime = _remainingTime - const Duration(seconds: 1);
@@ -357,7 +374,6 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     if (_hasReachedMaxAttempts || _currentUserId == null) return;
 
     try {
-      final provider = context.read<ExamQuestionProvider>();
       final progressData = {
         'exam_id': _exam.id,
         'current_index': _currentQuestionIndex,
@@ -366,7 +382,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
         'last_saved': DateTime.now().toIso8601String(),
       };
 
-      provider.deviceService.saveCacheItem(
+      _questionProvider.deviceService.saveCacheItem(
         'exam_progress_${_exam.id}_$_currentUserId',
         progressData,
         ttl: const Duration(hours: 24),
@@ -378,16 +394,16 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
   }
 
   void _selectAnswer(String? answer) {
-    if (!mounted || _hasReachedMaxAttempts) return;
+    if (!isMounted || _hasReachedMaxAttempts) return;
 
     setState(() {
-      final provider = context.read<ExamQuestionProvider>();
-      final questions = provider.getQuestionsByExam(_exam.id);
+      final questions = _questionProvider.getQuestionsByExam(_exam.id);
 
       if (_currentQuestionIndex < questions.length) {
         final question = questions[_currentQuestionIndex];
         _answers[question.id] = answer;
-        provider.saveAnswerOffline(_exam.id, question.id, answer ?? '');
+        _questionProvider.saveAnswerOffline(
+            _exam.id, question.id, answer ?? '');
       }
     });
 
@@ -398,8 +414,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     if (_hasReachedMaxAttempts) return;
 
     setState(() {
-      final provider = context.read<ExamQuestionProvider>();
-      final questions = provider.getQuestionsByExam(_exam.id);
+      final questions = _questionProvider.getQuestionsByExam(_exam.id);
       if (_currentQuestionIndex < questions.length - 1) _currentQuestionIndex++;
     });
   }
@@ -413,8 +428,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
   }
 
   bool _validateAllQuestionsAnswered() {
-    final provider = context.read<ExamQuestionProvider>();
-    final questions = provider.getQuestionsByExam(_exam.id);
+    final questions = _questionProvider.getQuestionsByExam(_exam.id);
     for (var question in questions) {
       if (_answers[question.id] == null || _answers[question.id]!.isEmpty) {
         return false;
@@ -431,8 +445,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       return;
     }
 
-    final connectivityService = context.read<ConnectivityService>();
-    if (!connectivityService.isOnline) {
+    if (isOffline) {
       final confirmed = await AppDialog.confirm(
         context: context,
         title: AppStrings.submitExamOffline,
@@ -442,7 +455,6 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
 
       if (confirmed == true) {
         await _queueExamOffline();
-        if (!mounted) return;
       }
       return;
     }
@@ -455,26 +467,23 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     );
 
     if (confirmed == true) await _doSubmitExam();
-    if (!mounted) return;
   }
 
   Future<void> _queueExamOffline() async {
     setState(() => _isSubmitting = true);
 
     try {
-      final provider = context.read<ExamQuestionProvider>();
-      final questions = provider.getQuestionsByExam(_exam.id);
+      final questions = _questionProvider.getQuestionsByExam(_exam.id);
 
       final answerList = questions.map((question) {
         return {
           'question_id': question.id,
-          'selected_option': _answers[question.id] ?? ''
+          'selected_option': _answers[question.id] ?? '',
         };
       }).toList();
 
-      final queueManager = context.read<OfflineQueueManager>();
-      queueManager.addItem(
-        type: AppConstants.queueActionSubmitExam, // ✅ FIXED: Using constant
+      _queueManager.addItem(
+        type: AppConstants.queueActionSubmitExam,
         data: {
           'exam_id': _exam.id,
           'answers': answerList,
@@ -482,7 +491,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
         },
       );
 
-      provider.deviceService.saveCacheItem(
+      _questionProvider.deviceService.saveCacheItem(
         'offline_exam_submission_${_exam.id}_$_currentUserId',
         {
           'exam_id': _exam.id,
@@ -493,14 +502,14 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
         isUserSpecific: true,
       );
 
-      await provider.deviceService.removeCacheItem(
+      await _questionProvider.deviceService.removeCacheItem(
         'exam_progress_${_exam.id}_$_currentUserId',
         isUserSpecific: true,
       );
 
       SnackbarService().showQueued(context, action: AppStrings.examSubmission);
 
-      if (mounted) {
+      if (isMounted) {
         context.pop();
       }
     } catch (e) {
@@ -515,29 +524,29 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
 
     AppDialog.showLoading(context, message: AppStrings.submittingExam);
     await _doSubmitExam();
-    if (!mounted) return;
+    if (!isMounted) return;
     AppDialog.hideLoading(context);
   }
 
   Future<void> _doSubmitExam() async {
-    if (!mounted) return;
+    if (!isMounted) return;
 
     setState(() => _isSubmitting = true);
     _stopTimer();
 
     try {
-      final provider = context.read<ExamQuestionProvider>();
-      final questions = provider.getQuestionsByExam(_exam.id);
+      final questions = _questionProvider.getQuestionsByExam(_exam.id);
 
       final answerList = questions.map((question) {
         return {
           'question_id': question.id,
-          'selected_option': _answers[question.id] ?? ''
+          'selected_option': _answers[question.id] ?? '',
         };
       }).toList();
 
-      final startResponse = await provider.apiService.startExam(_exam.id);
-      if (!mounted) return;
+      final startResponse =
+          await _questionProvider.apiService.startExam(_exam.id);
+      if (!isMounted) return;
 
       int examResultId = 0;
       if (startResponse.data is Map<String, dynamic>) {
@@ -550,9 +559,9 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
         throw ApiError(message: AppStrings.failedToStartExam);
       }
 
-      final submitResponse =
-          await provider.apiService.submitExam(examResultId, answerList);
-      if (!mounted) return;
+      final submitResponse = await _questionProvider.apiService
+          .submitExam(examResultId, answerList);
+      if (!isMounted) return;
 
       if (submitResponse.success) {
         if (submitResponse.data is Map<String, dynamic>) {
@@ -587,17 +596,16 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
         }
 
         if (_currentUserId != null) {
-          await provider.deviceService.removeCacheItem(
+          await _questionProvider.deviceService.removeCacheItem(
             'exam_progress_${_exam.id}_$_currentUserId',
             isUserSpecific: true,
           );
         }
 
-        final examProvider = context.read<ExamProvider>();
-        await examProvider.loadMyExamResults(forceRefresh: true);
-        if (!mounted) return;
+        await _examProvider.loadMyExamResults(forceRefresh: true);
+        if (!isMounted) return;
 
-        if (mounted) {
+        if (isMounted) {
           setState(() {
             _showResults = true;
             _hasReachedMaxAttempts = true;
@@ -610,41 +618,25 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       if (e.isUnauthorized) {
         _handleUnauthorizedError();
       } else {
-        if (mounted) {
+        if (isMounted) {
           SnackbarService().showError(context, e.userFriendlyMessage);
         }
       }
     } catch (e) {
-      if (mounted) {
+      if (isMounted) {
         SnackbarService().showError(context, AppStrings.failedToSubmitExam);
       }
     } finally {
-      if (mounted) setState(() => _isSubmitting = false);
+      if (isMounted) setState(() => _isSubmitting = false);
     }
   }
 
   void _handleUnauthorizedError() {
-    final authProvider = context.read<AuthProvider>();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await authProvider.logout();
-      if (!mounted) return;
-      if (mounted) GoRouter.of(context).go('/auth/login');
+      await _authProvider.logout();
+      if (!isMounted) return;
+      if (isMounted) GoRouter.of(context).go('/auth/login');
     });
-  }
-
-  @override
-  void dispose() {
-    _stopTimer();
-    _connectivitySubscription?.cancel();
-    if (!_hasReachedMaxAttempts && _currentUserId != null) {
-      Future.microtask(() async {
-        try {
-          await _saveProgressToCache();
-          if (!mounted) return;
-        } catch (e) {}
-      });
-    }
-    super.dispose();
   }
 
   String _getTimeLimitDescription() {
@@ -665,9 +657,17 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
         : AppStrings.resultsAvailableAfterExam;
   }
 
-  Widget _buildResultsScreen(BuildContext context) {
-    final provider = context.read<ExamQuestionProvider>();
-    final questions = provider.getQuestionsByExam(_exam.id);
+  String _getTimeString() {
+    final hours = _remainingTime.inHours;
+    final minutes = _remainingTime.inMinutes % 60;
+    final seconds = _remainingTime.inSeconds % 60;
+    return hours > 0
+        ? '${hours}h ${minutes.toString().padLeft(2, '0')}m'
+        : '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  Widget _buildResultsScreen() {
+    final questions = _questionProvider.getQuestionsByExam(_exam.id);
 
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
@@ -676,9 +676,11 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
             style: AppTextStyles.appBarTitle(context)),
         backgroundColor: AppColors.getBackground(context),
         elevation: 0,
-        leading: AppButton.icon(
-            icon: Icons.arrow_back_rounded,
-            onPressed: () => GoRouter.of(context).pop()),
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back_rounded,
+              color: AppColors.getTextPrimary(context)),
+          onPressed: () => GoRouter.of(context).pop(),
+        ),
       ),
       body: SingleChildScrollView(
         padding: ResponsiveValues.screenPadding(context),
@@ -689,16 +691,19 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                 padding: ResponsiveValues.dialogPadding(context),
                 child: Column(
                   children: [
-                    Text(AppStrings.yourScore,
-                        style: AppTextStyles.titleMedium(context)
-                            .copyWith(color: Colors.white)),
+                    Text(
+                      AppStrings.yourScore,
+                      style: AppTextStyles.titleMedium(context)
+                          .copyWith(color: Colors.white),
+                    ),
                     SizedBox(height: ResponsiveValues.spacingM(context)),
                     Text(
                       '${_submittedResult?.score.toStringAsFixed(1) ?? '0'}%',
                       style: AppTextStyles.displayLarge(context).copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -1),
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -1,
+                      ),
                     ),
                     SizedBox(height: ResponsiveValues.spacingS(context)),
                     Container(
@@ -718,7 +723,9 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                             ? AppStrings.passed
                             : AppStrings.failed,
                         style: AppTextStyles.labelLarge(context).copyWith(
-                            color: Colors.white, fontWeight: FontWeight.w700),
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                     SizedBox(height: ResponsiveValues.spacingL(context)),
@@ -726,17 +733,20 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
                         _buildScoreStat(
-                            AppStrings.correct,
-                            '${_submittedResult?.correctAnswers ?? 0}',
-                            AppColors.telegramGreen),
+                          AppStrings.correct,
+                          '${_submittedResult?.correctAnswers ?? 0}',
+                          AppColors.telegramGreen,
+                        ),
                         _buildScoreStat(
-                            AppStrings.total,
-                            '${_submittedResult?.totalQuestions ?? 0}',
-                            Colors.white),
+                          AppStrings.total,
+                          '${_submittedResult?.totalQuestions ?? 0}',
+                          Colors.white,
+                        ),
                         _buildScoreStat(
-                            AppStrings.time,
-                            _formatTime(_submittedResult?.timeTaken ?? 0),
-                            Colors.white70),
+                          AppStrings.time,
+                          _formatTime(_submittedResult?.timeTaken ?? 0),
+                          Colors.white70,
+                        ),
                       ],
                     ),
                   ],
@@ -746,8 +756,10 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
             SizedBox(height: ResponsiveValues.spacingXL(context)),
             Text(
               AppStrings.answerReview,
-              style: AppTextStyles.titleLarge(context)
-                  .copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.5),
+              style: AppTextStyles.titleLarge(context).copyWith(
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.5,
+              ),
             ),
             SizedBox(height: ResponsiveValues.spacingL(context)),
             ...List.generate(questions.length, (index) {
@@ -785,9 +797,10 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                                     : AppColors.redFaded,
                                 shape: BoxShape.circle,
                                 border: Border.all(
-                                    color: isCorrect
-                                        ? AppColors.telegramGreen
-                                        : AppColors.telegramRed),
+                                  color: isCorrect
+                                      ? AppColors.telegramGreen
+                                      : AppColors.telegramRed,
+                                ),
                               ),
                               child: Icon(
                                 isCorrect ? Icons.check_circle : Icons.cancel,
@@ -801,8 +814,10 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                             Expanded(
                               child: Text(
                                 '${AppStrings.question} ${index + 1}',
-                                style: AppTextStyles.titleSmall(context)
-                                    .copyWith(fontWeight: FontWeight.w600),
+                                style:
+                                    AppTextStyles.titleSmall(context).copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
                             Container(
@@ -815,14 +830,16 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                                 borderRadius: BorderRadius.circular(
                                     ResponsiveValues.radiusFull(context)),
                                 border: Border.all(
-                                    color: AppColors.telegramBlue
-                                        .withValues(alpha: 0.3)),
+                                  color: AppColors.telegramBlue
+                                      .withValues(alpha: 0.3),
+                                ),
                               ),
                               child: Text(
                                 '${question.marks} ${question.marks > 1 ? AppStrings.marks : AppStrings.mark}',
                                 style: AppTextStyles.caption(context).copyWith(
-                                    color: AppColors.telegramBlue,
-                                    fontWeight: FontWeight.w600),
+                                  color: AppColors.telegramBlue,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
                           ],
@@ -831,16 +848,24 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                         Text(
                           question.questionText,
                           style: AppTextStyles.bodyLarge(context).copyWith(
-                              fontWeight: FontWeight.w500, height: 1.5),
+                            fontWeight: FontWeight.w500,
+                            height: 1.5,
+                          ),
                         ),
                         SizedBox(height: ResponsiveValues.spacingL(context)),
-                        _buildAnswerRow(AppStrings.yourAnswer,
-                            _getOptionLetter(question, userAnswer), isCorrect),
+                        _buildAnswerRow(
+                          AppStrings.yourAnswer,
+                          _getOptionLetter(question, userAnswer),
+                          isCorrect,
+                        ),
                         if (!isCorrect) ...[
                           SizedBox(height: ResponsiveValues.spacingM(context)),
-                          _buildAnswerRow(AppStrings.correctAnswer,
-                              _getOptionLetter(question, correctAnswer), true,
-                              showIcon: false),
+                          _buildAnswerRow(
+                            AppStrings.correctAnswer,
+                            _getOptionLetter(question, correctAnswer),
+                            true,
+                            showIcon: false,
+                          ),
                         ],
                         if (explanation.isNotEmpty) ...[
                           SizedBox(height: ResponsiveValues.spacingL(context)),
@@ -865,8 +890,9 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                                     explanation,
                                     style: AppTextStyles.bodyMedium(context)
                                         .copyWith(
-                                            color: AppColors.getTextSecondary(
-                                                context)),
+                                      color:
+                                          AppColors.getTextSecondary(context),
+                                    ),
                                   ),
                                 ],
                               ),
@@ -896,8 +922,10 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       children: [
         Text(
           value,
-          style: AppTextStyles.titleLarge(context)
-              .copyWith(color: color, fontWeight: FontWeight.w700),
+          style: AppTextStyles.titleLarge(context).copyWith(
+            color: color,
+            fontWeight: FontWeight.w700,
+          ),
         ),
         Text(
           label,
@@ -928,16 +956,17 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
               style: AppTextStyles.bodyMedium(context),
               children: [
                 TextSpan(
-                    text: label,
-                    style:
-                        TextStyle(color: AppColors.getTextSecondary(context))),
+                  text: label,
+                  style: TextStyle(color: AppColors.getTextSecondary(context)),
+                ),
                 TextSpan(
                   text: ' $answer',
                   style: TextStyle(
-                      color: isCorrect
-                          ? AppColors.telegramGreen
-                          : AppColors.telegramRed,
-                      fontWeight: FontWeight.w600),
+                    color: isCorrect
+                        ? AppColors.telegramGreen
+                        : AppColors.telegramRed,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),
@@ -965,28 +994,23 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     return '${minutes}m ${remainingSeconds}s';
   }
 
-  String _getTimeString() {
-    final hours = _remainingTime.inHours;
-    final minutes = _remainingTime.inMinutes % 60;
-    final seconds = _remainingTime.inSeconds % 60;
-    return hours > 0
-        ? '${hours}h ${minutes.toString().padLeft(2, '0')}m'
-        : '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
-  }
-
-  Widget _buildInstructionsScreen(BuildContext context) {
+  Widget _buildInstructionsScreen() {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: AppBar(
-        title: Text(_exam.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: AppTextStyles.appBarTitle(context)),
+        title: Text(
+          _exam.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: AppTextStyles.appBarTitle(context),
+        ),
         backgroundColor: AppColors.getBackground(context),
         elevation: 0,
-        leading: AppButton.icon(
-            icon: Icons.arrow_back_rounded,
-            onPressed: () => GoRouter.of(context).pop()),
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back_rounded,
+              color: AppColors.getTextPrimary(context)),
+          onPressed: () => GoRouter.of(context).pop(),
+        ),
       ),
       body: SingleChildScrollView(
         padding: ResponsiveValues.screenPadding(context),
@@ -1021,7 +1045,8 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                           Text(
                             AppStrings.pleaseReadCarefully,
                             style: AppTextStyles.bodySmall(context).copyWith(
-                                color: AppColors.getTextSecondary(context)),
+                              color: AppColors.getTextSecondary(context),
+                            ),
                           ),
                         ],
                       ),
@@ -1033,52 +1058,63 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
             SizedBox(height: ResponsiveValues.spacingXL(context)),
             Text(
               AppStrings.examDetails,
-              style: AppTextStyles.titleLarge(context)
-                  .copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.5),
+              style: AppTextStyles.titleLarge(context).copyWith(
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.5,
+              ),
             ),
             SizedBox(height: ResponsiveValues.spacingL(context)),
             _buildDetailItem(
-                icon: Icons.description_rounded,
-                label: '${AppStrings.title}:',
-                value: _exam.title),
+              icon: Icons.description_rounded,
+              label: '${AppStrings.title}:',
+              value: _exam.title,
+            ),
             _buildDetailItem(
-                icon: Icons.category_rounded,
-                label: '${AppStrings.type}:',
-                value: _exam.examType.toUpperCase()),
+              icon: Icons.category_rounded,
+              label: '${AppStrings.type}:',
+              value: _exam.examType.toUpperCase(),
+            ),
             _buildDetailItem(
-                icon: Icons.book_rounded,
-                label: '${AppStrings.course}:',
-                value: _exam.courseName),
+              icon: Icons.book_rounded,
+              label: '${AppStrings.course}:',
+              value: _exam.courseName,
+            ),
             _buildDetailItem(
-                icon: Icons.timer_rounded,
-                label: '${AppStrings.timeLimit}:',
-                value: _getTimeLimitDescription()),
+              icon: Icons.timer_rounded,
+              label: '${AppStrings.timeLimit}:',
+              value: _getTimeLimitDescription(),
+            ),
             _buildDetailItem(
-                icon: Icons.auto_awesome_rounded,
-                label: '${AppStrings.autoSubmit}:',
-                value: _getAutoSubmitDescription()),
+              icon: Icons.auto_awesome_rounded,
+              label: '${AppStrings.autoSubmit}:',
+              value: _getAutoSubmitDescription(),
+            ),
             _buildDetailItem(
-                icon: Icons.visibility_rounded,
-                label: '${AppStrings.results}:',
-                value: _getResultsDisplayDescription()),
+              icon: Icons.visibility_rounded,
+              label: '${AppStrings.results}:',
+              value: _getResultsDisplayDescription(),
+            ),
             _buildDetailItem(
-                icon: Icons.score_rounded,
-                label: '${AppStrings.passingScore}:',
-                value: '${_exam.passingScore}%'),
+              icon: Icons.score_rounded,
+              label: '${AppStrings.passingScore}:',
+              value: '${_exam.passingScore}%',
+            ),
             _buildDetailItem(
-                icon: Icons.repeat_rounded,
-                label: '${AppStrings.maxAttempts}:',
-                value: '${_exam.maxAttempts}'),
+              icon: Icons.repeat_rounded,
+              label: '${AppStrings.maxAttempts}:',
+              value: '${_exam.maxAttempts}',
+            ),
             _buildDetailItem(
-                icon: Icons.history_rounded,
-                label: '${AppStrings.yourAttempts}:',
-                value: '${_exam.attemptsTaken}/${_exam.maxAttempts}'),
+              icon: Icons.history_rounded,
+              label: '${AppStrings.yourAttempts}:',
+              value: '${_exam.attemptsTaken}/${_exam.maxAttempts}',
+            ),
             SizedBox(height: ResponsiveValues.spacingXXL(context)),
             if (!_hasReachedMaxAttempts)
               SizedBox(
                 width: double.infinity,
                 child: AppButton.primary(
-                  label: _isOffline
+                  label: isOffline
                       ? AppStrings.startOfflineMode
                       : AppStrings.startExamNow,
                   onPressed: () {
@@ -1103,8 +1139,11 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildDetailItem(
-      {required IconData icon, required String label, required String value}) {
+  Widget _buildDetailItem({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
     return Padding(
       padding: EdgeInsets.only(bottom: ResponsiveValues.spacingM(context)),
       child: Row(
@@ -1115,24 +1154,34 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
             height: ResponsiveValues.iconSizeL(context),
             decoration: BoxDecoration(
                 color: AppColors.blueFaded, shape: BoxShape.circle),
-            child: Icon(icon,
-                size: ResponsiveValues.iconSizeXS(context),
-                color: AppColors.telegramBlue),
+            child: Icon(
+              icon,
+              size: ResponsiveValues.iconSizeXS(context),
+              color: AppColors.telegramBlue,
+            ),
           ),
           SizedBox(width: ResponsiveValues.spacingM(context)),
           Expanded(
             child: Row(
               children: [
                 Expanded(
-                    flex: 2,
-                    child: Text(label,
-                        style: AppTextStyles.bodyMedium(context).copyWith(
-                            color: AppColors.getTextSecondary(context)))),
+                  flex: 2,
+                  child: Text(
+                    label,
+                    style: AppTextStyles.bodyMedium(context).copyWith(
+                      color: AppColors.getTextSecondary(context),
+                    ),
+                  ),
+                ),
                 Expanded(
-                    flex: 3,
-                    child: Text(value,
-                        style: AppTextStyles.bodyMedium(context)
-                            .copyWith(fontWeight: FontWeight.w600))),
+                  flex: 3,
+                  child: Text(
+                    value,
+                    style: AppTextStyles.bodyMedium(context).copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -1141,8 +1190,8 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildExamInterface(
-      BuildContext context, List<ExamQuestion> questions) {
+  Widget _buildExamInterface() {
+    final questions = _questionProvider.getQuestionsByExam(_exam.id);
     final currentQuestion = questions[_currentQuestionIndex];
     final totalQuestions = questions.length;
     final answeredQuestions = _answers.length;
@@ -1153,14 +1202,17 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: AppBar(
-        title: Text(_exam.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: AppTextStyles.appBarTitle(context)),
+        title: Text(
+          _exam.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: AppTextStyles.appBarTitle(context),
+        ),
         backgroundColor: AppColors.getBackground(context),
         elevation: 0,
-        leading: AppButton.icon(
-          icon: Icons.arrow_back_rounded,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back_rounded,
+              color: AppColors.getTextPrimary(context)),
           onPressed: _isSubmitting
               ? null
               : () async {
@@ -1171,9 +1223,9 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                     confirmText: AppStrings.leave,
                     cancelText: AppStrings.stay,
                   );
-                  if (confirm == true && mounted) {
+                  if (confirm == true && isMounted) {
                     await _saveProgressToCache();
-                    if (!mounted) return;
+                    if (!isMounted) return;
                     GoRouter.of(context).pop();
                   }
                 },
@@ -1194,14 +1246,18 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.timer_rounded,
-                    size: ResponsiveValues.iconSizeXS(context),
-                    color: timeColor),
+                Icon(
+                  Icons.timer_rounded,
+                  size: ResponsiveValues.iconSizeXS(context),
+                  color: timeColor,
+                ),
                 SizedBox(width: ResponsiveValues.spacingXS(context)),
                 Text(
                   _getTimeString(),
-                  style: AppTextStyles.labelMedium(context)
-                      .copyWith(color: timeColor, fontWeight: FontWeight.w600),
+                  style: AppTextStyles.labelMedium(context).copyWith(
+                    color: timeColor,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),
@@ -1232,14 +1288,16 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                           borderRadius: BorderRadius.circular(
                               ResponsiveValues.radiusFull(context)),
                           border: Border.all(
-                              color: AppColors.telegramBlue
-                                  .withValues(alpha: 0.3)),
+                            color:
+                                AppColors.telegramBlue.withValues(alpha: 0.3),
+                          ),
                         ),
                         child: Text(
                           '$answeredQuestions/$totalQuestions ${AppStrings.answered}',
                           style: AppTextStyles.labelSmall(context).copyWith(
-                              color: AppColors.telegramBlue,
-                              fontWeight: FontWeight.w600),
+                            color: AppColors.telegramBlue,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ],
@@ -1270,10 +1328,11 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                                   ResponsiveValues.radiusFull(context)),
                               boxShadow: [
                                 BoxShadow(
-                                    color: AppColors.telegramBlue
-                                        .withValues(alpha: 0.5),
-                                    blurRadius:
-                                        ResponsiveValues.spacingXS(context))
+                                  color: AppColors.telegramBlue
+                                      .withValues(alpha: 0.5),
+                                  blurRadius:
+                                      ResponsiveValues.spacingXS(context),
+                                ),
                               ],
                             ),
                           ),
@@ -1329,7 +1388,7 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
                   SizedBox(
                     width: double.infinity,
                     child: AppButton.primary(
-                      label: _isOffline
+                      label: isOffline
                           ? AppStrings.saveOffline
                           : AppStrings.submitExam,
                       onPressed: _isSubmitting ? null : _submitExam,
@@ -1347,67 +1406,52 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final authProvider = context.read<AuthProvider>();
-    final questionProvider = context.read<ExamQuestionProvider>();
-
+  Widget buildContent(BuildContext context) {
     if (_showResults && _submittedResult != null) {
-      return _buildResultsScreen(context);
+      return _buildResultsScreen();
     }
 
     if (_hasReachedMaxAttempts && _submittedResult == null) {
-      return Scaffold(
-        backgroundColor: AppColors.getBackground(context),
-        appBar: AppBar(
-          title: Text(_exam.title,
-              style: AppTextStyles.appBarTitle(context),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis),
-          backgroundColor: AppColors.getBackground(context),
-          elevation: 0,
-          leading: AppButton.icon(
-              icon: Icons.arrow_back_rounded,
-              onPressed: () => GoRouter.of(context).pop()),
-        ),
-        body: Center(
-          child: Padding(
-            padding: EdgeInsets.all(ResponsiveValues.spacingXL(context)),
-            child: AppCard.glass(
-              child: Padding(
-                padding: ResponsiveValues.dialogPadding(context),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding:
-                          EdgeInsets.all(ResponsiveValues.spacingL(context)),
-                      decoration: BoxDecoration(
-                          color: AppColors.redFaded, shape: BoxShape.circle),
-                      child: const Icon(Icons.block_rounded,
-                          size: 48, color: AppColors.telegramRed),
+      return Center(
+        child: Padding(
+          padding: EdgeInsets.all(ResponsiveValues.spacingXL(context)),
+          child: AppCard.glass(
+            child: Padding(
+              padding: ResponsiveValues.dialogPadding(context),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
+                    decoration: BoxDecoration(
+                        color: AppColors.redFaded, shape: BoxShape.circle),
+                    child: const Icon(Icons.block_rounded,
+                        size: 48, color: AppColors.telegramRed),
+                  ),
+                  SizedBox(height: ResponsiveValues.spacingXL(context)),
+                  Text(
+                    AppStrings.maximumAttemptsReached,
+                    style: AppTextStyles.headlineMedium(context).copyWith(
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.5,
                     ),
-                    SizedBox(height: ResponsiveValues.spacingXL(context)),
-                    Text(
-                      AppStrings.maximumAttemptsReached,
-                      style: AppTextStyles.headlineMedium(context).copyWith(
-                          fontWeight: FontWeight.w700, letterSpacing: -0.5),
-                      textAlign: TextAlign.center,
+                    textAlign: TextAlign.center,
+                  ),
+                  SizedBox(height: ResponsiveValues.spacingM(context)),
+                  Text(
+                    '${AppStrings.youHaveUsedAll} ${_exam.maxAttempts} ${AppStrings.attemptsForThisExam}',
+                    style: AppTextStyles.bodyLarge(context).copyWith(
+                      color: AppColors.getTextSecondary(context),
                     ),
-                    SizedBox(height: ResponsiveValues.spacingM(context)),
-                    Text(
-                      '${AppStrings.youHaveUsedAll} ${_exam.maxAttempts} ${AppStrings.attemptsForThisExam}',
-                      style: AppTextStyles.bodyLarge(context)
-                          .copyWith(color: AppColors.getTextSecondary(context)),
-                      textAlign: TextAlign.center,
-                    ),
-                    SizedBox(height: ResponsiveValues.spacingXL(context)),
-                    AppButton.primary(
-                      label: AppStrings.goBack,
-                      onPressed: () => GoRouter.of(context).pop(),
-                      expanded: true,
-                    ),
-                  ],
-                ),
+                    textAlign: TextAlign.center,
+                  ),
+                  SizedBox(height: ResponsiveValues.spacingXL(context)),
+                  AppButton.primary(
+                    label: AppStrings.goBack,
+                    onPressed: () => GoRouter.of(context).pop(),
+                    expanded: true,
+                  ),
+                ],
               ),
             ),
           ),
@@ -1415,57 +1459,45 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       );
     }
 
-    if (!authProvider.isAuthenticated) {
-      return Scaffold(
-        backgroundColor: AppColors.getBackground(context),
-        appBar: AppBar(
-          title: Text(_exam.title,
-              style: AppTextStyles.appBarTitle(context),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis),
-          backgroundColor: AppColors.getBackground(context),
-          elevation: 0,
-          leading: AppButton.icon(
-              icon: Icons.arrow_back_rounded,
-              onPressed: () => GoRouter.of(context).pop()),
-        ),
-        body: Center(
-          child: Padding(
-            padding: EdgeInsets.all(ResponsiveValues.spacingXL(context)),
-            child: AppCard.glass(
-              child: Padding(
-                padding: ResponsiveValues.dialogPadding(context),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding:
-                          EdgeInsets.all(ResponsiveValues.spacingL(context)),
-                      decoration: BoxDecoration(
-                          color: AppColors.blueFaded, shape: BoxShape.circle),
-                      child: const Icon(Icons.lock_rounded,
-                          size: 48, color: AppColors.telegramBlue),
+    if (!_authProvider.isAuthenticated) {
+      return Center(
+        child: Padding(
+          padding: EdgeInsets.all(ResponsiveValues.spacingXL(context)),
+          child: AppCard.glass(
+            child: Padding(
+              padding: ResponsiveValues.dialogPadding(context),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
+                    decoration: BoxDecoration(
+                        color: AppColors.blueFaded, shape: BoxShape.circle),
+                    child: const Icon(Icons.lock_rounded,
+                        size: 48, color: AppColors.telegramBlue),
+                  ),
+                  SizedBox(height: ResponsiveValues.spacingXL(context)),
+                  Text(
+                    AppStrings.authenticationRequired,
+                    style: AppTextStyles.headlineMedium(context).copyWith(
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.5,
                     ),
-                    SizedBox(height: ResponsiveValues.spacingXL(context)),
-                    Text(
-                      AppStrings.authenticationRequired,
-                      style: AppTextStyles.headlineMedium(context).copyWith(
-                          fontWeight: FontWeight.w700, letterSpacing: -0.5),
+                  ),
+                  SizedBox(height: ResponsiveValues.spacingM(context)),
+                  Text(
+                    AppStrings.pleaseLoginToTakeExam,
+                    style: AppTextStyles.bodyLarge(context).copyWith(
+                      color: AppColors.getTextSecondary(context),
                     ),
-                    SizedBox(height: ResponsiveValues.spacingM(context)),
-                    Text(
-                      AppStrings.pleaseLoginToTakeExam,
-                      style: AppTextStyles.bodyLarge(context)
-                          .copyWith(color: AppColors.getTextSecondary(context)),
-                    ),
-                    SizedBox(height: ResponsiveValues.spacingXL(context)),
-                    AppButton.primary(
-                      label: AppStrings.login,
-                      onPressed: () => GoRouter.of(context).go('/auth/login'),
-                      expanded: true,
-                    ),
-                  ],
-                ),
+                  ),
+                  SizedBox(height: ResponsiveValues.spacingXL(context)),
+                  AppButton.primary(
+                    label: AppStrings.login,
+                    onPressed: () => GoRouter.of(context).go('/auth/login'),
+                    expanded: true,
+                  ),
+                ],
               ),
             ),
           ),
@@ -1474,35 +1506,22 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     }
 
     if (_checkingAccess) {
-      return Scaffold(
-        backgroundColor: AppColors.getBackground(context),
-        appBar: AppBar(
-          title: Text(_exam.title,
-              style: AppTextStyles.appBarTitle(context),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis),
-          backgroundColor: AppColors.getBackground(context),
-          elevation: 0,
-          leading: AppButton.icon(
-              icon: Icons.arrow_back_rounded,
-              onPressed: () => GoRouter.of(context).pop()),
-        ),
-        body: Center(
-          child: AppCard.glass(
-            child: Padding(
-              padding: ResponsiveValues.dialogPadding(context),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const AppShimmer(type: ShimmerType.circle),
-                  const SizedBox(height: 16),
-                  Text(
-                    AppStrings.loading,
-                    style: AppTextStyles.bodyMedium(context)
-                        .copyWith(color: AppColors.getTextSecondary(context)),
+      return Center(
+        child: AppCard.glass(
+          child: Padding(
+            padding: ResponsiveValues.dialogPadding(context),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const AppShimmer(type: ShimmerType.circle),
+                const SizedBox(height: 16),
+                Text(
+                  AppStrings.loading,
+                  style: AppTextStyles.bodyMedium(context).copyWith(
+                    color: AppColors.getTextSecondary(context),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -1510,105 +1529,55 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
     }
 
     if (!_hasAccess && _exam.requiresPayment) {
-      return Scaffold(
-        backgroundColor: AppColors.getBackground(context),
-        appBar: AppBar(
-          title: Text(_exam.title,
-              style: AppTextStyles.appBarTitle(context),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis),
-          backgroundColor: AppColors.getBackground(context),
-          elevation: 0,
-          leading: AppButton.icon(
-              icon: Icons.arrow_back_rounded,
-              onPressed: () => GoRouter.of(context).pop()),
-        ),
-        body: Center(
-          child: Padding(
-            padding: EdgeInsets.all(
-                ResponsiveValues.screenPadding(context) as double),
-            child: AppCard.glass(
-              child: Padding(
-                padding: ResponsiveValues.dialogPadding(context),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding:
-                          EdgeInsets.all(ResponsiveValues.spacingL(context)),
-                      decoration: BoxDecoration(
-                          color: AppColors.blueFaded, shape: BoxShape.circle),
-                      child: const Icon(Icons.lock_rounded,
-                          size: 48, color: AppColors.telegramBlue),
-                    ),
-                    SizedBox(height: ResponsiveValues.spacingXL(context)),
-                    Text(
-                      AppStrings.paymentRequired,
-                      style: AppTextStyles.headlineMedium(context).copyWith(
-                          fontWeight: FontWeight.w700, letterSpacing: -0.5),
-                    ),
-                    SizedBox(height: ResponsiveValues.spacingM(context)),
-                    Text(
-                      '${AppStrings.youNeedToPurchase} "${_exam.categoryName}" ${AppStrings.toAccessThisExam}',
-                      textAlign: TextAlign.center,
-                      style: AppTextStyles.bodyLarge(context).copyWith(
-                          color: AppColors.getTextSecondary(context),
-                          height: 1.6),
-                    ),
-                    SizedBox(height: ResponsiveValues.spacingXL(context)),
-                    AppButton.primary(
-                      label: AppStrings.purchaseAccess,
-                      onPressed: () {
-                        GoRouter.of(context).pop();
-                        GoRouter.of(context).push('/payment', extra: {
-                          'category': _exam.categoryName,
-                          'categoryId': _exam.categoryId,
-                          'paymentType': 'first_time',
-                          'context': 'exam',
-                          'examId': _exam.id,
-                          'examTitle': _exam.title,
-                        });
-                      },
-                      expanded: true,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    if (_showInstructions) return _buildInstructionsScreen(context);
-
-    if (questionProvider.isLoading) {
-      return Scaffold(
-        backgroundColor: AppColors.getBackground(context),
-        appBar: AppBar(
-          title: Text(_exam.title,
-              style: AppTextStyles.appBarTitle(context),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis),
-          backgroundColor: AppColors.getBackground(context),
-          elevation: 0,
-          leading: AppButton.icon(
-              icon: Icons.arrow_back_rounded,
-              onPressed: () => GoRouter.of(context).pop()),
-        ),
-        body: Center(
+      return Center(
+        child: Padding(
+          padding:
+              EdgeInsets.all(ResponsiveValues.screenPadding(context) as double),
           child: AppCard.glass(
             child: Padding(
               padding: ResponsiveValues.dialogPadding(context),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const AppShimmer(type: ShimmerType.circle),
-                  const SizedBox(height: 16),
+                  Container(
+                    padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
+                    decoration: BoxDecoration(
+                        color: AppColors.blueFaded, shape: BoxShape.circle),
+                    child: const Icon(Icons.lock_rounded,
+                        size: 48, color: AppColors.telegramBlue),
+                  ),
+                  SizedBox(height: ResponsiveValues.spacingXL(context)),
                   Text(
-                    AppStrings.loading,
-                    style: AppTextStyles.bodyMedium(context)
-                        .copyWith(color: AppColors.getTextSecondary(context)),
+                    AppStrings.paymentRequired,
+                    style: AppTextStyles.headlineMedium(context).copyWith(
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                  SizedBox(height: ResponsiveValues.spacingM(context)),
+                  Text(
+                    '${AppStrings.youNeedToPurchase} "${_exam.categoryName}" ${AppStrings.toAccessThisExam}',
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.bodyLarge(context).copyWith(
+                      color: AppColors.getTextSecondary(context),
+                      height: 1.6,
+                    ),
+                  ),
+                  SizedBox(height: ResponsiveValues.spacingXL(context)),
+                  AppButton.primary(
+                    label: AppStrings.purchaseAccess,
+                    onPressed: () {
+                      GoRouter.of(context).pop();
+                      GoRouter.of(context).push('/payment', extra: {
+                        'category': _exam.categoryName,
+                        'categoryId': _exam.categoryId,
+                        'paymentType': 'first_time',
+                        'context': 'exam',
+                        'examId': _exam.id,
+                        'examTitle': _exam.title,
+                      });
+                    },
+                    expanded: true,
                   ),
                 ],
               ),
@@ -1618,36 +1587,54 @@ class _ExamScreenState extends State<ExamScreen> with TickerProviderStateMixin {
       );
     }
 
-    final questions = questionProvider.getQuestionsByExam(_exam.id);
-    if (questions.isEmpty) {
-      return Scaffold(
-        backgroundColor: AppColors.getBackground(context),
-        appBar: AppBar(
-          title: Text(_exam.title,
-              style: AppTextStyles.appBarTitle(context),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis),
-          backgroundColor: AppColors.getBackground(context),
-          elevation: 0,
-          leading: AppButton.icon(
-              icon: Icons.arrow_back_rounded,
-              onPressed: () => GoRouter.of(context).pop()),
-        ),
-        body: Center(
-          child: AppEmptyState.noData(
-            dataType: AppStrings.questions,
-            customMessage: _isOffline
-                ? AppStrings.noCachedQuestionsAvailable
-                : AppStrings.couldNotLoadExamQuestions,
-            onRefresh: _loadExamQuestions,
-            isOffline: _isOffline,
-            pendingCount: _pendingCount,
+    if (_showInstructions) return _buildInstructionsScreen();
+
+    if (_questionProvider.isLoading && !_hasLoadedOnce) {
+      return Center(
+        child: AppCard.glass(
+          child: Padding(
+            padding: ResponsiveValues.dialogPadding(context),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const AppShimmer(type: ShimmerType.circle),
+                const SizedBox(height: 16),
+                Text(
+                  AppStrings.loading,
+                  style: AppTextStyles.bodyMedium(context).copyWith(
+                    color: AppColors.getTextSecondary(context),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       );
     }
 
+    final questions = _questionProvider.getQuestionsByExam(_exam.id);
+    if (questions.isEmpty && !_hasLoadedOnce) {
+      return Center(
+        child: buildEmptyWidget(
+          dataType: AppStrings.questions,
+          customMessage: isOffline
+              ? AppStrings.noCachedQuestionsAvailable
+              : AppStrings.couldNotLoadExamQuestions,
+          isOffline: isOffline,
+        ),
+      );
+    }
+
     if (_currentQuestionIndex >= questions.length) _currentQuestionIndex = 0;
-    return _buildExamInterface(context, questions);
+    return _buildExamInterface();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return buildScreen(
+      content: buildContent(context),
+      showAppBar: true,
+      showRefreshIndicator: false,
+    );
   }
 }

@@ -419,9 +419,9 @@ class ResponsiveValues {
   }
 
   static double categoryCardHeight(BuildContext context) {
-    if (ScreenSize.isDesktop(context)) return 180;
-    if (ScreenSize.isMobile(context)) return 200;
-    return 220;
+    if (ScreenSize.isDesktop(context)) return 220;
+    if (ScreenSize.isMobile(context)) return 240;
+    return 260;
   }
 
   static double categoryCardTitleSize(BuildContext context) {

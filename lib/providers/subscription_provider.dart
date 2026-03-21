@@ -21,8 +21,7 @@ class SubscriptionProvider extends ChangeNotifier
     with
         BaseProvider<SubscriptionProvider>,
         OfflineAwareProvider<SubscriptionProvider> {
-  @override
-  final ConnectivityService connectivityService;
+  final ConnectivityService _connectivityService;
 
   final ApiService apiService;
   final DeviceService deviceService;
@@ -67,10 +66,11 @@ class SubscriptionProvider extends ChangeNotifier
   SubscriptionProvider({
     required this.apiService,
     required this.deviceService,
-    required this.connectivityService,
+    required ConnectivityService connectivityService,
     required this.hiveService,
     required this.offlineQueueManager,
-  })  : _subscriptionUpdateController =
+  })  : _connectivityService = connectivityService,
+        _subscriptionUpdateController =
             StreamController<Map<int, bool>>.broadcast(),
         _subscriptionsUpdateController =
             StreamController<List<Subscription>>.broadcast() {
@@ -81,6 +81,9 @@ class SubscriptionProvider extends ChangeNotifier
     );
     _init();
   }
+
+  @override
+  ConnectivityService get connectivityService => _connectivityService;
 
   Future<void> _init() async {
     log('_init() START');
@@ -179,6 +182,15 @@ class SubscriptionProvider extends ChangeNotifier
     } catch (e) {
       log('Error saving to Hive: $e');
     }
+  }
+
+  Future<void> _saveSubscriptionsCache() async {
+    await _saveToHive();
+    deviceService.saveCacheItem(
+      AppConstants.subscriptionsCacheKey,
+      _allSubscriptions.map((s) => s.toJson()).toList(),
+      isUserSpecific: true,
+    );
   }
 
   void _rebuildCacheFromSubscriptions() {
@@ -417,24 +429,17 @@ class SubscriptionProvider extends ChangeNotifier
       // STEP 4: Fetch from API
       log('STEP 4: Fetching from API');
       try {
+        final previousSubscriptions = List<Subscription>.from(_allSubscriptions);
+        final hadCachedSubscriptions =
+            _hasInitialData || previousSubscriptions.isNotEmpty;
+
         final response = await apiService.getMySubscriptions().timeout(
-          const Duration(seconds: 10),
+          const Duration(seconds: 20),
           onTimeout: () {
             log('⏱️ API timeout in loadSubscriptions - using cached data');
-            if (_hasInitialData) {
-              _hasLoaded = true;
-              setLoaded();
-              _notifyChanges();
-              return ApiResponse<List<Subscription>>(
-                success: true,
-                message: 'Using cached data (server timeout)',
-                data: _allSubscriptions,
-              );
-            }
             return ApiResponse<List<Subscription>>(
               success: false,
               message: 'Request timed out. Please try again.',
-              data: [],
             );
           },
         );
@@ -442,26 +447,36 @@ class SubscriptionProvider extends ChangeNotifier
         if (response.success) {
           _allSubscriptions = response.data ?? [];
           log('✅ Received ${_allSubscriptions.length} subscriptions from API');
+
+          _hasLoaded = true;
+          _hasInitialData = _allSubscriptions.isNotEmpty;
+          setLoaded();
+
+          await _saveSubscriptionsCache();
+          _rebuildCacheFromSubscriptions();
+          _notifyChanges();
         } else {
+          if (hadCachedSubscriptions) {
+            _allSubscriptions = previousSubscriptions;
+            _hasLoaded = true;
+            _hasInitialData = _allSubscriptions.isNotEmpty;
+            setLoaded();
+            _rebuildCacheFromSubscriptions();
+            _notifyChanges();
+            log('⚠️ Using existing subscription cache after API failure');
+            return;
+          }
+
           _allSubscriptions = [];
+          _hasLoaded = true;
+          _hasInitialData = false;
+          setLoaded();
           setError(getUserFriendlyErrorMessage(response.message));
-          log('ℹ️ No subscriptions found from API');
+          _rebuildCacheFromSubscriptions();
+          _notifyChanges();
+          log('ℹ️ No subscriptions available from API');
+          return;
         }
-
-        _hasLoaded = true;
-        _hasInitialData = _allSubscriptions.isNotEmpty;
-        setLoaded();
-
-        await _saveToHive();
-
-        deviceService.saveCacheItem(
-          AppConstants.subscriptionsCacheKey,
-          _allSubscriptions.map((s) => s.toJson()).toList(),
-          isUserSpecific: true,
-        );
-
-        _rebuildCacheFromSubscriptions();
-        _notifyChanges();
 
         if (_categoryProvider != null && _allSubscriptions.isNotEmpty) {
           final statusMap = <int, bool>{};
@@ -659,7 +674,7 @@ class SubscriptionProvider extends ChangeNotifier
       _activeRequests--;
       _categoryCheckCompleters.remove(categoryId);
       // Process next request
-      _processNextRequest();
+      unawaited(_processNextRequest());
     }
   }
 
@@ -671,7 +686,7 @@ class SubscriptionProvider extends ChangeNotifier
     if (_lastBatchCheck != null &&
         DateTime.now().difference(_lastBatchCheck!) < _batchCheckCooldown) {
       log('⏱️ Batch check cooldown, falling back to individual');
-      _processNextRequest(); // Fall back to individual
+      unawaited(_processNextRequest()); // Fall back to individual
       return;
     }
 
@@ -735,7 +750,7 @@ class SubscriptionProvider extends ChangeNotifier
     } finally {
       _activeRequests--;
       // Continue processing
-      _processNextRequest();
+      unawaited(_processNextRequest());
     }
   }
 
@@ -777,7 +792,7 @@ class SubscriptionProvider extends ChangeNotifier
             }
 
             // Remove successfully checked IDs
-            missingIds.removeWhere((id) => batchResults.containsKey(id));
+            missingIds.removeWhere(batchResults.containsKey);
           }
         } catch (e) {
           log('Batch check failed, falling back to individual: $e');
@@ -836,13 +851,12 @@ class SubscriptionProvider extends ChangeNotifier
 
     try {
       final response = await apiService.getMySubscriptions().timeout(
-        const Duration(seconds: 10),
+        const Duration(seconds: 20),
         onTimeout: () {
           log('⏱️ API timeout in background refresh');
           return ApiResponse<List<Subscription>>(
             success: false,
             message: 'Request timed out',
-            data: [],
           );
         },
       );
@@ -854,12 +868,7 @@ class SubscriptionProvider extends ChangeNotifier
           log('Changes detected in background refresh');
           _allSubscriptions = newSubscriptions;
 
-          await _saveToHive();
-          deviceService.saveCacheItem(
-            AppConstants.subscriptionsCacheKey,
-            _allSubscriptions.map((s) => s.toJson()).toList(),
-            isUserSpecific: true,
-          );
+          await _saveSubscriptionsCache();
 
           _rebuildCacheFromSubscriptions();
           _notifyChanges();
@@ -875,19 +884,11 @@ class SubscriptionProvider extends ChangeNotifier
   Future<void> refreshAfterPaymentVerification() async {
     log('refreshAfterPaymentVerification()');
 
-    await deviceService.clearCacheByPrefix('subscriptions');
-
-    final userId = await UserSession().getCurrentUserId();
-    if (userId != null && _subscriptionsBox != null) {
-      await _subscriptionsBox!.delete('user_${userId}_subscriptions');
-    }
-
-    _allSubscriptions = [];
-    _subscriptionsByCategory = {};
     _categoryAccessCache = {};
     _categoryCheckComplete = {};
+    _categoryCheckCompleters.clear();
+    _lastBatchCheck = null;
     _hasLoaded = false;
-    _hasInitialData = false;
 
     await loadSubscriptions(forceRefresh: true, isManualRefresh: true);
     log('refreshAfterPaymentVerification() complete');
@@ -965,11 +966,6 @@ class SubscriptionProvider extends ChangeNotifier
     _subscriptionsUpdateController.add([]);
 
     safeNotify();
-  }
-
-  @override
-  void clearError() {
-    super.clearError();
   }
 
   @override

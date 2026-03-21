@@ -1,5 +1,5 @@
 // lib/providers/progress_provider.dart
-// COMPLETE FIXED VERSION - SAFE TYPE CASTING
+// COMPLETE FIXED VERSION - PROPERLY HANDLES _Map<dynamic, dynamic>
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -142,16 +142,22 @@ class ProgressProvider extends ChangeNotifier
     }
   }
 
-  // ✅ FIXED: Safe map conversion that handles all edge cases
-  Map<String, dynamic> _safeCastToMap(dynamic input) {
+  // ✅ FIXED: Properly convert any Map type to Map<String, dynamic>
+  Map<String, dynamic> _convertToMapString(dynamic input) {
     if (input == null) return {};
     if (input is Map<String, dynamic>) return input;
+
     if (input is Map) {
       try {
         final Map<String, dynamic> result = {};
-        input.forEach((key, value) {
+        // Use keys and values directly - this works for _Map<dynamic, dynamic>
+        final keys = input.keys.toList();
+        final values = input.values.toList();
+        for (int i = 0; i < keys.length; i++) {
+          final key = keys[i];
+          final value = values[i];
           result[key.toString()] = value;
-        });
+        }
         return result;
       } catch (e) {
         log('Error converting map: $e');
@@ -161,12 +167,13 @@ class ProgressProvider extends ChangeNotifier
     return {};
   }
 
-  // ✅ FIXED: Complete rewrite with safe casting
+// ✅ FIXED: Complete rewrite with safe casting for ALL data types
   Future<void> _loadCachedProgress() async {
     try {
       final userId = await UserSession().getCurrentUserId();
       if (userId == null) return;
 
+      // Try Hive first
       if (_progressBox != null) {
         final dynamic cachedProgressMap =
             _progressBox!.get('user_${userId}_progress');
@@ -174,12 +181,20 @@ class ProgressProvider extends ChangeNotifier
         if (cachedProgressMap != null) {
           final Map<int, UserProgress> convertedMap = {};
 
+          // ✅ FIXED: Handle different map types safely
           if (cachedProgressMap is Map) {
             try {
-              for (final entry in cachedProgressMap.entries) {
-                final key = entry.key;
-                final value = entry.value;
-                final int chapterId = int.tryParse(key.toString()) ?? 0;
+              // Convert to a map with string keys first
+              final Map<String, dynamic> stringKeyMap = {};
+              cachedProgressMap.forEach((key, value) {
+                stringKeyMap[key.toString()] = value;
+              });
+
+              // Now iterate safely
+              for (final entry in stringKeyMap.entries) {
+                final String key = entry.key;
+                final dynamic value = entry.value;
+                final int chapterId = int.tryParse(key) ?? 0;
 
                 if (chapterId > 0) {
                   try {
@@ -190,12 +205,12 @@ class ProgressProvider extends ChangeNotifier
                     } else if (value is Map<String, dynamic>) {
                       progress = UserProgress.fromJson(value);
                     } else if (value is Map) {
-                      final safeMap = _safeCastToMap(value);
-                      if (safeMap.isNotEmpty) {
-                        progress = UserProgress.fromJson(safeMap);
-                      } else {
-                        continue;
-                      }
+                      // Convert _Map<dynamic,dynamic> to Map<String,dynamic>
+                      final Map<String, dynamic> safeMap = {};
+                      value.forEach((k, v) {
+                        safeMap[k.toString()] = v;
+                      });
+                      progress = UserProgress.fromJson(safeMap);
                     } else {
                       continue;
                     }
@@ -222,11 +237,12 @@ class ProgressProvider extends ChangeNotifier
         }
       }
 
+      // Load stats from Hive
       if (_statsBox != null) {
         final dynamic cachedStats = _statsBox!.get('user_${userId}_stats');
         if (cachedStats != null) {
           final Map<String, dynamic> convertedStats =
-              _safeCastToMap(cachedStats);
+              _convertToMapString(cachedStats);
           if (convertedStats.isNotEmpty) {
             _overallStats = convertedStats;
             _hasLoadedOverall = true;
@@ -238,6 +254,7 @@ class ProgressProvider extends ChangeNotifier
         }
       }
 
+      // Try DeviceService cache
       log('Trying DeviceService cache');
       final cachedProgress =
           await deviceService.getCacheItem<Map<String, dynamic>>(
@@ -247,11 +264,26 @@ class ProgressProvider extends ChangeNotifier
 
       if (cachedProgress != null) {
         final progressList = cachedProgress['progress'] as List? ?? [];
-        _userProgress = progressList
-            .map((json) => UserProgress.fromJson(_safeCastToMap(json)))
-            .where((p) => p != null)
-            .cast<UserProgress>()
-            .toList();
+        _userProgress = [];
+        for (final item in progressList) {
+          try {
+            Map<String, dynamic> safeMap;
+            if (item is Map<String, dynamic>) {
+              safeMap = item;
+            } else if (item is Map) {
+              // Convert _Map<dynamic,dynamic> to Map<String,dynamic>
+              safeMap = {};
+              item.forEach((k, v) {
+                safeMap[k.toString()] = v;
+              });
+            } else {
+              continue;
+            }
+            _userProgress.add(UserProgress.fromJson(safeMap));
+          } catch (e) {
+            log('Error parsing progress item: $e');
+          }
+        }
         _progressByChapter = {for (final p in _userProgress) p.chapterId: p};
         _hasLoadedProgress = true;
         _progressUpdateController.add(_userProgress);
@@ -265,7 +297,7 @@ class ProgressProvider extends ChangeNotifier
         isUserSpecific: true,
       );
       if (cachedStats != null) {
-        _overallStats = _safeCastToMap(cachedStats);
+        _overallStats = _convertToMapString(cachedStats);
         _hasLoadedOverall = true;
         _parseStatsFromMap();
         _overallStatsController.add(_overallStats);
@@ -277,6 +309,7 @@ class ProgressProvider extends ChangeNotifier
       }
     } catch (e) {
       log('Error loading cached progress: $e');
+      // Don't rethrow - just log the error and continue with empty data
     }
   }
 
@@ -391,7 +424,7 @@ class ProgressProvider extends ChangeNotifier
       final response = await apiService.getOverallProgress();
 
       if (response.success && response.data != null) {
-        _overallStats = _safeCastToMap(response.data);
+        _overallStats = _convertToMapString(response.data);
         _parseStatsFromMap();
         await _saveStatsToHive();
         deviceService.saveCacheItem(
@@ -447,7 +480,7 @@ class ProgressProvider extends ChangeNotifier
           final dynamic cachedStats = _statsBox!.get('user_${userId}_stats');
           if (cachedStats != null) {
             final Map<String, dynamic> convertedStats =
-                _safeCastToMap(cachedStats);
+                _convertToMapString(cachedStats);
             if (convertedStats.isNotEmpty) {
               _overallStats = convertedStats;
               _hasLoadedOverall = true;
@@ -474,7 +507,7 @@ class ProgressProvider extends ChangeNotifier
           isUserSpecific: true,
         );
         if (cachedStats != null) {
-          _overallStats = _safeCastToMap(cachedStats);
+          _overallStats = _convertToMapString(cachedStats);
           _hasLoadedOverall = true;
           _isLoadingOverall = false;
           setLoaded();
@@ -518,7 +551,7 @@ class ProgressProvider extends ChangeNotifier
       final response = await apiService.getOverallProgress();
 
       if (response.success && response.data != null) {
-        _overallStats = _safeCastToMap(response.data);
+        _overallStats = _convertToMapString(response.data);
         _hasLoadedOverall = true;
         _isLoadingOverall = false;
         setLoaded();
@@ -609,7 +642,7 @@ class ProgressProvider extends ChangeNotifier
         final dynamic cachedStats = _statsBox!.get('user_${userId}_stats');
         if (cachedStats != null) {
           final Map<String, dynamic> convertedStats =
-              _safeCastToMap(cachedStats);
+              _convertToMapString(cachedStats);
           if (convertedStats.isNotEmpty) {
             _overallStats = convertedStats;
             _hasLoadedOverall = true;
@@ -628,7 +661,7 @@ class ProgressProvider extends ChangeNotifier
       );
       if (cachedStats == null) return false;
 
-      _overallStats = _safeCastToMap(cachedStats);
+      _overallStats = _convertToMapString(cachedStats);
       _hasLoadedOverall = true;
       _parseStatsFromMap();
       _overallStatsController.add(_overallStats);

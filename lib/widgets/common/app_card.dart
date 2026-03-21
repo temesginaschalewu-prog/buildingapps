@@ -218,9 +218,11 @@ class AppCard extends StatelessWidget {
     VoidCallback? onTap,
     bool isOffline = false,
   }) {
+    // Keep the menu card bedrock size aligned with the inner content
+    // to avoid mismatched hover overlay/box shadow visual sizes.
     return AppCard.glass(
       onTap: onTap,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: EdgeInsets.zero,
       isOffline: isOffline,
       child: child,
     );

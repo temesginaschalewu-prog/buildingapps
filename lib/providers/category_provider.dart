@@ -1,5 +1,5 @@
 // lib/providers/category_provider.dart
-// PRODUCTION-READY FINAL VERSION - FIXED STREAM RECREATION
+// PRODUCTION-READY FINAL VERSION - AUTO LOAD + BACKGROUND REFRESH
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -39,8 +39,10 @@ class CategoryProvider extends ChangeNotifier
 
   Box? _categoriesBox;
 
-  // ✅ FIXED: Proper stream declaration with late
   late StreamController<List<Category>> _categoriesUpdateController;
+
+  DateTime? _lastBackgroundRefresh;
+  static const Duration _minBackgroundInterval = Duration(minutes: 2);
 
   CategoryProvider({
     required this.apiService,
@@ -62,6 +64,25 @@ class CategoryProvider extends ChangeNotifier
     await _openHiveBox();
     await _loadCachedData();
     _hasInitialData = _categories.isNotEmpty;
+
+    // ✅ Show cached data IMMEDIATELY if we have it
+    if (_hasInitialData) {
+      _categoriesUpdateController.add(_categories);
+      safeNotify();
+      log('✅ Showing ${_categories.length} cached categories immediately');
+    }
+
+    // ✅ Auto-refresh in background to get latest data (no user action needed)
+    if (!isOffline) {
+      log('🔄 Auto-refreshing categories in background');
+      // Small delay to not block UI
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (!_isApiCallInProgress) {
+          loadCategories(forceRefresh: true);
+        }
+      });
+    }
+
     log('_init() END - hasInitialData: $_hasInitialData, categories: ${_categories.length}');
   }
 
@@ -123,6 +144,7 @@ class CategoryProvider extends ChangeNotifier
         }
       }
 
+      // Fallback to DeviceService
       final cachedCategories = await deviceService.getCacheItem<List<dynamic>>(
         'categories',
         isUserSpecific: true,
@@ -148,11 +170,17 @@ class CategoryProvider extends ChangeNotifier
         log('✅ Loaded ${_categories.length} categories from DeviceService');
       } else {
         log('No cached data found');
-        _hasLoaded = true; // Mark as loaded even with no data
+        _hasLoaded = true;
+        _categories = [];
+        _updateCategoryLists();
+        _categoriesUpdateController.add([]);
       }
     } catch (e) {
       log('❌ Error loading cached categories: $e');
-      _hasLoaded = true; // Mark as loaded even on error
+      _hasLoaded = true;
+      _categories = [];
+      _updateCategoryLists();
+      _categoriesUpdateController.add([]);
     }
   }
 
@@ -184,7 +212,7 @@ class CategoryProvider extends ChangeNotifier
       throw Exception('Network error. Please check your internet connection.');
     }
 
-    // ✅ If we already have data and not forcing refresh, return immediately
+    // Return cached data immediately if we have it
     if (_hasLoaded && !forceRefresh && !isManualRefresh) {
       log('✅ Already have data, returning cached');
       setLoaded();
@@ -197,7 +225,7 @@ class CategoryProvider extends ChangeNotifier
       return;
     }
 
-    // ✅ Wait for in-progress API call
+    // Wait for in-progress API call
     if (_isApiCallInProgress && !forceRefresh && !isManualRefresh) {
       log('⏳ API call already in progress, waiting...');
       if (_apiCallCompleter != null) {
@@ -332,7 +360,7 @@ class CategoryProvider extends ChangeNotifier
     } catch (e) {
       log('❌ Error: $e');
       _hasLoaded = true;
-      setLoaded(); // ✅ CRITICAL: ALWAYS set loaded
+      setLoaded();
       setError(e.toString());
       if (isManualRefresh) rethrow;
     } finally {
@@ -340,12 +368,8 @@ class CategoryProvider extends ChangeNotifier
     }
   }
 
-  // ✅ FIXED: Background refresh with rate limiting
-  DateTime? _lastBackgroundRefresh;
-  static const Duration _minBackgroundInterval = Duration(minutes: 2);
-
+  // ✅ Background refresh with rate limiting
   Future<void> _refreshInBackground() async {
-    // Rate limit background refreshes
     if (_lastBackgroundRefresh != null &&
         DateTime.now().difference(_lastBackgroundRefresh!) <
             _minBackgroundInterval) {
@@ -355,6 +379,7 @@ class CategoryProvider extends ChangeNotifier
     _lastBackgroundRefresh = DateTime.now();
 
     if (isOffline) return;
+
     try {
       final response = await apiService.getCategories();
       if (response.success && response.data != null) {
@@ -372,7 +397,7 @@ class CategoryProvider extends ChangeNotifier
           );
           _categoriesUpdateController.add(_categories);
           safeNotify();
-          log('🔄 Background refresh complete');
+          log('🔄 Background refresh complete - updated ${_categories.length} categories');
         }
       }
     } catch (e) {
@@ -428,11 +453,9 @@ class CategoryProvider extends ChangeNotifier
     await loadCategories();
   }
 
-  // ✅ FIXED: Clear user data with proper stream recreation
   Future<void> clearUserData() async {
     final session = UserSession();
-    final shouldClear = session.shouldClearCacheOnLogout();
-    if (!shouldClear) return;
+    if (!session.shouldClearCacheOnLogout()) return;
     final userId = await session.getCurrentUserId();
     if (userId != null && _categoriesBox != null) {
       await _categoriesBox!.delete('user_${userId}_categories');
@@ -445,7 +468,6 @@ class CategoryProvider extends ChangeNotifier
     _hasLoaded = false;
     _hasInitialData = false;
 
-    // ✅ FIXED: Properly recreate stream controller
     await _categoriesUpdateController.close();
     _categoriesUpdateController = StreamController<List<Category>>.broadcast();
     _categoriesUpdateController.add([]);

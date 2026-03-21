@@ -1,5 +1,5 @@
 // lib/providers/notification_provider.dart
-// PRODUCTION-READY FINAL VERSION
+// PRODUCTION-READY FINAL VERSION - FIXED OFFLINE CHECK
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -45,11 +45,9 @@ class NotificationProvider extends ChangeNotifier
 
   int _apiCallCount = 0;
 
-  // ✅ FIXED: Proper stream declaration
   late StreamController<List<notification_model.Notification>>
       _notificationsUpdateController;
 
-  // ✅ FIXED: Rate limiting
   DateTime? _lastBackgroundRefresh;
   static const Duration _minBackgroundInterval = Duration(minutes: 2);
 
@@ -71,7 +69,6 @@ class NotificationProvider extends ChangeNotifier
   }
 
   void _registerQueueProcessors() {
-    // Register processor for marking notifications as read
     offlineQueueManager.registerProcessor(
       AppConstants.queueActionMarkNotificationRead,
       _processMarkAsRead,
@@ -143,10 +140,6 @@ class NotificationProvider extends ChangeNotifier
           _lastLoadTime = DateTime.now();
           _notificationsUpdateController.add(_notifications);
           log('✅ Loaded ${_notifications.length} notifications from Hive');
-
-          if (connectivityService.isOnline) {
-            unawaited(_refreshFromApi());
-          }
         }
       }
     } catch (e) {
@@ -176,6 +169,9 @@ class NotificationProvider extends ChangeNotifier
   Stream<List<notification_model.Notification>> get notificationsUpdates =>
       _notificationsUpdateController.stream;
 
+  @override
+  bool get isLoaded => _lastLoadTime != null;
+
   List<notification_model.Notification> get unreadNotifications {
     return _notifications.where((n) => !n.isRead).toList();
   }
@@ -184,7 +180,7 @@ class NotificationProvider extends ChangeNotifier
     return _notifications.where((n) => n.isRead).toList();
   }
 
-  // ===== LOAD NOTIFICATIONS =====
+  // ===== LOAD NOTIFICATIONS - ✅ FIXED: CHECK CACHE FIRST, NO API CALL OFFLINE =====
   Future<void> loadNotifications({
     bool forceRefresh = false,
     bool isManualRefresh = false,
@@ -199,9 +195,9 @@ class NotificationProvider extends ChangeNotifier
           'Network error. Please check your internet connection.'));
     }
 
-    // If already loaded and not forcing refresh, return cached data
+    // ✅ CRITICAL: Return cached data IMMEDIATELY if we have it
     if (_notifications.isNotEmpty && !forceRefresh) {
-      log('✅ Already have data, returning cached');
+      log('✅ Already have ${_notifications.length} notifications, returning cached');
       setLoaded();
       _notificationsUpdateController.add(_notifications);
       return;
@@ -215,7 +211,7 @@ class NotificationProvider extends ChangeNotifier
     setLoading();
 
     try {
-      // STEP 1: Try Hive first
+      // ✅ STEP 1: ALWAYS try Hive cache first (fastest)
       if (!forceRefresh && _notifications.isEmpty) {
         log('STEP 1: Checking Hive cache');
         final userId = await UserSession().getCurrentUserId();
@@ -241,18 +237,14 @@ class NotificationProvider extends ChangeNotifier
               setLoaded();
               _notificationsUpdateController.add(_notifications);
               log('✅ Using cached notifications from Hive');
-
-              if (connectivityService.isOnline && !isManualRefresh) {
-                unawaited(_refreshFromApi());
-              }
               return;
             }
           }
         }
       }
 
-      // STEP 2: Try DeviceService
-      if (!forceRefresh) {
+      // ✅ STEP 2: Try DeviceService cache
+      if (!forceRefresh && _notifications.isEmpty) {
         log('STEP 2: Checking DeviceService cache');
         final cachedNotifications =
             await deviceService.getCacheItem<List<dynamic>>(
@@ -276,26 +268,14 @@ class NotificationProvider extends ChangeNotifier
 
             await _saveToHive();
             log('✅ Using cached notifications from DeviceService');
-
-            if (connectivityService.isOnline && !isManualRefresh) {
-              unawaited(_refreshFromApi());
-            }
             return;
           }
         }
       }
 
-      // STEP 3: Check offline status
-      if (!connectivityService.isOnline) {
-        log('STEP 3: Offline mode');
-        if (_notifications.isNotEmpty) {
-          setLoaded();
-          _notificationsUpdateController.add(_notifications);
-          log('✅ Showing cached notifications offline');
-          return;
-        }
-
-        // Even if offline with no cache, mark as loaded with empty list
+      // ✅ STEP 3: Check offline status - NO API CALL WHEN OFFLINE
+      if (isOffline) {
+        log('STEP 3: Offline mode - no cached data available');
         _notifications = [];
         _unreadCount = 0;
         setLoaded();
@@ -309,7 +289,7 @@ class NotificationProvider extends ChangeNotifier
         return;
       }
 
-      // STEP 4: Fetch from API
+      // ✅ STEP 4: Only fetch from API if online
       log('STEP 4: Fetching from API');
       final response = await apiService.getMyNotifications();
 
@@ -333,7 +313,6 @@ class NotificationProvider extends ChangeNotifier
         _notificationsUpdateController.add(_notifications);
         log('✅ Success! Notifications loaded');
       } else {
-        // Even if API fails, mark as loaded with existing data or empty
         setError(getUserFriendlyErrorMessage(response.message));
         setLoaded();
         log('❌ API error: ${response.message}');
@@ -349,10 +328,9 @@ class NotificationProvider extends ChangeNotifier
       setError(getUserFriendlyErrorMessage(e));
       setLoaded();
 
-      if (_notifications.isEmpty) {
-        await _recoverFromCache();
-      }
-
+      // Show empty state on error
+      _notifications = [];
+      _unreadCount = 0;
       _notificationsUpdateController.add(_notifications);
 
       if (isManualRefresh) {
@@ -363,14 +341,9 @@ class NotificationProvider extends ChangeNotifier
     }
   }
 
-  // ✅ FIXED: Rate limited background refresh
   Future<void> _refreshFromApi() async {
-    if (!connectivityService.isOnline) {
-      log('Offline, skipping background refresh');
-      return;
-    }
+    if (isOffline) return;
 
-    // Rate limiting
     if (_lastBackgroundRefresh != null &&
         DateTime.now().difference(_lastBackgroundRefresh!) <
             _minBackgroundInterval) {
@@ -385,7 +358,6 @@ class NotificationProvider extends ChangeNotifier
       if (response.success && response.data != null) {
         final newNotifications = response.data ?? [];
 
-        // Merge with existing notifications preserving read status
         final Map<int, notification_model.Notification> notificationMap = {};
         for (final notif in _notifications) {
           notificationMap[notif.logId] = notif;
@@ -714,7 +686,6 @@ class NotificationProvider extends ChangeNotifier
     await loadNotifications(forceRefresh: true);
   }
 
-  // ✅ FIXED: Clear user data with proper stream recreation
   Future<void> clearUserData() async {
     final session = UserSession();
     if (!session.shouldClearCacheOnLogout()) return;
@@ -735,7 +706,6 @@ class NotificationProvider extends ChangeNotifier
     _unreadCount = 0;
     _lastLoadTime = null;
 
-    // FIX: Properly recreate stream controller
     await _notificationsUpdateController.close();
     _notificationsUpdateController =
         StreamController<List<notification_model.Notification>>.broadcast();

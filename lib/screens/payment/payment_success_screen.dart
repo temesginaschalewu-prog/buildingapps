@@ -1,5 +1,5 @@
 // lib/screens/payment/payment_success_screen.dart
-// COMPLETE PRODUCTION-READY FILE - FIXED PENDING COUNT
+// PRODUCTION STANDARD - WITH SHIMMER TYPE
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -9,20 +9,15 @@ import 'package:flutter_animate/flutter_animate.dart';
 
 import '../../models/category_model.dart';
 import '../../services/device_service.dart';
-import '../../services/connectivity_service.dart';
-import '../../services/offline_queue_manager.dart';
 import '../../providers/category_provider.dart';
+import '../../widgets/common/base_screen_mixin.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_button.dart';
-import '../../widgets/common/app_shimmer.dart';
-import '../../widgets/common/app_empty_state.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
-import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
 import '../../utils/constants.dart';
 
-/// PRODUCTION-READY PAYMENT SUCCESS SCREEN with 3-Tier Caching
 class PaymentSuccessScreen extends StatefulWidget {
   final Map<String, dynamic>? extra;
 
@@ -33,7 +28,7 @@ class PaymentSuccessScreen extends StatefulWidget {
 }
 
 class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
-    with TickerProviderStateMixin {
+    with BaseScreenMixin<PaymentSuccessScreen>, TickerProviderStateMixin {
   bool _isLoading = true;
   bool _hasError = false;
   String _errorMessage = '';
@@ -49,15 +44,35 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
   String? _accountHolderName;
   bool _animationComplete = false;
   bool _isQueued = false;
-  int _pendingCount = 0;
-  int _secondsRemaining = 5;
+  int _secondsRemaining = 12;
 
   late AnimationController _checkAnimationController;
   late AnimationController _pulseAnimationController;
   late Animation<double> _scaleAnimation;
 
   Timer? _redirectTimer;
-  StreamSubscription? _connectivitySubscription;
+
+  @override
+  String get screenTitle => AppStrings.payment;
+
+  @override
+  String? get screenSubtitle => null;
+
+  @override
+  bool get isLoading => _isLoading;
+
+  @override
+  bool get hasCachedData => false;
+
+  @override
+  dynamic get errorMessage => _hasError ? _errorMessage : null;
+
+  // ✅ Shimmer type for payment success screen
+  @override
+  ShimmerType get shimmerType => ShimmerType.paymentCard;
+
+  @override
+  int get shimmerItemCount => 1;
 
   @override
   void initState() {
@@ -69,11 +84,12 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
         AnimationController(vsync: this, duration: 1.seconds)
           ..repeat(reverse: true);
     _scaleAnimation = Tween<double>(begin: 0.8, end: 1.2).animate(
-        CurvedAnimation(
-            parent: _pulseAnimationController, curve: Curves.easeInOut));
+      CurvedAnimation(
+          parent: _pulseAnimationController, curve: Curves.easeInOut),
+    );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initialize();
+      _loadData();
     });
   }
 
@@ -82,46 +98,12 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
     _redirectTimer?.cancel();
     _checkAnimationController.dispose();
     _pulseAnimationController.dispose();
-    _connectivitySubscription?.cancel();
     super.dispose();
   }
 
-  Future<void> _initialize() async {
-    await _checkConnectivity();
-    _setupConnectivityListener();
-    _checkPendingCount();
-    _loadData();
-  }
-
-  void _setupConnectivityListener() {
-    final connectivityService = context.read<ConnectivityService>();
-    _connectivitySubscription =
-        connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (mounted) {
-        setState(() {
-          final queueManager = context.read<OfflineQueueManager>();
-          _pendingCount = queueManager.pendingCount;
-        });
-      }
-    });
-  }
-
-  Future<void> _checkConnectivity() async {
-    final connectivityService = context.read<ConnectivityService>();
-    await connectivityService.checkConnectivity();
-    if (mounted) {
-      setState(() {
-        final queueManager = context.read<OfflineQueueManager>();
-        _pendingCount = queueManager.pendingCount;
-      });
-    }
-  }
-
-  Future<void> _checkPendingCount() async {
-    final queueManager = context.read<OfflineQueueManager>();
-    if (mounted) {
-      setState(() => _pendingCount = queueManager.pendingCount);
-    }
+  @override
+  Future<void> onRefresh() async {
+    // No refresh needed for success screen
   }
 
   Future<void> _loadData() async {
@@ -167,7 +149,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
       _startRedirectTimer();
 
       Future.delayed(1.seconds, () {
-        if (mounted) setState(() => _animationComplete = true);
+        if (isMounted) setState(() => _animationComplete = true);
       });
     } catch (e) {
       setState(() {
@@ -196,7 +178,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
   }
 
   void _redirectToHome() {
-    if (context.mounted) context.go('/');
+    if (isMounted) context.go('/');
   }
 
   Future<void> _tryToLoadFromCache() async {
@@ -244,46 +226,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
     }
   }
 
-  Widget _buildSkeletonLoader() {
-    return Scaffold(
-      backgroundColor: AppColors.getBackground(context),
-      body: Center(
-        child: AppCard.glass(
-          child: Padding(
-            padding: ResponsiveValues.dialogPadding(context),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const AppShimmer(type: ShimmerType.circle),
-                SizedBox(height: ResponsiveValues.spacingXL(context)),
-                const AppShimmer(type: ShimmerType.textLine, customWidth: 200),
-                SizedBox(height: ResponsiveValues.spacingL(context)),
-                const AppShimmer(type: ShimmerType.textLine, customWidth: 250),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildErrorScreen(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.getBackground(context),
-      body: SafeArea(
-        child: Padding(
-          padding: ResponsiveValues.dialogPadding(context),
-          child: AppEmptyState.error(
-            title: AppStrings.paymentError,
-            message: _errorMessage,
-            onRetry: () => context.go('/'),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSuccessIcon(BuildContext context) {
+  Widget _buildSuccessIcon() {
     return Stack(
       alignment: Alignment.center,
       children: [
@@ -305,7 +248,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                         .withValues(alpha: 0.3),
                     (_isQueued ? AppColors.info : AppColors.telegramGreen)
                         .withValues(alpha: 0.1),
-                    Colors.transparent
+                    Colors.transparent,
                   ],
                   stops: const [0.1, 0.5, 1.0],
                 ),
@@ -355,7 +298,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
     );
   }
 
-  Widget _buildSuccessContent(BuildContext context) {
+  Widget _buildSuccessContent() {
     final title = _isQueued
         ? AppStrings.paymentQueued
         : (_paymentType == 'first_time'
@@ -379,7 +322,20 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
         Text(
           message,
           style: AppTextStyles.bodyLarge(context).copyWith(
-              color: AppColors.getTextSecondary(context), height: 1.5),
+            color: AppColors.getTextSecondary(context),
+            height: 1.5,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        SizedBox(height: ResponsiveValues.spacingM(context)),
+        Text(
+          _isQueued
+              ? 'You have time to review this page before we return you home.'
+              : 'Please take a moment to review the payment details before we return you home.',
+          style: AppTextStyles.bodyMedium(context).copyWith(
+            color: AppColors.getTextSecondary(context),
+            height: 1.5,
+          ),
           textAlign: TextAlign.center,
         ),
         SizedBox(height: ResponsiveValues.spacingM(context)),
@@ -394,14 +350,15 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                 (_isQueued ? AppColors.info : AppColors.pending)
                     .withValues(alpha: 0.2),
                 (_isQueued ? AppColors.info : AppColors.pending)
-                    .withValues(alpha: 0.1)
+                    .withValues(alpha: 0.1),
               ],
             ),
             borderRadius:
                 BorderRadius.circular(ResponsiveValues.radiusFull(context)),
             border: Border.all(
-                color: (_isQueued ? AppColors.info : AppColors.pending)
-                    .withValues(alpha: 0.3)),
+              color: (_isQueued ? AppColors.info : AppColors.pending)
+                  .withValues(alpha: 0.3),
+            ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -417,8 +374,9 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                     ? AppStrings.queuedForSync
                     : AppStrings.pendingVerification,
                 style: AppTextStyles.labelSmall(context).copyWith(
-                    color: _isQueued ? AppColors.info : AppColors.pending,
-                    fontWeight: FontWeight.w600),
+                  color: _isQueued ? AppColors.info : AppColors.pending,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ],
           ),
@@ -517,23 +475,28 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
             gradient: LinearGradient(
               colors: [
                 AppColors.telegramBlue.withValues(alpha: 0.2),
-                AppColors.telegramPurple.withValues(alpha: 0.1)
+                AppColors.telegramPurple.withValues(alpha: 0.1),
               ],
             ),
             shape: BoxShape.circle,
           ),
-          child: Icon(icon,
-              size: ResponsiveValues.iconSizeXS(context),
-              color: AppColors.telegramBlue),
+          child: Icon(
+            icon,
+            size: ResponsiveValues.iconSizeXS(context),
+            color: AppColors.telegramBlue,
+          ),
         ),
         SizedBox(width: ResponsiveValues.spacingM(context)),
         Expanded(
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(label,
-                  style: AppTextStyles.bodyMedium(context)
-                      .copyWith(color: AppColors.getTextSecondary(context))),
+              Text(
+                label,
+                style: AppTextStyles.bodyMedium(context).copyWith(
+                  color: AppColors.getTextSecondary(context),
+                ),
+              ),
               Text(
                 value,
                 style: AppTextStyles.bodyMedium(context).copyWith(
@@ -548,7 +511,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
     );
   }
 
-  Widget _buildActionButtons(BuildContext context) {
+  Widget _buildActionButtons() {
     return Column(
       children: [
         SizedBox(
@@ -587,7 +550,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
               gradient: LinearGradient(
                 colors: [
                   AppColors.getSurface(context).withValues(alpha: 0.3),
-                  AppColors.getSurface(context).withValues(alpha: 0.1)
+                  AppColors.getSurface(context).withValues(alpha: 0.1),
                 ],
               ),
               borderRadius:
@@ -608,8 +571,10 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                 SizedBox(width: ResponsiveValues.spacingM(context)),
                 Text(
                   '${AppStrings.redirectingIn} $_secondsRemaining ${AppStrings.seconds}...',
-                  style: AppTextStyles.bodySmall(context)
-                      .copyWith(color: AppColors.getTextSecondary(context)),
+                  style: AppTextStyles.bodySmall(context).copyWith(
+                    color: AppColors.getTextSecondary(context),
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),
@@ -619,128 +584,74 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
     );
   }
 
-  Widget _buildMobileLayout(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.getBackground(context),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: ResponsiveValues.screenPadding(context),
-          child: Column(
-            children: [
-              if (_pendingCount > 0)
-                Container(
-                  margin: EdgeInsets.only(
-                      bottom: ResponsiveValues.spacingL(context)),
-                  padding: ResponsiveValues.cardPadding(context),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        AppColors.info.withValues(alpha: 0.2),
-                        AppColors.info.withValues(alpha: 0.1)
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(
-                        ResponsiveValues.radiusMedium(context)),
-                    border: Border.all(
-                        color: AppColors.info.withValues(alpha: 0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.schedule_rounded,
-                          color: AppColors.info,
-                          size: ResponsiveValues.iconSizeS(context)),
-                      SizedBox(width: ResponsiveValues.spacingM(context)),
-                      Expanded(
-                        child: Text(
-                          '$_pendingCount pending action${_pendingCount > 1 ? 's' : ''}',
-                          style: AppTextStyles.bodySmall(context)
-                              .copyWith(color: AppColors.info),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              _buildSuccessIcon(context),
-              SizedBox(height: ResponsiveValues.spacingXXL(context)),
-              _buildSuccessContent(context),
-              SizedBox(height: ResponsiveValues.spacingXXL(context)),
-              _buildActionButtons(context),
-              SizedBox(height: ResponsiveValues.spacingXXL(context)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  @override
+  Widget buildContent(BuildContext context) {
+    if (isLoading) {
+      return Center(
+        child: buildLoadingShimmer(),
+      );
+    }
 
-  Widget _buildDesktopLayout(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.getBackground(context),
-      body: Center(
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 500),
-          margin: ResponsiveValues.dialogPadding(context),
-          child: AppCard.glass(
-            child: Padding(
-              padding: ResponsiveValues.dialogPadding(context),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+    if (_hasError) {
+      return Center(
+        child: buildErrorWidget(_errorMessage, onRetry: () => context.go('/')),
+      );
+    }
+
+    return SingleChildScrollView(
+      padding: ResponsiveValues.screenPadding(context),
+      child: Column(
+        children: [
+          if (pendingCount > 0)
+            Container(
+              margin:
+                  EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
+              padding: ResponsiveValues.cardPadding(context),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    AppColors.info.withValues(alpha: 0.2),
+                    AppColors.info.withValues(alpha: 0.1)
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(
+                    ResponsiveValues.radiusMedium(context)),
+                border:
+                    Border.all(color: AppColors.info.withValues(alpha: 0.3)),
+              ),
+              child: Row(
                 children: [
-                  if (_pendingCount > 0)
-                    Container(
-                      margin: EdgeInsets.only(
-                          bottom: ResponsiveValues.spacingL(context)),
-                      padding: ResponsiveValues.cardPadding(context),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            AppColors.info.withValues(alpha: 0.2),
-                            AppColors.info.withValues(alpha: 0.1)
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(
-                            ResponsiveValues.radiusMedium(context)),
-                        border: Border.all(
-                            color: AppColors.info.withValues(alpha: 0.3)),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.schedule_rounded,
-                              color: AppColors.info,
-                              size: ResponsiveValues.iconSizeS(context)),
-                          SizedBox(width: ResponsiveValues.spacingM(context)),
-                          Expanded(
-                            child: Text(
-                              '$_pendingCount pending action${_pendingCount > 1 ? 's' : ''}',
-                              style: AppTextStyles.bodySmall(context)
-                                  .copyWith(color: AppColors.info),
-                            ),
-                          ),
-                        ],
-                      ),
+                  Icon(Icons.schedule_rounded,
+                      color: AppColors.info,
+                      size: ResponsiveValues.iconSizeS(context)),
+                  SizedBox(width: ResponsiveValues.spacingM(context)),
+                  Expanded(
+                    child: Text(
+                      '$pendingCount pending action${pendingCount > 1 ? 's' : ''}',
+                      style: AppTextStyles.bodySmall(context)
+                          .copyWith(color: AppColors.info),
                     ),
-                  _buildSuccessIcon(context),
-                  SizedBox(height: ResponsiveValues.spacingXXL(context)),
-                  _buildSuccessContent(context),
-                  SizedBox(height: ResponsiveValues.spacingXXL(context)),
-                  _buildActionButtons(context),
+                  ),
                 ],
               ),
             ),
-          ),
-        ),
+          _buildSuccessIcon(),
+          SizedBox(height: ResponsiveValues.spacingXXL(context)),
+          _buildSuccessContent(),
+          SizedBox(height: ResponsiveValues.spacingXXL(context)),
+          _buildActionButtons(),
+          SizedBox(height: ResponsiveValues.spacingXXL(context)),
+        ],
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) return _buildSkeletonLoader();
-    if (_hasError) return _buildErrorScreen(context);
-    return ResponsiveLayout(
-      mobile: _buildMobileLayout(context),
-      tablet: _buildDesktopLayout(context),
-      desktop: _buildDesktopLayout(context),
+    return buildScreen(
+      content: buildContent(context),
+      showAppBar: false,
+      showRefreshIndicator: false,
     );
   }
 }

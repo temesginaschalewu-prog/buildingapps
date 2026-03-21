@@ -1,5 +1,5 @@
 // lib/screens/chapter/chapter_content_screen.dart
-// COMPLETE PRODUCTION-READY FILE - FIXED PENDING COUNT
+// COMPLETE FINAL VERSION - PROPER SHIMMER TYPES FOR EACH TAB
 
 import 'dart:async';
 import 'dart:io';
@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:chewie/chewie.dart';
+import 'package:pull_to_refresh/pull_to_refresh.dart';
 import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
@@ -34,9 +35,9 @@ import '../../providers/category_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/progress_provider.dart';
-import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
-import '../../services/offline_queue_manager.dart';
+import '../../widgets/common/app_bar.dart';
+import '../../widgets/common/base_screen_mixin.dart';
 import '../../widgets/chapter/video_card.dart';
 import '../../widgets/chapter/note_card.dart';
 import '../../widgets/chapter/practice_question_card.dart';
@@ -44,8 +45,6 @@ import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_dialog.dart';
 import '../../widgets/common/app_shimmer.dart';
-import '../../widgets/common/app_empty_state.dart';
-import '../../widgets/common/app_bar.dart';
 import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
@@ -75,22 +74,23 @@ class ChapterContentScreen extends StatefulWidget {
 }
 
 class _ChapterContentScreenState extends State<ChapterContentScreen>
-    with TickerProviderStateMixin, WidgetsBindingObserver {
+    with
+        BaseScreenMixin<ChapterContentScreen>,
+        TickerProviderStateMixin,
+        WidgetsBindingObserver {
   late TabController _tabController;
   final ScrollController _scrollController = ScrollController();
 
   Chapter? _chapter;
   Category? _category;
 
-  bool _isLoading = true;
   bool _hasAccess = false;
   bool _isCheckingAccess = true;
   String? _errorMessage;
 
   bool _hasCachedData = false;
-  bool _isOffline = false;
-  bool _isRefreshing = false;
-  int _pendingCount = 0;
+  bool _isLoading = true;
+  bool _hasLoadedOnce = false;
 
   // Video players
   VideoPlayerController? _videoController;
@@ -119,14 +119,59 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   final Map<int, VideoQuality> _downloadQuality = {};
   final Dio _dio = Dio();
 
-  // Subscriptions
-  StreamSubscription? _videoUpdateSubscription;
-  StreamSubscription? _noteUpdateSubscription;
-  StreamSubscription? _questionUpdateSubscription;
-  StreamSubscription? _connectivitySubscription;
-  Timer? _refreshTimer;
-
   String? _currentUserId;
+
+  late VideoProvider _videoProvider;
+  late NoteProvider _noteProvider;
+  late QuestionProvider _questionProvider;
+  late ChapterProvider _chapterProvider;
+  late CourseProvider _courseProvider;
+  late CategoryProvider _categoryProvider;
+  late SubscriptionProvider _subscriptionProvider;
+  late AuthProvider _authProvider;
+  late ProgressProvider _progressProvider;
+
+  @override
+  String get screenTitle => _chapter?.name ?? AppStrings.chapter;
+
+  @override
+  String? get screenSubtitle => isOffline ? AppStrings.offlineMode : null;
+
+  // ✅ Only show loading if no cached data AND loading
+  @override
+  bool get isLoading => _isLoading && !_hasCachedData;
+
+  @override
+  bool get hasCachedData => _hasCachedData;
+
+  @override
+  dynamic get errorMessage => _errorMessage;
+
+  // ✅ Shimmer type based on current tab
+  @override
+  ShimmerType get shimmerType {
+    if (_tabController == null) return ShimmerType.videoCard;
+    switch (_tabController.index) {
+      case 0:
+        return ShimmerType.videoCard;
+      case 1:
+        return ShimmerType.noteCard;
+      case 2:
+        return ShimmerType.rectangle;
+      default:
+        return ShimmerType.videoCard;
+    }
+  }
+
+  @override
+  int get shimmerItemCount => 5;
+
+  @override
+  Widget? get appBarLeading => IconButton(
+        icon: Icon(Icons.arrow_back_rounded,
+            color: AppColors.getTextPrimary(context)),
+        onPressed: () => context.pop(),
+      );
 
   @override
   void initState() {
@@ -150,7 +195,22 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _videoProvider = Provider.of<VideoProvider>(context);
+    _noteProvider = Provider.of<NoteProvider>(context);
+    _questionProvider = Provider.of<QuestionProvider>(context);
+    _chapterProvider = Provider.of<ChapterProvider>(context);
+    _courseProvider = Provider.of<CourseProvider>(context);
+    _categoryProvider = Provider.of<CategoryProvider>(context);
+    _subscriptionProvider = Provider.of<SubscriptionProvider>(context);
+    _authProvider = Provider.of<AuthProvider>(context);
+    _progressProvider = Provider.of<ProgressProvider>(context);
+
     _getCurrentUserId();
+
+    // Mark as loaded if we have data
+    if (_chapter != null && _hasCachedData) {
+      _hasLoadedOnce = true;
+    }
   }
 
   @override
@@ -198,17 +258,12 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   }
 
   void _cleanupResources() {
-    _refreshTimer?.cancel();
-    _videoUpdateSubscription?.cancel();
-    _noteUpdateSubscription?.cancel();
-    _questionUpdateSubscription?.cancel();
-    _connectivitySubscription?.cancel();
     _tabController.dispose();
     _scrollController.dispose();
   }
 
   void _refreshVideoUi([VoidCallback? update]) {
-    if (mounted) {
+    if (isMounted) {
       setState(() {
         update?.call();
       });
@@ -238,38 +293,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   }
 
   Future<void> _getCurrentUserId() async {
-    final authProvider = context.read<AuthProvider>();
-    _currentUserId = authProvider.currentUser?.id.toString();
-  }
-
-  void _setupConnectivityListener() {
-    final connectivityService = context.read<ConnectivityService>();
-    _connectivitySubscription?.cancel();
-    _connectivitySubscription =
-        connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (mounted) {
-        setState(() {
-          _isOffline = !isOnline;
-          final queueManager = context.read<OfflineQueueManager>();
-          _pendingCount = queueManager.pendingCount;
-        });
-        if (isOnline && !_isRefreshing && _chapter != null) {
-          unawaited(_refreshInBackground());
-        }
-      }
-    });
-  }
-
-  Future<void> _checkConnectivity() async {
-    final connectivityService = context.read<ConnectivityService>();
-    await connectivityService.checkConnectivity();
-    if (mounted) {
-      setState(() {
-        _isOffline = !connectivityService.isOnline;
-        final queueManager = context.read<OfflineQueueManager>();
-        _pendingCount = queueManager.pendingCount;
-      });
-    }
+    _currentUserId = _authProvider.currentUser?.id.toString();
   }
 
   Future<Directory> _getAppCacheDirectory() async {
@@ -283,8 +307,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     if (_currentUserId == null) return;
 
     try {
-      final authProvider = context.read<AuthProvider>();
-      final deviceService = authProvider.deviceService;
+      final deviceService = _authProvider.deviceService;
 
       final videoPaths = await deviceService.getCacheItem<Map<String, dynamic>>(
         'cached_videos_chapter_${widget.chapterId}_$_currentUserId',
@@ -358,11 +381,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   }
 
   Future<void> _initializeFromCache() async {
-    final chapterProvider = context.read<ChapterProvider>();
-    final courseProvider = context.read<CourseProvider>();
-    final categoryProvider = context.read<CategoryProvider>();
-    final subscriptionProvider = context.read<SubscriptionProvider>();
-
     if (widget.chapter != null) {
       _chapter = widget.chapter;
       _category = widget.category;
@@ -371,10 +389,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       return;
     }
 
-    for (final category in categoryProvider.categories) {
-      final courses = courseProvider.getCoursesByCategory(category.id);
+    for (final category in _categoryProvider.categories) {
+      final courses = _courseProvider.getCoursesByCategory(category.id);
       for (final course in courses) {
-        final chapters = chapterProvider.getChaptersByCourse(course.id);
+        final chapters = _chapterProvider.getChaptersByCourse(course.id);
         for (final chapter in chapters) {
           if (chapter.id == widget.chapterId) {
             _chapter = chapter;
@@ -390,49 +408,28 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
     if (_category != null) {
       _hasAccess =
-          subscriptionProvider.hasActiveSubscriptionForCategory(_category!.id);
+          _subscriptionProvider.hasActiveSubscriptionForCategory(_category!.id);
     }
   }
 
   Future<void> _refreshInBackground() async {
-    if (_isRefreshing) return;
-    if (mounted) setState(() => _isRefreshing = true);
-
+    if (isRefreshing) return;
     try {
       await _checkAccessAndLoadData(forceRefresh: true);
-    } finally {
-      if (mounted) setState(() => _isRefreshing = false);
+    } catch (e) {
+      debugLog('ChapterContent', 'Background refresh error: $e');
     }
   }
 
-  Future<void> _manualRefresh() async {
-    if (_isRefreshing) return;
-
-    final connectivityService = context.read<ConnectivityService>();
-    if (!connectivityService.isOnline) {
+  @override
+  Future<void> onRefresh() async {
+    if (isOffline) {
       SnackbarService().showOffline(context);
-      setState(() => _isOffline = true);
       return;
     }
 
-    setState(() => _isRefreshing = true);
-
-    try {
-      await _checkAccessAndLoadData(forceRefresh: true);
-      setState(() => _isOffline = false);
-      SnackbarService().showSuccess(context, AppStrings.chapterUpdated);
-    } catch (e) {
-      if (!mounted) return;
-      if (_looksLikeNetworkError(e)) {
-        setState(() => _isOffline = true);
-        SnackbarService().showOffline(context, action: AppStrings.refresh);
-      } else {
-        setState(() => _isOffline = false);
-        SnackbarService().showError(context, AppStrings.refreshFailed);
-      }
-    } finally {
-      if (mounted) setState(() => _isRefreshing = false);
-    }
+    await _checkAccessAndLoadData(forceRefresh: true);
+    setState(() => _hasLoadedOnce = true);
   }
 
   bool _looksLikeNetworkError(Object error) {
@@ -444,10 +441,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   }
 
   Future<void> _checkAccessAndLoadData({bool forceRefresh = false}) async {
-    final authProvider = context.read<AuthProvider>();
-    final subscriptionProvider = context.read<SubscriptionProvider>();
-
-    if (!authProvider.isAuthenticated) {
+    if (!_authProvider.isAuthenticated) {
       _errorMessage = AppStrings.authenticationRequired;
       setState(() => _isCheckingAccess = false);
       return;
@@ -463,11 +457,11 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     if (_chapter!.isFree) {
       _hasAccess = true;
     } else if (_category != null) {
-      if (!_isOffline && forceRefresh) {
-        _hasAccess = await subscriptionProvider
+      if (!isOffline && forceRefresh) {
+        _hasAccess = await _subscriptionProvider
             .checkHasActiveSubscriptionForCategory(_category!.id);
       } else {
-        _hasAccess = subscriptionProvider
+        _hasAccess = _subscriptionProvider
             .hasActiveSubscriptionForCategory(_category!.id);
       }
     } else {
@@ -477,36 +471,39 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     setState(() => _isCheckingAccess = false);
 
     if (_hasAccess) {
-      await _loadContent(forceRefresh: forceRefresh && !_isOffline);
+      await _loadContent(forceRefresh: forceRefresh && !isOffline);
     }
 
-    setState(() => _isLoading = false);
+    setState(() {
+      _isLoading = false;
+      _hasLoadedOnce = true;
+    });
   }
 
   Future<void> _loadChapterData(bool forceRefresh) async {
-    final chapterProvider = context.read<ChapterProvider>();
-    final courseProvider = context.read<CourseProvider>();
-    final categoryProvider = context.read<CategoryProvider>();
-
-    if (categoryProvider.categories.isEmpty) {
-      await categoryProvider.loadCategories(
-          forceRefresh: forceRefresh && !_isOffline);
+    if (_categoryProvider.categories.isEmpty) {
+      await _categoryProvider.loadCategories(
+          forceRefresh: forceRefresh && !isOffline);
     }
 
-    for (final category in categoryProvider.categories) {
-      if (!courseProvider.hasLoadedCategory(category.id)) {
-        await courseProvider.loadCoursesByCategory(category.id,
-            forceRefresh: forceRefresh && !_isOffline);
+    for (final category in _categoryProvider.categories) {
+      if (!_courseProvider.hasLoadedCategory(category.id)) {
+        await _courseProvider.loadCoursesByCategory(
+          category.id,
+          forceRefresh: forceRefresh && !isOffline,
+        );
       }
 
-      final courses = courseProvider.getCoursesByCategory(category.id);
+      final courses = _courseProvider.getCoursesByCategory(category.id);
       for (final course in courses) {
-        if (!chapterProvider.hasLoadedForCourse(course.id)) {
-          await chapterProvider.loadChaptersByCourse(course.id,
-              forceRefresh: forceRefresh && !_isOffline);
+        if (!_chapterProvider.hasLoadedForCourse(course.id)) {
+          await _chapterProvider.loadChaptersByCourse(
+            course.id,
+            forceRefresh: forceRefresh && !isOffline,
+          );
         }
 
-        final chapters = chapterProvider.getChaptersByCourse(course.id);
+        final chapters = _chapterProvider.getChaptersByCourse(course.id);
         for (final chapter in chapters) {
           if (chapter.id == widget.chapterId) {
             _chapter = chapter;
@@ -519,33 +516,21 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   }
 
   Future<void> _loadContent({bool forceRefresh = false}) async {
-    final videoProvider = context.read<VideoProvider>();
-    final noteProvider = context.read<NoteProvider>();
-    final questionProvider = context.read<QuestionProvider>();
-
     try {
       await Future.wait([
-        videoProvider.loadVideosByChapter(widget.chapterId,
+        _videoProvider.loadVideosByChapter(widget.chapterId,
             forceRefresh: forceRefresh),
-        noteProvider.loadNotesByChapter(widget.chapterId,
+        _noteProvider.loadNotesByChapter(widget.chapterId,
             forceRefresh: forceRefresh),
-        questionProvider.loadPracticeQuestions(widget.chapterId,
+        _questionProvider.loadPracticeQuestions(widget.chapterId,
             forceRefresh: forceRefresh),
       ]);
     } catch (e) {
-      if (!mounted) return;
+      if (!isMounted) return;
       if (_looksLikeNetworkError(e)) {
-        setState(() => _isOffline = true);
+        // Already offline state handled by base mixin
       }
     }
-  }
-
-  void _setupBackgroundRefresh() {
-    _refreshTimer = Timer.periodic(const Duration(minutes: 5), (_) async {
-      if (mounted && _hasAccess && !_isRefreshing && !_isOffline) {
-        await _refreshInBackground();
-      }
-    });
   }
 
   void _pauseVideo() {
@@ -647,7 +632,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     } catch (e) {
       debugLog('VideoCard', 'Error switching quality: $e');
       _refreshVideoUi(() => _isPlayerInitialized = true);
-      if (mounted) {
+      if (isMounted) {
         SnackbarService().showError(context, AppStrings.failedToSwitchQuality);
       }
     }
@@ -655,7 +640,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
   Future<void> _showStreamingQualitySelector(Video video) async {
     final quality = await _showQualitySelector(video, forPlayback: true);
-    if (quality != null && mounted) {
+    if (quality != null && isMounted) {
       _refreshVideoUi(() {
         _currentPlaybackQualityLabel = quality.label;
       });
@@ -691,7 +676,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
     if (selectedSpeed != null &&
         selectedSpeed != _currentPlaybackSpeed &&
-        mounted) {
+        isMounted) {
       final previousSpeed = _currentPlaybackSpeed;
       _refreshVideoUi(() {
         _currentPlaybackSpeed = selectedSpeed;
@@ -715,8 +700,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
   Future<void> _playVideo(Video video) async {
     if (_isVideoDialogOpen) return;
-
-    if (!mounted) return;
+    if (!isMounted) return;
 
     showDialog(
       context: context,
@@ -731,14 +715,13 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     try {
       if (_cachedVideoPaths.containsKey(video.id)) {
         final localPath = _cachedVideoPaths[video.id]!;
-        if (mounted) Navigator.pop(context);
+        if (isMounted) Navigator.pop(context);
         await _playLocalVideo(video, localPath);
         return;
       }
 
-      final connectivity = context.read<ConnectivityService>();
-      if (!connectivity.isOnline) {
-        if (mounted) Navigator.pop(context);
+      if (isOffline) {
+        if (isMounted) Navigator.pop(context);
         SnackbarService().showOffline(context, action: AppStrings.playVideo);
         return;
       }
@@ -746,7 +729,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       VideoQuality? selectedQuality;
 
       if (video.hasQualities) {
-        if (mounted) Navigator.pop(context);
+        if (isMounted) Navigator.pop(context);
         selectedQuality = await _showQualitySelector(video, forPlayback: true);
         if (selectedQuality == null) return;
 
@@ -754,7 +737,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           _currentPlaybackQualityLabel = selectedQuality?.label;
         });
 
-        if (!mounted) return;
+        if (!isMounted) return;
         showDialog(
           context: context,
           barrierDismissible: false,
@@ -771,10 +754,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         });
       }
 
-      if (mounted) Navigator.pop(context);
+      if (isMounted) Navigator.pop(context);
       await _playNetworkVideo(video, selectedQuality.url);
     } catch (e) {
-      if (mounted) {
+      if (isMounted) {
         Navigator.pop(context);
         SnackbarService()
             .showError(context, AppStrings.failedToPlayVideoSimple);
@@ -809,7 +792,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         _isVideoDialogOpen = false;
         _isPlayingVideo = false;
       });
-      if (mounted) {
+      if (isMounted) {
         SnackbarService()
             .showError(context, AppStrings.failedToPlayDownloadedVideo);
       }
@@ -829,7 +812,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       await _mediaKitPlayer!.setVolume(100);
       await _mediaKitPlayer!.open(media_kit.Media(localPath));
 
-      if (!mounted) return;
+      if (!isMounted) return;
 
       _refreshVideoUi(() => _isPlayerInitialized = true);
 
@@ -859,10 +842,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           await _playWithMediaKit(video, videoUrl);
         } catch (e) {
           debugLog('VideoCard', 'MediaKit failed on Linux: $e');
-          SnackbarService().showError(
-            context,
-            AppStrings.videoPlaybackFailed,
-          );
+          SnackbarService().showError(context, AppStrings.videoPlaybackFailed);
         }
       } else {
         await _playWithVideoPlayer(video, videoUrl);
@@ -874,11 +854,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         _isPlayerInitialized = false;
       });
 
-      if (mounted) {
-        SnackbarService().showError(
-          context,
-          AppStrings.failedToPlayVideo,
-        );
+      if (isMounted) {
+        SnackbarService().showError(context, AppStrings.failedToPlayVideo);
       }
     }
   }
@@ -897,7 +874,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       await _mediaKitPlayer!.open(media_kit.Media(videoUrl));
       await _mediaKitPlayer!.setRate(_currentPlaybackSpeed);
 
-      if (!mounted) return;
+      if (!isMounted) return;
 
       setState(() => _isPlayerInitialized = true);
 
@@ -941,7 +918,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       await controller.setPlaybackSpeed(_currentPlaybackSpeed);
       debugLog('VideoCard', 'Video initialized: ${controller.value.duration}');
 
-      if (!mounted) return;
+      if (!isMounted) return;
 
       _chewieController = ChewieController(
         videoPlayerController: controller,
@@ -959,7 +936,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         await WakelockPlus.enable();
       } catch (e) {}
 
-      if (!mounted) return;
+      if (!isMounted) return;
 
       await showDialog(
         context: context,
@@ -988,8 +965,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   child: PlatformHelper.isLinux &&
                           _mediaKitVideoController != null
                       ? media_kit_video.Video(
-                          controller: _mediaKitVideoController!,
-                        )
+                          controller: _mediaKitVideoController!)
                       : (_chewieController != null
                           ? Chewie(controller: _chewieController!)
                           : const Center(child: CircularProgressIndicator())),
@@ -1001,8 +977,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                       child: Center(
                         child: CircularProgressIndicator(
                           valueColor: AlwaysStoppedAnimation<Color>(
-                            AppColors.telegramBlue,
-                          ),
+                              AppColors.telegramBlue),
                         ),
                       ),
                     ),
@@ -1012,14 +987,12 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   right: 8,
                   child: Container(
                     decoration: const BoxDecoration(
-                      color: Colors.black54,
-                      shape: BoxShape.circle,
-                    ),
+                        color: Colors.black54, shape: BoxShape.circle),
                     child: IconButton(
                       icon: const Icon(Icons.close, color: Colors.white),
                       onPressed: () {
                         Navigator.pop(context);
-                        if (mounted) _onVideoClosed(video);
+                        if (isMounted) _onVideoClosed(video);
                       },
                     ),
                   ),
@@ -1034,8 +1007,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                             horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
                           gradient: const LinearGradient(
-                            colors: [Color(0xFF0088CC), Color(0xFF0055AA)],
-                          ),
+                              colors: [Color(0xFF0088CC), Color(0xFF0055AA)]),
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(
@@ -1054,8 +1026,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                             horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
                           gradient: const LinearGradient(
-                            colors: [Color(0xFFFF6B35), Color(0xFFF7931E)],
-                          ),
+                              colors: [Color(0xFFFF6B35), Color(0xFFF7931E)]),
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(
@@ -1070,9 +1041,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                       const SizedBox(width: 8),
                       Container(
                         decoration: const BoxDecoration(
-                          color: Colors.black54,
-                          shape: BoxShape.circle,
-                        ),
+                            color: Colors.black54, shape: BoxShape.circle),
                         child: IconButton(
                           icon: const Icon(Icons.settings,
                               color: Colors.white, size: 20),
@@ -1082,9 +1051,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                       const SizedBox(width: 8),
                       Container(
                         decoration: const BoxDecoration(
-                          color: Colors.black54,
-                          shape: BoxShape.circle,
-                        ),
+                            color: Colors.black54, shape: BoxShape.circle),
                         child: IconButton(
                           icon: const Icon(Icons.speed,
                               color: Colors.white, size: 20),
@@ -1128,9 +1095,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     }
 
     try {
-      final videoProvider = context.read<VideoProvider>();
-      final progressProvider = context.read<ProgressProvider>();
-
       int progress = 0;
       if (PlatformHelper.shouldUseMediaKit && _mediaKitPlayer != null) {
         try {
@@ -1142,10 +1106,12 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         } catch (e) {}
       }
 
-      await progressProvider.saveChapterProgress(
-          chapterId: widget.chapterId, videoProgress: progress);
+      await _progressProvider.saveChapterProgress(
+        chapterId: widget.chapterId,
+        videoProgress: progress,
+      );
       if (progress >= 30) {
-        await videoProvider.incrementViewCount(video.id);
+        await _videoProvider.incrementViewCount(video.id);
       }
     } finally {
       _disposeAllPlayers();
@@ -1165,12 +1131,9 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       return VideoQuality(label: '480p', url: video.fullVideoUrl, height: 480);
     }
 
-    final videoProvider = context.read<VideoProvider>();
-    final savedPreference = await videoProvider.getQualityPreference(video.id);
-
-    final recommendedQuality = video.getRecommendedQuality(
-      await _getConnectionType(),
-    );
+    final savedPreference = await _videoProvider.getQualityPreference(video.id);
+    final recommendedQuality =
+        video.getRecommendedQuality(await _getConnectionType());
 
     VideoQuality? preSelected;
     if (savedPreference != null) {
@@ -1182,9 +1145,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
     final Completer<VideoQuality?> completer = Completer();
 
-    final double? bottomSheetHeight =
-        PlatformHelper.isTv ? MediaQuery.of(context).size.height * 0.6 : null;
-
     if (forPlayback) {
       await _fetchActualFileSizes(availableQualities);
     }
@@ -1193,9 +1153,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      constraints: bottomSheetHeight != null
-          ? BoxConstraints(maxHeight: bottomSheetHeight)
-          : null,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -1204,9 +1161,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           color: Theme.of(context).scaffoldBackgroundColor,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         ),
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
-        ),
+        padding:
+            EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1228,16 +1184,11 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                     forPlayback
                         ? AppStrings.selectQuality
                         : AppStrings.downloadQuality,
-                    style: TextStyle(
-                      fontSize: PlatformHelper.isTv ? 24 : 18,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   IconButton(
-                    icon: Icon(
-                      Icons.close,
-                      size: PlatformHelper.isTv ? 32 : 24,
-                    ),
+                    icon: const Icon(Icons.close),
                     onPressed: () {
                       Navigator.pop(context);
                       completer.complete(null);
@@ -1254,8 +1205,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
               return ListTile(
                 leading: Container(
-                  width: PlatformHelper.isTv ? 64 : 48,
-                  height: PlatformHelper.isTv ? 64 : 48,
+                  width: 48,
+                  height: 48,
                   decoration: BoxDecoration(
                     gradient: isRecommended
                         ? const LinearGradient(
@@ -1270,7 +1221,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                       style: TextStyle(
                         color: isRecommended ? Colors.white : Colors.black87,
                         fontWeight: FontWeight.bold,
-                        fontSize: PlatformHelper.isTv ? 20 : 16,
                       ),
                     ),
                   ),
@@ -1283,27 +1233,23 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                         fontWeight:
                             isSelected ? FontWeight.bold : FontWeight.normal,
                         color: isSelected ? const Color(0xFF0088CC) : null,
-                        fontSize: PlatformHelper.isTv ? 18 : 16,
                       ),
                     ),
                     if (isRecommended) ...[
                       const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
+                            horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
                           color: const Color(0xFF0088CC),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
                           AppStrings.best,
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: PlatformHelper.isTv ? 12 : 10,
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold),
                         ),
                       ),
                     ],
@@ -1313,29 +1259,20 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const SizedBox(height: 4),
-                    Text(
-                      _getQualityDescription(quality),
-                      style: TextStyle(
-                        fontSize: PlatformHelper.isTv ? 14 : 12,
-                      ),
-                    ),
+                    Text(_getQualityDescription(quality)),
                     if (quality.estimatedSize > 0) ...[
                       const SizedBox(height: 2),
                       Row(
                         children: [
-                          Icon(
-                            Icons.storage_rounded,
-                            size: PlatformHelper.isTv ? 16 : 12,
-                            color: Colors.grey[600],
-                          ),
+                          Icon(Icons.storage_rounded,
+                              size: 12, color: Colors.grey[600]),
                           const SizedBox(width: 4),
                           Text(
                             'Size: ${quality.formattedSize}',
                             style: TextStyle(
-                              fontSize: PlatformHelper.isTv ? 13 : 11,
-                              color: Colors.grey[600],
-                              fontWeight: FontWeight.w500,
-                            ),
+                                fontSize: 11,
+                                color: Colors.grey[600],
+                                fontWeight: FontWeight.w500),
                           ),
                         ],
                       ),
@@ -1343,14 +1280,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   ],
                 ),
                 trailing: isSelected
-                    ? Icon(
-                        Icons.check_circle,
-                        color: const Color(0xFF0088CC),
-                        size: PlatformHelper.isTv ? 32 : 24,
-                      )
+                    ? const Icon(Icons.check_circle, color: Color(0xFF0088CC))
                     : null,
                 onTap: () {
-                  videoProvider.saveQualityPreference(video.id, quality.label);
+                  _videoProvider.saveQualityPreference(video.id, quality.label);
                   Navigator.pop(context);
                   completer.complete(quality);
                 },
@@ -1373,9 +1306,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           options: Options(
             receiveTimeout: const Duration(seconds: 5),
             sendTimeout: const Duration(seconds: 5),
-            headers: {
-              'Accept-Encoding': 'identity',
-            },
+            headers: {'Accept-Encoding': 'identity'},
           ),
         );
 
@@ -1416,9 +1347,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   }
 
   Future<String> _getConnectionType() async {
-    final connectivityService = context.read<ConnectivityService>();
-    if (!connectivityService.isOnline) return 'offline';
-
+    if (isOffline) return 'offline';
     if (PlatformHelper.isTv) return 'wifi';
     if (PlatformHelper.isDesktop) return 'wifi';
     return 'mobile';
@@ -1438,10 +1367,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         if (await dir.exists()) {
           final stat = await dir.stat();
           if (stat.size > PlatformHelper.maxCacheSize) {
-            SnackbarService().showError(
-              context,
-              AppStrings.storageAlmostFull,
-            );
+            SnackbarService().showError(context, AppStrings.storageAlmostFull);
             return;
           }
         }
@@ -1456,8 +1382,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       _downloadProgress[video.id] = 0.0;
     });
 
-    final videoProvider = context.read<VideoProvider>();
-    videoProvider.setDownloadState(video.id, true, 0.0);
+    _videoProvider.setDownloadState(video.id, true, 0.0);
 
     try {
       final cacheDir = await _getAppCacheDirectory();
@@ -1494,10 +1419,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           },
         ),
         onReceiveProgress: (received, total) {
-          if (total != -1 && mounted) {
+          if (total != -1 && isMounted) {
             final progress = received / total;
             setState(() => _downloadProgress[video.id] = progress);
-            videoProvider.updateDownloadProgress(
+            _videoProvider.updateDownloadProgress(
                 video.id, progress, received, total);
           }
         },
@@ -1522,12 +1447,12 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
       final qualityLevel = VideoQualityLevel.fromHeight(quality.height);
 
-      videoProvider.setDownloadState(video.id, false, 1.0);
-      videoProvider.setDownloadedVideoPath(video.id, filePath, qualityLevel);
+      _videoProvider.setDownloadState(video.id, false, 1.0);
+      _videoProvider.setDownloadedVideoPath(video.id, filePath, qualityLevel);
 
       await _saveCacheMetadata();
 
-      if (mounted) {
+      if (isMounted) {
         SnackbarService().showSuccess(
           context,
           '${quality.label} ${AppStrings.videoDownloaded} (${(fileSize / 1024 / 1024).toStringAsFixed(1)} MB)',
@@ -1549,22 +1474,22 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         errorMessage = '${AppStrings.networkError}: ${e.message}';
       }
 
-      if (mounted) {
+      if (isMounted) {
         setState(() {
           _isDownloading[video.id] = false;
           _downloadProgress.remove(video.id);
         });
-        videoProvider.setDownloadState(video.id, false, 0.0);
+        _videoProvider.setDownloadState(video.id, false, 0.0);
         SnackbarService().showError(context, errorMessage);
       }
       debugLog('VideoCard', 'Download error: $e');
     } catch (e) {
-      if (mounted) {
+      if (isMounted) {
         setState(() {
           _isDownloading[video.id] = false;
           _downloadProgress.remove(video.id);
         });
-        videoProvider.setDownloadState(video.id, false, 0.0);
+        _videoProvider.setDownloadState(video.id, false, 0.0);
         SnackbarService().showError(
             context, '${AppStrings.downloadFailed}: ${e.toString()}');
       }
@@ -1613,10 +1538,11 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         fullFilePath,
         filePath,
         options: Options(
-            receiveTimeout: const Duration(minutes: 5),
-            sendTimeout: const Duration(minutes: 5)),
+          receiveTimeout: const Duration(minutes: 5),
+          sendTimeout: const Duration(minutes: 5),
+        ),
         onReceiveProgress: (received, total) {
-          if (total != -1 && mounted) {
+          if (total != -1 && isMounted) {
             setState(() => _downloadProgress[note.id] = received / total);
           }
         },
@@ -1630,11 +1556,11 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
       await _saveCacheMetadata();
 
-      if (mounted) {
+      if (isMounted) {
         SnackbarService().showSuccess(context, AppStrings.noteDownloaded);
       }
     } catch (e) {
-      if (mounted) {
+      if (isMounted) {
         setState(() {
           _isDownloading[note.id] = false;
           _downloadProgress.remove(note.id);
@@ -1649,8 +1575,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     if (_currentUserId == null) return;
 
     try {
-      final authProvider = context.read<AuthProvider>();
-      final deviceService = authProvider.deviceService;
+      final deviceService = _authProvider.deviceService;
 
       final videoPaths = <String, String>{};
       for (final entry in _cachedVideoPaths.entries) {
@@ -1692,8 +1617,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     if (_currentUserId == null) return;
 
     try {
-      final authProvider = context.read<AuthProvider>();
-      final deviceService = authProvider.deviceService;
+      final deviceService = _authProvider.deviceService;
 
       final progressData = {
         'selected_answers':
@@ -1716,7 +1640,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   }
 
   Future<void> _checkAllQuestions(List<Question> questions) async {
-    final questionProvider = context.read<QuestionProvider>();
     bool hasError = false;
     int correctCount = 0;
 
@@ -1733,7 +1656,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
       try {
         final result =
-            await questionProvider.checkAnswer(questionId, selectedAnswer);
+            await _questionProvider.checkAnswer(questionId, selectedAnswer);
         final isCorrect = result.data?['is_correct'] == true;
 
         setState(() {
@@ -1751,7 +1674,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     AppDialog.hideLoading(context);
     await _saveQuestionProgress();
 
-    if (mounted) {
+    if (isMounted) {
       SnackbarService().showSuccess(
         context,
         hasError
@@ -1793,11 +1716,9 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   }
 
   Future<void> _checkAnswer(int questionId, String selectedOption) async {
-    final questionProvider = context.read<QuestionProvider>();
-
     try {
       final result =
-          await questionProvider.checkAnswer(questionId, selectedOption);
+          await _questionProvider.checkAnswer(questionId, selectedOption);
       final isCorrect = result.data?['is_correct'] == true;
 
       setState(() {
@@ -1808,15 +1729,13 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
       await _saveQuestionProgress();
     } catch (e) {
-      if (mounted) {
+      if (isMounted) {
         SnackbarService().showError(context, AppStrings.failedToCheckAnswer);
       }
     }
   }
 
   Future<void> _initialize() async {
-    await _checkConnectivity();
-    _setupConnectivityListener();
     await _loadCachedContent();
     await _initializeFromCache();
 
@@ -1824,531 +1743,214 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       setState(() {
         _isLoading = false;
         _isCheckingAccess = false;
+        _hasLoadedOnce = true;
       });
       if (_hasAccess || (_chapter?.isFree ?? false)) {
         unawaited(_loadContent());
       }
-      if (!_isOffline) {
+      if (!isOffline) {
         unawaited(_refreshInBackground());
       }
     } else {
       await _checkAccessAndLoadData();
-    }
-
-    if (!_isOffline) {
-      _setupBackgroundRefresh();
     }
   }
 
   Widget _buildAccessDeniedScreen() {
     final isFree = _chapter?.isFree ?? false;
 
-    return Scaffold(
-      backgroundColor: AppColors.getBackground(context),
-      appBar: CustomAppBar(
-        title: _chapter?.name ?? AppStrings.chapter,
-        subtitle: isFree ? AppStrings.comingSoon : AppStrings.locked,
-        leading: AppButton.icon(
-            icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
-        showOfflineIndicator: _isOffline,
-      ),
-      body: Center(
-        child: Padding(
-          padding: EdgeInsets.all(ResponsiveValues.sectionPadding(context)),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: EdgeInsets.all(ResponsiveValues.spacingXL(context)),
-                decoration: BoxDecoration(
-                  color: isFree
-                      ? AppColors.telegramYellow.withValues(alpha: 0.1)
-                      : AppColors.telegramRed.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  isFree ? Icons.schedule_rounded : Icons.lock_rounded,
-                  size: ResponsiveValues.iconSizeXXL(context),
-                  color:
-                      isFree ? AppColors.telegramYellow : AppColors.telegramRed,
-                ),
-              ),
-              SizedBox(height: ResponsiveValues.spacingXXL(context)),
-              Text(
-                isFree ? AppStrings.comingSoon : AppStrings.chapterLocked,
-                style: AppTextStyles.headlineMedium(context)
-                    .copyWith(fontWeight: FontWeight.w700),
-              ),
-              SizedBox(height: ResponsiveValues.spacingL(context)),
-              Padding(
-                padding: EdgeInsets.symmetric(
-                    horizontal: ResponsiveValues.sectionPadding(context) * 2),
-                child: Text(
-                  isFree
-                      ? AppStrings.chapterComingSoonMessage
-                      : '${AppStrings.accessRequiresSubscription} "${_category?.name ?? AppStrings.theCategory}".',
-                  textAlign: TextAlign.center,
-                  style: AppTextStyles.bodyLarge(context).copyWith(
-                    color: AppColors.getTextSecondary(context),
-                    height: 1.6,
-                  ),
-                ),
-              ),
-              if (!isFree) ...[
-                SizedBox(height: ResponsiveValues.spacingXXXL(context)),
-                AppButton.primary(
-                  label: AppStrings.purchaseAccess,
-                  onPressed: () => context.push('/payment', extra: {
-                    'category': _category,
-                    'paymentType': 'first_time'
-                  }),
-                ),
-              ],
-              SizedBox(height: ResponsiveValues.spacingXL(context)),
-              AppButton.outline(
-                  label: AppStrings.goBack, onPressed: () => context.pop()),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeroMetric(
-      {required IconData icon, required String label, required String value}) {
-    return Expanded(
-      child: Container(
-        padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.1),
-          borderRadius:
-              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
-        ),
+    return Center(
+      child: Padding(
+        padding: EdgeInsets.all(ResponsiveValues.sectionPadding(context)),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon,
-                color: Colors.white70,
-                size: ResponsiveValues.iconSizeS(context)),
-            SizedBox(height: ResponsiveValues.spacingS(context)),
+            Container(
+              padding: EdgeInsets.all(ResponsiveValues.spacingXL(context)),
+              decoration: BoxDecoration(
+                color: isFree
+                    ? AppColors.telegramYellow.withValues(alpha: 0.1)
+                    : AppColors.telegramRed.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                isFree ? Icons.schedule_rounded : Icons.lock_rounded,
+                size: ResponsiveValues.iconSizeXXL(context),
+                color:
+                    isFree ? AppColors.telegramYellow : AppColors.telegramRed,
+              ),
+            ),
+            SizedBox(height: ResponsiveValues.spacingXXL(context)),
             Text(
-              value,
-              style: AppTextStyles.titleMedium(context).copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-              ),
+              isFree ? AppStrings.comingSoon : AppStrings.chapterLocked,
+              style: AppTextStyles.headlineMedium(context)
+                  .copyWith(fontWeight: FontWeight.w700),
             ),
-            SizedBox(height: ResponsiveValues.spacingXXS(context)),
-            Text(
-              label,
-              style: AppTextStyles.bodySmall(context)
-                  .copyWith(color: Colors.white70),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeroChip({required IconData icon, required String label}) {
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: ResponsiveValues.spacingM(context),
-        vertical: ResponsiveValues.spacingXS(context),
-      ),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.1),
-        borderRadius:
-            BorderRadius.circular(ResponsiveValues.radiusFull(context)),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon,
-              color: Colors.white70,
-              size: ResponsiveValues.iconSizeXS(context)),
-          SizedBox(width: ResponsiveValues.spacingXS(context)),
-          Text(
-            label,
-            style: AppTextStyles.labelSmall(context).copyWith(
-              color: Colors.white,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildChapterHero() {
-    final videoCount = context
-        .watch<VideoProvider>()
-        .getVideosByChapter(widget.chapterId)
-        .length;
-    final noteCount = context
-        .watch<NoteProvider>()
-        .getNotesByChapter(widget.chapterId)
-        .length;
-    final questionCount = context
-        .watch<QuestionProvider>()
-        .getQuestionsByChapter(widget.chapterId)
-        .length;
-
-    return Container(
-      margin: EdgeInsets.fromLTRB(
-        ResponsiveValues.spacingM(context),
-        ResponsiveValues.spacingM(context),
-        ResponsiveValues.spacingM(context),
-        ResponsiveValues.spacingS(context),
-      ),
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF0F766E),
-              Color(0xFF0EA5E9),
-              Color(0xFF111827),
-            ],
-          ),
-          borderRadius:
-              BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF0EA5E9).withValues(alpha: 0.16),
-              blurRadius: 26,
-              offset: const Offset(0, 12),
-            ),
-          ],
-        ),
-        child: Padding(
-          padding: ResponsiveValues.cardPadding(context),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Wrap(
-                spacing: ResponsiveValues.spacingS(context),
-                runSpacing: ResponsiveValues.spacingS(context),
-                children: [
-                  _buildHeroChip(
-                    icon: Icons.menu_book_rounded,
-                    label: widget.course?.name ?? AppStrings.course,
-                  ),
-                  _buildHeroChip(
-                    icon: _hasAccess
-                        ? Icons.verified_rounded
-                        : Icons.lock_outline_rounded,
-                    label: _hasAccess
-                        ? AppStrings.fullAccess
-                        : AppStrings.limitedAccess,
-                  ),
-                ],
-              ),
-              SizedBox(height: ResponsiveValues.spacingL(context)),
-              Text(
-                _chapter?.name ?? AppStrings.chapter,
-                style: AppTextStyles.headlineSmall(context).copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.8,
-                ),
-              ),
-              SizedBox(height: ResponsiveValues.spacingM(context)),
-              Text(
-                _chapter?.isFree ?? false
+            SizedBox(height: ResponsiveValues.spacingL(context)),
+            Padding(
+              padding: EdgeInsets.symmetric(
+                  horizontal: ResponsiveValues.sectionPadding(context) * 2),
+              child: Text(
+                isFree
                     ? AppStrings.chapterComingSoonMessage
                     : '${AppStrings.accessRequiresSubscription} "${_category?.name ?? AppStrings.theCategory}".',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: AppTextStyles.bodyMedium(context).copyWith(
-                  color: Colors.white.withValues(alpha: 0.82),
-                  height: 1.5,
+                textAlign: TextAlign.center,
+                style: AppTextStyles.bodyLarge(context).copyWith(
+                  color: AppColors.getTextSecondary(context),
+                  height: 1.6,
                 ),
               ),
-              SizedBox(height: ResponsiveValues.spacingXL(context)),
-              Row(
-                children: [
-                  _buildHeroMetric(
-                    icon: Icons.videocam_rounded,
-                    label: AppStrings.videos,
-                    value: videoCount.toString(),
-                  ),
-                  SizedBox(width: ResponsiveValues.spacingM(context)),
-                  _buildHeroMetric(
-                    icon: Icons.note_alt_rounded,
-                    label: AppStrings.notes,
-                    value: noteCount.toString(),
-                  ),
-                  SizedBox(width: ResponsiveValues.spacingM(context)),
-                  _buildHeroMetric(
-                    icon: Icons.quiz_rounded,
-                    label: AppStrings.practice,
-                    value: questionCount.toString(),
-                  ),
-                ],
+            ),
+            if (!isFree) ...[
+              SizedBox(height: ResponsiveValues.spacingXXXL(context)),
+              AppButton.primary(
+                label: AppStrings.purchaseAccess,
+                onPressed: () => context.push('/payment', extra: {
+                  'category': _category,
+                  'paymentType': 'first_time'
+                }),
               ),
             ],
-          ),
+            SizedBox(height: ResponsiveValues.spacingXL(context)),
+            AppButton.outline(
+                label: AppStrings.goBack, onPressed: () => context.pop()),
+          ],
         ),
       ),
-    );
-  }
-
-  Widget _buildSectionIntro({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-  }) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        ResponsiveValues.spacingM(context),
-        ResponsiveValues.spacingM(context),
-        ResponsiveValues.spacingM(context),
-        ResponsiveValues.spacingS(context),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  AppColors.telegramBlue.withValues(alpha: 0.18),
-                  AppColors.info.withValues(alpha: 0.10),
-                ],
-              ),
-              borderRadius:
-                  BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-            ),
-            child: Icon(icon, color: AppColors.telegramBlue),
-          ),
-          SizedBox(width: ResponsiveValues.spacingM(context)),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: AppTextStyles.titleMedium(context).copyWith(
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.4,
-                  ),
-                ),
-                SizedBox(height: ResponsiveValues.spacingXXS(context)),
-                Text(
-                  subtitle,
-                  style: AppTextStyles.bodySmall(context).copyWith(
-                    color: AppColors.getTextSecondary(context),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTabShell({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required Widget child,
-  }) {
-    return Column(
-      children: [
-        _buildSectionIntro(icon: icon, title: title, subtitle: subtitle),
-        Expanded(child: child),
-      ],
     );
   }
 
   Widget _buildVideosTab() {
-    final videoProvider = context.watch<VideoProvider>();
-    final videos = videoProvider.getVideosByChapter(widget.chapterId);
-    final hasLoadedVideos = videoProvider.hasLoadedForChapter(widget.chapterId);
+    final videos = _videoProvider.getVideosByChapter(widget.chapterId);
 
-    if (videoProvider.isLoadingForChapter(widget.chapterId) &&
+    // Show shimmer only if loading and no videos AND no cached data
+    if (_videoProvider.isLoadingForChapter(widget.chapterId) &&
         videos.isEmpty &&
-        !hasLoadedVideos &&
         !_hasCachedData &&
-        !_isOffline) {
-      return ListView.builder(
-        padding: ResponsiveValues.screenPadding(context),
-        itemCount: 3,
-        itemBuilder: (context, index) => Padding(
-          padding: EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
-          child: AppShimmer(type: ShimmerType.videoCard, index: index),
-        ),
-      );
+        !isOffline) {
+      return buildLoadingShimmer();
     }
 
     if (videos.isEmpty) {
       return Center(
-        child: AppEmptyState.noData(
+        child: buildEmptyWidget(
           dataType: AppStrings.videos,
-          customMessage: _isOffline
+          customMessage: isOffline
               ? AppStrings.noCachedVideos
               : AppStrings.noVideosForChapter,
-          onRefresh: () => videoProvider.loadVideosByChapter(widget.chapterId,
-              forceRefresh: true),
-          isOffline: _isOffline,
-          pendingCount: _pendingCount,
+          isOffline: isOffline,
         ),
       );
     }
 
-    return RefreshIndicator(
-      onRefresh: () => videoProvider.loadVideosByChapter(widget.chapterId,
-          forceRefresh: true),
-      color: AppColors.telegramBlue,
-      backgroundColor: AppColors.getBackground(context),
-      child: ListView.builder(
-        controller: _scrollController,
-        padding: ResponsiveValues.screenPadding(context),
-        itemCount: videos.length,
-        itemBuilder: (context, index) {
-          final video = videos[index];
-          return Padding(
-            padding:
-                EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
-            child: VideoCard(
-              video: video,
-              chapterId: widget.chapterId,
-              index: index,
-              onPlay: () => _playVideo(video),
-              onDownload: (quality) async {
-                setState(() => _downloadQuality[video.id] = quality);
-                await _downloadVideo(video);
-              },
-              onShowQualitySelector: _showQualitySelector,
-            ),
-          );
-        },
-      ),
+    return ListView.builder(
+      controller: _scrollController,
+      padding: ResponsiveValues.screenPadding(context),
+      itemCount: videos.length,
+      itemBuilder: (context, index) {
+        final video = videos[index];
+        return Padding(
+          padding: EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
+          child: VideoCard(
+            video: video,
+            chapterId: widget.chapterId,
+            index: index,
+            onPlay: () => _playVideo(video),
+            onDownload: (quality) async {
+              setState(() => _downloadQuality[video.id] = quality);
+              await _downloadVideo(video);
+            },
+            onShowQualitySelector: _showQualitySelector,
+          ),
+        );
+      },
     );
   }
 
   Widget _buildNotesTab() {
-    final noteProvider = context.watch<NoteProvider>();
-    final notes = noteProvider.getNotesByChapter(widget.chapterId);
-    final hasLoadedNotes = noteProvider.hasLoadedForChapter(widget.chapterId);
+    final notes = _noteProvider.getNotesByChapter(widget.chapterId);
 
-    if (noteProvider.isLoadingForChapter(widget.chapterId) &&
+    // Show shimmer only if loading and no notes AND no cached data
+    if (_noteProvider.isLoadingForChapter(widget.chapterId) &&
         notes.isEmpty &&
-        !hasLoadedNotes &&
         !_hasCachedData &&
-        !_isOffline) {
-      return ListView.builder(
-        padding: ResponsiveValues.screenPadding(context),
-        itemCount: 3,
-        itemBuilder: (context, index) => Padding(
-          padding: EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
-          child: AppShimmer(type: ShimmerType.noteCard, index: index),
-        ),
-      );
+        !isOffline) {
+      return buildLoadingShimmer();
     }
 
     if (notes.isEmpty) {
       return Center(
-        child: AppEmptyState.noData(
+        child: buildEmptyWidget(
           dataType: AppStrings.notes,
-          customMessage: _isOffline
+          customMessage: isOffline
               ? AppStrings.noCachedNotes
               : AppStrings.noNotesForChapter,
-          onRefresh: () => noteProvider.loadNotesByChapter(widget.chapterId,
-              forceRefresh: true),
-          isOffline: _isOffline,
-          pendingCount: _pendingCount,
+          isOffline: isOffline,
         ),
       );
     }
 
-    return RefreshIndicator(
-      onRefresh: () =>
-          noteProvider.loadNotesByChapter(widget.chapterId, forceRefresh: true),
-      color: AppColors.telegramBlue,
-      backgroundColor: AppColors.getBackground(context),
-      child: ListView.builder(
-        controller: _scrollController,
-        padding: ResponsiveValues.screenPadding(context),
-        itemCount: notes.length,
-        itemBuilder: (context, index) {
-          final note = notes[index];
-          final isDownloaded = _cachedNotePaths.containsKey(note.id);
-          final isDownloading = _isDownloading[note.id] == true;
-          final downloadProgress = _downloadProgress[note.id] ?? 0.0;
+    return ListView.builder(
+      controller: _scrollController,
+      padding: ResponsiveValues.screenPadding(context),
+      itemCount: notes.length,
+      itemBuilder: (context, index) {
+        final note = notes[index];
+        final isDownloaded = _cachedNotePaths.containsKey(note.id);
+        final isDownloading = _isDownloading[note.id] == true;
+        final downloadProgress = _downloadProgress[note.id] ?? 0.0;
 
-          return Padding(
-            padding:
-                EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
-            child: NoteCard(
-              note: note,
-              chapterId: widget.chapterId,
-              index: index,
-              isDownloaded: isDownloaded,
-              isDownloading: isDownloading,
-              downloadProgress: downloadProgress,
-              onTap: () {
-                final progressProvider = context.read<ProgressProvider>();
-                progressProvider.saveChapterProgress(
-                    chapterId: note.chapterId, notesViewed: true);
-                noteProvider.markNoteAsViewed(note.id);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => NoteDetailScreen(
-                      note: note,
-                      cachedPath: _cachedNotePaths[note.id],
-                    ),
+        return Padding(
+          padding: EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
+          child: NoteCard(
+            note: note,
+            chapterId: widget.chapterId,
+            index: index,
+            isDownloaded: isDownloaded,
+            isDownloading: isDownloading,
+            downloadProgress: downloadProgress,
+            onTap: () {
+              _progressProvider.saveChapterProgress(
+                chapterId: note.chapterId,
+                notesViewed: true,
+              );
+              _noteProvider.markNoteAsViewed(note.id);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => NoteDetailScreen(
+                    note: note,
+                    cachedPath: _cachedNotePaths[note.id],
                   ),
-                );
-              },
-              onDownload: () => _downloadNote(note),
-            ),
-          );
-        },
-      ),
+                ),
+              );
+            },
+            onDownload: () => _downloadNote(note),
+          ),
+        );
+      },
     );
   }
 
   Widget _buildPracticeTab() {
-    final questionProvider = context.watch<QuestionProvider>();
-    final questions = questionProvider.getQuestionsByChapter(widget.chapterId);
-    final hasLoadedQuestions =
-        questionProvider.hasLoadedForChapter(widget.chapterId);
+    final questions = _questionProvider.getQuestionsByChapter(widget.chapterId);
 
-    if (questionProvider.isLoadingForChapter(widget.chapterId) &&
+    // Show shimmer only if loading and no questions AND no cached data
+    if (_questionProvider.isLoadingForChapter(widget.chapterId) &&
         questions.isEmpty &&
-        !hasLoadedQuestions &&
         !_hasCachedData &&
-        !_isOffline) {
-      return ListView.builder(
-        padding: ResponsiveValues.screenPadding(context),
-        itemCount: 3,
-        itemBuilder: (context, index) => Padding(
-          padding: EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
-          child:
-              const AppShimmer(type: ShimmerType.rectangle, customHeight: 200),
-        ),
-      );
+        !isOffline) {
+      return buildLoadingShimmer();
     }
 
     if (questions.isEmpty) {
       return Center(
-        child: AppEmptyState.noData(
+        child: buildEmptyWidget(
           dataType: AppStrings.practiceQuestions,
-          customMessage: _isOffline
+          customMessage: isOffline
               ? AppStrings.noCachedQuestions
               : AppStrings.practiceQuestionsComingSoon,
-          onRefresh: () => questionProvider
-              .loadPracticeQuestions(widget.chapterId, forceRefresh: true),
-          isOffline: _isOffline,
-          pendingCount: _pendingCount,
+          isOffline: isOffline,
         ),
       );
     }
@@ -2359,7 +1961,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
     return CustomScrollView(
       slivers: [
-        if (_isOffline && _pendingCount > 0)
+        if (isOffline && pendingCount > 0)
           SliverToBoxAdapter(
             child: Container(
               margin: EdgeInsets.all(ResponsiveValues.spacingM(context)),
@@ -2384,7 +1986,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   SizedBox(width: ResponsiveValues.spacingM(context)),
                   Expanded(
                     child: Text(
-                      '$_pendingCount offline answer${_pendingCount > 1 ? 's' : ''}',
+                      '$pendingCount offline answer${pendingCount > 1 ? 's' : ''}',
                       style: AppTextStyles.bodySmall(context)
                           .copyWith(color: AppColors.info),
                     ),
@@ -2407,7 +2009,9 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                         Text(
                           AppStrings.practiceProgress,
                           style: AppTextStyles.titleMedium(context).copyWith(
-                              fontWeight: FontWeight.w600, letterSpacing: -0.5),
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: -0.5,
+                          ),
                         ),
                         Container(
                           padding: EdgeInsets.symmetric(
@@ -2423,8 +2027,9 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                           child: Text(
                             '$answeredCount/$totalCount',
                             style: AppTextStyles.labelSmall(context).copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700),
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                       ],
@@ -2543,132 +2148,45 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     if (state == AppLifecycleState.resumed) _resumeVideoIfNeeded();
   }
 
-  Widget _buildSkeletonLoader() {
-    return Scaffold(
-      backgroundColor: AppColors.getBackground(context),
-      appBar: CustomAppBar(
-        title: AppStrings.chapter,
-        subtitle: AppStrings.loading,
-        leading: AppButton.icon(
-            icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
-      ),
-      body: Column(
-        children: [
-          Container(
-            decoration: BoxDecoration(
-              border: Border(
-                  bottom: BorderSide(
-                      color: AppColors.getDivider(context), width: 0.5)),
-            ),
-            child: TabBar(
-              controller: _tabController,
-              tabs: [
-                const Tab(
-                    icon: Icon(Icons.videocam_rounded),
-                    text: AppStrings.videos),
-                const Tab(
-                    icon: Icon(Icons.note_alt_rounded), text: AppStrings.notes),
-                const Tab(
-                    icon: Icon(Icons.quiz_rounded), text: AppStrings.practice),
-              ],
-              labelStyle: AppTextStyles.labelMedium(context),
-              unselectedLabelStyle: AppTextStyles.labelMedium(context),
-              indicatorColor: AppColors.telegramBlue,
-              indicatorWeight: 3,
-              labelColor: AppColors.telegramBlue,
-              unselectedLabelColor: AppColors.getTextSecondary(context),
-            ),
-          ),
-          Expanded(
-            child: ListView.builder(
-              padding: ResponsiveValues.screenPadding(context),
-              itemCount: 3,
-              itemBuilder: (context, index) => Padding(
-                padding:
-                    EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
-                child: AppShimmer(type: ShimmerType.videoCard, index: index),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
-  Widget build(BuildContext context) {
-    if (_isLoading && !_hasCachedData) {
-      return _buildSkeletonLoader();
-    }
-
+  Widget buildContent(BuildContext context) {
     if (_errorMessage != null) {
-      return Scaffold(
-        backgroundColor: AppColors.getBackground(context),
-        appBar: CustomAppBar(
-          title: AppStrings.error,
-          subtitle: AppStrings.somethingWentWrong,
-          leading: AppButton.icon(
-              icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
-          showOfflineIndicator: _isOffline,
-        ),
-        body: Center(
-          child: AppEmptyState.error(
-            title: AppStrings.somethingWentWrong,
-            message: _errorMessage!,
-            onRetry: _initialize,
-          ),
-        ),
+      return buildErrorWidget(_errorMessage!, onRetry: _initialize);
+    }
+
+    if (_chapter == null && !_hasCachedData) {
+      return buildErrorWidget(
+        isOffline
+            ? AppStrings.noCachedDataAvailable
+            : AppStrings.chapterDoesNotExist,
+        onRetry: onRefresh,
       );
     }
 
-    if (_chapter == null) {
-      return Scaffold(
-        backgroundColor: AppColors.getBackground(context),
-        appBar: CustomAppBar(
-          title: AppStrings.notFound,
-          subtitle: AppStrings.chapterNotFound,
-          leading: AppButton.icon(
-              icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
-          showOfflineIndicator: _isOffline,
-        ),
-        body: Center(
-          child: AppEmptyState.error(
-            title: AppStrings.chapterNotFound,
-            message: _isOffline
-                ? AppStrings.noCachedDataAvailable
-                : AppStrings.chapterDoesNotExist,
-            onRetry: _manualRefresh,
+    if (!_hasAccess && !_isCheckingAccess) {
+      return _buildAccessDeniedScreen();
+    }
+
+    return SmartRefresher(
+      controller: RefreshController(),
+      onRefresh: onRefresh,
+      header: WaterDropHeader(
+        waterDropColor: AppColors.telegramBlue,
+        refresh: SizedBox(
+          width: ResponsiveValues.iconSizeL(context),
+          height: ResponsiveValues.iconSizeL(context),
+          child: const CircularProgressIndicator(
+            strokeWidth: 2,
+            valueColor: AlwaysStoppedAnimation(AppColors.telegramBlue),
           ),
         ),
-      );
-    }
-
-    if (_hasCachedData && _isLoading) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() => _isLoading = false);
-      });
-    }
-
-    if (!_hasAccess && !_isCheckingAccess) return _buildAccessDeniedScreen();
-
-    return Scaffold(
-      backgroundColor: AppColors.getBackground(context),
-      appBar: CustomAppBar(
-        title: _chapter!.name,
-        subtitle:
-            _isOffline ? AppStrings.offlineMode : AppStrings.chapterContent,
-        leading: AppButton.icon(
-            icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
-        showOfflineIndicator: _isOffline,
       ),
-      body: RefreshIndicator(
-        onRefresh: _manualRefresh,
-        color: AppColors.telegramBlue,
-        backgroundColor: AppColors.getSurface(context),
-        child: Column(
-          children: [
-            if (_isOffline && _pendingCount > 0)
-              Container(
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          if (isOffline && pendingCount > 0)
+            SliverToBoxAdapter(
+              child: Container(
                 margin: EdgeInsets.all(ResponsiveValues.spacingM(context)),
                 padding: ResponsiveValues.cardPadding(context),
                 decoration: BoxDecoration(
@@ -2691,7 +2209,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                     SizedBox(width: ResponsiveValues.spacingM(context)),
                     Expanded(
                       child: Text(
-                        AppStrings.offlineChangesLabel(_pendingCount),
+                        AppStrings.offlineChangesLabel(pendingCount),
                         style: AppTextStyles.bodySmall(context)
                             .copyWith(color: AppColors.info),
                       ),
@@ -2699,24 +2217,23 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   ],
                 ),
               ),
-            Container(
+            ),
+          SliverToBoxAdapter(
+            child: Container(
               decoration: BoxDecoration(
                 border: Border(
-                    bottom: BorderSide(
-                        color: AppColors.getDivider(context), width: 0.5)),
+                  bottom: BorderSide(
+                    color: AppColors.getDivider(context).withValues(alpha: 0.5),
+                    width: 0.5,
+                  ),
+                ),
               ),
               child: TabBar(
                 controller: _tabController,
-                tabs: [
-                  const Tab(
-                      icon: Icon(Icons.videocam_rounded),
-                      text: AppStrings.videos),
-                  const Tab(
-                      icon: Icon(Icons.note_alt_rounded),
-                      text: AppStrings.notes),
-                  const Tab(
-                      icon: Icon(Icons.quiz_rounded),
-                      text: AppStrings.practice),
+                tabs: const [
+                  Tab(text: AppStrings.videos),
+                  Tab(text: AppStrings.notes),
+                  Tab(text: AppStrings.practice),
                 ],
                 labelStyle: AppTextStyles.labelMedium(context),
                 unselectedLabelStyle: AppTextStyles.labelMedium(context),
@@ -2726,19 +2243,28 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                 unselectedLabelColor: AppColors.getTextSecondary(context),
               ),
             ),
-            Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  _buildVideosTab(),
-                  _buildNotesTab(),
-                  _buildPracticeTab(),
-                ],
-              ),
+          ),
+          SliverFillRemaining(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildVideosTab(),
+                _buildNotesTab(),
+                _buildPracticeTab(),
+              ],
             ),
-          ],
-        ),
-      ).animate().fadeIn(duration: AppThemes.animationMedium),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return buildScreen(
+      content: buildContent(context),
+      showAppBar: true,
+      showRefreshIndicator: false,
     );
   }
 }
@@ -2794,13 +2320,15 @@ class NoteDetailScreen extends StatelessWidget {
         title: note.title,
         subtitle: isPdf ? AppStrings.pdfDocument : AppStrings.textDocument,
         leading: AppButton.icon(
-            icon: Icons.arrow_back_rounded,
-            onPressed: () => Navigator.pop(context)),
+          icon: Icons.arrow_back_rounded,
+          onPressed: () => Navigator.pop(context),
+        ),
         actions: [
           if (hasFile && cachedPath != null)
             AppButton.icon(
-                icon: Icons.open_in_new_rounded,
-                onPressed: () => _openFile(context, cachedPath!)),
+              icon: Icons.open_in_new_rounded,
+              onPressed: () => _openFile(context, cachedPath!),
+            ),
         ],
       ),
       body: Column(

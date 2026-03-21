@@ -1,5 +1,5 @@
 // lib/screens/main/chatbot_screen.dart
-// COMPLETE FIXED VERSION - NULL SAFETY IN INITSTATE
+// PRODUCTION STANDARD - WITH PULL-TO-REFRESH & PROPER LOADING
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -9,15 +9,13 @@ import 'package:pull_to_refresh/pull_to_refresh.dart' hide RefreshIndicator;
 
 import '../../models/chatbot_model.dart';
 import '../../providers/chatbot_provider.dart';
-import '../../services/connectivity_service.dart';
+import '../../widgets/common/app_empty_state.dart';
+import '../../widgets/common/base_screen_mixin.dart';
 import '../../services/snackbar_service.dart';
-import '../../services/offline_queue_manager.dart';
 import '../../utils/helpers.dart';
 import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
-import '../../widgets/common/app_bar.dart';
 import '../../widgets/common/app_card.dart';
-import '../../widgets/common/app_empty_state.dart';
 import '../../widgets/common/app_shimmer.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
@@ -33,10 +31,7 @@ class ChatbotScreen extends StatefulWidget {
 }
 
 class _ChatbotScreenState extends State<ChatbotScreen>
-    with
-        WidgetsBindingObserver,
-        TickerProviderStateMixin,
-        AutomaticKeepAliveClientMixin {
+    with BaseScreenMixin<ChatbotScreen>, TickerProviderStateMixin {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final FocusNode _focusNode = FocusNode();
@@ -45,23 +40,48 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   bool _isSending = false;
   bool _showConversationList = false;
-  bool _isRefreshing = false;
   String _greeting = '';
   late AnimationController _slideController;
   late Animation<Offset> _slideAnimation;
-  bool _isOffline = false;
-  int _pendingCount = 0;
+  bool _initialLoadDone = false;
 
-  StreamSubscription? _connectivitySubscription;
-  bool _isMounted = false; // ✅ Track mounted state manually
+  late ChatbotProvider _provider;
 
   @override
-  bool get wantKeepAlive => true;
+  String get screenTitle => _provider.currentConversation?.title ?? 'AI Tutor';
+
+  @override
+  String? get screenSubtitle => _greeting;
+
+  @override
+  bool get isLoading =>
+      (_provider.isLoadingConversations && !_provider.hasInitialData) ||
+      (_provider.isLoadingMessages && !_initialLoadDone);
+
+  @override
+  bool get hasCachedData => _provider.hasInitialData;
+
+  @override
+  dynamic get errorMessage => _provider.errorMessage;
+
+  // ✅ Shimmer type for chatbot
+  @override
+  ShimmerType get shimmerType => ShimmerType.textLine;
+
+  @override
+  int get shimmerItemCount => 5;
+
+  @override
+  Widget? get appBarLeading => ScreenSize.isMobile(context)
+      ? IconButton(
+          icon: Icon(Icons.menu, color: AppColors.getTextPrimary(context)),
+          onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+        )
+      : null;
 
   @override
   void initState() {
     super.initState();
-    _isMounted = true;
 
     _slideController = AnimationController(
       vsync: this,
@@ -72,67 +92,42 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _slideController, curve: Curves.easeOut));
 
-    // ✅ DON'T access context here - use post frame callback
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_isMounted) {
-        _initialize();
-      }
-    });
+    _setGreeting();
+    _setupScreenSize();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _provider = Provider.of<ChatbotProvider>(context);
+
+    _provider.addListener(_onProviderDataChanged);
+
+    // Mark initial load as done after first data arrives
+    if (_provider.hasInitialData) {
+      _initialLoadDone = true;
+    }
+  }
+
+  void _onProviderDataChanged() {
+    if (mounted) {
+      setState(() {
+        if (_provider.hasInitialData) {
+          _initialLoadDone = true;
+        }
+      });
+    }
   }
 
   @override
   void dispose() {
-    _isMounted = false; // ✅ Mark as unmounted immediately
-    WidgetsBinding.instance.removeObserver(this);
-    _connectivitySubscription?.cancel();
     _messageController.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
     _slideController.dispose();
     _refreshController.dispose();
+    _provider.removeListener(_onProviderDataChanged);
     super.dispose();
-  }
-
-  Future<void> _initialize() async {
-    if (!_isMounted) return;
-
-    await _checkConnectivity();
-    _setupConnectivityListener();
-    _setGreeting();
-    _setupScreenSize();
-    _scrollToBottom();
-  }
-
-  void _setupConnectivityListener() {
-    if (!_isMounted) return;
-
-    // ✅ Safe to access context now (after first frame)
-    final connectivityService = context.read<ConnectivityService>();
-    _connectivitySubscription?.cancel();
-    _connectivitySubscription =
-        connectivityService.onConnectivityChanged.listen((isOnline) {
-      if (!_isMounted) return;
-
-      setState(() {
-        _isOffline = !isOnline;
-        final queueManager = context.read<OfflineQueueManager>();
-        _pendingCount = queueManager.pendingCount;
-      });
-    });
-  }
-
-  Future<void> _checkConnectivity() async {
-    if (!_isMounted) return;
-
-    final connectivityService = context.read<ConnectivityService>();
-    await connectivityService.checkConnectivity();
-    if (!_isMounted) return;
-
-    setState(() {
-      _isOffline = !connectivityService.isOnline;
-      final queueManager = context.read<OfflineQueueManager>();
-      _pendingCount = queueManager.pendingCount;
-    });
   }
 
   void _setGreeting() {
@@ -148,7 +143,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   void _setupScreenSize() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_isMounted) return;
+      if (!isMounted) return;
       if (ScreenSize.isTablet(context) || ScreenSize.isDesktop(context)) {
         setState(() => _showConversationList = true);
         _slideController.forward();
@@ -160,7 +155,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_isMounted || !_scrollController.hasClients) return;
+      if (!isMounted || !_scrollController.hasClients) return;
       _scrollController.animateTo(
         _scrollController.position.maxScrollExtent,
         duration: const Duration(milliseconds: 300),
@@ -169,271 +164,110 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     });
   }
 
-  Future<void> _manualRefresh() async {
-    if (_isRefreshing || !_isMounted) return;
-
-    final connectivityService = context.read<ConnectivityService>();
-    if (!connectivityService.isOnline) {
-      _refreshController.refreshFailed();
-      if (_isMounted) {
-        SnackbarService().showOffline(context, action: 'refresh');
-      }
-      return;
-    }
-
-    setState(() => _isRefreshing = true);
-
+  // ✅ Pull-to-refresh handler
+  @override
+  Future<void> onRefresh() async {
     try {
-      final chatbotProvider = context.read<ChatbotProvider>();
-      await chatbotProvider.loadConversations(
-        forceRefresh: true,
-        isManualRefresh: true,
-      );
-      if (!_isMounted) return;
-
-      if (widget.conversationId != null) {
-        await chatbotProvider.loadMessages(
-          widget.conversationId!,
-          forceRefresh: true,
-          isManualRefresh: true,
-        );
-      } else if (chatbotProvider.currentConversation != null) {
-        await chatbotProvider.loadMessages(
-          chatbotProvider.currentConversation!.id,
-          forceRefresh: true,
-          isManualRefresh: true,
-        );
-      }
-
-      if (!_isMounted) return;
-
-      setState(() => _isOffline = false);
-      SnackbarService().showSuccess(context, 'Chat updated');
+      await _provider.loadConversations(
+          forceRefresh: true, isManualRefresh: true);
       _refreshController.refreshCompleted();
+      setState(() => _initialLoadDone = true);
     } catch (e) {
-      if (_isMounted) {
-        setState(() => _isOffline = true);
-        SnackbarService().showError(context, 'Refresh failed');
-      }
       _refreshController.refreshFailed();
-    } finally {
-      if (_isMounted) setState(() => _isRefreshing = false);
+      rethrow;
     }
   }
 
   Future<void> _sendMessage() async {
     final message = _messageController.text.trim();
-    if (message.isEmpty || _isSending || !_isMounted) return;
-
-    final chatbotProvider = context.read<ChatbotProvider>();
+    if (message.isEmpty || _isSending) return;
 
     setState(() => _isSending = true);
     _messageController.clear();
 
     try {
-      final result = await chatbotProvider.sendMessage(
+      final result = await _provider.sendMessage(
         message,
         conversationId:
-            widget.conversationId ?? chatbotProvider.currentConversation?.id,
+            widget.conversationId ?? _provider.currentConversation?.id,
       );
 
-      if (!_isMounted) return;
+      if (!isMounted) return;
 
       if (result.success) {
         _scrollToBottom();
         if (result.data != null &&
             result.data!['conversationId'] != null &&
             widget.conversationId == null) {
-          await GoRouter.of(
-            context,
-          ).replace('/chatbot?conv=${result.data!['conversationId']}');
+          await GoRouter.of(context)
+              .replace('/chatbot?conv=${result.data!['conversationId']}');
         }
+        setState(() => _initialLoadDone = true);
       } else {
-        SnackbarService().showError(
-          context,
-          result.message,
-        );
+        SnackbarService().showError(context, result.message);
       }
     } catch (e) {
-      if (_isMounted) {
+      if (isMounted) {
         SnackbarService().showError(context, getUserFriendlyErrorMessage(e));
       }
     } finally {
-      if (_isMounted) setState(() => _isSending = false);
+      if (isMounted) setState(() => _isSending = false);
     }
 
     _focusNode.requestFocus();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    super.build(context);
-
-    final chatbotProvider = Provider.of<ChatbotProvider>(context);
-    final bool isLoading = chatbotProvider.isLoadingConversations &&
-        !chatbotProvider.hasInitialData;
-
-    if (isLoading) {
-      return Scaffold(
-        backgroundColor: AppColors.getBackground(context),
-        appBar: CustomAppBar(
-          title: 'AI Tutor',
-          subtitle: 'Loading...',
-          showOfflineIndicator: _isOffline,
-        ),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation(AppColors.telegramBlue),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Loading conversations...',
-                style: AppTextStyles.bodyMedium(context),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    if (_isOffline &&
-        chatbotProvider.conversations.isEmpty &&
-        chatbotProvider.messages.isEmpty) {
-      return Scaffold(
-        backgroundColor: AppColors.getBackground(context),
-        appBar: const CustomAppBar(
-          title: 'AI Tutor',
-          subtitle: 'Offline Mode',
-          showOfflineIndicator: true,
-        ),
-        body: Center(
-          child: AppEmptyState.offline(
-            dataType: 'chat',
-            message: 'You are offline. Messages will be queued when online.',
-            onRetry: _manualRefresh,
-            pendingCount: _pendingCount,
-          ),
-        ),
-      );
-    }
-
-    return Scaffold(
-      key: _scaffoldKey,
-      backgroundColor: AppColors.getBackground(context),
-      drawer: ScreenSize.isMobile(context)
-          ? Drawer(
-              width: ResponsiveValues.mobileDrawerWidth(context),
-              backgroundColor: Colors.transparent,
-              child: AppCard.glass(
-                child: _buildConversationList(chatbotProvider),
-              ),
-            )
-          : null,
-      body: RefreshIndicator(
-        onRefresh: _manualRefresh,
-        color: AppColors.telegramBlue,
-        backgroundColor: AppColors.getSurface(context),
-        child: CustomScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            SliverToBoxAdapter(
-              child: CustomAppBar(
-                title: chatbotProvider.currentConversation?.title ?? 'AI Tutor',
-                subtitle: _isOffline ? 'Offline Mode' : _greeting,
-                leading: ScreenSize.isMobile(context)
-                    ? IconButton(
-                        icon: Icon(
-                          Icons.menu,
-                          color: AppColors.getTextPrimary(context),
-                        ),
-                        onPressed: () =>
-                            _scaffoldKey.currentState?.openDrawer(),
-                      )
-                    : null,
-                customTrailing: _buildMessageCounter(chatbotProvider),
-                showOfflineIndicator: _isOffline,
-              ),
-            ),
-            if (_isOffline && _pendingCount > 0)
-              SliverToBoxAdapter(
-                child: Container(
-                  margin: const EdgeInsets.all(8),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        AppColors.info.withValues(alpha: 0.2),
-                        AppColors.info.withValues(alpha: 0.1),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: AppColors.info.withValues(alpha: 0.3),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.schedule_rounded,
-                        color: AppColors.info,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          '$_pendingCount offline message${_pendingCount > 1 ? 's' : ''}',
-                          style: const TextStyle(color: AppColors.info),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            SliverFillRemaining(
-              child: Row(
-                children: [
-                  if ((ScreenSize.isDesktop(context) ||
-                          ScreenSize.isTablet(context)) &&
-                      _showConversationList)
-                    Container(
-                      width: ScreenSize.isTablet(context)
-                          ? ResponsiveValues.tabletSidebarWidth(context)
-                          : ResponsiveValues.desktopSidebarWidth(context),
-                      margin: const EdgeInsets.only(right: 8),
-                      child: SlideTransition(
-                        position: _slideAnimation,
-                        child: AppCard.glass(
-                          child: _buildConversationList(chatbotProvider),
-                        ),
-                      ),
-                    ),
-                  Expanded(child: _buildChatArea(chatbotProvider)),
-                ],
-              ),
-            ),
-          ],
-        ),
+  Widget _buildMessageCounter() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: isOffline
+            ? AppColors.warning.withValues(alpha: 0.1)
+            : (_provider.remainingMessages > 0
+                ? AppColors.telegramGreen.withValues(alpha: 0.1)
+                : AppColors.telegramRed.withValues(alpha: 0.1)),
+        borderRadius: BorderRadius.circular(20),
       ),
-      bottomNavigationBar: _buildInputArea(chatbotProvider),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.message,
+            size: 16,
+            color: isOffline
+                ? AppColors.warning
+                : (_provider.remainingMessages > 0
+                    ? AppColors.telegramGreen
+                    : AppColors.telegramRed),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            isOffline
+                ? 'Offline'
+                : '${_provider.remainingMessages}/${_provider.dailyLimit}',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: isOffline
+                  ? AppColors.warning
+                  : (_provider.remainingMessages > 0
+                      ? AppColors.telegramGreen
+                      : AppColors.telegramRed),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildConversationList(ChatbotProvider provider) {
-    if (provider.isLoadingConversations && provider.conversations.isEmpty) {
-      return ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: 5,
-        itemBuilder: (context, index) => const Padding(
-          padding: EdgeInsets.only(bottom: 12),
-          child: AppShimmer(type: ShimmerType.textLine, customHeight: 60),
-        ),
-      );
+  Widget _buildConversationList() {
+    // ✅ Show shimmer only if loading AND no conversations AND not loaded yet
+    if (_provider.isLoadingConversations &&
+        _provider.conversations.isEmpty &&
+        !_initialLoadDone) {
+      return buildLoadingShimmer();
     }
 
-    if (provider.conversations.isEmpty) {
+    if (_provider.conversations.isEmpty) {
       return const Center(
         child: AppEmptyState(
           icon: Icons.chat_outlined,
@@ -462,11 +296,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(
-                    Icons.add_comment_outlined,
-                    color: AppColors.telegramBlue,
-                  ),
-                  onPressed: _isOffline ? null : _showNewChatDialog,
+                  icon: const Icon(Icons.add_comment_outlined,
+                      color: AppColors.telegramBlue),
+                  onPressed: isOffline ? null : _showNewChatDialog,
                 ),
               ],
             ),
@@ -474,10 +306,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         ),
         Expanded(
           child: ListView.builder(
-            itemCount: provider.conversations.length,
+            itemCount: _provider.conversations.length,
             itemBuilder: (context, index) {
-              final conv = provider.conversations[index];
-              final isSelected = provider.currentConversation?.id == conv.id;
+              final conv = _provider.conversations[index];
+              final isSelected = _provider.currentConversation?.id == conv.id;
 
               return ListTile(
                 leading: CircleAvatar(
@@ -504,27 +336,24 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                       )
                     : Text('${conv.messageCount} messages'),
                 onTap: () {
-                  if (conv.id != provider.currentConversation?.id) {
-                    provider.loadMessages(conv.id);
+                  if (conv.id != _provider.currentConversation?.id) {
+                    _provider.loadMessages(conv.id);
                     GoRouter.of(context).go('/chatbot?conv=${conv.id}');
+                    setState(() => _initialLoadDone = false);
                   }
                   if (ScreenSize.isMobile(context)) {
                     Navigator.pop(context);
                   }
                 },
                 trailing: PopupMenuButton(
-                  icon: Icon(
-                    Icons.more_vert,
-                    color: isSelected ? AppColors.telegramBlue : null,
-                  ),
+                  icon: Icon(Icons.more_vert,
+                      color: isSelected ? AppColors.telegramBlue : null),
                   itemBuilder: (context) => [
                     const PopupMenuItem(value: 'rename', child: Text('Rename')),
                     const PopupMenuItem(
                       value: 'delete',
-                      child: Text(
-                        'Delete',
-                        style: TextStyle(color: AppColors.telegramRed),
-                      ),
+                      child: Text('Delete',
+                          style: TextStyle(color: AppColors.telegramRed)),
                     ),
                   ],
                   onSelected: (value) async {
@@ -556,20 +385,16 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
           TextButton(
             onPressed: () async {
               if (controller.text.trim().isNotEmpty) {
-                final success = await context
-                    .read<ChatbotProvider>()
-                    .renameConversation(conv.id, controller.text.trim());
+                final success = await _provider.renameConversation(
+                    conv.id, controller.text.trim());
                 if (success && mounted) {
-                  SnackbarService().showSuccess(
-                    context,
-                    'Conversation renamed',
-                  );
+                  SnackbarService()
+                      .showSuccess(context, 'Conversation renamed');
                 }
                 if (mounted) Navigator.pop(context);
               }
@@ -589,14 +414,11 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         content: Text('Are you sure you want to delete "${conv.title}"?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
           TextButton(
             onPressed: () async {
-              final success = await context
-                  .read<ChatbotProvider>()
-                  .deleteConversation(conv.id);
+              final success = await _provider.deleteConversation(conv.id);
               if (success && mounted) {
                 SnackbarService().showSuccess(context, 'Conversation deleted');
               }
@@ -616,18 +438,17 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       builder: (context) => AlertDialog(
         title: const Text('Start New Chat'),
         content: const Text(
-          'This will clear the current conversation and start fresh.',
-        ),
+            'This will clear the current conversation and start fresh.'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              context.read<ChatbotProvider>().clearCurrentConversation();
+              _provider.clearCurrentConversation();
               GoRouter.of(context).go('/chatbot');
+              setState(() => _initialLoadDone = false);
             },
             child: const Text('Start New'),
           ),
@@ -636,49 +457,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     );
   }
 
-  Widget _buildMessageCounter(ChatbotProvider provider) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      decoration: BoxDecoration(
-        color: _isOffline
-            ? AppColors.warning.withValues(alpha: 0.1)
-            : (provider.remainingMessages > 0
-                ? AppColors.telegramGreen.withValues(alpha: 0.1)
-                : AppColors.telegramRed.withValues(alpha: 0.1)),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.message,
-            size: 16,
-            color: _isOffline
-                ? AppColors.warning
-                : (provider.remainingMessages > 0
-                    ? AppColors.telegramGreen
-                    : AppColors.telegramRed),
-          ),
-          const SizedBox(width: 4),
-          Text(
-            _isOffline
-                ? 'Offline'
-                : '${provider.remainingMessages}/${provider.dailyLimit}',
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: _isOffline
-                  ? AppColors.warning
-                  : (provider.remainingMessages > 0
-                      ? AppColors.telegramGreen
-                      : AppColors.telegramRed),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInputArea(ChatbotProvider provider) {
+  Widget _buildInputArea() {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -695,18 +474,15 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                   controller: _messageController,
                   focusNode: _focusNode,
                   decoration: InputDecoration(
-                    hintText: _isOffline
+                    hintText: isOffline
                         ? 'Offline - messages queued'
-                        : (provider.hasMessagesLeft
+                        : (_provider.hasMessagesLeft
                             ? 'Ask about any subject...'
                             : 'Daily limit reached'),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                        borderRadius: BorderRadius.circular(12)),
                     contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
+                        horizontal: 16, vertical: 12),
                   ),
                   maxLines: 3,
                   minLines: 1,
@@ -729,20 +505,20 @@ class _ChatbotScreenState extends State<ChatbotScreen>
               else
                 IconButton(
                   icon: Icon(
-                    _isOffline ? Icons.schedule_rounded : Icons.send,
+                    isOffline ? Icons.schedule_rounded : Icons.send,
                     color:
-                        _isOffline ? AppColors.warning : AppColors.telegramBlue,
+                        isOffline ? AppColors.warning : AppColors.telegramBlue,
                   ),
                   onPressed: _sendMessage,
                   iconSize: 28,
                 ),
             ],
           ),
-          if (_isOffline && _pendingCount > 0)
+          if (isOffline && pendingCount > 0)
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(
-                '$_pendingCount message${_pendingCount > 1 ? 's' : ''} queued',
+                '$pendingCount message${pendingCount > 1 ? 's' : ''} queued',
                 style: const TextStyle(color: AppColors.info),
               ),
             ),
@@ -751,90 +527,182 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     );
   }
 
-  Widget _buildChatArea(ChatbotProvider provider) {
-    if (provider.isLoadingMessages && provider.messages.isEmpty) {
+  Widget _buildChatArea() {
+    final hasMessages = _provider.messages.isNotEmpty;
+
+    // ✅ Show shimmer only if loading AND no messages AND not loaded yet
+    if (_provider.isLoadingMessages && !hasMessages && !_initialLoadDone) {
+      return buildLoadingShimmer();
+    }
+
+    // ✅ If we have messages, show them immediately
+    if (hasMessages) {
       return ListView.builder(
+        controller: _scrollController,
         padding: const EdgeInsets.all(16),
-        itemCount: 5,
-        itemBuilder: (context, index) => const Padding(
-          padding: EdgeInsets.only(bottom: 12),
-          child: AppShimmer(type: ShimmerType.textLine, customHeight: 60),
-        ),
+        itemCount: _provider.messages.length,
+        itemBuilder: (context, index) {
+          final message = _provider.messages[index];
+          final isUser = message.isUser;
+
+          return Align(
+            alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+            child: Container(
+              margin: EdgeInsets.only(
+                bottom: 8,
+                left: isUser ? 50 : 0,
+                right: isUser ? 0 : 50,
+              ),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isUser
+                    ? AppColors.telegramBlue
+                    : AppColors.getCard(context),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    message.content.replaceAll('*', ''),
+                    style: isUser ? const TextStyle(color: Colors.white) : null,
+                  ),
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.bottomRight,
+                    child: Text(
+                      '${message.timestamp.hour}:${message.timestamp.minute.toString().padLeft(2, '0')}',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: isUser
+                            ? Colors.white.withValues(alpha: 0.7)
+                            : AppColors.getTextSecondary(context),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       );
     }
 
-    if (provider.errorMessage != null && provider.messages.isEmpty) {
-      return Center(
-        child: AppEmptyState.error(
-          title: 'Error',
-          message: provider.errorMessage!,
-          onRetry: () => provider.clearError(),
-        ),
-      );
-    }
-
-    if (provider.messages.isEmpty) {
+    // ✅ Only show empty state if NOT loading and no messages
+    if (!_provider.isLoadingMessages && !hasMessages) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 32),
           child: AppEmptyState(
             icon: Icons.smart_toy,
             title: 'AI Learning Assistant',
-            message: _isOffline
+            message: isOffline
                 ? 'You are offline. Messages will be queued and sent when online.'
-                : 'Ask me about mathematics, sciences, Amharic, Ethiopian history, or get study tips. You have ${provider.remainingMessages}/${provider.dailyLimit} messages left today.',
+                : 'Ask me about mathematics, sciences, Amharic, Ethiopian history, or get study tips. You have ${_provider.remainingMessages}/${_provider.dailyLimit} messages left today.',
           ),
         ),
       );
     }
 
-    return ListView.builder(
-      controller: _scrollController,
-      padding: const EdgeInsets.all(16),
-      itemCount: provider.messages.length,
-      itemBuilder: (context, index) {
-        final message = provider.messages[index];
-        final isUser = message.isUser;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: AppEmptyState(
+          icon: Icons.smart_toy,
+          title: 'AI Learning Assistant',
+          message: isOffline
+              ? 'You are offline. Messages will be queued and sent when online.'
+              : 'Ask me about mathematics, sciences, Amharic, Ethiopian history, or get study tips.',
+        ),
+      ),
+    );
+  }
 
-        return Align(
-          alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-          child: Container(
-            margin: EdgeInsets.only(
-              bottom: 8,
-              left: isUser ? 50 : 0,
-              right: isUser ? 0 : 50,
-            ),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color:
-                  isUser ? AppColors.telegramBlue : AppColors.getCard(context),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  message.content.replaceAll('*', ''),
-                  style: isUser ? const TextStyle(color: Colors.white) : null,
-                ),
-                const SizedBox(height: 4),
-                Align(
-                  alignment: Alignment.bottomRight,
-                  child: Text(
-                    '${message.timestamp.hour}:${message.timestamp.minute.toString().padLeft(2, '0')}',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: isUser
-                          ? Colors.white.withValues(alpha: 0.7)
-                          : AppColors.getTextSecondary(context),
-                    ),
+  // ✅ BUILD CONTENT WITH PULL-TO-REFRESH
+  @override
+  Widget buildContent(BuildContext context) {
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      color: AppColors.telegramBlue,
+      backgroundColor: AppColors.getSurface(context),
+      child: Stack(
+        children: [
+          Row(
+            children: [
+              if ((ScreenSize.isDesktop(context) ||
+                      ScreenSize.isTablet(context)) &&
+                  _showConversationList)
+                Container(
+                  width: ScreenSize.isTablet(context)
+                      ? ResponsiveValues.tabletSidebarWidth(context)
+                      : ResponsiveValues.desktopSidebarWidth(context),
+                  margin: const EdgeInsets.only(right: 8),
+                  child: SlideTransition(
+                    position: _slideAnimation,
+                    child: AppCard.glass(child: _buildConversationList()),
                   ),
                 ),
-              ],
-            ),
+              Expanded(child: _buildChatArea()),
+            ],
           ),
-        );
-      },
+          if (isOffline && pendingCount > 0)
+            Positioned(
+              top: 16,
+              left: 16,
+              right: 16,
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        AppColors.info.withValues(alpha: 0.2),
+                        AppColors.info.withValues(alpha: 0.1)
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                        color: AppColors.info.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.schedule_rounded,
+                          color: AppColors.info, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '$pendingCount offline message${pendingCount > 1 ? 's' : ''}',
+                          style: const TextStyle(color: AppColors.info),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      key: _scaffoldKey,
+      backgroundColor: AppColors.getBackground(context),
+      drawer: ScreenSize.isMobile(context)
+          ? Drawer(
+              width: ResponsiveValues.mobileDrawerWidth(context),
+              backgroundColor: Colors.transparent,
+              child: AppCard.glass(child: _buildConversationList()),
+            )
+          : null,
+      body: buildScreen(
+          content: buildContent(context),
+          showAppBar: true,
+          showRefreshIndicator: false), // RefreshIndicator is inside content
+      bottomNavigationBar: _buildInputArea(),
     );
   }
 }

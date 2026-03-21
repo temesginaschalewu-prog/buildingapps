@@ -5,6 +5,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../models/chapter_model.dart';
 import '../../models/category_model.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/payment_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../providers/category_provider.dart';
 import '../../services/connectivity_service.dart';
@@ -235,6 +236,7 @@ class ChapterCard extends StatelessWidget {
   Future<void> _handleTap(BuildContext context) async {
     final authProvider = context.read<AuthProvider>();
     final subscriptionProvider = context.read<SubscriptionProvider>();
+    final paymentProvider = context.read<PaymentProvider>();
     final categoryProvider = context.read<CategoryProvider>();
     final connectivity = context.read<ConnectivityService>();
 
@@ -269,6 +271,22 @@ class ChapterCard extends StatelessWidget {
     // If no access, check if online to show payment dialog
     if (!connectivity.isOnline) {
       SnackbarService().showOffline(context, action: 'make payment');
+      return;
+    }
+
+    final hasPendingPayment = paymentProvider.getPendingPayments().any(
+      (payment) =>
+          payment.categoryId == categoryId ||
+          payment.categoryName.toLowerCase() == category.name.toLowerCase(),
+    );
+
+    if (hasPendingPayment) {
+      await AppDialog.info(
+        context: context,
+        title: 'Payment Pending',
+        message:
+            'You already have a pending payment for "${category.name}". Please wait for admin verification.',
+      );
       return;
     }
 
