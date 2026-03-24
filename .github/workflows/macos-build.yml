@@ -45,7 +45,12 @@ jobs:
       - name: Package macOS app
         run: |
           mkdir -p artifacts
-          ditto -c -k --sequesterRsrc --keepParent build/macos/Build/Products/Release/familyacademyclient.app artifacts/family-academy-macos.zip
+          APP_PATH="$(find build/macos/Build/Products/Release -maxdepth 1 -name '*.app' | head -n 1)"
+          if [ -z "$APP_PATH" ]; then
+            echo "No macOS .app bundle found in build output"
+            exit 1
+          fi
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" artifacts/family-academy-macos.zip
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
