@@ -5,7 +5,24 @@ on:
     branches:
       - main
       - master
-  workflow_dispatch:  # Allow manual trigger
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: client-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BASE_URL: https://family-academy-backend-a12l.onrender.com
+  API_VERSION: v1
+  API_BASE_URL: https://family-academy-backend-a12l.onrender.com/api/v1
+  APP_NAME: Family Academy
+  APP_VERSION: 1.5.0
+  APP_ENVIRONMENT: production
 
 jobs:
   build:
@@ -30,12 +47,12 @@ jobs:
 
       - name: Create .env file
         run: |
-          echo "BASE_URL=https://family-academy-backend-a12l.onrender.com" > .env
-          echo "API_VERSION=v1" >> .env
-          echo "API_BASE_URL=https://family-academy-backend-a12l.onrender.com/api/v1" >> .env
-          echo "APP_NAME=Family Academy" >> .env
-          echo "APP_VERSION=1.4.2" >> .env
-          echo "APP_ENVIRONMENT=production" >> .env
+          echo "BASE_URL=$env:BASE_URL" > .env
+          echo "API_VERSION=$env:API_VERSION" >> .env
+          echo "API_BASE_URL=$env:API_BASE_URL" >> .env
+          echo "APP_NAME=$env:APP_NAME" >> .env
+          echo "APP_VERSION=$env:APP_VERSION" >> .env
+          echo "APP_ENVIRONMENT=$env:APP_ENVIRONMENT" >> .env
 
       - name: Build Windows Release
         run: flutter build windows --release

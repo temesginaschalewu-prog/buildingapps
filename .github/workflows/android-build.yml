@@ -1,4 +1,4 @@
-name: Build macOS App
+name: Build Android App
 
 on:
   push:
@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: client-macos-${{ github.ref }}
+  group: client-android-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -26,18 +26,20 @@ env:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
 
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
-
-      - name: Enable macOS Desktop
-        run: flutter config --enable-macos-desktop
 
       - name: Clean
         run: flutter clean
@@ -56,22 +58,22 @@ jobs:
           APP_ENVIRONMENT=${APP_ENVIRONMENT}
           EOF
 
-      - name: Build macOS Release
-        run: flutter build macos --release
+      - name: Build Android APK
+        run: flutter build apk --release
 
-      - name: Package macOS app
-        run: |
-          mkdir -p artifacts
-          APP_PATH="$(find build/macos/Build/Products/Release -maxdepth 1 -name '*.app' | head -n 1)"
-          if [ -z "$APP_PATH" ]; then
-            echo "No macOS .app bundle found in build output"
-            exit 1
-          fi
-          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" artifacts/family-academy-macos.zip
+      - name: Build Android App Bundle
+        run: flutter build appbundle --release
 
-      - name: Upload Artifact
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: family-academy-macos
-          path: artifacts/family-academy-macos.zip
+          name: family-academy-android-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          compression-level: 0
+
+      - name: Upload AAB Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: family-academy-android-aab
+          path: build/app/outputs/bundle/release/app-release.aab
           compression-level: 0
