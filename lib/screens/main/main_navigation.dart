@@ -1,8 +1,4 @@
-// lib/screens/main/main_navigation.dart
-// FIXED - Removed duplicate category loading
-
 import 'dart:async';
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -15,10 +11,13 @@ import '../../providers/auth_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../providers/notification_provider.dart';
+import '../../providers/category_provider.dart';
+import '../../providers/payment_provider.dart';
 import '../../services/connectivity_service.dart';
 import '../../themes/app_colors.dart';
+import '../../themes/app_text_styles.dart';
+import '../../widgets/common/app_brand_logo.dart';
 
-/// PRODUCTION-READY MAIN NAVIGATION
 class MainNavigation extends StatefulWidget {
   final Widget child;
 
@@ -41,20 +40,19 @@ class _MainNavigationState extends State<MainNavigation>
   late AnimationController _tabAnimationController;
   Timer? _labelTimer;
   bool _showLabels = true;
+  DateTime? _lastResumeRefreshAt;
+  static const Duration _minResumeRefreshInterval = Duration(minutes: 3);
 
   @override
   void initState() {
     super.initState();
-    _connectivitySubscription?.cancel();
     WidgetsBinding.instance.addObserver(this);
-
+    _connectivitySubscription?.cancel();
     _tabAnimationController = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 300));
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initialize();
     });
-
     _labelTimer = Timer(const Duration(seconds: 3), () {
       if (mounted) setState(() => _showLabels = false);
     });
@@ -71,10 +69,43 @@ class _MainNavigationState extends State<MainNavigation>
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && !_isOffline) {
+      final now = DateTime.now();
+      if (_lastResumeRefreshAt != null &&
+          now.difference(_lastResumeRefreshAt!) < _minResumeRefreshInterval) {
+        return;
+      }
+      _lastResumeRefreshAt = now;
+      debugLog('MainNavigation', 'App resumed - refreshing cached data');
+      unawaited(_refreshDataOnResume());
+    }
+  }
+
+  Future<void> _refreshDataOnResume() async {
+    try {
+      final subscriptionProvider = context.read<SubscriptionProvider>();
+      final paymentProvider = context.read<PaymentProvider>();
+      final categoryProvider = context.read<CategoryProvider>();
+      final authProvider = context.read<AuthProvider>();
+
+      if (authProvider.isAuthenticated) {
+        await subscriptionProvider.loadSubscriptions(forceRefresh: true);
+        await paymentProvider.loadPayments(forceRefresh: true);
+        await categoryProvider.loadCategories(forceRefresh: true);
+
+        debugLog('MainNavigation', 'Resume refresh complete');
+      }
+    } catch (e) {
+      debugLog('MainNavigation', 'Error during resume refresh: $e');
+    }
+  }
+
   Future<void> _initialize() async {
     await _checkConnectivity();
     _setupConnectivityListener();
-    _initializeUserDataInBackground();
+    unawaited(_initializeUserDataInBackground());
     _setupStreamListeners();
     _updateCurrentIndexFromRoute();
   }
@@ -101,10 +132,8 @@ class _MainNavigationState extends State<MainNavigation>
 
   void _setupStreamListeners() {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-
     _notificationProvider =
         Provider.of<NotificationProvider>(context, listen: false);
-
     _authStateSubscription = authProvider.authStateChanges.listen((isAuth) {
       if (!mounted) return;
       if (isAuth) {
@@ -113,7 +142,6 @@ class _MainNavigationState extends State<MainNavigation>
         setState(() => _dataLoadedInBackground = false);
       }
     });
-
     _notificationProvider.addListener(_refreshUIOnNotificationChange);
   }
 
@@ -121,7 +149,6 @@ class _MainNavigationState extends State<MainNavigation>
     if (mounted) setState(() {});
   }
 
-  // ✅ FIXED: Removed category loading - only subscriptions and user profile
   Future<void> _initializeUserDataInBackground() async {
     if (_isInitializing || _dataLoadedInBackground) return;
 
@@ -133,20 +160,28 @@ class _MainNavigationState extends State<MainNavigation>
         Provider.of<SubscriptionProvider>(context, listen: false);
     final notificationProvider =
         Provider.of<NotificationProvider>(context, listen: false);
+    final paymentProvider =
+        Provider.of<PaymentProvider>(context, listen: false);
+    final connectivityService =
+        Provider.of<ConnectivityService>(context, listen: false);
 
     if (authProvider.isAuthenticated && !_dataLoadedInBackground) {
       try {
-        // Load user profile first
         await userProvider.loadUserProfile();
         if (!mounted) return;
+        await subscriptionProvider.syncFromUserProfile(userProvider.currentUser);
+        if (!mounted) return;
 
-        // ✅ FIXED: ONLY load subscriptions, NOT categories
-        // Categories are loaded by HomeScreen when needed
-        await subscriptionProvider.loadSubscriptions();
-
-        // Load notifications in background
+        // Access-critical state should reconcile against backend truth on app
+        // entry whenever we have connectivity, instead of relying on stale cache.
+        final forceBackendRefresh = connectivityService.isOnline;
+        await subscriptionProvider.loadSubscriptions(
+          forceRefresh: forceBackendRefresh,
+        );
+        await paymentProvider.loadPayments(
+          forceRefresh: forceBackendRefresh,
+        );
         unawaited(notificationProvider.loadNotifications());
-
         _dataLoadedInBackground = true;
       } catch (e) {
         debugLog('MainNavigation', 'Background data load error: $e');
@@ -158,9 +193,7 @@ class _MainNavigationState extends State<MainNavigation>
 
   void _updateCurrentIndexFromRoute() {
     if (!mounted) return;
-
     final location = GoRouterState.of(context).uri.toString();
-
     if (location == '/' || location.startsWith('/?')) {
       _setCurrentIndexWithAnimation(0);
     } else if (location == '/chatbot' || location.startsWith('/chatbot?')) {
@@ -176,106 +209,96 @@ class _MainNavigationState extends State<MainNavigation>
     if (newIndex != _currentIndex) {
       _navigationHistory.add(newIndex);
       if (_navigationHistory.length > 5) _navigationHistory.removeAt(0);
-
       if (!_showLabels) {
         setState(() => _showLabels = true);
         Future.delayed(const Duration(seconds: 2), () {
           if (mounted) setState(() => _showLabels = false);
         });
       }
-
       _tabAnimationController.reset();
       _tabAnimationController.forward();
-
       setState(() => _currentIndex = newIndex);
-    }
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && !_isOffline) {
-      _initializeUserDataInBackground();
     }
   }
 
   Widget _buildMobileNavigation() {
     final notificationProvider = Provider.of<NotificationProvider>(context);
     final unreadCount = notificationProvider.unreadCount;
-
     return Scaffold(
       body: widget.child,
-      bottomNavigationBar: GestureDetector(
-        onTapDown: (_) => setState(() => _showLabels = true),
-        onTapUp: (_) {
-          Future.delayed(const Duration(seconds: 2), () {
-            if (mounted) setState(() => _showLabels = false);
-          });
-        },
-        child: ClipRRect(
-          borderRadius:
-              BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    AppColors.getCard(context).withValues(alpha: 0.4),
-                    AppColors.getCard(context).withValues(alpha: 0.2),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(
-                    ResponsiveValues.radiusXLarge(context)),
-                border: Border.all(
-                    color: AppColors.telegramBlue.withValues(alpha: 0.2)),
+      bottomNavigationBar: Padding(
+        padding: EdgeInsets.fromLTRB(
+          ResponsiveValues.spacingM(context),
+          0,
+          ResponsiveValues.spacingM(context),
+          ResponsiveValues.spacingM(context),
+        ),
+        child: GestureDetector(
+          onTapDown: (_) => setState(() => _showLabels = true),
+          onTapUp: (_) {
+            Future.delayed(const Duration(seconds: 2), () {
+              if (mounted) setState(() => _showLabels = false);
+            });
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+            height: _showLabels
+                ? ResponsiveValues.bottomNavBarHeight(context) * 1.08
+                : ResponsiveValues.bottomNavBarHeight(context),
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom > 0
+                  ? MediaQuery.of(context).viewInsets.bottom
+                  : 0,
+            ),
+            decoration: BoxDecoration(
+              color: AppColors.getSurface(context).withValues(alpha: 0.96),
+              borderRadius: BorderRadius.circular(
+                ResponsiveValues.radiusXLarge(context),
               ),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeInOut,
-                height: _showLabels
-                    ? ResponsiveValues.bottomNavBarHeight(context) * 1.2
-                    : ResponsiveValues.bottomNavBarHeight(context),
-                padding: EdgeInsets.only(
-                  bottom: MediaQuery.of(context).viewInsets.bottom > 0
-                      ? MediaQuery.of(context).viewInsets.bottom
-                      : 0,
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    _buildMobileNavItem(
-                      index: 0,
-                      icon: Icons.home_outlined,
-                      activeIcon: Icons.home_rounded,
-                      label: 'Home',
-                      unreadCount: 0,
-                    ),
-                    _buildMobileNavItem(
-                      index: 1,
-                      icon: Icons.chat_bubble_outline_rounded,
-                      activeIcon: Icons.chat_bubble_rounded,
-                      label: 'Chat',
-                      unreadCount: 0,
-                    ),
-                    _buildMobileNavItem(
-                      index: 2,
-                      icon: Icons.auto_graph_outlined,
-                      activeIcon: Icons.auto_graph_rounded,
-                      label: 'Progress',
-                      unreadCount: 0,
-                    ),
-                    _buildMobileNavItem(
-                      index: 3,
-                      icon: Icons.person_outline_rounded,
-                      activeIcon: Icons.person_rounded,
-                      label: 'Profile',
-                      unreadCount: unreadCount,
-                    ),
-                  ],
-                ),
+              border: Border.all(
+                color: AppColors.getDivider(context).withValues(alpha: 0.8),
               ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 18,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildMobileNavItem(
+                  index: 0,
+                  icon: Icons.home_outlined,
+                  activeIcon: Icons.home_rounded,
+                  label: 'Home',
+                  unreadCount: 0,
+                ),
+                _buildMobileNavItem(
+                  index: 1,
+                  icon: Icons.chat_bubble_outline_rounded,
+                  activeIcon: Icons.chat_bubble_rounded,
+                  label: 'Chat',
+                  unreadCount: 0,
+                ),
+                _buildMobileNavItem(
+                  index: 2,
+                  icon: Icons.auto_graph_outlined,
+                  activeIcon: Icons.auto_graph_rounded,
+                  label: 'Progress',
+                  unreadCount: 0,
+                ),
+                _buildMobileNavItem(
+                  index: 3,
+                  icon: Icons.person_outline_rounded,
+                  activeIcon: Icons.person_rounded,
+                  label: 'Profile',
+                  unreadCount: unreadCount,
+                ),
+              ],
             ),
           ),
         ),
@@ -291,7 +314,9 @@ class _MainNavigationState extends State<MainNavigation>
     required int unreadCount,
   }) {
     final isSelected = _currentIndex == index;
-
+    final navContainerSize = ScreenSize.isMobile(context) ? 36.0 : 38.0;
+    final selectedIconSize = ScreenSize.isMobile(context) ? 25.0 : 26.0;
+    final unselectedIconSize = ScreenSize.isMobile(context) ? 22.5 : 24.0;
     return Expanded(
       child: GestureDetector(
         onTap: () => _onNavigationItemTapped(index),
@@ -305,25 +330,27 @@ class _MainNavigationState extends State<MainNavigation>
                 children: [
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
-                    width: ResponsiveValues.iconSizeL(context),
-                    height: ResponsiveValues.iconSizeL(context),
+                    width: navContainerSize,
+                    height: navContainerSize,
                     decoration: BoxDecoration(
-                      gradient: isSelected
-                          ? LinearGradient(
-                              colors: [
-                                AppColors.telegramBlue.withValues(alpha: 0.2),
-                                AppColors.telegramPurple.withValues(alpha: 0.1)
-                              ],
+                      color: isSelected
+                          ? AppColors.telegramBlue.withValues(alpha: 0.10)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(
+                        ResponsiveValues.radiusLarge(context),
+                      ),
+                      border: isSelected
+                          ? Border.all(
+                              color: AppColors.telegramBlue
+                                  .withValues(alpha: 0.18),
                             )
                           : null,
-                      shape: BoxShape.circle,
                     ),
                     child: Center(
                       child: Icon(
                         isSelected ? activeIcon : icon,
-                        size: isSelected
-                            ? ResponsiveValues.iconSizeM(context)
-                            : ResponsiveValues.iconSizeS(context),
+                        size:
+                            isSelected ? selectedIconSize : unselectedIconSize,
                         color: isSelected
                             ? AppColors.telegramBlue
                             : AppColors.getTextSecondary(context),
@@ -340,8 +367,7 @@ class _MainNavigationState extends State<MainNavigation>
                           vertical: 1,
                         ),
                         decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                              colors: [Color(0xFFFF3B30), Color(0xFFE6204A)]),
+                          color: const Color(0xFFFF3B30),
                           borderRadius: BorderRadius.circular(
                               ResponsiveValues.radiusSmall(context)),
                         ),
@@ -361,6 +387,24 @@ class _MainNavigationState extends State<MainNavigation>
                               height: 1.0,
                             ),
                             textAlign: TextAlign.center,
+                          ),
+                          ),
+                        ),
+                      ),
+                  if (isSelected)
+                    Positioned(
+                      bottom: -ResponsiveValues.spacingS(context),
+                      left: 0,
+                      right: 0,
+                      child: Center(
+                        child: Container(
+                          width: ResponsiveValues.spacingXL(context),
+                          height: 3,
+                          decoration: BoxDecoration(
+                            color: AppColors.telegramBlue,
+                            borderRadius: BorderRadius.circular(
+                              ResponsiveValues.radiusFull(context),
+                            ),
                           ),
                         ),
                       ),
@@ -396,45 +440,43 @@ class _MainNavigationState extends State<MainNavigation>
     final unreadCount = notificationProvider.unreadCount;
     final authProvider = Provider.of<AuthProvider>(context);
     final user = authProvider.currentUser;
-
     return Scaffold(
       body: Row(
         children: [
-          ClipRRect(
-            borderRadius:
-                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-              child: Container(
-                width: ResponsiveValues.spacingXXXXL(context) * 2,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      AppColors.getCard(context).withValues(alpha: 0.4),
-                      AppColors.getCard(context).withValues(alpha: 0.2),
-                    ],
-                  ),
-                  border: Border.all(
-                      color: AppColors.telegramBlue.withValues(alpha: 0.2)),
+          Container(
+            width: ResponsiveValues.spacingXXXXL(context) * 2,
+            decoration: BoxDecoration(
+              color: AppColors.getSurface(context).withValues(alpha: 0.98),
+              border: Border(
+                right: BorderSide(
+                  color: AppColors.getDivider(context).withValues(alpha: 0.75),
                 ),
-                child: Container(
-                  padding: EdgeInsets.symmetric(
-                      vertical: ResponsiveValues.spacingL(context)),
-                  child: Column(
+              ),
+            ),
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                vertical: ResponsiveValues.spacingL(context),
+              ),
+              child: Column(
                     children: [
                       SizedBox(height: ResponsiveValues.spacingXXL(context)),
                       Container(
-                        width: ResponsiveValues.iconSizeXL(context) * 1.5,
-                        height: ResponsiveValues.iconSizeXL(context) * 1.5,
+                        width:
+                            ResponsiveValues.sidebarBrandIconContainerSize(
+                                context),
+                        height:
+                            ResponsiveValues.sidebarBrandIconContainerSize(
+                                context),
                         margin: EdgeInsets.only(
                             bottom: ResponsiveValues.spacingXXL(context)),
                         decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                              colors: AppColors.blueGradient),
+                          color: AppColors.getCard(context),
                           borderRadius: BorderRadius.circular(
                               ResponsiveValues.radiusMedium(context)),
+                          border: Border.all(
+                            color: AppColors.getDivider(context)
+                                .withValues(alpha: 0.75),
+                          ),
                         ),
                         child: Center(
                           child: ClipRRect(
@@ -446,7 +488,7 @@ class _MainNavigationState extends State<MainNavigation>
                               errorBuilder: (context, error, stackTrace) {
                                 return Icon(Icons.school_rounded,
                                     size: ResponsiveValues.iconSizeL(context),
-                                    color: Colors.white);
+                                    color: AppColors.getTextSecondary(context));
                               },
                             ),
                           ),
@@ -492,8 +534,6 @@ class _MainNavigationState extends State<MainNavigation>
                         ),
                       SizedBox(height: ResponsiveValues.spacingL(context)),
                     ],
-                  ),
-                ),
               ),
             ),
           ),
@@ -511,7 +551,9 @@ class _MainNavigationState extends State<MainNavigation>
     int unreadCount = 0,
   }) {
     final isSelected = _currentIndex == index;
-
+    final navContainerSize = ScreenSize.isDesktop(context) ? 46.0 : 42.0;
+    final selectedIconSize = ScreenSize.isDesktop(context) ? 29.0 : 27.0;
+    final unselectedIconSize = ScreenSize.isDesktop(context) ? 26.0 : 24.0;
     return Tooltip(
       message: label,
       child: GestureDetector(
@@ -525,28 +567,28 @@ class _MainNavigationState extends State<MainNavigation>
                 clipBehavior: Clip.none,
                 children: [
                   Container(
-                    width: ResponsiveValues.iconSizeXL(context) * 1.5,
-                    height: ResponsiveValues.iconSizeXL(context) * 1.5,
+                    width: navContainerSize,
+                    height: navContainerSize,
                     decoration: BoxDecoration(
-                      gradient: isSelected
-                          ? LinearGradient(
-                              colors: [
-                                AppColors.telegramBlue.withValues(alpha: 0.2),
-                                AppColors.telegramPurple.withValues(alpha: 0.1)
-                              ],
-                            )
-                          : null,
+                      color: isSelected
+                          ? AppColors.telegramBlue.withValues(alpha: 0.10)
+                          : Colors.transparent,
                       borderRadius: BorderRadius.circular(
                           ResponsiveValues.radiusMedium(context)),
+                      border: isSelected
+                          ? Border.all(
+                              color: AppColors.telegramBlue
+                                  .withValues(alpha: 0.16),
+                            )
+                          : null,
                     ),
                     child: Center(
                       child: Stack(
                         children: [
                           Icon(
                             isSelected ? activeIcon : icon,
-                            size: isSelected
-                                ? ResponsiveValues.iconSizeL(context)
-                                : ResponsiveValues.iconSizeM(context),
+                            size:
+                                isSelected ? selectedIconSize : unselectedIconSize,
                             color: isSelected
                                 ? AppColors.telegramBlue
                                 : AppColors.getTextSecondary(context),
@@ -588,30 +630,31 @@ class _MainNavigationState extends State<MainNavigation>
   }
 
   Widget _buildSidebarAvatar(User user) {
-    final avatarSize = ResponsiveValues.iconSizeXL(context) * 2.3;
+    final avatarSize = ResponsiveValues.sidebarAvatarSize(context);
     final hasImage = user.profileImage != null && user.profileImage!.isNotEmpty;
-
     return Container(
       width: avatarSize,
       height: avatarSize,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
+        color: hasImage ? null : AppColors.getCard(context),
         image: hasImage
             ? DecorationImage(
                 image: NetworkImage(user.profileImage!), fit: BoxFit.cover)
             : null,
-        gradient: !hasImage
-            ? const LinearGradient(colors: AppColors.purpleGradient)
-            : null,
+        border: Border.all(
+          color: AppColors.getDivider(context).withValues(alpha: 0.8),
+        ),
       ),
       child: !hasImage
           ? Center(
               child: Text(
                 user.username.substring(0, 2).toUpperCase(),
                 style: TextStyle(
-                  color: Colors.white,
+                  color: AppColors.getTextPrimary(context),
                   fontWeight: FontWeight.bold,
-                  fontSize: ResponsiveValues.fontTitleMedium(context) * 0.10,
+                  fontSize:
+                      ResponsiveValues.sidebarAvatarInitialsFontSize(context),
                 ),
               ),
             )
@@ -624,33 +667,24 @@ class _MainNavigationState extends State<MainNavigation>
     final unreadCount = notificationProvider.unreadCount;
     final authProvider = Provider.of<AuthProvider>(context);
     final user = authProvider.currentUser;
-
     return Scaffold(
       body: Row(
         children: [
-          ClipRRect(
-            borderRadius:
-                BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-              child: Container(
-                width: ResponsiveValues.desktopSidebarWidth(context),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      AppColors.getCard(context).withValues(alpha: 0.4),
-                      AppColors.getCard(context).withValues(alpha: 0.2),
-                    ],
-                  ),
-                  border: Border.all(
-                      color: AppColors.telegramBlue.withValues(alpha: 0.2)),
+          Container(
+            width: ResponsiveValues.desktopSidebarWidth(context),
+            decoration: BoxDecoration(
+              color: AppColors.getSurface(context).withValues(alpha: 0.98),
+              border: Border(
+                right: BorderSide(
+                  color: AppColors.getDivider(context).withValues(alpha: 0.75),
                 ),
-                child: Container(
-                  padding: EdgeInsets.symmetric(
-                      vertical: ResponsiveValues.spacingL(context)),
-                  child: Column(
+              ),
+            ),
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                vertical: ResponsiveValues.spacingL(context),
+              ),
+              child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Padding(
@@ -662,16 +696,20 @@ class _MainNavigationState extends State<MainNavigation>
                         child: Row(
                           children: [
                             Container(
-                              width: ResponsiveValues.iconSizeXL(context) * 1.5,
-                              height:
-                                  ResponsiveValues.iconSizeXL(context) * 1.5,
+                              width: ResponsiveValues
+                                  .sidebarBrandIconContainerSize(context),
+                              height: ResponsiveValues
+                                  .sidebarBrandIconContainerSize(context),
                               margin: EdgeInsets.only(
                                   right: ResponsiveValues.spacingM(context)),
                               decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                    colors: AppColors.blueGradient),
+                                color: AppColors.getCard(context),
                                 borderRadius: BorderRadius.circular(
                                     ResponsiveValues.radiusSmall(context)),
+                                border: Border.all(
+                                  color: AppColors.getDivider(context)
+                                      .withValues(alpha: 0.75),
+                                ),
                               ),
                               child: Center(
                                 child: ClipRRect(
@@ -684,7 +722,8 @@ class _MainNavigationState extends State<MainNavigation>
                                       return Icon(Icons.school_rounded,
                                           size: ResponsiveValues.iconSizeS(
                                               context),
-                                          color: Colors.white);
+                                          color:
+                                              AppColors.getTextSecondary(context));
                                     },
                                   ),
                                 ),
@@ -758,16 +797,13 @@ class _MainNavigationState extends State<MainNavigation>
                               ResponsiveValues.spacingL(context)),
                           padding: ResponsiveValues.cardPadding(context),
                           decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                AppColors.getCard(context)
-                                    .withValues(alpha: 0.4),
-                                AppColors.getCard(context)
-                                    .withValues(alpha: 0.2),
-                              ],
-                            ),
+                            color: AppColors.getCard(context),
                             borderRadius: BorderRadius.circular(
                                 ResponsiveValues.radiusMedium(context)),
+                            border: Border.all(
+                              color: AppColors.getDivider(context)
+                                  .withValues(alpha: 0.75),
+                            ),
                           ),
                           child: Row(
                             children: [
@@ -812,8 +848,6 @@ class _MainNavigationState extends State<MainNavigation>
                           ),
                         ),
                     ],
-                  ),
-                ),
               ),
             ),
           ),
@@ -832,7 +866,6 @@ class _MainNavigationState extends State<MainNavigation>
     int unreadCount = 0,
   }) {
     final isSelected = _currentIndex == index;
-
     return GestureDetector(
       onTap: () => _onNavigationItemTapped(index),
       child: AnimatedContainer(
@@ -841,17 +874,14 @@ class _MainNavigationState extends State<MainNavigation>
         margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
         decoration: BoxDecoration(
-          gradient: isSelected
-              ? LinearGradient(
-                  colors: [
-                    AppColors.telegramBlue.withValues(alpha: 0.2),
-                    AppColors.telegramPurple.withValues(alpha: 0.1)
-                  ],
-                )
-              : null,
+          color: isSelected
+              ? AppColors.telegramBlue.withValues(alpha: 0.07)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
           border: isSelected
-              ? Border.all(color: AppColors.telegramBlue.withValues(alpha: 0.3))
+              ? Border.all(
+                  color: AppColors.telegramBlue.withValues(alpha: 0.16),
+                )
               : null,
         ),
         child: Row(
@@ -863,20 +893,15 @@ class _MainNavigationState extends State<MainNavigation>
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    gradient: isSelected
-                        ? LinearGradient(
-                            colors: [
-                              AppColors.telegramBlue.withValues(alpha: 0.2),
-                              AppColors.telegramPurple.withValues(alpha: 0.1)
-                            ],
-                          )
-                        : LinearGradient(
-                            colors: [
-                              AppColors.getCard(context).withValues(alpha: 0.3),
-                              AppColors.getCard(context).withValues(alpha: 0.1)
-                            ],
-                          ),
+                    color: isSelected
+                        ? AppColors.telegramBlue.withValues(alpha: 0.10)
+                        : AppColors.getCard(context),
                     borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isSelected
+                          ? AppColors.telegramBlue.withValues(alpha: 0.14)
+                          : AppColors.getDivider(context).withValues(alpha: 0.55),
+                    ),
                   ),
                   child: Center(
                     child: Stack(
@@ -953,9 +978,7 @@ class _MainNavigationState extends State<MainNavigation>
 
   void _onNavigationItemTapped(int index) {
     if (!mounted) return;
-
     _setCurrentIndexWithAnimation(index);
-
     switch (index) {
       case 0:
         GoRouter.of(context).go('/');
@@ -972,18 +995,103 @@ class _MainNavigationState extends State<MainNavigation>
     }
   }
 
+  bool _shouldShowStartupShell({
+    required AuthProvider authProvider,
+    required UserProvider userProvider,
+    required CategoryProvider categoryProvider,
+    required SubscriptionProvider subscriptionProvider,
+    required PaymentProvider paymentProvider,
+  }) {
+    final location = GoRouterState.of(context).uri.toString();
+    final isHomeRoute = location == '/' || location.startsWith('/?');
+    final hasBootstrapData = userProvider.hasInitialData ||
+        categoryProvider.hasInitialData ||
+        subscriptionProvider.hasInitialData ||
+        paymentProvider.hasInitialData;
+
+    return authProvider.isAuthenticated &&
+        isHomeRoute &&
+        (_isInitializing || !_dataLoadedInBackground) &&
+        !hasBootstrapData;
+  }
+
+  Widget _buildStartupShell() {
+    return Scaffold(
+      backgroundColor: AppColors.getBackground(context),
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 460),
+            child: Padding(
+              padding: ResponsiveValues.screenPadding(context),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  AppBrandLogo(
+                    size: ResponsiveValues.splashLogoSize(context) * 0.72,
+                    borderRadius: ResponsiveValues.radiusXLarge(context),
+                  ),
+                  SizedBox(height: ResponsiveValues.spacingXL(context)),
+                  Text(
+                    'Preparing your home screen',
+                    style: AppTextStyles.headlineSmall(context).copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  SizedBox(height: ResponsiveValues.spacingS(context)),
+                  Text(
+                    'We are loading your categories, notifications, and access details so everything appears correctly the first time.',
+                    style: AppTextStyles.bodyMedium(context).copyWith(
+                      color: AppColors.getTextSecondary(context),
+                      height: 1.55,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  SizedBox(height: ResponsiveValues.spacingXL(context)),
+                  SizedBox(
+                    width: 30,
+                    height: 30,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                        AppColors.telegramBlue,
+                      ),
+                      backgroundColor:
+                          AppColors.getDivider(context).withValues(alpha: 0.45),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
-
+    final userProvider = Provider.of<UserProvider>(context);
+    final categoryProvider = Provider.of<CategoryProvider>(context);
+    final subscriptionProvider = Provider.of<SubscriptionProvider>(context);
+    final paymentProvider = Provider.of<PaymentProvider>(context);
     WidgetsBinding.instance
         .addPostFrameCallback((_) => _updateCurrentIndexFromRoute());
-
     if (authProvider.isAuthenticated && authProvider.isInitialized) {
       WidgetsBinding.instance
           .addPostFrameCallback((_) => authProvider.checkSession());
     }
-
+    if (_shouldShowStartupShell(
+      authProvider: authProvider,
+      userProvider: userProvider,
+      categoryProvider: categoryProvider,
+      subscriptionProvider: subscriptionProvider,
+      paymentProvider: paymentProvider,
+    )) {
+      return _buildStartupShell();
+    }
     if (ScreenSize.isMobile(context)) {
       return _buildMobileNavigation();
     } else if (ScreenSize.isTablet(context)) {

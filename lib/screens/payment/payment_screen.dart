@@ -1,15 +1,11 @@
-// lib/screens/payment/payment_screen.dart
-// COMPLETE FIXED - ADDED BACK BUTTON & SHIMMER TYPE
-
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_animate/flutter_animate.dart';
-
 import '../../models/category_model.dart';
 import '../../providers/payment_provider.dart';
 import '../../providers/auth_provider.dart';
@@ -19,12 +15,12 @@ import '../../providers/category_provider.dart';
 import '../../services/device_service.dart';
 import '../../services/snackbar_service.dart';
 import '../../services/offline_queue_manager.dart';
+import '../../services/user_session.dart';
 import '../../widgets/common/base_screen_mixin.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_text_field.dart';
 import '../../utils/responsive_values.dart';
-import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/helpers.dart';
@@ -44,8 +40,6 @@ class _PaymentScreenState extends State<PaymentScreen>
   final _passwordController = TextEditingController();
   final _accountHolderNameController = TextEditingController();
   final _picker = ImagePicker();
-
-  late AnimationController _animationController;
 
   PaymentMethod? _selectedPaymentMethod;
   File? _proofImageFile;
@@ -91,7 +85,6 @@ class _PaymentScreenState extends State<PaymentScreen>
   @override
   dynamic get errorMessage => _hasError ? _errorMessage : null;
 
-  // ✅ Shimmer type for payment screen
   @override
   ShimmerType get shimmerType => ShimmerType.paymentCard;
 
@@ -104,19 +97,6 @@ class _PaymentScreenState extends State<PaymentScreen>
             color: AppColors.getTextPrimary(context)),
         onPressed: () => context.pop(),
       );
-
-  @override
-  void initState() {
-    super.initState();
-    _animationController = AnimationController(
-      vsync: this,
-      duration: AppThemes.animationMedium,
-    );
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _animationController.forward();
-    });
-  }
 
   @override
   void didChangeDependencies() {
@@ -137,7 +117,6 @@ class _PaymentScreenState extends State<PaymentScreen>
   void dispose() {
     _passwordController.dispose();
     _accountHolderNameController.dispose();
-    _animationController.dispose();
     super.dispose();
   }
 
@@ -174,6 +153,23 @@ class _PaymentScreenState extends State<PaymentScreen>
     } catch (e) {
       debugLog('PaymentScreen', 'Error loading cached methods: $e');
     }
+  }
+
+  String _resolvePaymentType({
+    Category? category,
+    int? categoryId,
+    String? requestedType,
+  }) {
+    final resolvedCategoryId = category?.id ?? categoryId;
+    final hasExpiredSubscription = resolvedCategoryId != null &&
+        _subscriptionProvider.expiredSubscriptions
+            .any((sub) => sub.categoryId == resolvedCategoryId);
+
+    if (hasExpiredSubscription) {
+      return 'repayment';
+    }
+
+    return requestedType ?? 'first_time';
   }
 
   void _initializeData() {
@@ -223,14 +219,20 @@ class _PaymentScreenState extends State<PaymentScreen>
         return;
       }
 
-      _monthsToAdd = category.billingCycle == 'semester' ? 4 : 1;
+      _monthsToAdd = _settingsProvider.getBillingCycleMonths(
+        category.billingCycle,
+      );
 
       setState(() {
         _username = _authProvider.currentUser?.username ?? '';
         _amount = category?.price ?? 0.0;
         _billingCycle = category!.billingCycle;
         _category = category;
-        _paymentType = args['paymentType'] ?? 'first_time';
+        _paymentType = _resolvePaymentType(
+          category: category,
+          categoryId: args['categoryId'] as int?,
+          requestedType: args['paymentType']?.toString(),
+        );
         _hasError = false;
         _cachedMethods = _settingsProvider.getPaymentMethods();
         _isLoadingMethods = _cachedMethods.isEmpty;
@@ -317,15 +319,11 @@ class _PaymentScreenState extends State<PaymentScreen>
   }
 
   String _getBillingCycleDescription() {
-    return _billingCycle == 'semester'
-        ? AppStrings.semesterBilling
-        : AppStrings.monthlyBilling;
+    return _settingsProvider.getBillingCycleDescription(_billingCycle);
   }
 
   String _getAccessDurationText() {
-    return _billingCycle == 'semester'
-        ? AppStrings.accessFourMonths
-        : AppStrings.oneMonth;
+    return _settingsProvider.getBillingCycleDurationText(_billingCycle);
   }
 
   String? _validateAccountHolderName(String? value) {
@@ -397,12 +395,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                         width: ResponsiveValues.iconSizeL(context),
                         height: ResponsiveValues.iconSizeL(context),
                         decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              AppColors.telegramBlue.withValues(alpha: 0.2),
-                              AppColors.telegramPurple.withValues(alpha: 0.1),
-                            ],
-                          ),
+                          color: AppColors.telegramBlue.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(
                             ResponsiveValues.radiusSmall(context),
                           ),
@@ -471,14 +464,14 @@ class _PaymentScreenState extends State<PaymentScreen>
                   Container(
                     padding: ResponsiveValues.cardPadding(context),
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          AppColors.getCard(context).withValues(alpha: 0.3),
-                          AppColors.getCard(context).withValues(alpha: 0.1),
-                        ],
-                      ),
+                      color:
+                          AppColors.getSurface(context).withValues(alpha: 0.55),
                       borderRadius: BorderRadius.circular(
                         ResponsiveValues.radiusSmall(context),
+                      ),
+                      border: Border.all(
+                        color: AppColors.getDivider(context)
+                            .withValues(alpha: 0.16),
                       ),
                     ),
                     child: Row(
@@ -503,12 +496,8 @@ class _PaymentScreenState extends State<PaymentScreen>
                             padding: EdgeInsets.all(
                                 ResponsiveValues.spacingXXS(context)),
                             decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  AppColors.telegramBlue.withValues(alpha: 0.2),
+                              color:
                                   AppColors.telegramBlue.withValues(alpha: 0.1),
-                                ],
-                              ),
                               borderRadius: BorderRadius.circular(
                                 ResponsiveValues.radiusSmall(context),
                               ),
@@ -546,7 +535,7 @@ class _PaymentScreenState extends State<PaymentScreen>
     return GestureDetector(
       onTap: isOffline ? null : _pickImage,
       child: AnimatedContainer(
-        duration: AppThemes.animationFast,
+        duration: const Duration(milliseconds: 180),
         height: 200,
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -598,12 +587,8 @@ class _PaymentScreenState extends State<PaymentScreen>
                             vertical: ResponsiveValues.spacingXS(context),
                           ),
                           decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                AppColors.telegramRed,
-                                AppColors.telegramRed.withValues(alpha: 0.8),
-                              ],
-                            ),
+                            color:
+                                AppColors.telegramRed.withValues(alpha: 0.92),
                             borderRadius: BorderRadius.circular(
                               ResponsiveValues.radiusFull(context),
                             ),
@@ -636,12 +621,8 @@ class _PaymentScreenState extends State<PaymentScreen>
                           vertical: ResponsiveValues.spacingXS(context),
                         ),
                         decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              AppColors.telegramGreen,
-                              AppColors.telegramGreen.withValues(alpha: 0.8),
-                            ],
-                          ),
+                          color:
+                              AppColors.telegramGreen.withValues(alpha: 0.92),
                           borderRadius: BorderRadius.circular(
                             ResponsiveValues.radiusFull(context),
                           ),
@@ -741,15 +722,11 @@ class _PaymentScreenState extends State<PaymentScreen>
             Row(
               children: [
                 Container(
-                  width: ResponsiveValues.iconSizeXL(context) * 1.5,
-                  height: ResponsiveValues.iconSizeXL(context) * 1.5,
+                  width: ResponsiveValues.featureCardIconContainerSize(context),
+                  height:
+                      ResponsiveValues.featureCardIconContainerSize(context),
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        AppColors.telegramBlue.withValues(alpha: 0.2),
-                        AppColors.telegramPurple.withValues(alpha: 0.1),
-                      ],
-                    ),
+                    color: AppColors.telegramBlue.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(
                       ResponsiveValues.radiusMedium(context),
                     ),
@@ -783,7 +760,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                   children: [
                     Text(
                       _amount.toStringAsFixed(0),
-                      style: AppTextStyles.displaySmall(context).copyWith(
+                      style: AppTextStyles.headlineSmall(context).copyWith(
                         color: AppColors.telegramBlue,
                         fontWeight: FontWeight.w700,
                       ),
@@ -830,10 +807,7 @@ class _PaymentScreenState extends State<PaymentScreen>
           ],
         ),
       ),
-    )
-        .animate()
-        .fadeIn(duration: AppThemes.animationMedium, delay: 100.ms)
-        .slideY(begin: 0.1, end: 0, duration: AppThemes.animationMedium);
+    );
   }
 
   Widget _buildSummaryRow({
@@ -842,17 +816,13 @@ class _PaymentScreenState extends State<PaymentScreen>
     required String value,
   }) {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
           width: ResponsiveValues.iconSizeL(context),
           height: ResponsiveValues.iconSizeL(context),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                AppColors.telegramBlue.withValues(alpha: 0.2),
-                AppColors.telegramPurple.withValues(alpha: 0.1),
-              ],
-            ),
+            color: AppColors.telegramBlue.withValues(alpha: 0.1),
             shape: BoxShape.circle,
           ),
           child: Icon(
@@ -863,19 +833,22 @@ class _PaymentScreenState extends State<PaymentScreen>
         ),
         SizedBox(width: ResponsiveValues.spacingM(context)),
         Expanded(
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 label,
-                style: AppTextStyles.bodySmall(context).copyWith(
+                style: AppTextStyles.labelMedium(context).copyWith(
                   color: AppColors.getTextSecondary(context),
+                  fontWeight: FontWeight.w600,
                 ),
               ),
+              SizedBox(height: ResponsiveValues.spacingXXS(context)),
               Text(
                 value,
                 style: AppTextStyles.bodyMedium(context).copyWith(
                   fontWeight: FontWeight.w600,
+                  height: 1.35,
                 ),
               ),
             ],
@@ -968,12 +941,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                   width: double.infinity,
                   padding: ResponsiveValues.cardPadding(context),
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        AppColors.info.withValues(alpha: 0.18),
-                        AppColors.info.withValues(alpha: 0.08),
-                      ],
-                    ),
+                    color: AppColors.info.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(
                       ResponsiveValues.radiusMedium(context),
                     ),
@@ -1027,10 +995,7 @@ class _PaymentScreenState extends State<PaymentScreen>
           ),
         ),
       ),
-    )
-        .animate()
-        .fadeIn(duration: AppThemes.animationMedium, delay: 200.ms)
-        .slideY(begin: 0.1, end: 0, duration: AppThemes.animationMedium);
+    );
   }
 
   Future<void> _submitPayment() async {
@@ -1066,33 +1031,79 @@ class _PaymentScreenState extends State<PaymentScreen>
     setState(() {
       _isSubmittingPayment = true;
       _submitStatusMessage = isOffline
-          ? 'Saving payment for sync...'
-          : 'Uploading payment proof...';
+          ? 'Saving your payment for sync'
+          : 'Uploading your payment proof';
     });
 
     try {
       final paymentMethod = _selectedPaymentMethod!.method;
       String? proofImageUrl;
 
+      // ✅ Always try to upload first if online
       if (!isOffline) {
         try {
           if (isMounted) {
             setState(() {
-              _submitStatusMessage = 'Uploading payment proof...';
+              _submitStatusMessage = 'Uploading your payment proof';
             });
           }
-          final uploadResponse =
-              await _paymentProvider.uploadPaymentProof(_proofImageFile!);
+
+          // ✅ Add timeout to upload
+          final uploadResponse = await _paymentProvider
+              .uploadPaymentProof(_proofImageFile!)
+              .timeout(
+            const Duration(seconds: 15),
+            onTimeout: () {
+              debugLog('PaymentScreen', 'Upload timeout - queuing payment');
+              throw TimeoutException('Upload timed out');
+            },
+          );
+
           if (uploadResponse.success && uploadResponse.data != null) {
             proofImageUrl = uploadResponse.data;
+            debugLog('PaymentScreen', '✅ Upload successful: $proofImageUrl');
           } else {
-            SnackbarService()
-                .showError(context, AppStrings.failedToUploadProof);
-            return;
+            debugLog(
+                'PaymentScreen', '❌ Upload failed: ${uploadResponse.message}');
+            throw Exception(uploadResponse.message);
           }
         } catch (uploadError) {
           debugLog('PaymentScreen', 'Upload error: $uploadError');
-          SnackbarService().showError(context, AppStrings.failedToUploadImage);
+
+          // ✅ On upload timeout or failure, FALL BACK TO OFFLINE QUEUE
+          SnackbarService().showInfo(
+            context,
+            'This is taking a little longer than expected. Your payment will be saved and synced automatically.',
+          );
+
+          // Save to offline queue
+          await _queuePaymentOffline(
+            categoryId: _category!.id,
+            paymentType: _paymentType,
+            paymentMethod: paymentMethod,
+            amount: _amount,
+            accountHolderName: _accountHolderNameController.text.trim(),
+            proofImagePath: _proofImageFile!.path,
+          );
+
+          if (isMounted) {
+            await context.push('/payment-success', extra: {
+              'category': _category,
+              'category_id': _category!.id,
+              'category_name': _category!.name,
+              'payment_type': _paymentType,
+              'payment_method': paymentMethod,
+              'payment_method_name': _selectedPaymentMethod!.name,
+              'amount': _amount,
+              'billing_cycle': _billingCycle,
+              'months': _monthsToAdd,
+              'duration_text': _getAccessDurationText(),
+              'username': _username,
+              'account_holder_name': _accountHolderNameController.text.trim(),
+              'timestamp': DateTime.now().toIso8601String(),
+              'queued': true,
+            });
+          }
           return;
         }
       }
@@ -1100,42 +1111,14 @@ class _PaymentScreenState extends State<PaymentScreen>
       final accountHolderName = _accountHolderNameController.text.trim();
 
       if (isOffline) {
-        if (isMounted) {
-          setState(() {
-            _submitStatusMessage = 'Saving payment for sync...';
-          });
-        }
-        _queueManager.addItem(
-          type: AppConstants.queueActionSubmitPayment,
-          data: {
-            'categoryId': _category!.id,
-            'paymentType': _paymentType,
-            'paymentMethod': paymentMethod,
-            'amount': _amount,
-            'accountHolderName':
-                accountHolderName.isNotEmpty ? accountHolderName : null,
-            'proofImagePath': null,
-            'userId': _currentUserId,
-          },
-        );
-
-        _deviceService.saveCacheItem(
-          'last_payment_data',
-          {
-            'categoryId': _category!.id,
-            'paymentType': _paymentType,
-            'paymentMethod': paymentMethod,
-            'paymentMethodName': _selectedPaymentMethod!.name,
-            'categoryName': _category!.name,
-            'amount': _amount,
-            'billingCycle': _billingCycle,
-            'durationText': _getAccessDurationText(),
-            'username': _username,
-            'accountHolderName':
-                accountHolderName.isNotEmpty ? accountHolderName : null,
-            'queued': true,
-          },
-          ttl: const Duration(days: 1),
+        await _queuePaymentOffline(
+          categoryId: _category!.id,
+          paymentType: _paymentType,
+          paymentMethod: paymentMethod,
+          amount: _amount,
+          accountHolderName:
+              accountHolderName.isNotEmpty ? accountHolderName : null,
+          proofImagePath: _proofImageFile!.path,
         );
 
         if (isMounted) {
@@ -1157,76 +1140,121 @@ class _PaymentScreenState extends State<PaymentScreen>
             'queued': true,
           });
         }
-      } else {
+        return;
+      }
+
+      // ✅ Online submission with proof URL
+      if (isMounted) {
+        setState(() {
+          _submitStatusMessage = 'Submitting your payment';
+        });
+      }
+
+      final result = await _paymentProvider
+          .submitPayment(
+        categoryId: _category!.id,
+        paymentType: _paymentType,
+        paymentMethod: paymentMethod,
+        amount: _amount,
+        accountHolderName:
+            accountHolderName.isNotEmpty ? accountHolderName : null,
+        proofImagePath: proofImageUrl,
+      )
+          .timeout(
+        const Duration(seconds: 20),
+        onTimeout: () {
+          debugLog('PaymentScreen', 'Payment submission timeout - queuing');
+          throw TimeoutException('Payment submission timed out');
+        },
+      );
+
+      if (result.success && result.data != null) {
+        await _subscriptionProvider.refreshAfterPaymentVerification();
+        await _authProvider.checkSession();
+
         if (isMounted) {
-          setState(() {
-            _submitStatusMessage = 'Submitting payment...';
+          SnackbarService().showSuccess(context, AppStrings.paymentSubmitted);
+          await context.push('/payment-success', extra: {
+            'category': _category,
+            'category_id': _category!.id,
+            'category_name': _category!.name,
+            'payment_type': _paymentType,
+            'payment_method': paymentMethod,
+            'payment_method_name': _selectedPaymentMethod!.name,
+            'amount': _amount,
+            'billing_cycle': _billingCycle,
+            'months': _monthsToAdd,
+            'duration_text': _getAccessDurationText(),
+            'username': _username,
+            'account_holder_name':
+                accountHolderName.isNotEmpty ? accountHolderName : null,
+            'timestamp': DateTime.now().toIso8601String(),
           });
         }
-        final result = await _paymentProvider.submitPayment(
-          categoryId: _category!.id,
-          paymentType: _paymentType,
-          paymentMethod: paymentMethod,
-          amount: _amount,
-          accountHolderName:
-              accountHolderName.isNotEmpty ? accountHolderName : null,
-          proofImagePath: proofImageUrl,
-        );
+      } else {
+        final message = result.message;
+        final action = result.data?['action'];
 
-        if (result.success && result.data != null) {
-          await _subscriptionProvider.refreshAfterPaymentVerification();
-          await _authProvider.checkSession();
-
+        if (action == 'device_change_required') {
           if (isMounted) {
-            SnackbarService().showSuccess(context, AppStrings.paymentSubmitted);
-            await context.push('/payment-success', extra: {
-              'category': _category,
-              'category_id': _category!.id,
-              'category_name': _category!.name,
-              'payment_type': _paymentType,
-              'payment_method': paymentMethod,
-              'payment_method_name': _selectedPaymentMethod!.name,
-              'amount': _amount,
-              'billing_cycle': _billingCycle,
-              'months': _monthsToAdd,
-              'duration_text': _getAccessDurationText(),
-              'username': _username,
-              'account_holder_name':
-                  accountHolderName.isNotEmpty ? accountHolderName : null,
-              'timestamp': DateTime.now().toIso8601String(),
+            await context.push('/device-change', extra: {
+              'message': message,
+              'action': action,
+              'data': result.data,
             });
           }
-        } else {
-          final message = result.message;
-          final action = result.data?['action'];
-
-          if (action == 'device_change_required') {
-            if (isMounted) {
-              await context.push('/device-change', extra: {
-                'message': message,
-                'action': action,
-                'data': result.data,
-              });
-            }
-          } else {
-            if (isMounted) {
-              final normalizedMessage = message.toLowerCase();
-              if (normalizedMessage.contains('already') ||
-                  normalizedMessage.contains('pending') ||
-                  normalizedMessage.contains('duplicate')) {
-                SnackbarService().showInfo(
-                  context,
-                  'This payment was already submitted. Please wait for verification.',
-                );
-              } else {
-                SnackbarService().showError(context, message);
-              }
-            }
+        } else if (message.toLowerCase().contains('pending')) {
+          SnackbarService().showInfo(
+            context,
+            'You already have a pending payment for this category.',
+          );
+          if (isMounted) {
+            context.pop();
           }
+        } else {
+          SnackbarService().showError(context, message);
         }
       }
     } catch (e) {
       debugLog('PaymentScreen', 'Payment error: $e');
+
+      // ✅ On any error, try to queue offline as fallback
+      if (!isOffline) {
+        SnackbarService().showInfo(
+          context,
+          'Network issue detected. Saving payment for later sync...',
+        );
+
+        await _queuePaymentOffline(
+          categoryId: _category!.id,
+          paymentType: _paymentType,
+          paymentMethod: _selectedPaymentMethod!.method,
+          amount: _amount,
+          accountHolderName: _accountHolderNameController.text.trim(),
+          proofImagePath: _proofImageFile!.path,
+        );
+
+        if (isMounted) {
+          await context.push('/payment-success', extra: {
+            'category': _category,
+            'category_id': _category!.id,
+            'category_name': _category!.name,
+            'payment_type': _paymentType,
+            'payment_method': _selectedPaymentMethod!.method,
+            'payment_method_name': _selectedPaymentMethod!.name,
+            'amount': _amount,
+            'billing_cycle': _billingCycle,
+            'months': _monthsToAdd,
+            'duration_text': _getAccessDurationText(),
+            'username': _username,
+            'account_holder_name': _accountHolderNameController.text.trim(),
+            'timestamp': DateTime.now().toIso8601String(),
+            'queued': true,
+          });
+        }
+        return;
+      }
+
       if (isMounted) {
         SnackbarService()
             .showError(context, '${AppStrings.paymentFailed}: ${e.toString()}');
@@ -1238,6 +1266,75 @@ class _PaymentScreenState extends State<PaymentScreen>
           _submitStatusMessage = '';
         });
       }
+    }
+  }
+
+  Future<void> _queuePaymentOffline({
+    required int categoryId,
+    required String paymentType,
+    required String paymentMethod,
+    required double amount,
+    String? accountHolderName,
+    String? proofImagePath,
+  }) async {
+    try {
+      final userId = await UserSession().getCurrentUserId();
+      if (userId == null) return;
+
+      // Save the image file locally for later upload
+      String? savedImagePath;
+      if (proofImagePath != null) {
+        final imageFile = File(proofImagePath);
+        if (await imageFile.exists()) {
+          final appDocDir = await getApplicationDocumentsDirectory();
+          final paymentDir = Directory('${appDocDir.path}/pending_payments');
+          if (!await paymentDir.exists()) {
+            await paymentDir.create(recursive: true);
+          }
+          final fileName =
+              'payment_${DateTime.now().millisecondsSinceEpoch}.jpg';
+          savedImagePath = '${paymentDir.path}/$fileName';
+          await imageFile.copy(savedImagePath);
+          debugLog('PaymentScreen', '📁 Saved image locally: $savedImagePath');
+        }
+      }
+
+      _queueManager.addItem(
+        type: AppConstants.queueActionSubmitPayment,
+        data: {
+          'categoryId': categoryId,
+          'paymentType': paymentType,
+          'paymentMethod': paymentMethod,
+          'amount': amount,
+          'accountHolderName': accountHolderName,
+          'proofImagePath': savedImagePath,
+          'userId': userId,
+          'timestamp': DateTime.now().toIso8601String(),
+        },
+      );
+
+      // Cache payment data for success screen
+      _deviceService.saveCacheItem(
+        'last_payment_data',
+        {
+          'categoryId': categoryId,
+          'paymentType': paymentType,
+          'paymentMethod': paymentMethod,
+          'paymentMethodName': _selectedPaymentMethod?.name,
+          'categoryName': _category?.name,
+          'amount': amount,
+          'billingCycle': _billingCycle,
+          'durationText': _getAccessDurationText(),
+          'username': _username,
+          'accountHolderName': accountHolderName,
+          'queued': true,
+        },
+        ttl: const Duration(days: 1),
+      );
+
+      debugLog('PaymentScreen', '📝 Queued payment for offline sync');
+    } catch (e) {
+      debugLog('PaymentScreen', 'Error queueing payment: $e');
     }
   }
 
@@ -1302,18 +1399,11 @@ class _PaymentScreenState extends State<PaymentScreen>
               ),
             ),
             SizedBox(height: ResponsiveValues.spacingS(context)),
-            _buildNoteItem(AppStrings.noteAccountHolderMatch),
-            _buildNoteItem(AppStrings.noteProcessingTime),
-            _buildNoteItem(AppStrings.noteKeepProof),
-            _buildNoteItem(AppStrings.noteContactSupport),
-            _buildNoteItem(AppStrings.noteNotification),
+            ..._settingsProvider.getPaymentImportantNotes().map(_buildNoteItem),
           ],
         ),
       ),
-    )
-        .animate()
-        .fadeIn(duration: AppThemes.animationMedium, delay: 300.ms)
-        .slideY(begin: 0.1, end: 0, duration: AppThemes.animationMedium);
+    );
   }
 
   @override
@@ -1332,7 +1422,8 @@ class _PaymentScreenState extends State<PaymentScreen>
       return Center(
         child: buildEmptyWidget(
           dataType: AppStrings.paymentMethods,
-          customMessage: AppStrings.paymentMethodsNotAvailable,
+          customMessage:
+              _settingsProvider.getPaymentMethodsUnavailableMessage(),
           isOffline: isOffline,
         ),
       );
@@ -1370,39 +1461,6 @@ class _PaymentScreenState extends State<PaymentScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (isOffline && pendingCount > 0)
-              Container(
-                margin:
-                    EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
-                padding: ResponsiveValues.cardPadding(context),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      AppColors.info.withValues(alpha: 0.2),
-                      AppColors.info.withValues(alpha: 0.1)
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(
-                      ResponsiveValues.radiusMedium(context)),
-                  border:
-                      Border.all(color: AppColors.info.withValues(alpha: 0.3)),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.schedule_rounded,
-                        color: AppColors.info,
-                        size: ResponsiveValues.iconSizeS(context)),
-                    SizedBox(width: ResponsiveValues.spacingM(context)),
-                    Expanded(
-                      child: Text(
-                        AppStrings.pendingActionsLabel(pendingCount),
-                        style: AppTextStyles.bodySmall(context)
-                            .copyWith(color: AppColors.info),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             _buildPaymentSummary(),
             SizedBox(height: ResponsiveValues.spacingXL(context)),
             _buildPaymentForm(_cachedMethods),

@@ -3,7 +3,6 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
@@ -16,11 +15,8 @@ import '../../widgets/common/base_screen_mixin.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_text_field.dart';
-import '../../widgets/common/app_shimmer.dart';
-import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
-import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
 import '../../utils/helpers.dart';
 import '../../utils/constants.dart';
@@ -39,8 +35,6 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
   int? _selectedSchoolId;
   bool _schoolsLoaded = false;
   Timer? _debounceTimer;
-
-  late AnimationController _headerAnimationController;
   late SchoolProvider _schoolProvider;
   late AuthProvider _authProvider;
 
@@ -68,11 +62,6 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
   @override
   void initState() {
     super.initState();
-    _headerAnimationController = AnimationController(
-      vsync: this,
-      duration: AppThemes.animationMedium,
-    );
-
     _searchController.addListener(_filterSchools);
   }
 
@@ -83,14 +72,12 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
     _authProvider = Provider.of<AuthProvider>(context);
 
     _loadSchools();
-    _headerAnimationController.forward();
   }
 
   @override
   void dispose() {
     _debounceTimer?.cancel();
     _searchController.dispose();
-    _headerAnimationController.dispose();
     super.dispose();
   }
 
@@ -129,7 +116,22 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
 
   @override
   Future<void> onRefresh() async {
-    await _loadSchools(forceRefresh: true);
+    if (isOffline) {
+      SnackbarService().showOffline(context, action: AppStrings.refresh);
+      return;
+    }
+
+    try {
+      await _loadSchools(forceRefresh: true);
+    } catch (e) {
+      if (!isMounted) return;
+      SnackbarService().showInfo(
+        context,
+        hasCachedData
+            ? 'We could not refresh schools just now. Your saved list is still available.'
+            : AppStrings.refreshFailed,
+      );
+    }
   }
 
   void _handleSchoolSelection(int? schoolId) {
@@ -241,8 +243,12 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
             child: Row(
               children: [
                 Container(
-                  width: ResponsiveValues.iconSizeXL(context) * 1.5,
-                  height: ResponsiveValues.iconSizeXL(context) * 1.5,
+                  width: ResponsiveValues.schoolSelectionIconContainerSize(
+                    context,
+                  ),
+                  height: ResponsiveValues.schoolSelectionIconContainerSize(
+                    context,
+                  ),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: isSelected
@@ -276,11 +282,9 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                       Text(
                         school.name,
                         style: AppTextStyles.titleMedium(context).copyWith(
-                          fontSize: ScreenSize.fontSize(
-                            context: context,
-                            base: 16,
-                            tablet: 18,
-                            desktop: 20,
+                          fontSize:
+                              ResponsiveValues.schoolSelectionTitleFont(
+                            context,
                           ),
                         ),
                         maxLines: 2,
@@ -332,14 +336,7 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
           ),
         ),
       ),
-    )
-        .animate()
-        .fadeIn(duration: AppThemes.animationMedium, delay: (index * 50).ms)
-        .slideX(
-            begin: 0.1,
-            end: 0,
-            duration: AppThemes.animationMedium,
-            delay: (index * 50).ms);
+    );
   }
 
   Widget _buildOtherOption(int index) {
@@ -360,8 +357,12 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
             child: Row(
               children: [
                 Container(
-                  width: ResponsiveValues.iconSizeXL(context) * 1.5,
-                  height: ResponsiveValues.iconSizeXL(context) * 1.5,
+                  width: ResponsiveValues.schoolSelectionIconContainerSize(
+                    context,
+                  ),
+                  height: ResponsiveValues.schoolSelectionIconContainerSize(
+                    context,
+                  ),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: isSelected
@@ -395,11 +396,9 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                       Text(
                         AppStrings.otherSchool,
                         style: AppTextStyles.titleMedium(context).copyWith(
-                          fontSize: ScreenSize.fontSize(
-                            context: context,
-                            base: 16,
-                            tablet: 18,
-                            desktop: 20,
+                          fontSize:
+                              ResponsiveValues.schoolSelectionTitleFont(
+                            context,
                           ),
                         ),
                       ),
@@ -439,14 +438,98 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
           ),
         ),
       ),
-    )
-        .animate()
-        .fadeIn(duration: AppThemes.animationMedium, delay: (index * 50).ms)
-        .slideX(
-            begin: 0.1,
-            end: 0,
-            duration: AppThemes.animationMedium,
-            delay: (index * 50).ms);
+    );
+  }
+
+  Widget _buildIntroPanel() {
+    final selectedSchool = _selectedSchoolId != null && _selectedSchoolId != 0
+        ? _schoolProvider.schools
+            .cast<School?>()
+            .firstWhere(
+              (school) => school?.id == _selectedSchoolId,
+              orElse: () => null,
+            )
+        : null;
+
+    return AppCard.glass(
+      child: Padding(
+        padding: ResponsiveValues.cardPadding(context),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Choose your school before entering the learning workspace.',
+                    style: AppTextStyles.bodyMedium(context).copyWith(
+                      color: AppColors.getTextSecondary(context),
+                      height: 1.45,
+                    ),
+                  ),
+                ),
+                SizedBox(width: ResponsiveValues.spacingM(context)),
+                Container(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: ResponsiveValues.spacingM(context),
+                    vertical: ResponsiveValues.spacingXS(context),
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.telegramBlue.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(
+                      ResponsiveValues.radiusFull(context),
+                    ),
+                  ),
+                  child: Text(
+                    '${_filteredSchools.length + 1} options',
+                    style: AppTextStyles.labelSmall(context).copyWith(
+                      color: AppColors.telegramBlue,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (_selectedSchoolId != null) ...[
+              SizedBox(height: ResponsiveValues.spacingL(context)),
+              Container(
+                width: double.infinity,
+                padding: EdgeInsets.symmetric(
+                  horizontal: ResponsiveValues.spacingM(context),
+                  vertical: ResponsiveValues.spacingM(context),
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.telegramBlue.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(
+                    ResponsiveValues.radiusMedium(context),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.check_circle_rounded,
+                      size: ResponsiveValues.iconSizeS(context),
+                      color: AppColors.telegramBlue,
+                    ),
+                    SizedBox(width: ResponsiveValues.spacingM(context)),
+                    Expanded(
+                      child: Text(
+                        selectedSchool != null
+                            ? 'Selected: ${selectedSchool.name}'
+                            : 'Selected: ${AppStrings.otherSchool}',
+                        style: AppTextStyles.bodyMedium(context).copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -457,37 +540,6 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
 
     return Column(
       children: [
-        if (isOffline && pendingCount > 0)
-          Container(
-            margin: EdgeInsets.all(ResponsiveValues.spacingM(context)),
-            padding: ResponsiveValues.cardPadding(context),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  AppColors.info.withValues(alpha: 0.2),
-                  AppColors.info.withValues(alpha: 0.1)
-                ],
-              ),
-              borderRadius:
-                  BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-              border: Border.all(color: AppColors.info.withValues(alpha: 0.3)),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.schedule_rounded,
-                    color: AppColors.info,
-                    size: ResponsiveValues.iconSizeS(context)),
-                SizedBox(width: ResponsiveValues.spacingM(context)),
-                Expanded(
-                  child: Text(
-                    '$pendingCount pending action${pendingCount > 1 ? 's' : ''} will sync when online',
-                    style: AppTextStyles.bodySmall(context)
-                        .copyWith(color: AppColors.info),
-                  ),
-                ),
-              ],
-            ),
-          ),
         Expanded(
           child: RefreshIndicator(
             onRefresh: onRefresh,
@@ -495,11 +547,28 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
             backgroundColor: AppColors.getSurface(context),
             child: CustomScrollView(
               slivers: [
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      ResponsiveValues.onboardingHeaderPadding(context).left,
+                      ResponsiveValues.onboardingHeaderPadding(context).top,
+                      ResponsiveValues.onboardingHeaderPadding(context).right,
+                      ResponsiveValues.onboardingHeaderPadding(context).bottom,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildIntroPanel(),
+                      ],
+                    ),
+                  ),
+                ),
                 SliverPadding(
                   padding: EdgeInsets.only(
-                    left: ResponsiveValues.spacingL(context),
-                    right: ResponsiveValues.spacingL(context),
-                    top: ResponsiveValues.spacingL(context),
+                    left: ResponsiveValues.onboardingHeaderPadding(context).left,
+                    right:
+                        ResponsiveValues.onboardingHeaderPadding(context).right,
+                    top: ResponsiveValues.onboardingListSpacing(context),
                   ),
                   sliver: SliverList.separated(
                     itemCount: _filteredSchools.length + 1,
@@ -510,66 +579,27 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                       return _buildSchoolCard(_filteredSchools[index], index);
                     },
                     separatorBuilder: (context, index) =>
-                        SizedBox(height: ResponsiveValues.spacingL(context)),
+                        SizedBox(
+                      height: ResponsiveValues.onboardingListSpacing(context),
+                    ),
                   ),
                 ),
                 SliverToBoxAdapter(
-                    child:
-                        SizedBox(height: ResponsiveValues.spacingL(context))),
+                    child: SizedBox(
+                        height: ResponsiveValues.onboardingListSpacing(
+                      context,
+                    ))),
               ],
             ),
           ),
         ),
         Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                AppColors.getBackground(context).withValues(alpha: 0),
-                AppColors.getBackground(context),
-                AppColors.getBackground(context),
-              ],
-              stops: const [0.0, 0.3, 1.0],
-            ),
-          ),
+          color: AppColors.getBackground(context),
           child: Padding(
-            padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
+            padding: ResponsiveValues.onboardingFooterPadding(context),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (isOffline)
-                  Container(
-                    padding: ResponsiveValues.cardPadding(context),
-                    margin: EdgeInsets.only(
-                        bottom: ResponsiveValues.spacingL(context)),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          AppColors.warning.withValues(alpha: 0.2),
-                          AppColors.warning.withValues(alpha: 0.1)
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(
-                          ResponsiveValues.radiusMedium(context)),
-                      border: Border.all(
-                          color: AppColors.warning.withValues(alpha: 0.3)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.wifi_off_rounded,
-                            color: AppColors.warning, size: 20),
-                        SizedBox(width: ResponsiveValues.spacingM(context)),
-                        Expanded(
-                          child: Text(
-                            AppStrings.offlineCachedSchools,
-                            style: AppTextStyles.bodySmall(context)
-                                .copyWith(color: AppColors.warning),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                 SizedBox(
                   width: double.infinity,
                   child: AppButton(
@@ -593,13 +623,16 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
                       vertical: ResponsiveValues.spacingM(context),
                     ),
                   )
-                      .animate()
-                      .fadeIn(
-                          duration: AppThemes.animationMedium, delay: 600.ms)
-                      .slideY(
-                          begin: 0.1,
-                          end: 0,
-                          duration: AppThemes.animationMedium),
+                ),
+                SizedBox(height: ResponsiveValues.spacingS(context)),
+                Text(
+                  isOffline
+                      ? AppStrings.offlineCachedSchools
+                      : 'You can change this later from your profile settings.',
+                  style: AppTextStyles.bodySmall(context).copyWith(
+                    color: AppColors.getTextSecondary(context),
+                  ),
+                  textAlign: TextAlign.center,
                 ),
                 SizedBox(height: ResponsiveValues.spacingS(context)),
               ],
@@ -628,12 +661,10 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
               Size.fromHeight(ResponsiveValues.appBarHeight(context) + 16),
           child: Padding(
             padding: ResponsiveValues.screenPadding(context),
-            child: AppCard.glass(
-              child: AppTextField.search(
-                controller: _searchController,
-                hint: AppStrings.searchSchools,
-                enabled: !isOffline,
-              ),
+            child: AppTextField.search(
+              controller: _searchController,
+              hint: AppStrings.searchSchools,
+              enabled: !isOffline,
             ),
           ),
         ),

@@ -1,12 +1,8 @@
-// lib/widgets/common/app_empty_state.dart
-// COMPLETE PRODUCTION-READY FILE - MATCHES YOUR EXISTING CODE
-
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/responsive_values.dart';
-import 'app_card.dart';
 import 'app_button.dart';
 
 enum EmptyStateType {
@@ -51,6 +47,20 @@ class AppEmptyState extends StatelessWidget {
     this.pendingCount,
   });
 
+  static String _formatDataType(String dataType) {
+    final normalized = dataType
+        .trim()
+        .replaceAll(RegExp(r'[_-]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .toLowerCase();
+
+    if (normalized.isEmpty) {
+      return 'content';
+    }
+
+    return normalized;
+  }
+
   factory AppEmptyState.noData({
     required String dataType,
     String? customMessage,
@@ -59,11 +69,12 @@ class AppEmptyState extends StatelessWidget {
     bool isOffline = false,
     int? pendingCount,
   }) {
+    final label = _formatDataType(dataType);
     final message = isOffline
-        ? 'No cached $dataType available. Connect to internet.'
-        : (customMessage ?? 'No $dataType available.');
+        ? 'Reconnect to load your $label and continue where you left off.'
+        : (customMessage ?? 'Your $label will appear here once it is ready.');
 
-    final title = isOffline ? 'Offline Mode' : 'No $dataType';
+    final title = isOffline ? 'You are offline' : 'Nothing here yet';
     final icon = isOffline ? Icons.wifi_off_rounded : Icons.inbox_rounded;
     final type = isOffline ? EmptyStateType.offline : EmptyStateType.noData;
 
@@ -72,7 +83,7 @@ class AppEmptyState extends StatelessWidget {
       title: title,
       message: message,
       actionText: onRefresh != null
-          ? (isRefreshing ? 'Refreshing...' : 'Refresh')
+          ? (isRefreshing ? 'Refreshing' : 'Refresh')
           : null,
       onAction: onRefresh,
       type: type,
@@ -88,17 +99,18 @@ class AppEmptyState extends StatelessWidget {
     bool isRefreshing = false,
     int? pendingCount,
   }) {
+    final label = dataType != null ? _formatDataType(dataType) : 'content';
     final displayMessage = message ??
         (dataType != null
-            ? 'No cached $dataType available. Connect to internet.'
-            : 'You are offline. Connect to internet.');
+            ? 'Reconnect to load your $label and keep everything up to date.'
+            : 'Reconnect to continue using the latest content and updates.');
 
     return AppEmptyState(
       icon: Icons.wifi_off_rounded,
-      title: 'Offline Mode',
+      title: 'You are offline',
       message: displayMessage,
       actionText:
-          onRetry != null ? (isRefreshing ? 'Connecting...' : 'Retry') : null,
+          onRetry != null ? (isRefreshing ? 'Reconnecting' : 'Try again') : null,
       onAction: onRetry,
       type: EmptyStateType.offline,
       isRefreshing: isRefreshing,
@@ -120,7 +132,7 @@ class AppEmptyState extends StatelessWidget {
       title: 'Changes Queued',
       message:
           '$actionText waiting to sync. $action will complete when online.',
-      actionText: isSyncing ? 'Syncing...' : 'Sync Now',
+      actionText: isSyncing ? 'Syncing' : 'Sync now',
       onAction: onSync,
       type: EmptyStateType.queued,
       isRefreshing: isSyncing,
@@ -133,7 +145,7 @@ class AppEmptyState extends StatelessWidget {
   }) {
     return AppEmptyState(
       icon: Icons.sync_rounded,
-      title: 'Syncing...',
+      title: 'Syncing',
       message: message ?? 'Your changes are being synced.',
       type: EmptyStateType.syncing,
       isRefreshing: true,
@@ -151,7 +163,7 @@ class AppEmptyState extends StatelessWidget {
       title: title, // ✅ Using the title parameter
       message: message,
       actionText:
-          onRetry != null ? (isRefreshing ? 'Retrying...' : 'Try Again') : null,
+          onRetry != null ? (isRefreshing ? 'Retrying' : 'Try again') : null,
       onAction: onRetry,
       type: EmptyStateType.error,
       isRefreshing: isRefreshing,
@@ -192,47 +204,40 @@ class AppEmptyState extends StatelessWidget {
     final content = Container(
       constraints: BoxConstraints(maxWidth: maxWidth ?? 400),
       padding: padding,
-      child: AppCard.glass(
-        isOffline:
-            type == EmptyStateType.offline || type == EmptyStateType.queued,
-        child: Padding(
-          padding: EdgeInsets.all(ResponsiveValues.spacingXL(context)),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              return SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(maxWidth: constraints.maxWidth),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: centerContent
-                        ? CrossAxisAlignment.center
-                        : CrossAxisAlignment.start,
-                    children: [
-                      if (showAnimation) _buildAnimatedIcon(context),
-                      SizedBox(height: ResponsiveValues.spacingL(context)),
-                      _buildTitle(context),
-                      SizedBox(height: ResponsiveValues.spacingM(context)),
-                      _buildMessage(context),
-                      if (pendingCount != null && pendingCount! > 1)
-                        Padding(
-                          padding: EdgeInsets.only(
-                              top: ResponsiveValues.spacingM(context)),
-                          child: _buildPendingBadge(context),
-                        ),
-                      if (actionText != null && onAction != null) ...[
-                        SizedBox(height: ResponsiveValues.spacingXL(context)),
-                        _buildActionButton(context),
-                      ],
-                      SizedBox(height: ResponsiveValues.spacingS(context)),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: constraints.maxWidth),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: centerContent
+                    ? CrossAxisAlignment.center
+                    : CrossAxisAlignment.start,
+                children: [
+                  if (showAnimation) _buildAnimatedIcon(context),
+                  SizedBox(height: ResponsiveValues.spacingL(context)),
+                  _buildTitle(context),
+                  SizedBox(height: ResponsiveValues.spacingM(context)),
+                  _buildMessage(context),
+                  if (pendingCount != null && pendingCount! > 1)
+                    Padding(
+                      padding: EdgeInsets.only(
+                          top: ResponsiveValues.spacingM(context)),
+                      child: _buildPendingBadge(context),
+                    ),
+                  if (actionText != null && onAction != null) ...[
+                    SizedBox(height: ResponsiveValues.spacingXL(context)),
+                    _buildActionButton(context),
+                  ],
+                  SizedBox(height: ResponsiveValues.spacingS(context)),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
 
@@ -243,21 +248,22 @@ class AppEmptyState extends StatelessWidget {
   }
 
   Widget _buildAnimatedIcon(BuildContext context) {
-    final iconSize = ResponsiveValues.iconSizeXXL(context) * 2;
+    final iconSize = ResponsiveValues.iconSizeXXL(context) * 1.7;
     final iconColor = _getIconColor(context);
 
     return Container(
       width: iconSize,
       height: iconSize,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            iconColor.withValues(alpha: 0.2),
-            iconColor.withValues(alpha: 0.05)
-          ],
-        ),
+        color: iconColor.withValues(alpha: 0.1),
         shape: BoxShape.circle,
-        border: Border.all(color: iconColor.withValues(alpha: 0.3), width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: iconColor.withValues(alpha: 0.12),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: type == EmptyStateType.syncing
           ? const Center(
@@ -273,7 +279,7 @@ class AppEmptyState extends StatelessWidget {
             )
           : Icon(
               icon ?? _getIconForType(),
-              size: iconSize * 0.5,
+              size: iconSize * 0.44,
               color: iconColor,
             ),
     );
@@ -286,10 +292,9 @@ class AppEmptyState extends StatelessWidget {
       child: Text(
         title,
         style: AppTextStyles.titleLarge(context)
-            .copyWith(fontWeight: FontWeight.w600),
+            .copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.1),
         textAlign: centerContent ? TextAlign.center : TextAlign.start,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
+        maxLines: 3,
       ),
     );
   }
@@ -305,8 +310,7 @@ class AppEmptyState extends StatelessWidget {
           height: 1.5,
         ),
         textAlign: centerContent ? TextAlign.center : TextAlign.start,
-        maxLines: 4,
-        overflow: TextOverflow.ellipsis,
+        softWrap: true,
       ),
     );
   }
@@ -318,10 +322,10 @@ class AppEmptyState extends StatelessWidget {
         vertical: ResponsiveValues.spacingXS(context),
       ),
       decoration: BoxDecoration(
-        color: AppColors.info.withValues(alpha: 0.1),
+        color: AppColors.info.withValues(alpha: 0.08),
         borderRadius:
             BorderRadius.circular(ResponsiveValues.radiusFull(context)),
-        border: Border.all(color: AppColors.info.withValues(alpha: 0.3)),
+        border: Border.all(color: AppColors.info.withValues(alpha: 0.18)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -350,9 +354,12 @@ class AppEmptyState extends StatelessWidget {
         width: double.infinity,
         height: ResponsiveValues.buttonHeightMedium(context),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(colors: AppColors.blueGradient),
+          color: AppColors.getCard(context).withValues(alpha: 0.96),
           borderRadius:
               BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+          border: Border.all(
+            color: AppColors.getDivider(context).withValues(alpha: 0.85),
+          ),
         ),
         child: Center(
           child: Row(
@@ -363,14 +370,17 @@ class AppEmptyState extends StatelessWidget {
                 height: ResponsiveValues.iconSizeS(context),
                 child: const CircularProgressIndicator(
                   strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  valueColor:
+                      AlwaysStoppedAnimation<Color>(AppColors.telegramBlue),
                 ),
               ),
               SizedBox(width: ResponsiveValues.spacingS(context)),
               Text(
-                actionText ?? 'Loading...',
-                style: AppTextStyles.labelLarge(context)
-                    .copyWith(color: Colors.white),
+                actionText ?? 'Loading',
+                style: AppTextStyles.labelLarge(context).copyWith(
+                  color: AppColors.telegramBlue,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ],
           ),
@@ -379,10 +389,10 @@ class AppEmptyState extends StatelessWidget {
     }
 
     return AppButton.primary(
-      label: actionText!,
+      label: actionText ?? 'Action',
       icon: _getActionIcon(),
       onPressed: onAction,
-      requiresOnline: type == EmptyStateType.offline ? false : true,
+      requiresOnline: type != EmptyStateType.offline,
     );
   }
 

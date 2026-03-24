@@ -1,7 +1,5 @@
-// lib/utils/helpers.dart
-// COMPLETE PRODUCTION-READY FILE - WITH ERROR HELPER
-
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -10,7 +8,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 
 // ===== LOGGING =====
 void debugLog(String tag, String message) {
-  if (const bool.fromEnvironment('PRODUCTION')) {
+  if (kReleaseMode) {
     return;
   }
   debugPrint(

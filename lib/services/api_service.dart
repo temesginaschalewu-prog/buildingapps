@@ -1,6 +1,3 @@
-// lib/services/api_service.dart
-// PRODUCTION FINAL - REDUCED TIMEOUTS & RETRY
-
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -19,7 +16,6 @@ import 'package:familyacademyclient/models/exam_result_model.dart';
 import 'package:familyacademyclient/models/notification_model.dart';
 import 'package:familyacademyclient/models/parent_link_model.dart';
 import 'package:familyacademyclient/models/payment_model.dart';
-import 'package:familyacademyclient/models/progress_model.dart';
 import 'package:familyacademyclient/models/school_model.dart';
 import 'package:familyacademyclient/models/setting_model.dart';
 import 'package:familyacademyclient/models/subscription_model.dart';
@@ -36,17 +32,27 @@ import '../models/video_model.dart';
 import '../models/chatbot_model.dart';
 import '../utils/api_response.dart';
 
-/// PRODUCTION-READY API SERVICE - OPTIMIZED TIMEOUTS
+class _HttpJsonResult {
+  final int statusCode;
+  final dynamic data;
+
+  const _HttpJsonResult({
+    required this.statusCode,
+    required this.data,
+  });
+}
+
 class ApiService {
   late Dio _dio;
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
   bool _isRefreshingToken = false;
-  late SharedPreferences _prefs;
-  final Map<String, Future<Response<dynamic>>> _inFlightGetRequests = {};
+  SharedPreferences? _prefs;
+  Future<void>? _prefsInitFuture;
+  final HttpClient _httpClient = HttpClient();
 
   final Map<String, int> _retryCounts = {};
-  static const int _maxRetries = 2; // Reduced from 3
-  static const int _baseRetryDelaySeconds = 1; // Reduced from 2
+  static const int _maxRetries = 3;
+  static const int _baseRetryDelaySeconds = 2;
 
   final StreamController<Map<String, dynamic>> _deviceDeactivationController =
       StreamController<Map<String, dynamic>>.broadcast();
@@ -60,20 +66,22 @@ class ApiService {
 
   Dio get dio => _dio;
 
-  // OPTIMIZED TIMEOUTS - Reduced from 30 seconds
-  static const int _connectTimeout = 8;
-  static const int _receiveTimeout = 8;
-  static const int _sendTimeout = 8;
+  static const int _connectTimeout = 45;
+  static const int _receiveTimeout = 45;
+  static const int _sendTimeout = 45;
 
   static const String _apiPrefix = '/api/v1';
 
   ApiService() {
+    _httpClient.connectionTimeout = const Duration(seconds: _connectTimeout);
+    _httpClient.idleTimeout = const Duration(seconds: _receiveTimeout);
+
     _dio = Dio(
       BaseOptions(
         baseUrl: AppConstants.apiBaseUrl,
-        connectTimeout: Duration(seconds: _connectTimeout),
-        receiveTimeout: Duration(seconds: _receiveTimeout),
-        sendTimeout: Duration(seconds: _sendTimeout),
+        connectTimeout: const Duration(seconds: _connectTimeout),
+        receiveTimeout: const Duration(seconds: _receiveTimeout),
+        sendTimeout: const Duration(seconds: _sendTimeout),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -89,8 +97,6 @@ class ApiService {
       onResponse: _onResponse,
       onError: _onError,
     ));
-
-    _initSharedPreferences();
   }
 
   void setOfflineQueueManager(OfflineQueueManager manager) {
@@ -101,8 +107,16 @@ class ApiService {
     _prefs = await SharedPreferences.getInstance();
   }
 
+  Future<SharedPreferences> _ensurePrefs() async {
+    if (_prefs != null) return _prefs!;
+    _prefsInitFuture ??= _initSharedPreferences();
+    await _prefsInitFuture;
+    return _prefs!;
+  }
+
   Future<String?> _getDeviceId() async {
     try {
+      final prefs = await _ensurePrefs();
       if (Hive.isBoxOpen('device_info_box')) {
         final deviceInfoBox = Hive.box<Map<String, dynamic>>('device_info_box');
         if (deviceInfoBox.containsKey('current_device')) {
@@ -117,7 +131,7 @@ class ApiService {
           return deviceInfo?['device_id'] as String?;
         }
       }
-      return _prefs.getString(AppConstants.persistentDeviceIdKey);
+      return prefs.getString(AppConstants.persistentDeviceIdKey);
     } catch (e) {
       debugLog('ApiService', 'Error getting device ID: $e');
       return null;
@@ -126,6 +140,7 @@ class ApiService {
 
   Future<void> _onRequest(
       RequestOptions options, RequestInterceptorHandler handler) async {
+    final prefs = await _ensurePrefs();
     final token = await _secureStorage.read(key: AppConstants.tokenKey);
 
     if (token != null) {
@@ -137,7 +152,7 @@ class ApiService {
       options.headers['X-Device-ID'] = deviceId;
     }
 
-    final userData = _prefs.getString(AppConstants.userDataKey);
+    final userData = prefs.getString(AppConstants.userDataKey);
     if (userData != null) {
       try {
         final userJson = json.decode(userData);
@@ -146,7 +161,6 @@ class ApiService {
       } catch (e) {}
     }
 
-    // Initialize retry count
     options.extra['retryCount'] = 0;
 
     if (kDebugMode) {
@@ -166,7 +180,6 @@ class ApiService {
       DioException error, ErrorInterceptorHandler handler) async {
     debugLog('ApiService', '${error.type} - ${error.message}');
 
-    // RETRY LOGIC for timeouts
     if (error.type == DioExceptionType.connectionTimeout ||
         error.type == DioExceptionType.receiveTimeout ||
         error.type == DioExceptionType.sendTimeout) {
@@ -175,7 +188,7 @@ class ApiService {
 
       if (retryCount < _maxRetries) {
         options.extra['retryCount'] = retryCount + 1;
-        final delaySeconds = _baseRetryDelaySeconds * (retryCount + 1);
+        final delaySeconds = _baseRetryDelaySeconds * (1 << retryCount);
 
         debugLog('ApiService',
             '⏱️ Timeout, retrying (${retryCount + 1}/$_maxRetries) in ${delaySeconds}s');
@@ -188,7 +201,6 @@ class ApiService {
           return;
         } catch (retryError) {
           debugLog('ApiService', 'Retry failed: $retryError');
-          // Continue to error handling
         }
       }
 
@@ -344,9 +356,10 @@ class ApiService {
   Future<void> _queueOfflineRequest(RequestOptions request) async {
     if (_offlineQueueManager == null) return;
 
+    final prefs = await _ensurePrefs();
     final userId = await _secureStorage
         .read(key: AppConstants.tokenKey)
-        .then((_) => _prefs.getString(AppConstants.currentUserIdKey));
+        .then((_) => prefs.getString(AppConstants.currentUserIdKey));
 
     if (userId == null) return;
 
@@ -419,45 +432,146 @@ class ApiService {
   }
 
   Future<void> _clearUserDataOnly() async {
+    final prefs = await _ensurePrefs();
     await _secureStorage.deleteAll();
-    final keys = _prefs.getKeys();
+    final keys = prefs.getKeys();
     for (final key in keys) {
       if (key.startsWith('user_') ||
           key == AppConstants.userDataKey ||
           key == AppConstants.sessionStartKey) {
-        await _prefs.remove(key);
+        await prefs.remove(key);
       }
     }
   }
 
-  String _buildGetRequestKey(
+  Uri _buildApiUri(
     String path, {
     Map<String, dynamic>? queryParameters,
   }) {
-    if (queryParameters == null || queryParameters.isEmpty) return path;
-    final entries = queryParameters.entries.toList()
-      ..sort((a, b) => a.key.compareTo(b.key));
-    final query = entries.map((e) => '${e.key}=${e.value}').join('&');
-    return '$path?$query';
-  }
-
-  Future<Response<dynamic>> _getWithInFlightDedup(
-    String path, {
-    Map<String, dynamic>? queryParameters,
-  }) {
-    final key = _buildGetRequestKey(
-      path,
-      queryParameters: queryParameters,
+    final baseUri = Uri.parse(_dio.options.baseUrl);
+    final resolved = baseUri.resolve(
+      path.startsWith('/') ? path.substring(1) : path,
     );
 
-    final inFlight = _inFlightGetRequests[key];
-    if (inFlight != null) return inFlight;
+    if (queryParameters == null || queryParameters.isEmpty) {
+      return resolved;
+    }
 
-    final request = _dio
-        .get(path, queryParameters: queryParameters)
-        .whenComplete(() => _inFlightGetRequests.remove(key));
-    _inFlightGetRequests[key] = request;
-    return request;
+    final normalizedQuery = <String, String>{};
+    queryParameters.forEach((key, value) {
+      if (value != null) {
+        normalizedQuery[key] = value.toString();
+      }
+    });
+
+    return resolved.replace(queryParameters: normalizedQuery);
+  }
+
+  Future<Map<String, String>> _buildRequestHeaders() async {
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'X-Client-Version': AppConstants.appVersion,
+      'X-Client-Platform': 'mobile',
+      'Connection': 'close',
+    };
+
+    final token = await _secureStorage.read(key: AppConstants.tokenKey);
+    if (token != null && token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+
+    final deviceId = await _getDeviceId();
+    if (deviceId != null && deviceId.isNotEmpty) {
+      headers['X-Device-ID'] = deviceId;
+    }
+
+    final prefs = await _ensurePrefs();
+    final userData = prefs.getString(AppConstants.userDataKey);
+    if (userData != null) {
+      try {
+        final userJson = json.decode(userData) as Map<String, dynamic>;
+        final userId = userJson['id'];
+        if (userId != null) {
+          headers['X-User-ID'] = userId.toString();
+        }
+      } catch (_) {}
+    }
+
+    return headers;
+  }
+
+  Future<_HttpJsonResult> _performHttpGetJson(
+    String path, {
+    Map<String, dynamic>? queryParameters,
+    Duration timeout = const Duration(seconds: _receiveTimeout),
+  }) async {
+    final uri = _buildApiUri(path, queryParameters: queryParameters);
+    final headers = await _buildRequestHeaders();
+
+    debugLog('ApiService', 'HTTP GET $uri');
+
+    final request = await _httpClient.getUrl(uri).timeout(timeout);
+    headers.forEach(request.headers.set);
+
+    final response = await request.close().timeout(timeout);
+    final body = await response.transform(utf8.decoder).join().timeout(timeout);
+
+    debugLog(
+      'ApiService',
+      'HTTP GET $path completed with ${response.statusCode} and ${body.length} chars',
+    );
+
+    final decoded = _decodePlainJsonResponse(body, requestPath: path);
+
+    final result = _HttpJsonResult(
+      statusCode: response.statusCode,
+      data: decoded,
+    );
+    debugLog(
+      'ApiService',
+      'HTTP GET $path returning result object with status ${result.statusCode}',
+    );
+    return result;
+  }
+
+  dynamic _decodePlainJsonResponse(
+    dynamic rawData, {
+    required String requestPath,
+  }) {
+    if (rawData == null) {
+      debugLog('ApiService', 'Plain JSON decode for $requestPath got null body');
+      return null;
+    }
+
+    if (rawData is Map || rawData is List) {
+      return rawData;
+    }
+
+    if (rawData is String) {
+      final trimmed = rawData.trim();
+      debugLog(
+        'ApiService',
+        'Plain JSON decode for $requestPath received ${trimmed.length} chars',
+      );
+
+      if (trimmed.isEmpty) {
+        return null;
+      }
+
+      return jsonDecode(trimmed);
+    }
+
+    if (rawData is List<int>) {
+      final decoded = utf8.decode(rawData);
+      return _decodePlainJsonResponse(decoded, requestPath: requestPath);
+    }
+
+    debugLog(
+      'ApiService',
+      'Plain JSON decode for $requestPath received unexpected type ${rawData.runtimeType}',
+    );
+    return rawData;
   }
 
   String _extractApiErrorMessage(dynamic data, String fallback) {
@@ -710,6 +824,8 @@ class ApiService {
       return ApiResponse<Map<String, dynamic>>(
         success: false,
         message: e.response?.data['message'] ?? 'Token validation failed',
+        error: e.response?.data,
+        statusCode: e.response?.statusCode,
       );
     }
   }
@@ -718,8 +834,8 @@ class ApiService {
     try {
       final response = await _dio.get('/health',
           options: Options(
-            sendTimeout: const Duration(seconds: 5),
-            receiveTimeout: const Duration(seconds: 5),
+            sendTimeout: const Duration(seconds: 10),
+            receiveTimeout: const Duration(seconds: 10),
           ));
       _hasNetworkConnection = response.statusCode == 200;
       return _hasNetworkConnection;
@@ -739,19 +855,13 @@ class ApiService {
 
       if (response.data is Map && response.data['success'] == true) {
         final data = response.data['data'];
-        debugPrint('🔍 [ApiService] getSchools: data type=${data.runtimeType}');
-
         List<School> schools = [];
 
         if (data is List) {
-          debugPrint(
-              '🔍 [ApiService] getSchools: data is List with ${data.length} items');
           schools = data.map((json) {
             try {
               return School.fromJson(json as Map<String, dynamic>);
             } catch (e) {
-              debugPrint(
-                  '🔍 [ApiService] getSchools: error parsing school: $e');
               return School(
                 id: json['id'] ?? 0,
                 name: json['name']?.toString() ?? 'Unknown',
@@ -760,8 +870,6 @@ class ApiService {
               );
             }
           }).toList();
-          debugPrint(
-              '🔍 [ApiService] getSchools: parsed ${schools.length} schools');
         }
 
         return ApiResponse<List<School>>(
@@ -940,7 +1048,6 @@ class ApiService {
       debugPrint(
           '🔍 [ApiService] getCategories: Requesting $_apiPrefix/categories');
 
-      // ✅ FIXED: Remove deduplication - use direct call
       final response = await _dio.get('$_apiPrefix/categories');
 
       debugPrint(
@@ -1005,7 +1112,6 @@ class ApiService {
       debugPrint(
           '🔍 [ApiService] getCategories: Parsed ${categories.length} categories');
 
-      // ✅ Log success
       debugPrint(
           '🔍 [ApiService] getCategories: ✅ SUCCESS - returning ${categories.length} categories');
 
@@ -1032,9 +1138,9 @@ class ApiService {
       final response = await _dio.get(
         '$_apiPrefix/courses/category/$categoryId',
         options: Options(
-          connectTimeout: const Duration(seconds: 20),
-          receiveTimeout: const Duration(seconds: 20),
-          sendTimeout: const Duration(seconds: 20),
+          connectTimeout: const Duration(seconds: 45),
+          receiveTimeout: const Duration(seconds: 45),
+          sendTimeout: const Duration(seconds: 45),
         ),
       );
       debugPrint(
@@ -1042,25 +1148,17 @@ class ApiService {
 
       if (response.data is Map && response.data['success'] == true) {
         final data = response.data['data'];
-        debugPrint(
-            '🔍 [ApiService] getCoursesByCategory: data type=${data.runtimeType}');
 
         List<Course> courses = [];
 
         if (data is List) {
-          debugPrint(
-              '🔍 [ApiService] getCoursesByCategory: data is List with ${data.length} items');
           courses = data.map((json) => Course.fromJson(json)).toList();
         } else if (data is Map && data['courses'] is List) {
-          debugPrint(
-              '🔍 [ApiService] getCoursesByCategory: found courses in map with ${(data['courses'] as List).length} items');
           courses = (data['courses'] as List)
               .map((json) => Course.fromJson(json))
               .toList();
         }
 
-        debugPrint(
-            '🔍 [ApiService] getCoursesByCategory: parsed ${courses.length} courses');
         return ApiResponse<List<Course>>(
           success: true,
           message: response.data['message'] ?? 'Courses retrieved',
@@ -1091,9 +1189,9 @@ class ApiService {
       final response = await _dio.get(
         '$_apiPrefix/chapters/course/$courseId',
         options: Options(
-          connectTimeout: const Duration(seconds: 20),
-          receiveTimeout: const Duration(seconds: 20),
-          sendTimeout: const Duration(seconds: 20),
+          connectTimeout: const Duration(seconds: 45),
+          receiveTimeout: const Duration(seconds: 45),
+          sendTimeout: const Duration(seconds: 45),
         ),
       );
       debugPrint(
@@ -1101,25 +1199,17 @@ class ApiService {
 
       if (response.data is Map && response.data['success'] == true) {
         final data = response.data['data'];
-        debugPrint(
-            '🔍 [ApiService] getChaptersByCourse: data type=${data.runtimeType}');
 
         List<Chapter> chapters = [];
 
         if (data is List) {
-          debugPrint(
-              '🔍 [ApiService] getChaptersByCourse: data is List with ${data.length} items');
           chapters = data.map((json) => Chapter.fromJson(json)).toList();
         } else if (data is Map && data['chapters'] is List) {
-          debugPrint(
-              '🔍 [ApiService] getChaptersByCourse: found chapters in map with ${(data['chapters'] as List).length} items');
           chapters = (data['chapters'] as List)
               .map((json) => Chapter.fromJson(json))
               .toList();
         }
 
-        debugPrint(
-            '🔍 [ApiService] getChaptersByCourse: parsed ${chapters.length} chapters');
         return ApiResponse<List<Chapter>>(
           success: true,
           message: response.data['message'] ?? 'Chapters retrieved',
@@ -1150,9 +1240,9 @@ class ApiService {
       final response = await _dio.get(
         '$_apiPrefix/chapters/$chapterId/videos',
         options: Options(
-          connectTimeout: const Duration(seconds: 20),
-          receiveTimeout: const Duration(seconds: 20),
-          sendTimeout: const Duration(seconds: 20),
+          connectTimeout: const Duration(seconds: 45),
+          receiveTimeout: const Duration(seconds: 45),
+          sendTimeout: const Duration(seconds: 45),
         ),
       );
       debugPrint(
@@ -1160,25 +1250,17 @@ class ApiService {
 
       if (response.data is Map && response.data['success'] == true) {
         final data = response.data['data'];
-        debugPrint(
-            '🔍 [ApiService] getVideosByChapter: data type=${data.runtimeType}');
 
         List<Video> videos = [];
 
         if (data is List) {
-          debugPrint(
-              '🔍 [ApiService] getVideosByChapter: data is List with ${data.length} items');
           videos = data.map((json) => Video.fromJson(json)).toList();
         } else if (data is Map && data['videos'] is List) {
-          debugPrint(
-              '🔍 [ApiService] getVideosByChapter: found videos in map with ${(data['videos'] as List).length} items');
           videos = (data['videos'] as List)
               .map((json) => Video.fromJson(json))
               .toList();
         }
 
-        debugPrint(
-            '🔍 [ApiService] getVideosByChapter: parsed ${videos.length} videos');
         return ApiResponse<List<Video>>(
           success: true,
           message: response.data['message'] ?? 'Videos retrieved',
@@ -1224,9 +1306,9 @@ class ApiService {
       final response = await _dio.get(
         '$_apiPrefix/chapters/$chapterId/notes',
         options: Options(
-          connectTimeout: const Duration(seconds: 20),
-          receiveTimeout: const Duration(seconds: 20),
-          sendTimeout: const Duration(seconds: 20),
+          connectTimeout: const Duration(seconds: 45),
+          receiveTimeout: const Duration(seconds: 45),
+          sendTimeout: const Duration(seconds: 45),
         ),
       );
       debugPrint(
@@ -1234,25 +1316,17 @@ class ApiService {
 
       if (response.data is Map && response.data['success'] == true) {
         final data = response.data['data'];
-        debugPrint(
-            '🔍 [ApiService] getNotesByChapter: data type=${data.runtimeType}');
 
         List<Note> notes = [];
 
         if (data is List) {
-          debugPrint(
-              '🔍 [ApiService] getNotesByChapter: data is List with ${data.length} items');
           notes = data.map((json) => Note.fromJson(json)).toList();
         } else if (data is Map && data['notes'] is List) {
-          debugPrint(
-              '🔍 [ApiService] getNotesByChapter: found notes in map with ${(data['notes'] as List).length} items');
           notes = (data['notes'] as List)
               .map((json) => Note.fromJson(json))
               .toList();
         }
 
-        debugPrint(
-            '🔍 [ApiService] getNotesByChapter: parsed ${notes.length} notes');
         return ApiResponse<List<Note>>(
           success: true,
           message: response.data['message'] ?? 'Notes retrieved',
@@ -1284,9 +1358,9 @@ class ApiService {
       final response = await _dio.get(
         '$_apiPrefix/chapters/$chapterId/practice-questions',
         options: Options(
-          connectTimeout: const Duration(seconds: 20),
-          receiveTimeout: const Duration(seconds: 20),
-          sendTimeout: const Duration(seconds: 20),
+          connectTimeout: const Duration(seconds: 45),
+          receiveTimeout: const Duration(seconds: 45),
+          sendTimeout: const Duration(seconds: 45),
         ),
       );
       debugPrint(
@@ -1294,25 +1368,17 @@ class ApiService {
 
       if (response.data is Map && response.data['success'] == true) {
         final data = response.data['data'];
-        debugPrint(
-            '🔍 [ApiService] getPracticeQuestions: data type=${data.runtimeType}');
 
         List<Question> questions = [];
 
         if (data is List) {
-          debugPrint(
-              '🔍 [ApiService] getPracticeQuestions: data is List with ${data.length} items');
           questions = data.map((json) => Question.fromJson(json)).toList();
         } else if (data is Map && data['questions'] is List) {
-          debugPrint(
-              '🔍 [ApiService] getPracticeQuestions: found questions in map with ${(data['questions'] as List).length} items');
           questions = (data['questions'] as List)
               .map((json) => Question.fromJson(json))
               .toList();
         }
 
-        debugPrint(
-            '🔍 [ApiService] getPracticeQuestions: parsed ${questions.length} questions');
         return ApiResponse<List<Question>>(
           success: true,
           message: response.data['message'] ?? 'Questions retrieved',
@@ -1369,19 +1435,13 @@ class ApiService {
 
       if (response.data is Map && response.data['success'] == true) {
         final data = response.data['data'];
-        debugPrint(
-            '🔍 [ApiService] getAvailableExams: data type=${data.runtimeType}');
 
         List<Exam> exams = [];
 
         if (data is List) {
-          debugPrint(
-              '🔍 [ApiService] getAvailableExams: data is List with ${data.length} items');
           exams = data.map((json) => Exam.fromJson(json)).toList();
         }
 
-        debugPrint(
-            '🔍 [ApiService] getAvailableExams: parsed ${exams.length} exams');
         return ApiResponse<List<Exam>>(
           success: true,
           message: response.data['message'] ?? 'Exams retrieved',
@@ -1428,19 +1488,13 @@ class ApiService {
 
       if (response.data is Map && response.data['success'] == true) {
         final data = response.data['data'];
-        debugPrint(
-            '🔍 [ApiService] getExamQuestions: data type=${data.runtimeType}');
 
         List<ExamQuestion> questions = [];
 
         if (data is List) {
-          debugPrint(
-              '🔍 [ApiService] getExamQuestions: data is List with ${data.length} items');
           questions = data.map((json) => ExamQuestion.fromJson(json)).toList();
         }
 
-        debugPrint(
-            '🔍 [ApiService] getExamQuestions: parsed ${questions.length} questions');
         return ApiResponse<List<ExamQuestion>>(
           success: true,
           message: response.data['message'] ?? 'Exam questions retrieved',
@@ -1485,7 +1539,7 @@ class ApiService {
       int examResultId, List<Map<String, dynamic>> answers) async {
     try {
       final response = await _dio.post(
-          '$_apiPrefix/exam-results/$examResultId/submit',
+          '$_apiPrefix/exams/submit/$examResultId',
           data: {'answers': answers});
       return ApiResponse.fromJson(
           response.data, (data) => data as Map<String, dynamic>);
@@ -1511,19 +1565,13 @@ class ApiService {
 
       if (response.statusCode == 200 && response.data['success'] == true) {
         final data = response.data['data'];
-        debugPrint(
-            '🔍 [ApiService] getUserExamResults: data type=${data.runtimeType}');
 
         List<ExamResult> results = [];
 
         if (data is List) {
-          debugPrint(
-              '🔍 [ApiService] getUserExamResults: data is List with ${data.length} items');
           results = data.map((json) => ExamResult.fromJson(json)).toList();
         }
 
-        debugPrint(
-            '🔍 [ApiService] getUserExamResults: parsed ${results.length} results');
         return ApiResponse<List<ExamResult>>(
           success: true,
           message: response.data['message'] ?? 'Exam results retrieved',
@@ -1552,7 +1600,7 @@ class ApiService {
     try {
       debugPrint(
           '🔍 [ApiService] checkSubscriptionStatus: START for categoryId=$categoryId');
-      final response = await _getWithInFlightDedup(
+      final response = await _performHttpGetJson(
         '$_apiPrefix/subscriptions/check-status',
         queryParameters: {'category_id': categoryId},
       );
@@ -1561,12 +1609,36 @@ class ApiService {
 
       if (response.data is Map && response.data['success'] == true) {
         final data = response.data['data'] ?? {};
-        debugPrint(
-            '🔍 [ApiService] checkSubscriptionStatus: data type=${data.runtimeType}');
+        if (data is Map) {
+          final mapData = Map<String, dynamic>.from(data);
+          final hasSubscription =
+              mapData['has_subscription'] == true ||
+                  mapData['has_active_subscription'] == true;
+          final subscription = mapData['subscription'];
+
+          if (subscription is Map) {
+            final normalized = Map<String, dynamic>.from(subscription);
+            normalized['has_subscription'] = hasSubscription;
+            return ApiResponse<Map<String, dynamic>>(
+              success: true,
+              message: response.data['message'] ?? 'Status checked',
+              data: normalized,
+            );
+          }
+
+          return ApiResponse<Map<String, dynamic>>(
+            success: true,
+            message: response.data['message'] ?? 'Status checked',
+            data: {
+              'has_subscription': hasSubscription,
+            },
+          );
+        }
+
         return ApiResponse<Map<String, dynamic>>(
           success: true,
           message: response.data['message'] ?? 'Status checked',
-          data: data is Map ? Map<String, dynamic>.from(data) : {},
+          data: {},
         );
       }
 
@@ -1575,11 +1647,11 @@ class ApiService {
         message: response.data['message'] ?? 'Failed to check subscription',
         data: {'has_subscription': false},
       );
-    } on DioException catch (e) {
+    } catch (e) {
       debugPrint('🔍 [ApiService] checkSubscriptionStatus: ERROR: $e');
       return ApiResponse<Map<String, dynamic>>(
         success: false,
-        message: e.response?.data['message'] ?? 'Failed to check subscription',
+        message: 'Failed to check subscription',
         data: {'has_subscription': false},
       );
     }
@@ -1588,27 +1660,22 @@ class ApiService {
   Future<ApiResponse<List<Subscription>>> getMySubscriptions() async {
     try {
       debugPrint('🔍 [ApiService] getMySubscriptions: START');
-      final response = await _getWithInFlightDedup(
-          '$_apiPrefix/subscriptions/my-subscriptions');
+      final response = await _performHttpGetJson(
+        '$_apiPrefix/subscriptions/my-subscriptions',
+      );
       debugPrint(
           '🔍 [ApiService] getMySubscriptions: statusCode=${response.statusCode}');
 
       if (response.data is Map && response.data['success'] == true) {
         final data = response.data['data'];
-        debugPrint(
-            '🔍 [ApiService] getMySubscriptions: data type=${data.runtimeType}');
 
         List<Subscription> subscriptions = [];
 
         if (data is List) {
-          debugPrint(
-              '🔍 [ApiService] getMySubscriptions: data is List with ${data.length} items');
           subscriptions =
               data.map((json) => Subscription.fromJson(json)).toList();
         }
 
-        debugPrint(
-            '🔍 [ApiService] getMySubscriptions: parsed ${subscriptions.length} subscriptions');
         return ApiResponse<List<Subscription>>(
           success: true,
           message: response.data['message'] ?? 'Subscriptions retrieved',
@@ -1621,11 +1688,11 @@ class ApiService {
         message: response.data['message'] ?? 'Failed to fetch subscriptions',
         data: [],
       );
-    } on DioException catch (e) {
+    } catch (e) {
       debugPrint('🔍 [ApiService] getMySubscriptions: ERROR: $e');
       return ApiResponse<List<Subscription>>(
         success: false,
-        message: e.response?.data['message'] ?? 'Failed to fetch subscriptions',
+        message: 'Failed to fetch subscriptions',
         data: [],
       );
     }
@@ -1642,8 +1709,8 @@ class ApiService {
         '$_apiPrefix/subscriptions/check-multiple',
         data: {'category_ids': categoryIds},
         options: Options(
-          sendTimeout: const Duration(seconds: 15),
-          receiveTimeout: const Duration(seconds: 15),
+          sendTimeout: const Duration(seconds: 45),
+          receiveTimeout: const Duration(seconds: 45),
         ),
       );
 
@@ -1652,9 +1719,6 @@ class ApiService {
 
       if (response.statusCode == 200 && response.data['success'] == true) {
         final Map<String, dynamic> results = response.data['data'] ?? {};
-        debugPrint(
-            '🔍 [ApiService] checkMultipleSubscriptions: got ${results.length} results');
-
         return results
             .map((key, value) => MapEntry(int.parse(key), value == true));
       }
@@ -1714,26 +1778,21 @@ class ApiService {
   Future<ApiResponse<List<Payment>>> getMyPayments() async {
     try {
       debugPrint('🔍 [ApiService] getMyPayments: START');
-      final response =
-          await _getWithInFlightDedup('$_apiPrefix/payments/my-payments');
+      final response = await _performHttpGetJson(
+        '$_apiPrefix/payments/my-payments',
+      );
       debugPrint(
           '🔍 [ApiService] getMyPayments: statusCode=${response.statusCode}');
 
       if (response.data is Map && response.data['success'] == true) {
         final data = response.data['data'];
-        debugPrint(
-            '🔍 [ApiService] getMyPayments: data type=${data.runtimeType}');
 
         List<Payment> payments = [];
 
         if (data is List) {
-          debugPrint(
-              '🔍 [ApiService] getMyPayments: data is List with ${data.length} items');
           payments = data.map((json) => Payment.fromJson(json)).toList();
         }
 
-        debugPrint(
-            '🔍 [ApiService] getMyPayments: parsed ${payments.length} payments');
         return ApiResponse<List<Payment>>(
           success: true,
           message: response.data['message'] ?? 'Payments retrieved',
@@ -1746,11 +1805,11 @@ class ApiService {
         message: response.data['message'] ?? 'Failed to fetch payments',
         data: [],
       );
-    } on DioException catch (e) {
+    } catch (e) {
       debugPrint('🔍 [ApiService] getMyPayments: ERROR: $e');
       return ApiResponse<List<Payment>>(
         success: false,
-        message: e.response?.data['message'] ?? 'Failed to fetch payments',
+        message: 'Failed to fetch payments',
         data: [],
       );
     }
@@ -1760,8 +1819,9 @@ class ApiService {
   Future<ApiResponse<Map<String, dynamic>>> getUnreadCount() async {
     try {
       debugPrint('🔍 [ApiService] getUnreadCount: START');
-      final response =
-          await _getWithInFlightDedup('$_apiPrefix/notifications/unread-count');
+      final response = await _performHttpGetJson(
+        '$_apiPrefix/notifications/unread-count',
+      );
       debugPrint(
           '🔍 [ApiService] getUnreadCount: statusCode=${response.statusCode}');
 
@@ -1781,11 +1841,11 @@ class ApiService {
         message: response.data['message'] ?? 'Failed to get unread count',
         data: {'unread_count': 0},
       );
-    } on DioException catch (e) {
+    } catch (e) {
       debugPrint('🔍 [ApiService] getUnreadCount: ERROR: $e');
       return ApiResponse<Map<String, dynamic>>(
         success: false,
-        message: e.response?.data['message'] ?? 'Failed to get unread count',
+        message: 'Failed to get unread count',
         data: {'unread_count': 0},
       );
     }
@@ -1794,27 +1854,22 @@ class ApiService {
   Future<ApiResponse<List<Notification>>> getMyNotifications() async {
     try {
       debugPrint('🔍 [ApiService] getMyNotifications: START');
-      final response = await _getWithInFlightDedup(
-          '$_apiPrefix/notifications/my-notifications');
+      final response = await _performHttpGetJson(
+        '$_apiPrefix/notifications/my-notifications',
+      );
       debugPrint(
           '🔍 [ApiService] getMyNotifications: statusCode=${response.statusCode}');
 
       if (response.data is Map && response.data['success'] == true) {
         final data = response.data['data'];
-        debugPrint(
-            '🔍 [ApiService] getMyNotifications: data type=${data.runtimeType}');
 
         List<Notification> notifications = [];
 
         if (data is List) {
-          debugPrint(
-              '🔍 [ApiService] getMyNotifications: data is List with ${data.length} items');
           notifications =
               data.map((json) => Notification.fromJson(json)).toList();
         }
 
-        debugPrint(
-            '🔍 [ApiService] getMyNotifications: parsed ${notifications.length} notifications');
         return ApiResponse<List<Notification>>(
           success: true,
           message: response.data['message'] ?? 'Notifications retrieved',
@@ -1827,11 +1882,11 @@ class ApiService {
         message: response.data['message'] ?? 'Failed to fetch notifications',
         data: [],
       );
-    } on DioException catch (e) {
+    } catch (e) {
       debugPrint('🔍 [ApiService] getMyNotifications: ERROR: $e');
       return ApiResponse<List<Notification>>(
         success: false,
-        message: e.response?.data['message'] ?? 'Failed to fetch notifications',
+        message: 'Failed to fetch notifications',
         data: [],
       );
     }
@@ -1872,6 +1927,19 @@ class ApiService {
       return ApiResponse(
         success: false,
         message: e.response?.data['message'] ?? 'Failed to delete notification',
+      );
+    }
+  }
+
+  Future<ApiResponse<void>> deleteAllNotifications() async {
+    try {
+      final response = await _dio.delete('$_apiPrefix/notifications/delete-all');
+      return ApiResponse(success: true, message: response.data['message']);
+    } on DioException catch (e) {
+      return ApiResponse(
+        success: false,
+        message:
+            e.response?.data['message'] ?? 'Failed to delete all notifications',
       );
     }
   }
@@ -2043,8 +2111,6 @@ class ApiService {
 
       if (response.data is Map && response.data['success'] == true) {
         final data = response.data['data'];
-        debugPrint(
-            '🔍 [ApiService] getParentLinkStatus: data type=${data.runtimeType}');
         if (data is Map<String, dynamic>) {
           return ApiResponse<ParentLink>(
             success: true,
@@ -2100,15 +2166,14 @@ class ApiService {
   Future<ApiResponse<User>> getMyProfile() async {
     try {
       debugPrint('🔍 [ApiService] getMyProfile: START');
-      final response =
-          await _getWithInFlightDedup('$_apiPrefix/users/profile/me');
+      final response = await _performHttpGetJson(
+        '$_apiPrefix/users/profile/me',
+      );
       debugPrint(
           '🔍 [ApiService] getMyProfile: statusCode=${response.statusCode}');
 
       if (response.data is Map && response.data['success'] == true) {
         final data = response.data['data'];
-        debugPrint(
-            '🔍 [ApiService] getMyProfile: data type=${data.runtimeType}');
         if (data is Map<String, dynamic>) {
           return ApiResponse<User>(
             success: true,
@@ -2122,11 +2187,61 @@ class ApiService {
         success: false,
         message: response.data['message'] ?? 'Failed to fetch profile',
       );
-    } on DioException catch (e) {
+    } catch (e) {
       debugPrint('🔍 [ApiService] getMyProfile: ERROR: $e');
       return ApiResponse<User>(
         success: false,
-        message: e.response?.data['message'] ?? 'Failed to fetch profile',
+        message: 'Failed to fetch profile',
+      );
+    }
+  }
+
+  Future<ApiResponse<Map<String, dynamic>>> updateMyProfile(
+      {String? email, String? phone, String? profileImage, int? schoolId}) async {
+    try {
+      final Map<String, dynamic> data = {};
+      if (email != null && email.isNotEmpty) data['email'] = email;
+      if (phone != null && phone.isNotEmpty) data['phone'] = phone;
+      if (profileImage != null && profileImage.isNotEmpty) {
+        data['profile_image'] = profileImage;
+      }
+      if (schoolId != null) data['school_id'] = schoolId;
+
+      debugPrint('🔍 [ApiService] updateMyProfile: Sending data: $data');
+
+      final response = await _dio.put(
+        '$_apiPrefix/users/profile/me',
+        data: data,
+      );
+
+      debugPrint(
+          '🔍 [ApiService] updateMyProfile: statusCode=${response.statusCode}');
+
+      if (response.data is Map && response.data['success'] == true) {
+        final responseData = response.data['data'];
+        if (responseData != null && responseData is Map<String, dynamic>) {
+          return ApiResponse<Map<String, dynamic>>(
+            success: true,
+            message: response.data['message'] ?? 'Profile updated successfully',
+            data: responseData,
+          );
+        }
+
+        return ApiResponse<Map<String, dynamic>>(
+          success: true,
+          message: response.data['message'] ?? 'Profile updated successfully',
+        );
+      }
+
+      return ApiResponse<Map<String, dynamic>>(
+        success: false,
+        message: response.data['message'] ?? 'Failed to update profile',
+      );
+    } on DioException catch (e) {
+      debugPrint('🔍 [ApiService] updateMyProfile: ERROR: $e');
+      return ApiResponse<Map<String, dynamic>>(
+        success: false,
+        message: e.response?.data['message'] ?? 'Failed to update profile',
       );
     }
   }
@@ -2191,54 +2306,6 @@ class ApiService {
     }
   }
 
-  // ===== PROGRESS =====
-  Future<ApiResponse<List<UserProgress>>> getUserProgressForCourse(
-      int courseId) async {
-    try {
-      debugPrint(
-          '🔍 [ApiService] getUserProgressForCourse: START for courseId=$courseId');
-      final response = await _dio.get('$_apiPrefix/progress/course/$courseId');
-      debugPrint(
-          '🔍 [ApiService] getUserProgressForCourse: statusCode=${response.statusCode}');
-
-      if (response.data is Map && response.data['success'] == true) {
-        final data = response.data['data'];
-        debugPrint(
-            '🔍 [ApiService] getUserProgressForCourse: data type=${data.runtimeType}');
-
-        List<UserProgress> progress = [];
-
-        if (data is List) {
-          debugPrint(
-              '🔍 [ApiService] getUserProgressForCourse: data is List with ${data.length} items');
-          progress = data.map((json) => UserProgress.fromJson(json)).toList();
-        }
-
-        debugPrint(
-            '🔍 [ApiService] getUserProgressForCourse: parsed ${progress.length} progress items');
-        return ApiResponse<List<UserProgress>>(
-          success: true,
-          message: response.data['message'] ?? 'Progress retrieved',
-          data: progress,
-        );
-      }
-
-      return ApiResponse<List<UserProgress>>(
-        success: false,
-        message: response.data['message'] ?? 'Failed to fetch course progress',
-        data: [],
-      );
-    } on DioException catch (e) {
-      debugPrint('🔍 [ApiService] getUserProgressForCourse: ERROR: $e');
-      return ApiResponse<List<UserProgress>>(
-        success: false,
-        message:
-            e.response?.data['message'] ?? 'Failed to fetch course progress',
-        data: [],
-      );
-    }
-  }
-
   // ===== CHATBOT =====
   Future<ApiResponse<Map<String, dynamic>>> getChatbotUsage() async {
     try {
@@ -2298,8 +2365,6 @@ class ApiService {
               .toList();
         }
 
-        debugPrint(
-            '🔍 [ApiService] getChatbotConversations: parsed ${conversations.length} conversations');
         return ApiResponse<List<ChatbotConversation>>(
           success: true,
           message: response.data['message'] ?? 'Conversations retrieved',
@@ -2391,8 +2456,6 @@ class ApiService {
               .toList();
         }
 
-        debugPrint(
-            '🔍 [ApiService] getChatbotConversationMessages: parsed ${messages.length} messages');
         return ApiResponse<List<ChatbotMessage>>(
           success: true,
           message: response.data['message'] ?? 'Messages retrieved',
@@ -2472,8 +2535,8 @@ class ApiService {
         data: formData,
         options: Options(
           headers: {'Content-Type': 'multipart/form-data'},
-          sendTimeout: const Duration(seconds: 30),
-          receiveTimeout: const Duration(seconds: 30),
+          sendTimeout: const Duration(seconds: 45),
+          receiveTimeout: const Duration(seconds: 45),
         ),
       );
 
@@ -2540,8 +2603,8 @@ class ApiService {
         data: formData,
         options: Options(
           headers: {'Content-Type': 'multipart/form-data'},
-          sendTimeout: const Duration(seconds: 30),
-          receiveTimeout: const Duration(seconds: 30),
+          sendTimeout: const Duration(seconds: 45),
+          receiveTimeout: const Duration(seconds: 45),
         ),
       );
 
@@ -2591,57 +2654,6 @@ class ApiService {
       return ApiResponse<String>(
         success: false,
         message: e.response?.data['message'] ?? errorMessage,
-      );
-    }
-  }
-
-  Future<ApiResponse<Map<String, dynamic>>> updateMyProfile(
-      {String? email, String? phone, String? profileImage}) async {
-    try {
-      final Map<String, dynamic> data = {};
-      if (email != null && email.isNotEmpty) data['email'] = email;
-      if (phone != null && phone.isNotEmpty) data['phone'] = phone;
-      if (profileImage != null && profileImage.isNotEmpty) {
-        data['profile_image'] = profileImage;
-      }
-
-      debugPrint('🔍 [ApiService] updateMyProfile: Sending data: $data');
-
-      final response = await _dio.put(
-        '$_apiPrefix/users/profile/me',
-        data: data,
-      );
-
-      debugPrint(
-          '🔍 [ApiService] updateMyProfile: statusCode=${response.statusCode}');
-      debugPrint('🔍 [ApiService] updateMyProfile: response=${response.data}');
-
-      if (response.data is Map && response.data['success'] == true) {
-        // If the response contains updated user data, return it
-        final responseData = response.data['data'];
-        if (responseData != null && responseData is Map<String, dynamic>) {
-          return ApiResponse<Map<String, dynamic>>(
-            success: true,
-            message: response.data['message'] ?? 'Profile updated successfully',
-            data: responseData,
-          );
-        }
-
-        return ApiResponse<Map<String, dynamic>>(
-          success: true,
-          message: response.data['message'] ?? 'Profile updated successfully',
-        );
-      }
-
-      return ApiResponse<Map<String, dynamic>>(
-        success: false,
-        message: response.data['message'] ?? 'Failed to update profile',
-      );
-    } on DioException catch (e) {
-      debugPrint('🔍 [ApiService] updateMyProfile: ERROR: $e');
-      return ApiResponse<Map<String, dynamic>>(
-        success: false,
-        message: e.response?.data['message'] ?? 'Failed to update profile',
       );
     }
   }

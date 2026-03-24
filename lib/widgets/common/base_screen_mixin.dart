@@ -1,6 +1,3 @@
-// lib/widgets/common/base_screen_mixin.dart
-// PRODUCTION STANDARD - WITH PROPER SHIMMER TYPES
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -11,6 +8,7 @@ import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/responsive_values.dart';
 import 'app_bar.dart';
+import 'app_brand_logo.dart';
 import 'app_empty_state.dart';
 import 'app_shimmer.dart';
 
@@ -147,6 +145,62 @@ mixin BaseScreenMixin<T extends StatefulWidget> on State<T> {
 
   // ✅ STANDARDIZED loading widget - uses screen's shimmerType
   Widget buildLoadingShimmer() {
+    if (shimmerType == ShimmerType.textLine) {
+      return SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: ResponsiveValues.screenPadding(context),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            minHeight: MediaQuery.of(context).size.height * 0.72,
+          ),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  AppBrandLogo(
+                    size: ResponsiveValues.splashLogoSize(context) * 0.68,
+                    borderRadius: ResponsiveValues.radiusXLarge(context),
+                  ),
+                  SizedBox(height: ResponsiveValues.spacingXL(context)),
+                  Text(
+                    'Getting everything ready',
+                    style: AppTextStyles.titleLarge(context).copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  SizedBox(height: ResponsiveValues.spacingS(context)),
+                  Text(
+                    'We are preparing your latest updates so the screen opens in a clean, ready state.',
+                    style: AppTextStyles.bodyMedium(context).copyWith(
+                      color: AppColors.getTextSecondary(context),
+                      height: 1.5,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  SizedBox(height: ResponsiveValues.spacingXL(context)),
+                  SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                        AppColors.telegramBlue,
+                      ),
+                      backgroundColor:
+                          AppColors.getDivider(context).withValues(alpha: 0.4),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return ListView.builder(
       padding: ResponsiveValues.screenPadding(context),
       itemCount: shimmerItemCount,
@@ -206,8 +260,8 @@ mixin BaseScreenMixin<T extends StatefulWidget> on State<T> {
     return CustomAppBar(
       title: screenTitle,
       subtitle: _isRefreshing
-          ? 'Refreshing...'
-          : (_isOffline ? 'Offline Mode' : screenSubtitle),
+          ? 'Updating'
+          : (_isOffline ? 'Offline' : screenSubtitle),
       leading: appBarLeading,
       actions: appBarActions,
       showThemeToggle: showThemeToggle,
@@ -221,7 +275,7 @@ mixin BaseScreenMixin<T extends StatefulWidget> on State<T> {
                 color: AppColors.getSurface(context).withValues(alpha: 0.15),
                 shape: BoxShape.circle,
               ),
-              child: Center(
+              child: const Center(
                 child: SizedBox(
                   width: 18,
                   height: 18,
@@ -244,7 +298,7 @@ mixin BaseScreenMixin<T extends StatefulWidget> on State<T> {
     bool showRefreshIndicator = true,
   }) {
     // Error state
-    if (errorMessage != null) {
+    if (errorMessage != null && !hasCachedData) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
         appBar: showAppBar ? buildAppBar() : null,

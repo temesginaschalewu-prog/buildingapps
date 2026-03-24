@@ -85,7 +85,7 @@ class StreakProvider extends ChangeNotifier
   Future<void> _init() async {
     log('_init() START');
     await _openHiveBoxes();
-    await _getCurrentUserId();
+    await _ensureCurrentUserScope();
     await loadStreak();
 
     if (_streak != null) {
@@ -112,6 +112,20 @@ class StreakProvider extends ChangeNotifier
     final session = UserSession();
     _currentUserId = await session.getCurrentUserId();
     log('Current user ID: $_currentUserId');
+  }
+
+  Future<void> _ensureCurrentUserScope() async {
+    final previousUserId = _currentUserId;
+    await _getCurrentUserId();
+
+    if (previousUserId == _currentUserId) return;
+
+    log('🔄 StreakProvider user scope changed: $previousUserId -> $_currentUserId');
+    stopBackgroundRefresh();
+    _lastBackgroundRefresh = null;
+    _streak = null;
+    _streakHistory = [];
+    safeNotify();
   }
 
   // ===== GETTERS =====
@@ -165,6 +179,7 @@ class StreakProvider extends ChangeNotifier
     bool forceRefresh = false,
     bool isManualRefresh = false,
   }) async {
+    await _ensureCurrentUserScope();
     _apiCallCount++;
     final callId = _apiCallCount;
 
@@ -317,6 +332,7 @@ class StreakProvider extends ChangeNotifier
   // ✅ FIXED: Rate limited background refresh
   Future<void> _refreshInBackground() async {
     if (isOffline) return;
+    await _ensureCurrentUserScope();
 
     // Rate limiting
     if (_lastBackgroundRefresh != null &&
@@ -398,6 +414,7 @@ class StreakProvider extends ChangeNotifier
   // ===== UPDATE STREAK =====
   Future<void> updateStreak() async {
     log('updateStreak()');
+    await _ensureCurrentUserScope();
 
     if (isLoading) return;
 
@@ -477,6 +494,7 @@ class StreakProvider extends ChangeNotifier
     _lastBackgroundRefresh = null;
     _streak = null;
     _streakHistory = [];
+    _currentUserId = null;
     safeNotify();
   }
 

@@ -57,6 +57,10 @@ class ResponsiveInfo {
   EdgeInsets get dialogPadding => ResponsiveValues.dialogPadding(context);
   EdgeInsets get buttonPadding => ResponsiveValues.buttonPadding(context);
   EdgeInsets get listItemPadding => ResponsiveValues.listItemPadding(context);
+  EdgeInsets get onboardingHeaderPadding =>
+      ResponsiveValues.onboardingHeaderPadding(context);
+  EdgeInsets get onboardingFooterPadding =>
+      ResponsiveValues.onboardingFooterPadding(context);
 
   double scale(double value) {
     if (isMobile) return value;
@@ -64,6 +68,51 @@ class ResponsiveInfo {
     if (isDesktop) return value * 1.1;
     return value * 1.15;
   }
+
+  double get onboardingListSpacing =>
+      ResponsiveValues.onboardingListSpacing(context);
+  double get schoolSelectionIconContainerSize =>
+      ResponsiveValues.schoolSelectionIconContainerSize(context);
+  double get schoolSelectionTitleFont =>
+      ResponsiveValues.schoolSelectionTitleFont(context);
+  double get supportActionIconContainerSize =>
+      ResponsiveValues.supportActionIconContainerSize(context);
+  double get featureCardIconContainerSize =>
+      ResponsiveValues.featureCardIconContainerSize(context);
+  EdgeInsets get sectionLoadingPadding =>
+      ResponsiveValues.sectionLoadingPadding(context);
+  double get successStateOuterSize =>
+      ResponsiveValues.successStateOuterSize(context);
+  double get sidebarBrandIconContainerSize =>
+      ResponsiveValues.sidebarBrandIconContainerSize(context);
+  double get sidebarAvatarSize =>
+      ResponsiveValues.sidebarAvatarSize(context);
+  double get sidebarAvatarInitialsFontSize =>
+      ResponsiveValues.sidebarAvatarInitialsFontSize(context);
+  double get profileAvatarActionSize =>
+      ResponsiveValues.profileAvatarActionSize(context);
+  double get listItemIconContainerSize =>
+      ResponsiveValues.listItemIconContainerSize(context);
+  double get listItemIconSize =>
+      ResponsiveValues.listItemIconSize(context);
+  EdgeInsets get modalInsetPaddingSmall =>
+      ResponsiveValues.modalInsetPaddingSmall(context);
+  double get modalHandleWidth =>
+      ResponsiveValues.modalHandleWidth(context);
+  double get modalHandleHeight =>
+      ResponsiveValues.modalHandleHeight(context);
+  EdgeInsets get modalHeaderPadding =>
+      ResponsiveValues.modalHeaderPadding(context);
+  EdgeInsets get mediaOverlayChipPadding =>
+      ResponsiveValues.mediaOverlayChipPadding(context);
+  double get mediaOverlayChipTextSize =>
+      ResponsiveValues.mediaOverlayChipTextSize(context);
+  double get selectionSheetLeadingSize =>
+      ResponsiveValues.selectionSheetLeadingSize(context);
+  double get homeCategoryGridAspectRatio =>
+      ResponsiveValues.homeCategoryGridAspectRatio(context);
+  double get homeGridHorizontalPadding =>
+      ResponsiveValues.homeGridHorizontalPadding(context);
 }
 
 class ResponsiveBuilder extends StatelessWidget {

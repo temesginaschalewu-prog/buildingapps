@@ -1,8 +1,3 @@
-// lib/widgets/common/app_bar.dart
-// PRODUCTION FINAL - WITH CONNECTION QUALITY & SYNC FEEDBACK
-
-import 'dart:math' as math;
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/theme_provider.dart';
@@ -36,35 +31,24 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   });
 
   @override
-  Size get preferredSize => const Size.fromHeight(kToolbarHeight + 32);
-
-  String _getQualityMessage(ConnectionQuality quality) {
-    switch (quality) {
-      case ConnectionQuality.none:
-        return 'Offline';
-      case ConnectionQuality.poor:
-        return 'Poor connection - videos may buffer';
-      case ConnectionQuality.fair:
-        return 'Fair connection';
-      case ConnectionQuality.good:
-        return 'Good connection';
-      case ConnectionQuality.excellent:
-        return 'Excellent connection';
-    }
+  Size get preferredSize {
+    final view = WidgetsBinding.instance.platformDispatcher.views.first;
+    final topInset = view.viewPadding.top / view.devicePixelRatio;
+    return Size.fromHeight(kToolbarHeight + 24 + topInset);
   }
 
   Color _getQualityColor(ConnectionQuality quality) {
     switch (quality) {
       case ConnectionQuality.none:
-        return Colors.red;
+        return AppColors.warning;
       case ConnectionQuality.poor:
-        return Colors.orange;
+        return AppColors.telegramOrange;
       case ConnectionQuality.fair:
-        return Colors.yellow;
+        return AppColors.telegramYellow;
       case ConnectionQuality.good:
-        return Colors.green;
+        return AppColors.telegramGreen;
       case ConnectionQuality.excellent:
-        return Colors.green;
+        return AppColors.telegramGreen;
     }
   }
 
@@ -73,197 +57,209 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
     return Consumer3<ConnectivityService, ThemeProvider, OfflineQueueManager>(
       builder: (context, connectivity, themeProvider, queueManager, child) {
         final isDark = Theme.of(context).brightness == Brightness.dark;
-        final isOnline = connectivity.isOnline;
-        final pendingCount = queueManager.pendingCount;
         final isProcessing = queueManager.isProcessing;
         final quality = connectivity.connectionQuality;
-        final topInset = MediaQuery.of(context).padding.top;
-        final safeTopInset = math.min(topInset, 20.0);
+        final baseColor = isDark
+            ? const Color(0xFF101A2A)
+            : const Color(0xFFF7FAFF);
+        final topWash = isDark
+            ? const Color(0xFF1C3154).withValues(alpha: 0.86)
+            : const Color(0xFFEAF3FF).withValues(alpha: 0.96);
+        final bottomWash = isDark
+            ? const Color(0xFF0F1725).withValues(alpha: 0.96)
+            : const Color(0xFFFDFEFF).withValues(alpha: 0.98);
+        final fullTintTop = isDark
+            ? AppColors.telegramBlue.withValues(alpha: 0.22)
+            : AppColors.telegramBlue.withValues(alpha: 0.16);
+        final fullTintMiddle = isDark
+            ? AppColors.telegramBlueLight.withValues(alpha: 0.14)
+            : AppColors.telegramBlueLight.withValues(alpha: 0.11);
+        final fullTintBottom = isDark
+            ? AppColors.telegramTeal.withValues(alpha: 0.06)
+            : AppColors.telegramTeal.withValues(alpha: 0.05);
+        final edgeStroke = isDark
+            ? Colors.white.withValues(alpha: 0.06)
+            : const Color(0xFFDDE7F5);
+        final titleColor =
+            isDark ? const Color(0xFFF7FAFE) : const Color(0xFF12243D);
+        final subtitleColor =
+            isDark ? const Color(0xFF9CB0C7) : const Color(0xFF6A7C93);
 
-        final backgroundColor = isDark
-            ? AppColors.darkSurface.withValues(alpha: 0.95)
-            : const Color(0xFFF9F4F7).withValues(alpha: 0.96);
-        final gradientStart =
-            isDark ? AppColors.darkCard : const Color(0xFFF6EEF3);
-        final gradientEnd =
-            isDark ? AppColors.darkBackground : const Color(0xFFEFF3F7);
-
-        return ClipRRect(
-          borderRadius: const BorderRadius.only(
-            bottomLeft: Radius.circular(24),
-            bottomRight: Radius.circular(24),
+        return Container(
+          height: preferredSize.height,
+          decoration: BoxDecoration(
+            color: baseColor.withValues(alpha: isDark ? 0.90 : 0.88),
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                topWash,
+                bottomWash,
+              ],
+            ),
+            border: Border(
+              bottom: BorderSide(color: edgeStroke),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: isDark
+                    ? Colors.black.withValues(alpha: 0.20)
+                    : const Color(0xFFB8C8DE).withValues(alpha: 0.10),
+                blurRadius: 16,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Container(
-              height: kToolbarHeight + 24,
-              padding: EdgeInsets.only(
-                left: ResponsiveValues.spacingL(context),
-                right: ResponsiveValues.spacingL(context),
-                top: safeTopInset + 6,
-                bottom: 6,
-              ),
-              decoration: BoxDecoration(
-                color: backgroundColor,
-                boxShadow: [
-                  BoxShadow(
-                    color: isDark
-                        ? Colors.black.withValues(alpha: 0.3)
-                        : const Color(0xFFB6A9B3).withValues(alpha: 0.22),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                    spreadRadius: 1,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      stops: const [0.0, 0.45, 1.0],
+                      colors: [
+                        fullTintTop,
+                        fullTintMiddle,
+                        fullTintBottom,
+                      ],
+                    ),
                   ),
-                ],
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [gradientStart, gradientEnd],
-                ),
-                border: Border(
-                  bottom: BorderSide(
-                      color: isDark
-                          ? AppColors.telegramBlue.withValues(alpha: 0.15)
-                          : const Color(0xFFD7C8D2).withValues(alpha: 0.85)),
                 ),
               ),
-              child: Row(
-                children: [
-                  if (leading != null) leading!,
-                  Expanded(
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final canShowSubtitle =
-                            subtitle != null && constraints.maxHeight >= 34;
-                        return Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Row(
+              IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: RadialGradient(
+                      center: const Alignment(0, -0.25),
+                      radius: 1.15,
+                      colors: [
+                        Colors.white.withValues(alpha: isDark ? 0.04 : 0.22),
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              IgnorePointer(
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: Container(
+                    height: 14,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.white.withValues(alpha: isDark ? 0.05 : 0.38),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    left: ResponsiveValues.spacingM(context),
+                    right: ResponsiveValues.spacingM(context),
+                    top: 3,
+                    bottom: 9,
+                  ),
+                  child: Row(
+                    children: [
+                      if (leading != null) leading!,
+                      Expanded(
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final canShowSubtitle =
+                                subtitle != null && constraints.maxHeight >= 34;
+                            return Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
                               children: [
-                                Text(
-                                  title,
-                                  style: AppTextStyles.headlineSmall(context)
-                                      .copyWith(fontWeight: FontWeight.w700),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-
-                                // Connection Quality Indicator
-                                if (quality != ConnectionQuality.good &&
-                                    quality != ConnectionQuality.excellent)
-                                  Padding(
-                                    padding: EdgeInsets.only(
-                                        left: ResponsiveValues.spacingXS(
-                                            context)),
-                                    child: Tooltip(
-                                      message: _getQualityMessage(quality),
+                                Row(
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        title,
+                                        style: AppTextStyles.titleLarge(context)
+                                            .copyWith(
+                                          fontWeight: FontWeight.w700,
+                                          letterSpacing: -0.2,
+                                          color: titleColor,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    Padding(
+                                      padding: EdgeInsets.only(
+                                        left: ResponsiveValues.spacingXS(context),
+                                      ),
                                       child: Container(
-                                        width: 8,
-                                        height: 8,
+                                        width: 7,
+                                        height: 7,
                                         decoration: BoxDecoration(
                                           color: _getQualityColor(quality),
                                           shape: BoxShape.circle,
                                         ),
                                       ),
                                     ),
-                                  ),
-
-                                // Sync/Pending Indicator
-                                if (isProcessing)
-                                  Padding(
-                                    padding: EdgeInsets.only(
-                                        left: ResponsiveValues.spacingXS(
-                                            context)),
-                                    child: SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor:
-                                            AlwaysStoppedAnimation<Color>(
-                                                AppColors.info),
-                                      ),
-                                    ),
-                                  )
-                                else if (pendingCount > 0 && isOnline)
-                                  Padding(
-                                    padding: EdgeInsets.only(
-                                        left: ResponsiveValues.spacingXS(
-                                            context)),
-                                    child: Container(
-                                      padding: const EdgeInsets.all(2),
-                                      decoration: const BoxDecoration(
-                                        color: AppColors.info,
-                                        shape: BoxShape.circle,
-                                      ),
-                                      constraints: const BoxConstraints(
-                                        minWidth: 18,
-                                        minHeight: 18,
-                                      ),
-                                      child: Center(
-                                        child: Text(
-                                          pendingCount > 9
-                                              ? '9+'
-                                              : pendingCount.toString(),
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize:
-                                                ResponsiveValues.fontBadgeSmall(
-                                                    context),
-                                            fontWeight: FontWeight.bold,
+                                    if (isProcessing)
+                                      Padding(
+                                        padding: EdgeInsets.only(
+                                          left:
+                                              ResponsiveValues.spacingXS(context),
+                                        ),
+                                        child: const SizedBox(
+                                          width: 15,
+                                          height: 15,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            valueColor:
+                                                AlwaysStoppedAnimation<Color>(
+                                              AppColors.info,
+                                            ),
                                           ),
                                         ),
                                       ),
-                                    ),
-                                  ),
-
-                                // Offline Indicator
-                                if (showOfflineIndicator && !isOnline)
-                                  Padding(
-                                    padding: EdgeInsets.only(
-                                        left: ResponsiveValues.spacingXS(
-                                            context)),
-                                    child: Icon(
-                                      Icons.wifi_off_rounded,
-                                      size:
-                                          ResponsiveValues.iconSizeXS(context),
-                                      color: AppColors.warning,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            if (canShowSubtitle) ...[
-                              const SizedBox(height: 2),
-                              Text(
-                                subtitle!,
-                                style:
-                                    AppTextStyles.bodySmall(context).copyWith(
-                                  color: AppColors.getTextSecondary(context),
+                                  ],
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                          ],
-                        );
-                      },
-                    ),
+                                if (canShowSubtitle) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    subtitle!,
+                                    style:
+                                        AppTextStyles.bodySmall(context).copyWith(
+                                      color: subtitleColor,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ],
+                            );
+                          },
+                        ),
+                      ),
+                      _buildButtonRow(context, themeProvider),
+                    ],
                   ),
-                  _buildButtonRow(
-                      context, themeProvider, isOnline, pendingCount),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
         );
       },
     );
   }
 
-  Widget _buildButtonRow(BuildContext context, ThemeProvider themeProvider,
-      bool isOnline, int pendingCount) {
+  Widget _buildButtonRow(BuildContext context, ThemeProvider themeProvider) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -311,7 +307,7 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
       width: ResponsiveValues.appBarButtonSize(context),
       height: ResponsiveValues.appBarButtonSize(context),
       decoration: BoxDecoration(
-        color: AppColors.getSurface(context).withValues(alpha: 0.2),
+        color: AppColors.getSurface(context).withValues(alpha: 0.15),
         shape: BoxShape.circle,
       ),
       child: ClipOval(

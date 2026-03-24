@@ -43,8 +43,9 @@ class NoteCard extends StatelessWidget {
     final isPdf = note.filePath?.toLowerCase().endsWith('.pdf') ?? false;
     final hasFile = note.hasFile;
 
-    return AppCard.note(
-      isDownloaded: isDownloaded,
+    return AppCard.solid(
+      borderColor: (isPdf ? AppColors.telegramRed : AppColors.telegramBlue)
+          .withValues(alpha: 0.14),
       onTap: () => _handleTap(context),
       child: Material(
         color: Colors.transparent,
@@ -52,42 +53,34 @@ class NoteCard extends StatelessWidget {
           onTap: () => _handleTap(context),
           borderRadius:
               BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
-          splashColor: AppColors.telegramBlue.withValues(alpha: 0.1),
+          splashColor: AppColors.telegramBlue.withValues(alpha: 0.08),
           highlightColor: Colors.transparent,
           child: Padding(
             padding: ResponsiveValues.cardPadding(context),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Icon
                 Container(
-                  width: ResponsiveValues.iconSizeXXL(context),
-                  height: ResponsiveValues.iconSizeXXL(context),
+                  width: ResponsiveValues.iconSizeXL(context) * 1.06,
+                  height: ResponsiveValues.iconSizeXL(context) * 1.06,
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: isPdf
-                          ? [
-                              AppColors.telegramRed.withValues(alpha: 0.2),
-                              AppColors.telegramRed.withValues(alpha: 0.1)
-                            ]
-                          : [
-                              AppColors.telegramBlue.withValues(alpha: 0.2),
-                              AppColors.telegramPurple.withValues(alpha: 0.1)
-                            ],
-                    ),
+                    color: isPdf
+                        ? AppColors.telegramRed.withValues(alpha: 0.10)
+                        : AppColors.telegramBlue.withValues(alpha: 0.09),
                     borderRadius: BorderRadius.circular(
-                        ResponsiveValues.radiusLarge(context)),
+                      ResponsiveValues.radiusLarge(context),
+                    ),
                   ),
                   child: Icon(
                     isPdf
                         ? Icons.picture_as_pdf_rounded
                         : Icons.note_alt_rounded,
-                    size: ResponsiveValues.iconSizeL(context),
+                    size: ResponsiveValues.iconSizeM(context),
                     color:
                         isPdf ? AppColors.telegramRed : AppColors.telegramBlue,
                   ),
                 ),
                 SizedBox(width: ResponsiveValues.spacingL(context)),
-                // Content
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -95,42 +88,64 @@ class NoteCard extends StatelessWidget {
                       Text(
                         note.title,
                         style: AppTextStyles.titleMedium(context)
-                            .copyWith(fontWeight: FontWeight.w600),
+                            .copyWith(fontWeight: FontWeight.w700),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      SizedBox(height: ResponsiveValues.spacingXS(context)),
-                      Row(
+                      SizedBox(height: ResponsiveValues.spacingS(context)),
+                      Wrap(
+                        spacing: ResponsiveValues.spacingM(context),
+                        runSpacing: ResponsiveValues.spacingXS(context),
                         children: [
-                          Icon(
-                            Icons.calendar_today_rounded,
-                            size: ResponsiveValues.iconSizeXXS(context),
-                            color: AppColors.getTextSecondary(context),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.calendar_today_rounded,
+                                size: ResponsiveValues.iconSizeXXS(context),
+                                color: AppColors.getTextSecondary(context),
+                              ),
+                              SizedBox(
+                                  width: ResponsiveValues.spacingXXS(context)),
+                              Text(
+                                note.formattedDate,
+                                style: AppTextStyles.caption(context).copyWith(
+                                  color: AppColors.getTextSecondary(context),
+                                ),
+                              ),
+                            ],
                           ),
-                          SizedBox(width: ResponsiveValues.spacingXXS(context)),
-                          Text(
-                            note.formattedDate,
-                            style: AppTextStyles.caption(context).copyWith(
-                                color: AppColors.getTextSecondary(context)),
-                          ),
-                          if (hasFile) ...[
-                            SizedBox(width: ResponsiveValues.spacingM(context)),
-                            Icon(
-                              isPdf
-                                  ? Icons.picture_as_pdf_rounded
-                                  : Icons.description_rounded,
-                              size: ResponsiveValues.iconSizeXXS(context),
-                              color: isPdf
-                                  ? AppColors.telegramRed
-                                  : AppColors.telegramBlue,
+                          if (hasFile)
+                            Container(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: ResponsiveValues.spacingS(context),
+                                vertical:
+                                    ResponsiveValues.spacingXXS(context),
+                              ),
+                              decoration: BoxDecoration(
+                                color: (isPdf
+                                        ? AppColors.telegramRed
+                                        : AppColors.telegramBlue)
+                                    .withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(
+                                  ResponsiveValues.radiusFull(context),
+                                ),
+                              ),
+                              child: Text(
+                                isPdf ? 'PDF' : 'Document',
+                                style: AppTextStyles.labelSmall(context).copyWith(
+                                  color: isPdf
+                                      ? AppColors.telegramRed
+                                      : AppColors.telegramBlue,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
                             ),
-                          ],
                         ],
                       ),
                     ],
                   ),
                 ),
-                // Download/View button
                 if (isDownloading)
                   SizedBox(
                     width: ResponsiveValues.iconSizeXL(context),
@@ -139,13 +154,14 @@ class NoteCard extends StatelessWidget {
                       alignment: Alignment.center,
                       children: [
                         SizedBox(
-                          width: ResponsiveValues.iconSizeM(context),
-                          height: ResponsiveValues.iconSizeM(context),
+                          width: ResponsiveValues.iconSizeS(context) * 1.2,
+                          height: ResponsiveValues.iconSizeS(context) * 1.2,
                           child: CircularProgressIndicator(
                             value: downloadProgress,
                             strokeWidth: 2,
                             valueColor: const AlwaysStoppedAnimation<Color>(
-                                AppColors.telegramBlue),
+                              AppColors.telegramBlue,
+                            ),
                           ),
                         ),
                         Text(
@@ -182,13 +198,13 @@ class NoteCard extends StatelessWidget {
     )
         .animate()
         .fadeIn(
-          duration: 300.ms,
+          duration: 220.ms,
           delay: (index * 50).ms,
         )
         .slideX(
-          begin: 0.1,
+          begin: 0.06,
           end: 0,
-          duration: 300.ms,
+          duration: 220.ms,
           delay: (index * 50).ms,
         );
   }

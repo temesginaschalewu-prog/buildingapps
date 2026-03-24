@@ -55,7 +55,7 @@ class PracticeQuestionCard extends StatelessWidget {
         {'letter': 'F', 'text': question.optionF},
     ];
 
-    return AppCard.glass(
+    return AppCard.solid(
       child: Container(
         margin: EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
         child: Padding(
@@ -67,21 +67,14 @@ class PracticeQuestionCard extends StatelessWidget {
               Row(
                 children: [
                   Container(
-                    width: ResponsiveValues.iconSizeXL(context),
-                    height: ResponsiveValues.iconSizeXL(context),
+                    width: ResponsiveValues.iconSizeL(context) * 1.1,
+                    height: ResponsiveValues.iconSizeL(context) * 1.1,
                     decoration: BoxDecoration(
-                      gradient: isAnswered
+                      color: isAnswered
                           ? (isCorrect
-                              ? const LinearGradient(
-                                  colors: AppColors.greenGradient)
-                              : const LinearGradient(
-                                  colors: AppColors.pinkGradient))
-                          : LinearGradient(
-                              colors: [
-                                AppColors.telegramBlue.withValues(alpha: 0.2),
-                                AppColors.telegramPurple.withValues(alpha: 0.1)
-                              ],
-                            ),
+                              ? AppColors.telegramGreen
+                              : AppColors.telegramRed)
+                          : AppColors.telegramBlue.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(
                           ResponsiveValues.radiusSmall(context)),
                     ),
@@ -105,7 +98,7 @@ class PracticeQuestionCard extends StatelessWidget {
                         Text(
                           'Question ${index + 1}',
                           style: AppTextStyles.titleSmall(context)
-                              .copyWith(fontWeight: FontWeight.w600),
+                              .copyWith(fontWeight: FontWeight.w700),
                         ),
                         Container(
                           margin: EdgeInsets.only(
@@ -116,11 +109,11 @@ class PracticeQuestionCard extends StatelessWidget {
                           ),
                           decoration: BoxDecoration(
                             color: _getDifficultyColor(question.difficulty)
-                                .withValues(alpha: 0.1),
+                                .withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(
                                 ResponsiveValues.radiusSmall(context)),
                           ),
-                          child: Text(
+                      child: Text(
                             question.difficulty.toUpperCase(),
                             style:
                                 AppTextStyles.statusBadge(context).copyWith(
@@ -142,8 +135,8 @@ class PracticeQuestionCard extends StatelessWidget {
                     ),
                     decoration: BoxDecoration(
                       color: question.isPracticeQuestion
-                          ? AppColors.telegramBlue.withValues(alpha: 0.1)
-                          : AppColors.telegramPurple.withValues(alpha: 0.1),
+                          ? AppColors.telegramBlue.withValues(alpha: 0.10)
+                          : AppColors.telegramPurple.withValues(alpha: 0.10),
                       borderRadius: BorderRadius.circular(
                           ResponsiveValues.radiusSmall(context)),
                     ),
@@ -164,8 +157,8 @@ class PracticeQuestionCard extends StatelessWidget {
               // Question text
               Text(
                 question.questionText,
-                style: AppTextStyles.bodyLarge(context)
-                    .copyWith(fontWeight: FontWeight.w500, height: 1.5),
+                      style: AppTextStyles.bodyLarge(context)
+                    .copyWith(fontWeight: FontWeight.w500, height: 1.55),
               ),
               SizedBox(height: ResponsiveValues.spacingXL(context)),
               // Options
@@ -196,24 +189,14 @@ class PracticeQuestionCard extends StatelessWidget {
                 Padding(
                   padding:
                       EdgeInsets.only(top: ResponsiveValues.spacingL(context)),
-                  child: AppCard.glass(
+                  child: AppCard.solid(
                     child: Container(
                       width: double.infinity,
                       padding: ResponsiveValues.cardPadding(context),
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: isCorrect
-                              ? [
-                                  AppColors.telegramGreen
-                                      .withValues(alpha: 0.1),
-                                  AppColors.telegramGreen
-                                      .withValues(alpha: 0.05)
-                                ]
-                              : [
-                                  AppColors.telegramRed.withValues(alpha: 0.1),
-                                  AppColors.telegramRed.withValues(alpha: 0.05)
-                                ],
-                        ),
+                        color: isCorrect
+                            ? AppColors.telegramGreen.withValues(alpha: 0.06)
+                            : AppColors.telegramRed.withValues(alpha: 0.06),
                         borderRadius: BorderRadius.circular(
                             ResponsiveValues.radiusMedium(context)),
                       ),
@@ -273,8 +256,8 @@ class PracticeQuestionCard extends StatelessWidget {
     bool isAnswered,
     bool isCorrect,
   ) {
-    Color borderColor = AppColors.getDivider(context);
-    Color bgColor = Colors.transparent;
+    Color borderColor = AppColors.getDivider(context).withValues(alpha: 0.9);
+    Color bgColor = AppColors.getSurface(context).withValues(alpha: 0.45);
     Color textColor = AppColors.getTextPrimary(context);
     IconData? icon;
 
@@ -282,19 +265,19 @@ class PracticeQuestionCard extends StatelessWidget {
       if (isSelected) {
         if (isCorrect) {
           borderColor = AppColors.telegramGreen;
-          bgColor = AppColors.telegramGreen.withValues(alpha: 0.1);
+          bgColor = AppColors.telegramGreen.withValues(alpha: 0.08);
           icon = Icons.check_circle_rounded;
           textColor = AppColors.telegramGreen;
         } else {
           borderColor = AppColors.telegramRed;
-          bgColor = AppColors.telegramRed.withValues(alpha: 0.1);
+          bgColor = AppColors.telegramRed.withValues(alpha: 0.08);
           icon = Icons.cancel_rounded;
           textColor = AppColors.telegramRed;
         }
       }
     } else if (isSelected) {
       borderColor = AppColors.telegramBlue;
-      bgColor = AppColors.telegramBlue.withValues(alpha: 0.1);
+      bgColor = AppColors.telegramBlue.withValues(alpha: 0.08);
       textColor = AppColors.telegramBlue;
     }
 

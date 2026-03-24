@@ -1,5 +1,5 @@
 // lib/providers/subscription_provider.dart
-// PRODUCTION-READY FINAL VERSION - WITH BATCH SUBSCRIPTION CHECKING
+// PRODUCTION-READY FINAL VERSION - WITH FORCE CACHE INVALIDATION
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -11,6 +11,7 @@ import '../services/connectivity_service.dart';
 import '../services/hive_service.dart';
 import '../services/offline_queue_manager.dart';
 import '../models/subscription_model.dart';
+import '../models/user_model.dart';
 import '../providers/category_provider.dart';
 import '../utils/constants.dart';
 import '../utils/api_response.dart';
@@ -41,25 +42,21 @@ class SubscriptionProvider extends ChangeNotifier
 
   int _apiCallCount = 0;
 
-  // ✅ FIXED: Proper stream declarations
   late StreamController<Map<int, bool>> _subscriptionUpdateController;
   late StreamController<List<Subscription>> _subscriptionsUpdateController;
 
   final Map<int, Completer<bool>> _categoryCheckCompleters = {};
   static const Duration _categoryCheckTimeout = Duration(seconds: 10);
 
-  // Add a semaphore to limit parallel requests
   static const int _maxConcurrentRequests = 2;
   int _activeRequests = 0;
   final List<Map<String, dynamic>> _pendingRequests = [];
 
-  // ✅ FIXED: Rate limiting
   DateTime? _lastBackgroundRefresh;
   static const Duration _minBackgroundInterval = Duration(minutes: 2);
 
   CategoryProvider? _categoryProvider;
 
-  // ✅ FIXED: Cache for batch results
   DateTime? _lastBatchCheck;
   static const Duration _batchCheckCooldown = Duration(seconds: 30);
 
@@ -147,12 +144,7 @@ class SubscriptionProvider extends ChangeNotifier
       );
 
       if (cachedSubscriptions != null) {
-        final List<Subscription> subscriptions = [];
-        for (final json in cachedSubscriptions) {
-          if (json is Map<String, dynamic>) {
-            subscriptions.add(Subscription.fromJson(json));
-          }
-        }
+        final subscriptions = _subscriptionsFromDynamicList(cachedSubscriptions);
 
         if (subscriptions.isNotEmpty) {
           _allSubscriptions = subscriptions;
@@ -164,10 +156,210 @@ class SubscriptionProvider extends ChangeNotifier
 
           await _saveToHive();
           log('✅ Loaded ${_allSubscriptions.length} cached subscriptions from DeviceService');
+          return;
         }
+      }
+
+      final restoredFromUser = await _restoreSubscriptionsFromCachedUser();
+      if (restoredFromUser) {
+        log('✅ Restored subscriptions from cached user profile');
       }
     } catch (e) {
       log('Error loading cached subscriptions: $e');
+    }
+  }
+
+  String _normalizeCategoryName(String? value) {
+    return (value ?? '').trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  int _resolveCategoryId(int currentId, String? categoryName) {
+    if (currentId > 0) return currentId;
+    if (categoryName == null || categoryName.trim().isEmpty) return currentId;
+    final categories = _categoryProvider?.categories ?? const [];
+    if (categories.isEmpty) return currentId;
+
+    final normalizedTarget = _normalizeCategoryName(categoryName);
+    for (final category in categories) {
+      if (_normalizeCategoryName(category.name) == normalizedTarget) {
+        return category.id;
+      }
+    }
+    return currentId;
+  }
+
+  Subscription _normalizeSubscription(Subscription subscription) {
+    final resolvedCategoryId =
+        _resolveCategoryId(subscription.categoryId, subscription.categoryName);
+    if (resolvedCategoryId == subscription.categoryId) {
+      return subscription;
+    }
+
+    return Subscription(
+      id: subscription.id,
+      userId: subscription.userId,
+      categoryId: resolvedCategoryId,
+      startDate: subscription.startDate,
+      expiryDate: subscription.expiryDate,
+      status: subscription.status,
+      billingCycle: subscription.billingCycle,
+      paymentId: subscription.paymentId,
+      createdAt: subscription.createdAt,
+      updatedAt: subscription.updatedAt,
+      categoryName: subscription.categoryName,
+      price: subscription.price,
+    );
+  }
+
+  List<Subscription> _subscriptionsFromDynamicList(List<dynamic> rawList) {
+    final List<Subscription> subscriptions = [];
+    for (final item in rawList) {
+      if (item is Subscription) {
+        subscriptions.add(_normalizeSubscription(item));
+      } else if (item is Map<String, dynamic>) {
+        subscriptions.add(
+          _normalizeSubscription(Subscription.fromJson(item)),
+        );
+      } else if (item is Map) {
+        subscriptions.add(
+          _normalizeSubscription(
+            Subscription.fromJson(Map<String, dynamic>.from(item)),
+          ),
+        );
+      }
+    }
+    return subscriptions;
+  }
+
+  Subscription _pickPreferredSubscription(
+    Subscription current,
+    Subscription candidate,
+  ) {
+    if (candidate.isActive != current.isActive) {
+      return candidate.isActive ? candidate : current;
+    }
+
+    if (candidate.expiryDate != current.expiryDate) {
+      return candidate.expiryDate.isAfter(current.expiryDate)
+          ? candidate
+          : current;
+    }
+
+    final currentUpdated = current.updatedAt ?? current.createdAt;
+    final candidateUpdated = candidate.updatedAt ?? candidate.createdAt;
+    if (candidateUpdated != null && currentUpdated != null) {
+      if (candidateUpdated.isAfter(currentUpdated)) {
+        return candidate;
+      }
+      if (currentUpdated.isAfter(candidateUpdated)) {
+        return current;
+      }
+    } else if (candidateUpdated != null) {
+      return candidate;
+    } else if (currentUpdated != null) {
+      return current;
+    }
+
+    return candidate.id > current.id ? candidate : current;
+  }
+
+  List<Subscription> _collapseSubscriptions(
+    List<Subscription> subscriptions,
+  ) {
+    final Map<int, Subscription> byCategory = {};
+
+    for (final subscription in subscriptions) {
+      final normalized = _normalizeSubscription(subscription);
+      if (normalized.categoryId <= 0) {
+        continue;
+      }
+
+      final existing = byCategory[normalized.categoryId];
+      byCategory[normalized.categoryId] = existing == null
+          ? normalized
+          : _pickPreferredSubscription(existing, normalized);
+    }
+
+    final collapsed = byCategory.values.toList()
+      ..sort((a, b) {
+        if (a.isActive != b.isActive) {
+          return a.isActive ? -1 : 1;
+        }
+        return b.expiryDate.compareTo(a.expiryDate);
+      });
+
+    return collapsed;
+  }
+
+  Future<bool> _restoreSubscriptionsFromCachedUser() async {
+    final userId = await UserSession().getCurrentUserId();
+    if (userId == null) return false;
+
+    try {
+      User? cachedUser;
+
+      if (Hive.isBoxOpen(AppConstants.hiveUserBox)) {
+        final userBox = Hive.box<dynamic>(AppConstants.hiveUserBox);
+        final hiveUser = userBox.get('user_${userId}_profile');
+        if (hiveUser is User) {
+          cachedUser = hiveUser;
+        } else if (hiveUser is Map) {
+          cachedUser = User.fromJson(Map<String, dynamic>.from(hiveUser));
+        }
+      }
+
+      cachedUser ??= await deviceService
+          .getCacheItem<Map<String, dynamic>>(
+            AppConstants.userProfileKey(userId),
+            isUserSpecific: true,
+          )
+          .then((json) => json != null ? User.fromJson(json) : null);
+
+      if (cachedUser == null) return false;
+
+      return _hydrateFromUserProfile(cachedUser, persistCache: false);
+    } catch (e) {
+      log('⚠️ Error restoring subscriptions from cached user: $e');
+      return false;
+    }
+  }
+
+  Future<bool> _hydrateFromUserProfile(
+    User user, {
+    bool persistCache = true,
+  }) async {
+    final rawSubscriptions = user.subscriptions;
+    if (rawSubscriptions == null || rawSubscriptions.isEmpty) return false;
+
+    final profileSubscriptions =
+        _collapseSubscriptions(_subscriptionsFromDynamicList(rawSubscriptions));
+    final subscriptions = _allSubscriptions.isNotEmpty
+        ? _collapseSubscriptions([
+            ..._allSubscriptions,
+            ...profileSubscriptions,
+          ])
+        : profileSubscriptions;
+    if (subscriptions.isEmpty) return false;
+
+    _allSubscriptions = subscriptions;
+    _rebuildCacheFromSubscriptions();
+    _hasLoaded = true;
+    _hasInitialData = true;
+
+    if (persistCache) {
+      await _saveSubscriptionsCache();
+    }
+
+    _notifyChanges();
+    return true;
+  }
+
+  Future<void> syncFromUserProfile(User? user) async {
+    if (user == null) return;
+
+    final hydrated = await _hydrateFromUserProfile(user);
+    if (hydrated) {
+      log('✅ Synced subscriptions from active user profile');
     }
   }
 
@@ -175,9 +367,11 @@ class SubscriptionProvider extends ChangeNotifier
     try {
       final userId = await UserSession().getCurrentUserId();
       if (userId != null && _subscriptionsBox != null) {
+        final collapsedSubscriptions = _collapseSubscriptions(_allSubscriptions);
+        _allSubscriptions = collapsedSubscriptions;
         await _subscriptionsBox!
-            .put('user_${userId}_subscriptions', _allSubscriptions);
-        log('💾 Saved ${_allSubscriptions.length} subscriptions to Hive');
+            .put('user_${userId}_subscriptions', collapsedSubscriptions);
+        log('💾 Saved ${collapsedSubscriptions.length} subscriptions to Hive');
       }
     } catch (e) {
       log('Error saving to Hive: $e');
@@ -185,10 +379,12 @@ class SubscriptionProvider extends ChangeNotifier
   }
 
   Future<void> _saveSubscriptionsCache() async {
+    final collapsedSubscriptions = _collapseSubscriptions(_allSubscriptions);
+    _allSubscriptions = collapsedSubscriptions;
     await _saveToHive();
     deviceService.saveCacheItem(
       AppConstants.subscriptionsCacheKey,
-      _allSubscriptions.map((s) => s.toJson()).toList(),
+      collapsedSubscriptions.map((s) => s.toJson()).toList(),
       isUserSpecific: true,
     );
   }
@@ -198,11 +394,14 @@ class SubscriptionProvider extends ChangeNotifier
     _categoryAccessCache = {};
     _categoryCheckComplete = {};
 
-    for (final sub in _allSubscriptions) {
-      final isActive = sub.isActive;
-      _subscriptionsByCategory[sub.categoryId] = sub;
-      _categoryAccessCache[sub.categoryId] = isActive;
-      _categoryCheckComplete[sub.categoryId] = true;
+    final collapsedSubscriptions = _collapseSubscriptions(_allSubscriptions);
+    _allSubscriptions = collapsedSubscriptions;
+
+    for (final normalized in collapsedSubscriptions) {
+      final isActive = normalized.isActive;
+      _subscriptionsByCategory[normalized.categoryId] = normalized;
+      _categoryAccessCache[normalized.categoryId] = isActive;
+      _categoryCheckComplete[normalized.categoryId] = true;
     }
   }
 
@@ -264,6 +463,22 @@ class SubscriptionProvider extends ChangeNotifier
     return false;
   }
 
+  bool? _getKnownAccessState(int categoryId) {
+    if (_categoryAccessCache.containsKey(categoryId)) {
+      return _categoryAccessCache[categoryId];
+    }
+
+    final subscription = _subscriptionsByCategory[categoryId];
+    if (subscription != null) {
+      final isActive = subscription.isActive;
+      _categoryAccessCache[categoryId] = isActive;
+      _categoryCheckComplete[categoryId] = true;
+      return isActive;
+    }
+
+    return null;
+  }
+
   List<int> getCategoriesWithActiveSubscription() {
     final List<int> result = [];
     _categoryAccessCache.forEach((categoryId, hasAccess) {
@@ -274,7 +489,99 @@ class SubscriptionProvider extends ChangeNotifier
 
   void setCategoryProvider(CategoryProvider categoryProvider) {
     _categoryProvider = categoryProvider;
+    if (_allSubscriptions.isNotEmpty) {
+      _allSubscriptions = _allSubscriptions.map(_normalizeSubscription).toList();
+      _rebuildCacheFromSubscriptions();
+      _notifyChanges();
+    }
     log('CategoryProvider set');
+  }
+
+  // ✅ FORCE INVALIDATE CACHE - clears ALL cached subscription data
+  Future<void> forceInvalidateCache() async {
+    log('forceInvalidateCache() - clearing ALL cached subscription data');
+
+    _categoryAccessCache.clear();
+    _categoryCheckComplete.clear();
+    _allSubscriptions = [];
+    _subscriptionsByCategory = {};
+    _hasLoaded = false;
+    _hasInitialData = false;
+
+    for (final completer in _categoryCheckCompleters.values) {
+      if (!completer.isCompleted) {
+        completer.complete(false);
+      }
+    }
+    _categoryCheckCompleters.clear();
+
+    final userId = await UserSession().getCurrentUserId();
+    if (userId != null && _subscriptionsBox != null) {
+      try {
+        await _subscriptionsBox!.delete('user_${userId}_subscriptions');
+        log('✅ Cleared Hive subscription cache');
+      } catch (e) {
+        log('Error clearing Hive cache: $e');
+      }
+    }
+
+    try {
+      await deviceService.removeCacheItem(
+        AppConstants.subscriptionsCacheKey,
+        isUserSpecific: true,
+      );
+      log('✅ Cleared DeviceService cache');
+    } catch (e) {
+      log('Error clearing DeviceService cache: $e');
+    }
+
+    _notifyChanges();
+
+    log('✅ Cache invalidation complete');
+  }
+
+  // ✅ FORCE REFRESH - clears cache and tries to fetch fresh data
+  Future<void> forceRefreshFromServer() async {
+    log('forceRefreshFromServer() - clearing cache and fetching fresh data');
+
+    await forceInvalidateCache();
+
+    if (isOffline) {
+      log('Offline - cache cleared, but cannot fetch fresh data');
+      return;
+    }
+
+    try {
+      final response = await apiService.getMySubscriptions().timeout(
+        const Duration(seconds: 45),
+        onTimeout: () {
+          log('⏱️ API timeout during force refresh');
+          return ApiResponse<List<Subscription>>(
+            success: false,
+            message: 'Request timed out',
+          );
+        },
+      );
+
+      if (response.success && response.data != null) {
+        _allSubscriptions = response.data!;
+        _hasLoaded = true;
+        _hasInitialData = _allSubscriptions.isNotEmpty;
+
+        await _saveSubscriptionsCache();
+        _rebuildCacheFromSubscriptions();
+        _notifyChanges();
+        log('✅ Force refresh completed - loaded ${_allSubscriptions.length} subscriptions');
+      } else {
+        log('⚠️ Force refresh failed - keeping cache cleared');
+        _hasLoaded = true;
+        _notifyChanges();
+      }
+    } catch (e) {
+      log('❌ Force refresh error: $e');
+      _hasLoaded = true;
+      _notifyChanges();
+    }
   }
 
   // ===== LOAD SUBSCRIPTIONS =====
@@ -324,14 +631,7 @@ class SubscriptionProvider extends ChangeNotifier
               _subscriptionsBox!.get('user_${userId}_subscriptions');
 
           if (cachedSubscriptions != null && cachedSubscriptions is List) {
-            final List<Subscription> subscriptions = [];
-            for (final item in cachedSubscriptions) {
-              if (item is Subscription) {
-                subscriptions.add(item);
-              } else if (item is Map<String, dynamic>) {
-                subscriptions.add(Subscription.fromJson(item));
-              }
-            }
+            final subscriptions = _subscriptionsFromDynamicList(cachedSubscriptions);
 
             if (subscriptions.isNotEmpty) {
               _allSubscriptions = subscriptions;
@@ -370,12 +670,7 @@ class SubscriptionProvider extends ChangeNotifier
         );
 
         if (cachedSubscriptions != null) {
-          final List<Subscription> subscriptions = [];
-          for (final json in cachedSubscriptions) {
-            if (json is Map<String, dynamic>) {
-              subscriptions.add(Subscription.fromJson(json));
-            }
-          }
+          final subscriptions = _subscriptionsFromDynamicList(cachedSubscriptions);
 
           if (subscriptions.isNotEmpty) {
             _allSubscriptions = subscriptions;
@@ -403,6 +698,12 @@ class SubscriptionProvider extends ChangeNotifier
             return;
           }
         }
+
+        final restoredFromUser = await _restoreSubscriptionsFromCachedUser();
+        if (restoredFromUser) {
+          log('✅ Loaded subscriptions from cached user profile fallback');
+          return;
+        }
       }
 
       // STEP 3: Check offline status
@@ -429,12 +730,13 @@ class SubscriptionProvider extends ChangeNotifier
       // STEP 4: Fetch from API
       log('STEP 4: Fetching from API');
       try {
-        final previousSubscriptions = List<Subscription>.from(_allSubscriptions);
+        final previousSubscriptions =
+            List<Subscription>.from(_allSubscriptions);
         final hadCachedSubscriptions =
             _hasInitialData || previousSubscriptions.isNotEmpty;
 
         final response = await apiService.getMySubscriptions().timeout(
-          const Duration(seconds: 20),
+          const Duration(seconds: 45),
           onTimeout: () {
             log('⏱️ API timeout in loadSubscriptions - using cached data');
             return ApiResponse<List<Subscription>>(
@@ -445,7 +747,8 @@ class SubscriptionProvider extends ChangeNotifier
         );
 
         if (response.success) {
-          _allSubscriptions = response.data ?? [];
+          _allSubscriptions =
+              (response.data ?? []).map(_normalizeSubscription).toList();
           log('✅ Received ${_allSubscriptions.length} subscriptions from API');
 
           _hasLoaded = true;
@@ -456,6 +759,12 @@ class SubscriptionProvider extends ChangeNotifier
           _rebuildCacheFromSubscriptions();
           _notifyChanges();
         } else {
+          final restoredFromUser = await _restoreSubscriptionsFromCachedUser();
+          if (restoredFromUser) {
+            log('⚠️ Using cached user subscriptions after API failure');
+            return;
+          }
+
           if (hadCachedSubscriptions) {
             _allSubscriptions = previousSubscriptions;
             _hasLoaded = true;
@@ -489,6 +798,11 @@ class SubscriptionProvider extends ChangeNotifier
         log('✅ Success! Subscriptions loaded');
       } catch (e) {
         log('❌ Error loading subscriptions: $e');
+        final restoredFromUser = await _restoreSubscriptionsFromCachedUser();
+        if (restoredFromUser) {
+          log('⚠️ Using cached user subscriptions after exception');
+          return;
+        }
         setError(getUserFriendlyErrorMessage(e));
         _hasLoaded = true;
         setLoaded();
@@ -500,6 +814,12 @@ class SubscriptionProvider extends ChangeNotifier
       }
     } catch (e) {
       log('❌ Error loading subscriptions: $e');
+
+      final restoredFromUser = await _restoreSubscriptionsFromCachedUser();
+      if (restoredFromUser) {
+        log('⚠️ Using cached user subscriptions after outer failure');
+        return;
+      }
 
       setError(getUserFriendlyErrorMessage(e));
 
@@ -526,23 +846,27 @@ class SubscriptionProvider extends ChangeNotifier
     log('checkHasActiveSubscriptionForCategory() CALL #$callId for category $categoryId');
 
     if (isManualRefresh && isOffline) {
+      final knownAccess = _getKnownAccessState(categoryId);
+      if (knownAccess != null) {
+        log('Offline manual refresh - preserving known access for category $categoryId: $knownAccess');
+        return knownAccess;
+      }
       throw Exception(getUserFriendlyErrorMessage(
           'Network error. Please check your internet connection.'));
     }
 
-    // Check cache first
-    if (_categoryAccessCache.containsKey(categoryId)) {
-      final cached = _categoryAccessCache[categoryId]!;
+    final knownAccess = _getKnownAccessState(categoryId);
+    if (knownAccess != null) {
+      final cached = knownAccess;
       log('Using cached access for category $categoryId: $cached');
       return cached;
     }
 
     if (isOffline) {
-      log('Offline, returning false for category $categoryId');
+      log('Offline, no known cached access for category $categoryId');
       return false;
     }
 
-    // If already checking, wait for result
     if (_categoryCheckCompleters.containsKey(categoryId)) {
       log('Waiting for existing check for category $categoryId');
       try {
@@ -555,11 +879,9 @@ class SubscriptionProvider extends ChangeNotifier
       }
     }
 
-    // Create completer for this request
     final completer = Completer<bool>();
     _categoryCheckCompleters[categoryId] = completer;
 
-    // Queue the request instead of executing immediately
     _queueCategoryCheck(categoryId, completer);
 
     return completer.future;
@@ -575,13 +897,11 @@ class SubscriptionProvider extends ChangeNotifier
     _processNextRequest();
   }
 
-  // ✅ FIXED: Enhanced to use batch checking when possible
   Future<void> _processNextRequest() async {
     if (_pendingRequests.isEmpty || _activeRequests >= _maxConcurrentRequests) {
       return;
     }
 
-    // Check if we can do a batch request
     if (_pendingRequests.length >= 3 && !isOffline) {
       await _processBatchRequest();
       return;
@@ -597,7 +917,7 @@ class SubscriptionProvider extends ChangeNotifier
 
       final response =
           await apiService.checkSubscriptionStatus(categoryId).timeout(
-        const Duration(seconds: 8),
+        const Duration(seconds: 15),
         onTimeout: () {
           log('⏱️ API timeout for category $categoryId');
           return ApiResponse<Map<String, dynamic>>(
@@ -656,41 +976,44 @@ class SubscriptionProvider extends ChangeNotifier
         completer.complete(hasSubscription);
       } else {
         log('API returned no subscription for category $categoryId');
-        _categoryAccessCache[categoryId] = false;
-        _categoryCheckComplete[categoryId] = true;
-        _subscriptionUpdateController.add({categoryId: false});
+        final previousKnownAccess = _getKnownAccessState(categoryId);
+        if (previousKnownAccess != null) {
+          log('Preserving cached access for category $categoryId after failed API check: $previousKnownAccess');
+          completer.complete(previousKnownAccess);
+        } else {
+          _categoryAccessCache[categoryId] = false;
+          _categoryCheckComplete[categoryId] = true;
+          _subscriptionUpdateController.add({categoryId: false});
 
-        if (_categoryProvider != null) {
-          unawaited(_categoryProvider!
-              .updateCategorySubscriptionStatus(categoryId, false));
+          if (_categoryProvider != null) {
+            unawaited(_categoryProvider!
+                .updateCategorySubscriptionStatus(categoryId, false));
+          }
+
+          completer.complete(false);
         }
-
-        completer.complete(false);
       }
     } catch (e) {
       log('Error checking subscription for category $categoryId: $e');
-      completer.complete(false);
+      final previousKnownAccess = _getKnownAccessState(categoryId);
+      completer.complete(previousKnownAccess ?? false);
     } finally {
       _activeRequests--;
       _categoryCheckCompleters.remove(categoryId);
-      // Process next request
       unawaited(_processNextRequest());
     }
   }
 
-  // ✅ FIXED: New batch processing method
   Future<void> _processBatchRequest() async {
     if (_pendingRequests.isEmpty || isOffline) return;
 
-    // Check cooldown
     if (_lastBatchCheck != null &&
         DateTime.now().difference(_lastBatchCheck!) < _batchCheckCooldown) {
       log('⏱️ Batch check cooldown, falling back to individual');
-      unawaited(_processNextRequest()); // Fall back to individual
+      unawaited(_processNextRequest());
       return;
     }
 
-    // Collect up to 10 category IDs
     final batchSize =
         _pendingRequests.length > 10 ? 10 : _pendingRequests.length;
     final batchRequests = _pendingRequests.sublist(0, batchSize);
@@ -699,7 +1022,6 @@ class SubscriptionProvider extends ChangeNotifier
     final completers =
         batchRequests.map((r) => r['completer'] as Completer<bool>).toList();
 
-    // Remove these from pending queue
     _pendingRequests.removeRange(0, batchSize);
 
     _activeRequests++;
@@ -710,19 +1032,21 @@ class SubscriptionProvider extends ChangeNotifier
 
       final results =
           await apiService.checkMultipleSubscriptions(categoryIds).timeout(
-        const Duration(seconds: 10),
+        const Duration(seconds: 20),
         onTimeout: () {
           log('⏱️ Batch API timeout');
           return <int, bool>{};
         },
       );
 
-      // Process results
       for (int i = 0; i < categoryIds.length; i++) {
         final categoryId = categoryIds[i];
         final completer = completers[i];
 
-        final hasSubscription = results[categoryId] ?? false;
+        final hasSubscription =
+            results.containsKey(categoryId)
+                ? (results[categoryId] ?? false)
+                : (_getKnownAccessState(categoryId) ?? false);
 
         _categoryAccessCache[categoryId] = hasSubscription;
         _categoryCheckComplete[categoryId] = true;
@@ -739,7 +1063,6 @@ class SubscriptionProvider extends ChangeNotifier
       log('✅ Batch processed ${results.length} results');
     } catch (e) {
       log('❌ Batch request failed: $e');
-      // Re-queue failed items as individual requests
       for (int i = 0; i < categoryIds.length; i++) {
         _pendingRequests.add({
           'categoryId': categoryIds[i],
@@ -749,7 +1072,6 @@ class SubscriptionProvider extends ChangeNotifier
       }
     } finally {
       _activeRequests--;
-      // Continue processing
       unawaited(_processNextRequest());
     }
   }
@@ -764,7 +1086,6 @@ class SubscriptionProvider extends ChangeNotifier
     final results = <int, bool>{};
     final updates = <int, bool>{};
 
-    // Get cached results first
     for (final categoryId in categoryIds) {
       if (_categoryAccessCache.containsKey(categoryId)) {
         results[categoryId] = _categoryAccessCache[categoryId]!;
@@ -778,7 +1099,6 @@ class SubscriptionProvider extends ChangeNotifier
     if (missingIds.isNotEmpty && !isOffline) {
       log('Checking ${missingIds.length} missing categories');
 
-      // Try batch first if enough categories
       if (missingIds.length >= 3 && !isOffline) {
         try {
           final batchResults =
@@ -790,8 +1110,6 @@ class SubscriptionProvider extends ChangeNotifier
               _categoryAccessCache[entry.key] = entry.value;
               _categoryCheckComplete[entry.key] = true;
             }
-
-            // Remove successfully checked IDs
             missingIds.removeWhere(batchResults.containsKey);
           }
         } catch (e) {
@@ -799,7 +1117,6 @@ class SubscriptionProvider extends ChangeNotifier
         }
       }
 
-      // Handle remaining IDs with individual checks
       if (missingIds.isNotEmpty) {
         final futures = missingIds.map((id) =>
             checkHasActiveSubscriptionForCategory(id,
@@ -826,11 +1143,9 @@ class SubscriptionProvider extends ChangeNotifier
     return results;
   }
 
-  // ✅ FIXED: Rate limited background refresh
   Future<void> _refreshInBackground() async {
     if (isOffline) return;
 
-    // Rate limiting
     if (_lastBackgroundRefresh != null &&
         DateTime.now().difference(_lastBackgroundRefresh!) <
             _minBackgroundInterval) {
@@ -851,7 +1166,7 @@ class SubscriptionProvider extends ChangeNotifier
 
     try {
       final response = await apiService.getMySubscriptions().timeout(
-        const Duration(seconds: 20),
+        const Duration(seconds: 45),
         onTimeout: () {
           log('⏱️ API timeout in background refresh');
           return ApiResponse<List<Subscription>>(
@@ -890,7 +1205,7 @@ class SubscriptionProvider extends ChangeNotifier
     _lastBatchCheck = null;
     _hasLoaded = false;
 
-    await loadSubscriptions(forceRefresh: true, isManualRefresh: true);
+    await forceRefreshFromServer();
     log('refreshAfterPaymentVerification() complete');
   }
 
@@ -933,7 +1248,6 @@ class SubscriptionProvider extends ChangeNotifier
     await loadSubscriptions();
   }
 
-  // ✅ FIXED: Clear user data with proper stream recreation
   Future<void> clearUserData() async {
     final session = UserSession();
     if (!session.shouldClearCacheOnLogout()) return;
@@ -955,7 +1269,6 @@ class SubscriptionProvider extends ChangeNotifier
     _lastBackgroundRefresh = null;
     _lastBatchCheck = null;
 
-    // FIX: Properly recreate streams
     await _subscriptionUpdateController.close();
     await _subscriptionsUpdateController.close();
     _subscriptionUpdateController =

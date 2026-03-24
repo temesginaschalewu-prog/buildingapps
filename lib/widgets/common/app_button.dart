@@ -228,7 +228,7 @@ class AppButton extends StatelessWidget {
       width: _getIconContainerSize(context),
       height: _getIconContainerSize(context),
       decoration: BoxDecoration(
-        color: AppColors.getSurface(context).withValues(alpha: 0.15),
+        color: AppColors.getSurface(context).withValues(alpha: 0.12),
         shape: BoxShape.circle,
       ),
       child: ClipOval(
@@ -261,49 +261,60 @@ class AppButton extends StatelessWidget {
   BoxDecoration _getDecoration(BuildContext context, bool isEnabled,
       double borderRadius, bool isOfflineDisabled) {
     final Color disabledColor = AppColors.telegramGray.withValues(alpha: 0.2);
-    AppColors.warning.withValues(alpha: 0.2);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     switch (variant) {
       case ButtonVariant.primary:
         return BoxDecoration(
           gradient: isEnabled && !isOfflineDisabled
-              ? const LinearGradient(colors: AppColors.blueGradient)
+              ? const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    AppColors.telegramBlueLight,
+                    AppColors.telegramBlue,
+                  ],
+                )
               : null,
           color: !isEnabled || isOfflineDisabled ? disabledColor : null,
           borderRadius: BorderRadius.circular(borderRadius),
+          border: Border.all(
+            color: isEnabled && !isOfflineDisabled
+                ? Colors.white.withValues(alpha: 0.12)
+                : Colors.transparent,
+          ),
           boxShadow: isEnabled && !isOfflineDisabled
               ? [
                   BoxShadow(
-                      color: AppColors.telegramBlue.withValues(alpha: 0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2))
+                    color: AppColors.telegramBlue.withValues(alpha: 0.22),
+                    blurRadius: 14,
+                    offset: const Offset(0, 6),
+                  ),
                 ]
               : null,
         );
 
       case ButtonVariant.secondary:
         return BoxDecoration(
-          gradient: isEnabled && !isOfflineDisabled
-              ? LinearGradient(colors: [
-                  AppColors.getCard(context).withValues(alpha: 0.4),
-                  AppColors.getCard(context).withValues(alpha: 0.2)
-                ])
-              : null,
+          color: isEnabled && !isOfflineDisabled
+              ? AppColors.getCard(context).withValues(alpha: isDark ? 0.90 : 0.96)
+              : AppColors.getCard(context).withValues(alpha: 0.72),
           borderRadius: BorderRadius.circular(borderRadius),
           border: Border.all(
             color: isOfflineDisabled
                 ? AppColors.warning.withValues(alpha: 0.3)
                 : (isEnabled
-                    ? AppColors.telegramBlue.withValues(alpha: 0.3)
+                    ? AppColors.getDivider(context).withValues(alpha: 0.8)
                     : AppColors.getTextSecondary(context)
-                        .withValues(alpha: 0.1)),
+                        .withValues(alpha: 0.14)),
           ),
           boxShadow: isEnabled && !isOfflineDisabled
               ? [
                   BoxShadow(
-                      color: AppColors.telegramBlue.withValues(alpha: 0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2))
+                    color: Colors.black.withValues(alpha: isDark ? 0.10 : 0.035),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
                 ]
               : null,
         );
@@ -318,9 +329,10 @@ class AppButton extends StatelessWidget {
           boxShadow: isEnabled && !isOfflineDisabled
               ? [
                   BoxShadow(
-                      color: AppColors.telegramGreen.withValues(alpha: 0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2))
+                    color: AppColors.telegramGreen.withValues(alpha: 0.18),
+                    blurRadius: 12,
+                    offset: const Offset(0, 5),
+                  ),
                 ]
               : null,
         );
@@ -328,16 +340,17 @@ class AppButton extends StatelessWidget {
       case ButtonVariant.danger:
         return BoxDecoration(
           gradient: isEnabled && !isOfflineDisabled
-              ? const LinearGradient(colors: AppColors.pinkGradient)
+              ? const LinearGradient(colors: AppColors.dangerGradient)
               : null,
           color: !isEnabled || isOfflineDisabled ? disabledColor : null,
           borderRadius: BorderRadius.circular(borderRadius),
           boxShadow: isEnabled && !isOfflineDisabled
               ? [
                   BoxShadow(
-                      color: AppColors.telegramRed.withValues(alpha: 0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2))
+                    color: AppColors.telegramRed.withValues(alpha: 0.20),
+                    blurRadius: 12,
+                    offset: const Offset(0, 5),
+                  ),
                 ]
               : null,
         );
@@ -350,10 +363,10 @@ class AppButton extends StatelessWidget {
             color: isOfflineDisabled
                 ? AppColors.warning.withValues(alpha: 0.5)
                 : (isEnabled
-                    ? AppColors.telegramBlue
+                    ? AppColors.getDivider(context).withValues(alpha: 0.95)
                     : AppColors.getTextSecondary(context)
                         .withValues(alpha: 0.3)),
-            width: 1.5,
+            width: 1.2,
           ),
         );
 
@@ -371,7 +384,7 @@ class AppButton extends StatelessWidget {
   Color _getSplashColor(BuildContext context) {
     switch (variant) {
       case ButtonVariant.secondary:
-        return AppColors.telegramBlue.withValues(alpha: 0.1);
+        return AppColors.telegramBlue.withValues(alpha: 0.08);
       default:
         return Colors.white.withValues(alpha: 0.2);
     }
@@ -391,7 +404,7 @@ class AppButton extends StatelessWidget {
       case ButtonVariant.outline:
       case ButtonVariant.text:
       case ButtonVariant.icon:
-        return AppColors.telegramBlue;
+        return AppColors.getTextPrimary(context);
     }
   }
 

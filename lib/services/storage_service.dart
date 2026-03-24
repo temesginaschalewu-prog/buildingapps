@@ -97,6 +97,7 @@ class StorageService {
   Future<void> saveUser(User user) async {
     await ensureInitialized();
     final userJson = json.encode(user.toJson());
+    await _prefs.setString(AppConstants.userDataKeyFor(user.id.toString()), userJson);
     await _prefs.setString(AppConstants.userDataKey, userJson);
 
     // USE EXISTING BOX
@@ -120,13 +121,13 @@ class StorageService {
 
   Future<User?> getUser() async {
     await ensureInitialized();
+    final currentUserId = await getCurrentUserId();
 
     // USE EXISTING BOX
     try {
-      final userId = await getCurrentUserId();
-      if (userId != null && Hive.isBoxOpen(AppConstants.hiveUserBox)) {
+      if (currentUserId != null && Hive.isBoxOpen(AppConstants.hiveUserBox)) {
         final userBox = Hive.box<dynamic>(AppConstants.hiveUserBox);
-        final cachedUser = userBox.get('user_${userId}_profile');
+        final cachedUser = userBox.get('user_${currentUserId}_profile');
         if (cachedUser != null && cachedUser is User) {
           return cachedUser;
         }
@@ -143,10 +144,16 @@ class StorageService {
       if (cachedUser != null) return cachedUser;
     }
 
-    final userJson = _prefs.getString(AppConstants.userDataKey);
+    final userJson = currentUserId != null
+        ? _prefs.getString(AppConstants.userDataKeyFor(currentUserId))
+        : _prefs.getString(AppConstants.userDataKey);
     if (userJson != null) {
       try {
-        return User.fromJson(json.decode(userJson));
+        final user = User.fromJson(json.decode(userJson));
+        if (currentUserId == null || user.id.toString() == currentUserId) {
+          return user;
+        }
+        return null;
       } catch (e) {
         return null;
       }
@@ -160,10 +167,13 @@ class StorageService {
 
   Future<void> clearUser() async {
     await ensureInitialized();
+    final userId = await getCurrentUserId();
     await _prefs.remove(AppConstants.userDataKey);
+    if (userId != null) {
+      await _prefs.remove(AppConstants.userDataKeyFor(userId));
+    }
 
     try {
-      final userId = await getCurrentUserId();
       if (userId != null && Hive.isBoxOpen(AppConstants.hiveUserBox)) {
         final userBox = Hive.box<dynamic>(AppConstants.hiveUserBox);
         await userBox.delete('user_${userId}_profile');
@@ -224,16 +234,29 @@ class StorageService {
   // ===== SCHOOL SELECTION =====
   Future<void> saveSelectedSchool(int schoolId) async {
     await ensureInitialized();
+    final userId = await getCurrentUserId();
+    if (userId != null) {
+      await _prefs.setInt(AppConstants.selectedSchoolIdKeyFor(userId), schoolId);
+    }
     await _prefs.setInt(AppConstants.selectedSchoolIdKey, schoolId);
   }
 
   Future<int?> getSelectedSchool() async {
     await ensureInitialized();
+    final userId = await getCurrentUserId();
+    if (userId != null) {
+      final scoped = _prefs.getInt(AppConstants.selectedSchoolIdKeyFor(userId));
+      if (scoped != null) return scoped;
+    }
     return _prefs.getInt(AppConstants.selectedSchoolIdKey);
   }
 
   Future<void> clearSelectedSchool() async {
     await ensureInitialized();
+    final userId = await getCurrentUserId();
+    if (userId != null) {
+      await _prefs.remove(AppConstants.selectedSchoolIdKeyFor(userId));
+    }
     await _prefs.remove(AppConstants.selectedSchoolIdKey);
   }
 

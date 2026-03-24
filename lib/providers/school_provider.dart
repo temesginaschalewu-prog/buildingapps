@@ -240,6 +240,13 @@ class SchoolProvider extends ChangeNotifier
     log('loadSchools() CALL #$callId');
 
     if (isManualRefresh && isOffline) {
+      if (_schools.isNotEmpty) {
+        clearError();
+        _loadError = false;
+        setLoaded();
+        _schoolsUpdateController.add(_schools);
+        return;
+      }
       throw Exception(getUserFriendlyErrorMessage(
           'Network error. Please check your internet connection.'));
     }
@@ -422,6 +429,15 @@ class SchoolProvider extends ChangeNotifier
         _schoolsUpdateController.add(_schools);
         log('✅ Success! Schools loaded');
       } else {
+        if (_schools.isNotEmpty) {
+          clearError();
+          _loadError = false;
+          setLoaded();
+          _schoolsUpdateController.add(_schools);
+          log('⚠️ API refresh failed, keeping cached schools');
+          return;
+        }
+
         setError(getUserFriendlyErrorMessage(response.message));
         _loadError = true;
         setLoaded();
@@ -438,9 +454,15 @@ class SchoolProvider extends ChangeNotifier
         }
       }
     } catch (e) {
-      setError(getUserFriendlyErrorMessage(e));
-      _loadError = true;
-      setLoaded();
+      if (_schools.isNotEmpty) {
+        clearError();
+        _loadError = false;
+        setLoaded();
+      } else {
+        setError(getUserFriendlyErrorMessage(e));
+        _loadError = true;
+        setLoaded();
+      }
       log('❌ Error loading schools: $e');
 
       if (_schools.isEmpty) {
@@ -449,7 +471,7 @@ class SchoolProvider extends ChangeNotifier
 
       _schoolsUpdateController.add(_schools);
 
-      if (isManualRefresh) {
+      if (isManualRefresh && _schools.isEmpty) {
         rethrow;
       }
     } finally {
@@ -600,6 +622,7 @@ class SchoolProvider extends ChangeNotifier
         AppConstants.selectedSchoolKey,
         schoolId,
         ttl: const Duration(days: 365),
+        isUserSpecific: true,
       );
 
       _selectedSchoolController.add(schoolId);
@@ -618,7 +641,10 @@ class SchoolProvider extends ChangeNotifier
     _selectedSchoolId = null;
 
     await _saveSelectedToHive(null);
-    await deviceService.removeCacheItem(AppConstants.selectedSchoolKey);
+    await deviceService.removeCacheItem(
+      AppConstants.selectedSchoolKey,
+      isUserSpecific: true,
+    );
 
     _selectedSchoolController.add(null);
     safeNotify();
@@ -674,7 +700,10 @@ class SchoolProvider extends ChangeNotifier
     if (!session.shouldClearCacheOnLogout()) return;
 
     await deviceService.clearCacheByPrefix('schools');
-    await deviceService.removeCacheItem(AppConstants.selectedSchoolKey);
+    await deviceService.removeCacheItem(
+      AppConstants.selectedSchoolKey,
+      isUserSpecific: true,
+    );
     stopBackgroundRefresh();
     _lastBackgroundRefresh = null;
 

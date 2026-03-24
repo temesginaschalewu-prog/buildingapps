@@ -135,6 +135,26 @@ class ExamQuestionProvider extends ChangeNotifier
     return _questionsByExam[examId] ?? [];
   }
 
+  Future<void> seedExamQuestions(
+    int examId,
+    List<ExamQuestion> questions, {
+    bool notify = true,
+  }) async {
+    _questionsByExam[examId] = questions;
+    _lastLoadedTime[examId] = DateTime.now();
+    _isLoadingExam[examId] = false;
+    setLoaded();
+
+    await _cacheExamQuestions(examId, questions);
+    await _cacheExamQuestionsToHive(examId, questions);
+    await loadSavedAnswersForExam(examId);
+
+    if (notify) {
+      _questionsUpdateController.add({examId: questions});
+      safeNotify();
+    }
+  }
+
   ExamQuestion? getQuestionById(int id) {
     for (final questions in _questionsByExam.values) {
       try {
@@ -715,11 +735,6 @@ class ExamQuestionProvider extends ChangeNotifier
     _examAccessController.add({});
 
     safeNotify();
-  }
-
-  @override
-  void clearError() {
-    super.clearError();
   }
 
   @override

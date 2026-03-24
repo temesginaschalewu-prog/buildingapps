@@ -79,6 +79,7 @@ class UserProvider extends ChangeNotifier
         email: data['email'],
         phone: data['phone'],
         profileImage: data['profileImage'],
+        schoolId: data['schoolId'],
       );
 
       if (response.success) {
@@ -154,9 +155,11 @@ class UserProvider extends ChangeNotifier
       // If no Hive data, try DeviceService
       if (_currentUser == null) {
         log('Trying DeviceService for user');
-        final cachedUser =
-            await deviceService.getCacheItem<Map<String, dynamic>>(
-          'user_profile',
+        final cacheKey = _currentUserId != null
+            ? AppConstants.userProfileKey(_currentUserId!)
+            : 'user_profile';
+        final cachedUser = await deviceService.getCacheItem<Map<String, dynamic>>(
+          cacheKey,
           isUserSpecific: true,
         );
         if (cachedUser != null) {
@@ -556,6 +559,7 @@ class UserProvider extends ChangeNotifier
     String? email,
     String? phone,
     String? profileImage,
+    int? schoolId,
   }) async {
     log('updateProfile()');
 
@@ -568,6 +572,7 @@ class UserProvider extends ChangeNotifier
           email: email,
           phone: phone,
           profileImage: profileImage,
+          schoolId: schoolId,
         );
         setLoaded();
         return ApiResponse<Map<String, dynamic>>(
@@ -582,6 +587,7 @@ class UserProvider extends ChangeNotifier
         email: email,
         phone: phone,
         profileImage: profileImage,
+        schoolId: schoolId,
       )
           .timeout(
         const Duration(seconds: 15),
@@ -628,7 +634,7 @@ class UserProvider extends ChangeNotifier
       setError(getUserFriendlyErrorMessage(e));
       log('❌ Profile update error: $e');
 
-      String errorMessage = getUserFriendlyErrorMessage(e);
+      final String errorMessage = getUserFriendlyErrorMessage(e);
 
       return ApiResponse<Map<String, dynamic>>(
         success: false,
@@ -641,6 +647,7 @@ class UserProvider extends ChangeNotifier
     String? email,
     String? phone,
     String? profileImage,
+    int? schoolId,
   }) async {
     try {
       final userId = await UserSession().getCurrentUserId();
@@ -652,6 +659,7 @@ class UserProvider extends ChangeNotifier
           'email': email,
           'phone': phone,
           'profileImage': profileImage,
+          'schoolId': schoolId,
           'userId': userId,
           'timestamp': DateTime.now().toIso8601String(),
         },

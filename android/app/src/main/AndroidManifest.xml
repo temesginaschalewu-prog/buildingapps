@@ -141,7 +141,8 @@
         <service
             android:name="androidx.work.impl.background.systemjob.SystemJobService"
             android:permission="android.permission.BIND_JOB_SERVICE"
-            android:exported="false" />
+            android:exported="false"
+            tools:replace="android:exported" />
 
     </application>
 

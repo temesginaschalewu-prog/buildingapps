@@ -46,6 +46,7 @@ class ExamProvider extends ChangeNotifier
 
   Box? _examsBox;
   Box? _resultsBox;
+  String? _activeUserId;
 
   int _apiCallCount = 0;
 
@@ -112,6 +113,7 @@ class ExamProvider extends ChangeNotifier
   Future<void> _init() async {
     log('_init() START');
     await _openHiveBoxes();
+    await _ensureCurrentUserScope();
     await _loadCachedData();
 
     if (_hasLoadedExams || _hasLoadedResults) {
@@ -142,9 +144,41 @@ class ExamProvider extends ChangeNotifier
     }
   }
 
+  Future<String?> _ensureCurrentUserScope() async {
+    final userId = await UserSession().getCurrentUserId();
+    if (_activeUserId == userId) return userId;
+
+    log('🔄 ExamProvider user scope changed: $_activeUserId -> $userId');
+    _activeUserId = userId;
+    _resetInMemoryState();
+    return userId;
+  }
+
+  void _resetInMemoryState() {
+    stopBackgroundRefresh();
+    _availableExams = [];
+    _myExamResults = [];
+    _examsByCourse = {};
+    _isLoadingForCourse.clear();
+    _hasLoadedForCourse.clear();
+    _hasLoadedExams = false;
+    _hasLoadedResults = false;
+    _lastBackgroundRefreshForCourse.clear();
+    _lastResultsBackgroundRefresh = null;
+
+    if (!_examsUpdateController.isClosed) {
+      _examsUpdateController.add(_availableExams);
+    }
+    if (!_resultsUpdateController.isClosed) {
+      _resultsUpdateController.add(_myExamResults);
+    }
+
+    safeNotify();
+  }
+
   Future<void> _loadCachedData() async {
     try {
-      final userId = await UserSession().getCurrentUserId();
+      final userId = await _ensureCurrentUserScope();
       if (userId == null) return;
 
       if (_examsBox != null) {
@@ -260,6 +294,7 @@ class ExamProvider extends ChangeNotifier
     bool forceRefresh = false,
     bool isManualRefresh = false,
   }) async {
+    await _ensureCurrentUserScope();
     _apiCallCount++;
     final callId = _apiCallCount;
 
@@ -492,6 +527,7 @@ class ExamProvider extends ChangeNotifier
     bool forceRefresh = false,
     bool isManualRefresh = false,
   }) async {
+    await _ensureCurrentUserScope();
     _apiCallCount++;
     final callId = _apiCallCount;
 
@@ -700,6 +736,7 @@ class ExamProvider extends ChangeNotifier
   // ===== EXAM SUBMISSION METHODS =====
   Future<ApiResponse<Map<String, dynamic>>> startExam(int examId) async {
     log('startExam() for exam $examId');
+    await _ensureCurrentUserScope();
 
     // ✅ FIXED: Early connectivity check
     if (isOffline) {
@@ -724,6 +761,7 @@ class ExamProvider extends ChangeNotifier
   Future<ApiResponse<Map<String, dynamic>>> submitExam(
       int examResultId, List<Map<String, dynamic>> answers) async {
     log('submitExam() for result $examResultId');
+    await _ensureCurrentUserScope();
 
     // ✅ FIXED: Handle offline with queue
     if (isOffline) {
@@ -760,6 +798,7 @@ class ExamProvider extends ChangeNotifier
   Future<ApiResponse<Map<String, dynamic>>> saveExamProgress(
       int examResultId, List<Map<String, dynamic>> answers) async {
     log('saveExamProgress() for result $examResultId');
+    await _ensureCurrentUserScope();
 
     // ✅ FIXED: Handle offline with queue
     if (isOffline) {
@@ -797,7 +836,7 @@ class ExamProvider extends ChangeNotifier
   }
 
   // ✅ FIXED: Background refresh with rate limiting
-  Map<dynamic, dynamic> _lastBackgroundRefreshForCourse = {};
+  final Map<dynamic, dynamic> _lastBackgroundRefreshForCourse = {};
   static const Duration _minBackgroundInterval = Duration(minutes: 2);
 
   Future<void> _refreshCourseExamsInBackground(int courseId) async {
@@ -985,6 +1024,7 @@ class ExamProvider extends ChangeNotifier
   Future<void> clearUserData() async {
     final session = UserSession();
     if (!session.shouldClearCacheOnLogout()) return;
+    _activeUserId = null;
 
     final userId = await session.getCurrentUserId();
     if (userId != null) {
@@ -1019,11 +1059,6 @@ class ExamProvider extends ChangeNotifier
     _resultsUpdateController.add([]);
 
     safeNotify();
-  }
-
-  @override
-  void clearError() {
-    super.clearError();
   }
 
   @override

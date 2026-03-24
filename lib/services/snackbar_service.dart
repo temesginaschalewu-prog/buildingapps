@@ -1,6 +1,3 @@
-// lib/services/snackbar_service.dart
-// COMPLETE PRODUCTION-READY FILE - FIXED MESSAGE DEDUPLICATION
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../themes/app_colors.dart';
@@ -39,9 +36,7 @@ class SnackbarService {
 
     // ✅ FIXED: Clean up old messages periodically
     _messageCleanupTimer?.cancel();
-    _messageCleanupTimer = Timer(_messageDedupeDuration, () {
-      _recentMessages.clear();
-    });
+    _messageCleanupTimer = Timer(_messageDedupeDuration, _recentMessages.clear);
 
     // Don't try to show if context isn't mounted
     if (!context.mounted) return;

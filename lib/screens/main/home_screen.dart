@@ -1,6 +1,3 @@
-// lib/screens/main/home_screen.dart
-// PRODUCTION STANDARD - NO SHIMMER WHEN CACHED DATA EXISTS
-
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -25,8 +22,6 @@ class _HomeScreenState extends State<HomeScreen>
   late CategoryProvider _categoryProvider;
   late PaymentProvider _paymentProvider;
   late SubscriptionProvider _subscriptionProvider;
-  final Map<int, bool> _categorySubscriptionCache = {};
-  final Map<int, bool> _categoryPendingPaymentCache = {};
   String _greeting = '';
 
   @override
@@ -68,6 +63,7 @@ class _HomeScreenState extends State<HomeScreen>
     // ✅ Listen for category changes to update UI automatically
     _categoryProvider.addListener(_onCategoryChange);
     _paymentProvider.addListener(_onPaymentChange);
+    _subscriptionProvider.addListener(_onSubscriptionChange);
 
     // ✅ Ensure UI updates after first frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -84,7 +80,12 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   void _onPaymentChange() {
-    _categoryPendingPaymentCache.clear();
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _onSubscriptionChange() {
     if (mounted) {
       setState(() {});
     }
@@ -94,17 +95,18 @@ class _HomeScreenState extends State<HomeScreen>
   void dispose() {
     _categoryProvider.removeListener(_onCategoryChange);
     _paymentProvider.removeListener(_onPaymentChange);
+    _subscriptionProvider.removeListener(_onSubscriptionChange);
     super.dispose();
   }
 
   void _setGreeting() {
     final hour = DateTime.now().hour;
     if (hour < 12) {
-      _greeting = 'Good Morning';
+      _greeting = 'Good morning';
     } else if (hour < 17) {
-      _greeting = 'Good Afternoon';
+      _greeting = 'Good afternoon';
     } else {
-      _greeting = 'Good Evening';
+      _greeting = 'Good evening';
     }
   }
 
@@ -118,34 +120,27 @@ class _HomeScreenState extends State<HomeScreen>
     final activeCategories = _categoryProvider.activeCategories;
     if (activeCategories.isNotEmpty) {
       final categoryIds = activeCategories.map((c) => c.id).toList();
-      final results = await _subscriptionProvider
-          .checkSubscriptionsForCategories(categoryIds);
-      if (isMounted) {
-        setState(() => _categorySubscriptionCache.addAll(results));
-      }
+      await _subscriptionProvider.checkSubscriptionsForCategories(categoryIds);
+      if (isMounted) setState(() {});
     }
   }
 
   bool _getCategorySubscriptionStatus(int categoryId) {
-    if (_categorySubscriptionCache.containsKey(categoryId)) {
-      return _categorySubscriptionCache[categoryId]!;
+    final categoryProviderStatus =
+        _categoryProvider.getCategorySubscriptionStatus(categoryId);
+    if (categoryProviderStatus) {
+      return true;
     }
-    final status =
-        _subscriptionProvider.hasActiveSubscriptionForCategory(categoryId);
-    _categorySubscriptionCache[categoryId] = status;
-    return status;
+    return _subscriptionProvider.hasActiveSubscriptionForCategory(categoryId);
   }
 
   bool _getCategoryPendingPaymentStatus(int categoryId) {
-    if (_categoryPendingPaymentCache.containsKey(categoryId)) {
-      return _categoryPendingPaymentCache[categoryId]!;
+    if (_getCategorySubscriptionStatus(categoryId)) {
+      return false;
     }
-
-    final status = _paymentProvider
+    return _paymentProvider
         .getPendingPayments()
         .any((payment) => payment.categoryId == categoryId);
-    _categoryPendingPaymentCache[categoryId] = status;
-    return status;
   }
 
   @override
@@ -166,37 +161,6 @@ class _HomeScreenState extends State<HomeScreen>
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
-        if (isOffline && pendingCount > 0)
-          SliverToBoxAdapter(
-            child: Container(
-              margin: const EdgeInsets.all(8),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    AppColors.info.withValues(alpha: 0.2),
-                    AppColors.info.withValues(alpha: 0.1)
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(12),
-                border:
-                    Border.all(color: AppColors.info.withValues(alpha: 0.3)),
-              ),
-                child: Row(
-                  children: [
-                  const Icon(Icons.schedule_rounded,
-                      color: AppColors.info, size: 20),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '$pendingCount pending change${pendingCount > 1 ? 's' : ''}',
-                      style: const TextStyle(color: AppColors.info),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
         if (shouldShowEmpty)
           SliverFillRemaining(
             child: buildEmptyWidget(
@@ -209,13 +173,15 @@ class _HomeScreenState extends State<HomeScreen>
           if (activeCategories.isNotEmpty) ...[
             SliverPadding(
               padding: EdgeInsets.symmetric(
-                  horizontal: ResponsiveValues.spacingS(context)),
+                  horizontal:
+                      ResponsiveValues.homeGridHorizontalPadding(context)),
               sliver: SliverGrid(
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: columns,
                   crossAxisSpacing: ResponsiveValues.gridSpacing(context),
                   mainAxisSpacing: ResponsiveValues.gridRunSpacing(context),
-                  childAspectRatio: 0.7,
+                  childAspectRatio:
+                      ResponsiveValues.homeCategoryGridAspectRatio(context),
                 ),
                 delegate: SliverChildBuilderDelegate(
                   (context, index) {
@@ -244,28 +210,42 @@ class _HomeScreenState extends State<HomeScreen>
           if (comingSoonCategories.isNotEmpty) ...[
             SliverPadding(
               padding: EdgeInsets.symmetric(
-                horizontal: ResponsiveValues.spacingS(context),
+                horizontal: ResponsiveValues.homeGridHorizontalPadding(context),
                 vertical: ResponsiveValues.spacingM(context),
               ),
               sliver: SliverToBoxAdapter(
-                child: Text(
-                  'Coming Soon',
-                  style: AppTextStyles.titleMedium(context).copyWith(
-                    color: AppColors.telegramOrange,
-                    fontWeight: FontWeight.w600,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Coming Soon',
+                      style: AppTextStyles.titleMedium(context).copyWith(
+                        color: AppColors.telegramOrange,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    SizedBox(height: ResponsiveValues.spacingXS(context)),
+                    Text(
+                      'A preview of categories that will open soon.',
+                      style: AppTextStyles.bodySmall(context).copyWith(
+                        color: AppColors.getTextSecondary(context),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
             SliverPadding(
               padding: EdgeInsets.symmetric(
-                  horizontal: ResponsiveValues.spacingS(context)),
+                  horizontal:
+                      ResponsiveValues.homeGridHorizontalPadding(context)),
               sliver: SliverGrid(
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: columns,
                   crossAxisSpacing: ResponsiveValues.gridSpacing(context),
                   mainAxisSpacing: ResponsiveValues.gridRunSpacing(context),
-                  childAspectRatio: 0.7,
+                  childAspectRatio:
+                      ResponsiveValues.homeCategoryGridAspectRatio(context),
                 ),
                 delegate: SliverChildBuilderDelegate(
                   (context, index) {

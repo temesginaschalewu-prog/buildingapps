@@ -751,11 +751,6 @@ class NoteProvider extends ChangeNotifier
   }
 
   @override
-  void clearError() {
-    super.clearError();
-  }
-
-  @override
   void dispose() {
     stopBackgroundRefresh();
     _noteUpdateController.close();

@@ -2,10 +2,8 @@
 // PRODUCTION-READY FINAL VERSION - INCREASED TIMEOUT TO 20 SECONDS
 
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hive/hive.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
@@ -255,6 +253,12 @@ class PaymentProvider extends ChangeNotifier
     log('loadPayments() CALL #$callId');
 
     if (isManualRefresh && isOffline) {
+      if (_payments.isNotEmpty) {
+        clearError();
+        _paymentsUpdateController.add(_payments);
+        setLoaded();
+        return;
+      }
       throw Exception(getUserFriendlyErrorMessage(
           'Network error. Please check your internet connection.'));
     }
@@ -416,6 +420,14 @@ class PaymentProvider extends ChangeNotifier
         _paymentsUpdateController.add(_payments);
         log('✅ Success! Payments loaded');
       } else {
+        if (_payments.isNotEmpty) {
+          clearError();
+          log('⚠️ API refresh failed, keeping cached payments');
+          setLoaded();
+          _paymentsUpdateController.add(_payments);
+          return;
+        }
+
         setError(getUserFriendlyErrorMessage(response.message));
         log('❌ API error: ${response.message}');
         setLoaded();
@@ -424,19 +436,21 @@ class PaymentProvider extends ChangeNotifier
           throw Exception(response.message);
         }
       }
-    } catch (e, stackTrace) {
+    } catch (e) {
       log('❌ Error loading payments: $e');
 
-      setError(getUserFriendlyErrorMessage(e));
-      setLoaded();
-
       if (_payments.isEmpty) {
+        setError(getUserFriendlyErrorMessage(e));
+        setLoaded();
         await _recoverFromCache();
+      } else {
+        clearError();
+        setLoaded();
       }
 
       _paymentsUpdateController.add(_payments);
 
-      if (isManualRefresh) {
+      if (isManualRefresh && _payments.isEmpty) {
         rethrow;
       }
     } finally {
@@ -466,7 +480,6 @@ class PaymentProvider extends ChangeNotifier
           return ApiResponse<List<Payment>>(
             success: false,
             message: 'Timeout',
-            data: null,
           );
         },
       );
@@ -699,11 +712,6 @@ class PaymentProvider extends ChangeNotifier
     _paymentsUpdateController.add(_payments);
 
     safeNotify();
-  }
-
-  @override
-  void clearError() {
-    super.clearError();
   }
 
   @override

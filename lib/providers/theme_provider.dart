@@ -7,7 +7,6 @@ import 'package:hive/hive.dart';
 import '../utils/constants.dart';
 import '../themes/app_themes.dart';
 import '../services/connectivity_service.dart';
-import '../utils/helpers.dart';
 import 'base_provider.dart';
 
 /// PRODUCTION-READY Theme Provider

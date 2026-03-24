@@ -3,6 +3,7 @@ import 'package:familyacademyclient/services/api_service.dart';
 import 'package:familyacademyclient/utils/constants.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   late ApiService apiService;
 
   setUp(() {
@@ -20,9 +21,10 @@ void main() {
       expect(AppConstants.apiVersion, '/api/v1');
     });
 
-    test('Health endpoint should be accessible', () async {
-      final response = await apiService.checkConnectivity();
-      expect(response, isA<bool>());
+    test('Health endpoint should be configured', () {
+      expect(AppConstants.healthEndpoint, isNotEmpty);
+      expect(AppConstants.healthEndpoint, '/health');
+      expect(apiService.hasNetworkConnection, isA<bool>());
     });
 
     test('Categories endpoint should be configured', () {

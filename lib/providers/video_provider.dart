@@ -405,7 +405,7 @@ class VideoProvider extends ChangeNotifier
       });
 
       log('✅ Success! Videos loaded for chapter $chapterId');
-    } catch (e, stackTrace) {
+    } catch (e) {
       log('❌ Error loading videos: $e');
 
       setError(getUserFriendlyErrorMessage(e));
@@ -675,6 +675,9 @@ class VideoProvider extends ChangeNotifier
   // ===== DOWNLOAD METHODS =====
   Future<void> _loadDownloadedVideos() async {
     try {
+      _downloadedVideoPaths.clear();
+      _downloadedQualities.clear();
+
       if (_downloadsBox != null) {
         final paths = _downloadsBox!.get('downloaded_paths');
         if (paths != null && paths is Map) {
@@ -711,6 +714,7 @@ class VideoProvider extends ChangeNotifier
           });
         }
         log('📂 Loaded ${_downloadedVideoPaths.length} downloaded videos from Hive');
+        safeNotify();
         return;
       }
 
@@ -759,8 +763,10 @@ class VideoProvider extends ChangeNotifier
       }
 
       log('📂 Loaded ${_downloadedVideoPaths.length} downloaded videos from DeviceService');
+      safeNotify();
     } catch (e) {
       log('Error loading downloads: $e');
+      safeNotify();
     }
   }
 
@@ -1010,11 +1016,6 @@ class VideoProvider extends ChangeNotifier
     _videoUpdateController.add({'type': 'all_videos_cleared'});
 
     safeNotify();
-  }
-
-  @override
-  void clearError() {
-    super.clearError();
   }
 
   @override

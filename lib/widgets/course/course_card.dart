@@ -64,17 +64,9 @@ class CourseCard extends StatelessWidget {
                   width: ResponsiveValues.iconSizeXXL(context),
                   height: ResponsiveValues.iconSizeXXL(context),
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: hasFullAccess
-                          ? [
-                              AppColors.telegramGreen.withValues(alpha: 0.2),
-                              AppColors.telegramGreen.withValues(alpha: 0.1)
-                            ]
-                          : [
-                              AppColors.telegramBlue.withValues(alpha: 0.2),
-                              AppColors.telegramPurple.withValues(alpha: 0.1)
-                            ],
-                    ),
+                    color: hasFullAccess
+                        ? AppColors.telegramGreen.withValues(alpha: 0.09)
+                        : AppColors.telegramBlue.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(
                         ResponsiveValues.radiusLarge(context)),
                   ),
@@ -95,7 +87,7 @@ class CourseCard extends StatelessWidget {
                       Text(
                         course.name,
                         style: AppTextStyles.titleMedium(context)
-                            .copyWith(fontWeight: FontWeight.w600),
+                            .copyWith(fontWeight: FontWeight.w700),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -121,7 +113,7 @@ class CourseCard extends StatelessWidget {
                               vertical: ResponsiveValues.spacingXXS(context),
                             ),
                             decoration: BoxDecoration(
-                              color: accessColor.withValues(alpha: 0.1),
+                              color: accessColor.withValues(alpha: 0.08),
                               borderRadius: BorderRadius.circular(
                                   ResponsiveValues.radiusFull(context)),
                             ),
@@ -154,7 +146,7 @@ class CourseCard extends StatelessWidget {
                             ),
                             decoration: BoxDecoration(
                               color:
-                                  AppColors.telegramBlue.withValues(alpha: 0.1),
+                                  AppColors.telegramBlue.withValues(alpha: 0.08),
                               borderRadius: BorderRadius.circular(
                                   ResponsiveValues.radiusFull(context)),
                             ),

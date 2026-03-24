@@ -403,7 +403,7 @@ class OfflineQueueManager {
     }
 
     await _saveQueue();
-    processQueue();
+    unawaited(processQueue());
   }
 
   Future<void> clearCompleted() async {

@@ -25,23 +25,10 @@ class NotificationButton extends StatefulWidget {
 }
 
 class _NotificationButtonState extends State<NotificationButton> {
-  StreamSubscription? _connectivitySubscription;
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _refreshUnreadCount());
-    _setupConnectivityListener();
-  }
-
-  void _setupConnectivityListener() {
-    final connectivityService = context.read<ConnectivityService>();
-    _connectivitySubscription =
-        connectivityService.onConnectivityChanged.listen((_) {
-      if (mounted) {
-        setState(() {});
-      }
-    });
   }
 
   Future<void> _refreshUnreadCount() async {
@@ -53,7 +40,6 @@ class _NotificationButtonState extends State<NotificationButton> {
 
   @override
   void dispose() {
-    _connectivitySubscription?.cancel();
     super.dispose();
   }
 
@@ -62,7 +48,6 @@ class _NotificationButtonState extends State<NotificationButton> {
     return Consumer2<NotificationProvider, ConnectivityService>(
       builder: (context, provider, connectivity, child) {
         final unreadCount = provider.unreadCount;
-        final isOffline = !connectivity.isOnline;
         final buttonSize =
             widget.size ?? ResponsiveValues.appBarButtonSize(context);
 
@@ -70,7 +55,7 @@ class _NotificationButtonState extends State<NotificationButton> {
           width: buttonSize,
           height: buttonSize,
           decoration: BoxDecoration(
-            color: AppColors.getSurface(context).withValues(alpha: 0.15),
+            color: AppColors.getSurface(context).withValues(alpha: 0.12),
             borderRadius:
                 BorderRadius.circular(ResponsiveValues.radiusFull(context) / 2),
           ),
@@ -82,12 +67,10 @@ class _NotificationButtonState extends State<NotificationButton> {
               child: InkWell(
                 onTap: widget.onTap ??
                     () async {
-                      // Always load from cache first, refresh in background if online
-                      await provider.loadNotifications();
                       if (!mounted) return;
+                      unawaited(provider.loadNotifications());
                       if (context.mounted) {
-                        await GoRouter.of(context).push('/notifications');
-                        if (!mounted) return;
+                        await context.push('/notifications');
                       }
                     },
                 borderRadius: BorderRadius.circular(
@@ -111,30 +94,22 @@ class _NotificationButtonState extends State<NotificationButton> {
                             ),
                           ),
                           badgeStyle: badges.BadgeStyle(
-                            badgeColor: isOffline
-                                ? AppColors.warning
-                                : AppColors.telegramRed,
+                            badgeColor: AppColors.telegramRed,
                             padding: EdgeInsets.all(
                                 ResponsiveValues.spacingXXS(context)),
                           ),
                           child: Icon(
                             Icons.notifications_outlined,
                             size: ResponsiveValues.appBarIconSize(context),
-                            color: widget.iconColor ??
-                                (isOffline
-                                    ? AppColors.warning
-                                    : AppColors.getTextPrimary(context)),
+                            color:
+                                widget.iconColor ?? AppColors.getTextPrimary(context),
                           ),
                         )
                       : Icon(
-                          isOffline
-                              ? Icons.wifi_off_rounded
-                              : Icons.notifications_outlined,
+                          Icons.notifications_outlined,
                           size: ResponsiveValues.appBarIconSize(context),
-                          color: widget.iconColor ??
-                              (isOffline
-                                  ? AppColors.warning
-                                  : AppColors.getTextPrimary(context)),
+                          color:
+                              widget.iconColor ?? AppColors.getTextPrimary(context),
                         ),
                 ),
               ),

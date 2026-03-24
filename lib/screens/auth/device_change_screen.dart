@@ -19,6 +19,7 @@ import '../../widgets/common/app_dialog.dart';
 import '../../widgets/common/app_shimmer.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/device_provider.dart';
+import '../../providers/settings_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../providers/category_provider.dart';
 import '../../themes/app_colors.dart';
@@ -26,6 +27,7 @@ import '../../themes/app_text_styles.dart';
 import '../../utils/responsive_values.dart' hide EmptyStateType;
 import '../../utils/helpers.dart';
 import '../../utils/api_response.dart';
+import '../../utils/constants.dart';
 import '../../utils/router.dart';
 
 class DeviceChangeScreen extends StatefulWidget {
@@ -51,17 +53,17 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
   late String _username;
   late String _deviceId;
   late String _currentDeviceId;
-  late int _maxChanges;
   late bool _canChangeDevice;
 
   late AnimationController _pulseAnimationController;
   late AuthProvider _authProvider;
   late DeviceProvider _deviceProvider;
+  late SettingsProvider _settingsProvider;
   late SubscriptionProvider _subscriptionProvider;
   late CategoryProvider _categoryProvider;
 
   @override
-  String get screenTitle => 'Device Change';
+  String get screenTitle => 'Approve new device';
 
   @override
   String? get screenSubtitle => null;
@@ -96,6 +98,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
     super.didChangeDependencies();
     _authProvider = Provider.of<AuthProvider>(context);
     _deviceProvider = Provider.of<DeviceProvider>(context);
+    _settingsProvider = Provider.of<SettingsProvider>(context);
     _subscriptionProvider = Provider.of<SubscriptionProvider>(context);
     _categoryProvider = Provider.of<CategoryProvider>(context);
   }
@@ -182,9 +185,6 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
         args['deviceId']?.toString() ??
         args['data']?['newDeviceId']?.toString() ??
         '';
-
-    _maxChanges =
-        args['maxChanges'] as int? ?? args['data']?['maxChanges'] as int? ?? 2;
 
     _canChangeDevice = args['canChangeDevice'] as bool? ??
         args['data']?['canChangeDevice'] as bool? ??
@@ -281,8 +281,10 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
             } catch (e) {}
 
             if (isMounted) {
-              SnackbarService()
-                  .showError(context, 'Invalid device change request');
+              SnackbarService().showError(
+                context,
+                AppStrings.invalidDeviceChangeRequest,
+              );
               context.go('/auth/login');
             }
           }
@@ -310,7 +312,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
 
   String? _validatePassword(String? value) {
     if (value == null || value.isEmpty) {
-      return 'Password is required to confirm device change';
+      return AppStrings.passwordRequiredForDeviceChange;
     }
     return null;
   }
@@ -318,19 +320,22 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
   Future<void> _approveDeviceChange() async {
     if (!_formKey.currentState!.validate()) return;
     if (!_confirmChange) {
-      SnackbarService().showError(context, 'Please confirm the device change');
+      SnackbarService().showError(
+        context,
+        AppStrings.confirmDeviceChangePrompt,
+      );
       return;
     }
     if (!_canChangeDevice) {
       SnackbarService().showError(
         context,
-        'You have reached the maximum device changes ($_maxChanges per month)',
+        _settingsProvider.getDeviceChangeLimitMessage(),
       );
       return;
     }
 
     if (isOffline) {
-      SnackbarService().showOffline(context, action: 'change device');
+      SnackbarService().showOffline(context, action: 'approve device');
       return;
     }
 
@@ -354,7 +359,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
             debugLog(
                 'DeviceChangeScreen', 'Have userId but no username: $userId');
           }
-          throw ApiError(message: 'Username not found. Please login again.');
+          throw ApiError(message: AppStrings.usernameNotFoundLoginAgain);
         }
       }
 
@@ -421,8 +426,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
       String errorMessage;
       if (e is ApiError) {
         if (e.action == 'max_device_changes_reached') {
-          errorMessage =
-              'Maximum device changes (2 per month) reached. Please contact support.';
+          errorMessage = _settingsProvider.getDeviceChangeLimitMessage();
         } else if (e.statusCode == 403) {
           errorMessage = 'Access denied. Please check your password.';
         } else {
@@ -446,11 +450,11 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
   void _cancelDeviceChange() {
     AppDialog.confirm(
       context: context,
-      title: 'Cancel Device Change',
+      title: 'Cancel device approval',
       message:
-          'Are you sure you want to cancel? You will not be able to login on this device.',
-      confirmText: 'Yes, Cancel',
-      cancelText: 'No, Stay',
+          'Are you sure you want to cancel? You will need to sign in again before using this device.',
+      confirmText: 'Yes, cancel',
+      cancelText: 'Stay here',
     ).then((confirmed) {
       if (confirmed == true && isMounted) {
         _authProvider.clearDeviceChangeRequirement();
@@ -473,19 +477,25 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
           ),
         ),
         Expanded(
-          child: AppCard.glass(
-            child: Container(
-              padding: EdgeInsets.all(ResponsiveValues.spacingS(context)),
-              child: Text(
-                value.isNotEmpty
-                    ? value.substring(
-                            0, value.length > 30 ? 30 : value.length) +
-                        (value.length > 30 ? '...' : '')
-                    : 'Not available',
-                style: AppTextStyles.bodySmall(context).copyWith(
-                  fontFamily: Platform.isIOS ? 'Courier' : 'monospace',
-                  fontWeight: FontWeight.w600,
-                ),
+          child: Container(
+            padding: EdgeInsets.all(ResponsiveValues.spacingS(context)),
+            decoration: BoxDecoration(
+              color: AppColors.getSurface(context).withValues(alpha: 0.55),
+              borderRadius: BorderRadius.circular(
+                ResponsiveValues.radiusMedium(context),
+              ),
+            ),
+            child: Text(
+              value.isNotEmpty
+                  ? value.substring(
+                          0,
+                          value.length > 30 ? 30 : value.length,
+                        ) +
+                      (value.length > 30 ? '...' : '')
+                  : 'Not available',
+              style: AppTextStyles.bodySmall(context).copyWith(
+                fontFamily: Platform.isIOS ? 'Courier' : 'monospace',
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
@@ -497,51 +507,39 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
   Widget _buildWarningBanner() {
     return AppCard.glass(
       child: Padding(
-        padding: EdgeInsets.all(ResponsiveValues.spacingXL(context)),
+        padding: ResponsiveValues.cardPadding(context),
         child: Row(
           children: [
-            AnimatedBuilder(
-              animation: _pulseAnimationController,
-              builder: (context, child) {
-                return Transform.scale(
-                  scale: 1 + _pulseAnimationController.value * 0.1,
-                  child: Container(
-                    padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          AppColors.telegramYellow.withValues(alpha: 0.2),
-                          AppColors.telegramYellow.withValues(alpha: 0.1),
-                        ],
-                      ),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      Icons.warning_rounded,
-                      size: ResponsiveValues.iconSizeXL(context),
-                      color: AppColors.telegramYellow,
-                    ),
-                  ),
-                );
-              },
+            Container(
+              width: ResponsiveValues.iconSizeXL(context),
+              height: ResponsiveValues.iconSizeXL(context),
+              decoration: BoxDecoration(
+                color: AppColors.telegramYellow.withValues(alpha: 0.10),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.warning_rounded,
+                size: ResponsiveValues.iconSizeS(context),
+                color: AppColors.telegramYellow,
+              ),
             ),
-            SizedBox(width: ResponsiveValues.spacingXL(context)),
+            SizedBox(width: ResponsiveValues.spacingL(context)),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'New Device Detected',
-                    style: AppTextStyles.headlineSmall(context).copyWith(
-                      color: AppColors.telegramYellow,
-                      fontWeight: FontWeight.w600,
+                    'New device detected',
+                    style: AppTextStyles.titleMedium(context).copyWith(
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                  SizedBox(height: ResponsiveValues.spacingS(context)),
+                  SizedBox(height: ResponsiveValues.spacingXS(context)),
                   Text(
-                    'You are logging in from a new device. Your old device will be blocked after this change.',
-                    style: AppTextStyles.bodyLarge(context).copyWith(
-                      color: AppColors.telegramYellow,
+                    'Approve this only if you recognize the device. Your old device will stop accessing this account after the change.',
+                    style: AppTextStyles.bodyMedium(context).copyWith(
+                      color: AppColors.getTextSecondary(context),
+                      height: 1.45,
                     ),
                   ),
                 ],
@@ -627,16 +625,16 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
               child: RichText(
                 text: TextSpan(
                   style: AppTextStyles.bodyMedium(context),
-                  children: const [
-                    TextSpan(text: 'I understand that: '),
-                    TextSpan(
+                  children: [
+                    const TextSpan(text: 'I understand that: '),
+                    const TextSpan(
                       text: 'my old device will be blocked, ',
                       style: TextStyle(fontWeight: FontWeight.w600),
                     ),
-                    TextSpan(text: 'and I can only change devices '),
+                    const TextSpan(text: 'and I can only change devices '),
                     TextSpan(
-                      text: '2 times per month.',
-                      style: TextStyle(fontWeight: FontWeight.w600),
+                      text: _settingsProvider.getDeviceChangeLimitSummary(),
+                      style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                   ],
                 ),
@@ -669,7 +667,10 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
                   isLoading: _isLoading,
                   expanded: true,
                 )
-              : const AppButton.danger(label: 'Cannot Change', expanded: true),
+              : const AppButton.danger(
+                  label: 'Change unavailable',
+                  expanded: true,
+                ),
         ),
       ],
     );
@@ -689,7 +690,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
             SizedBox(width: ResponsiveValues.spacingM(context)),
             Expanded(
               child: Text(
-                'Device changes are limited to 2 per month for security reasons.',
+                _settingsProvider.getDeviceChangeLimitMessage(),
                 style: AppTextStyles.bodySmall(context).copyWith(
                   fontStyle: FontStyle.italic,
                 ),
@@ -707,12 +708,10 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
       return Center(
         child: AppEmptyState(
           icon: Icons.wifi_off_rounded,
-          title: 'Offline',
-          message: 'You are offline. Please connect to complete device change.',
-          actionText: 'Retry',
-          onAction: () {
-            setState(() => isOffline); // Will be updated by base mixin
-          },
+          title: 'You are offline',
+          message: AppStrings.offlineCompleteDeviceChange,
+          actionText: 'Try again',
+          onAction: _initializeArgs,
           pendingCount: pendingCount,
           type: EmptyStateType.offline,
         ),
@@ -730,7 +729,7 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
                 const AppShimmer(type: ShimmerType.circle),
                 const SizedBox(height: 16),
                 Text(
-                  'Initializing device information...',
+                  AppStrings.initializingDeviceInformation,
                   style: AppTextStyles.bodyMedium(context).copyWith(
                     color: AppColors.getTextSecondary(context),
                   ),
@@ -746,9 +745,9 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
       return Center(
         child: AppEmptyState(
           icon: Icons.error_outline_rounded,
-          title: 'Invalid Request',
-          message: 'No device change data provided.',
-          actionText: 'Go to Login',
+          title: AppStrings.invalidRequest,
+          message: AppStrings.noDeviceChangeDataProvided,
+          actionText: 'Go to sign in',
           onAction: () => context.go('/auth/login'),
           type: EmptyStateType.error,
         ),
@@ -762,6 +761,31 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            AppCard.glass(
+              child: Padding(
+                padding: ResponsiveValues.cardPadding(context),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Approve this device',
+                      style: AppTextStyles.headlineSmall(context).copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    SizedBox(height: ResponsiveValues.spacingXS(context)),
+                    Text(
+                      'Review the new device request, confirm your password, and approve the change only if this device is yours.',
+                      style: AppTextStyles.bodyMedium(context).copyWith(
+                        color: AppColors.getTextSecondary(context),
+                        height: 1.45,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            SizedBox(height: ResponsiveValues.spacingL(context)),
             _buildWarningBanner(),
             SizedBox(height: ResponsiveValues.spacingXL(context)),
             _buildDeviceInfoCard(),

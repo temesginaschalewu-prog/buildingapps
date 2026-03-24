@@ -53,6 +53,7 @@ class ProgressProvider extends ChangeNotifier
 
   Box? _progressBox;
   Box? _statsBox;
+  String? _activeUserId;
 
   int _apiCallCount = 0;
 
@@ -113,6 +114,7 @@ class ProgressProvider extends ChangeNotifier
   Future<void> _init() async {
     log('_init() START');
     await _openHiveBoxes();
+    await _ensureCurrentUserScope();
     await _loadCachedProgress();
 
     if (_hasLoadedOverall || _hasLoadedProgress) {
@@ -140,6 +142,49 @@ class ProgressProvider extends ChangeNotifier
     } catch (e) {
       log('⚠️ Error opening Hive boxes: $e');
     }
+  }
+
+  Future<String?> _ensureCurrentUserScope() async {
+    final userId = await UserSession().getCurrentUserId();
+    if (_activeUserId == userId) return userId;
+
+    log('🔄 ProgressProvider user scope changed: $_activeUserId -> $userId');
+    _activeUserId = userId;
+    _resetInMemoryState();
+    return userId;
+  }
+
+  void _resetInMemoryState() {
+    for (final timer in _saveDebounceTimers.values) {
+      timer.cancel();
+    }
+    _saveDebounceTimers.clear();
+    _pendingSaves.clear();
+
+    stopBackgroundRefresh();
+    _lastBackgroundRefresh = null;
+
+    _userProgress = [];
+    _progressByChapter = {};
+    _overallStats = {};
+    _achievements = [];
+    _recentActivity = [];
+    _streakHistory = [];
+    _hasLoadedOverall = false;
+    _hasLoadedProgress = false;
+    _isLoadingOverall = false;
+
+    if (!_progressUpdateController.isClosed) {
+      _progressUpdateController.add(_userProgress);
+    }
+    if (!_chapterProgressController.isClosed) {
+      _chapterProgressController.add(_progressByChapter);
+    }
+    if (!_overallStatsController.isClosed) {
+      _overallStatsController.add(_overallStats);
+    }
+
+    safeNotify();
   }
 
   // ✅ FIXED: Properly convert any Map type to Map<String, dynamic>
@@ -170,7 +215,7 @@ class ProgressProvider extends ChangeNotifier
 // ✅ FIXED: Complete rewrite with safe casting for ALL data types
   Future<void> _loadCachedProgress() async {
     try {
-      final userId = await UserSession().getCurrentUserId();
+      final userId = await _ensureCurrentUserScope();
       if (userId == null) return;
 
       // Try Hive first
@@ -316,14 +361,20 @@ class ProgressProvider extends ChangeNotifier
   void _parseStatsFromMap() {
     if (_overallStats['achievements'] != null &&
         _overallStats['achievements'] is List) {
-      _achievements = List<Map<String, dynamic>>.from(
-          _overallStats['achievements'] as List);
+      _achievements = (_overallStats['achievements'] as List)
+          .whereType<Map>()
+          .map(_convertToMapString)
+          .where((item) => item.isNotEmpty)
+          .toList();
     }
 
     if (_overallStats['recent_activity'] != null &&
         _overallStats['recent_activity'] is List) {
-      _recentActivity = List<Map<String, dynamic>>.from(
-          _overallStats['recent_activity'] as List);
+      _recentActivity = (_overallStats['recent_activity'] as List)
+          .whereType<Map>()
+          .map(_convertToMapString)
+          .where((item) => item.isNotEmpty)
+          .toList();
     }
 
     if (_overallStats['streak_history'] != null &&
@@ -412,6 +463,7 @@ class ProgressProvider extends ChangeNotifier
 
   Future<void> _loadAllProgressFromApi() async {
     if (isOffline) return;
+    await _ensureCurrentUserScope();
     if (_lastBackgroundRefresh != null &&
         DateTime.now().difference(_lastBackgroundRefresh!) <
             _minBackgroundInterval) {
@@ -447,6 +499,7 @@ class ProgressProvider extends ChangeNotifier
     bool forceRefresh = false,
     bool isManualRefresh = false,
   }) async {
+    await _ensureCurrentUserScope();
     _apiCallCount++;
     final callId = _apiCallCount;
 
@@ -637,7 +690,7 @@ class ProgressProvider extends ChangeNotifier
   Future<bool> _restoreOverallStatsFromCache() async {
     log('Attempting cache recovery for stats');
     try {
-      final userId = await UserSession().getCurrentUserId();
+      final userId = await _ensureCurrentUserScope();
       if (userId != null && _statsBox != null) {
         final dynamic cachedStats = _statsBox!.get('user_${userId}_stats');
         if (cachedStats != null) {
@@ -683,6 +736,7 @@ class ProgressProvider extends ChangeNotifier
     log('saveChapterProgress() for chapter $chapterId');
 
     try {
+      await _ensureCurrentUserScope();
       _saveDebounceTimers[chapterId]?.cancel();
 
       final completer = Completer<void>();
@@ -807,7 +861,7 @@ class ProgressProvider extends ChangeNotifier
 
   Future<void> _markAsPendingSync(int chapterId, UserProgress progress) async {
     try {
-      final userId = await UserSession().getCurrentUserId();
+      final userId = await _ensureCurrentUserScope();
       if (userId == null) return;
 
       offlineQueueManager.addItem(
@@ -852,6 +906,7 @@ class ProgressProvider extends ChangeNotifier
     }
     _saveDebounceTimers.clear();
     _pendingSaves.clear();
+    _activeUserId = null;
 
     final userId = await session.getCurrentUserId();
     if (userId != null) {
@@ -876,6 +931,7 @@ class ProgressProvider extends ChangeNotifier
     _streakHistory = [];
     _hasLoadedOverall = false;
     _hasLoadedProgress = false;
+    _isLoadingOverall = false;
 
     await _progressUpdateController.close();
     await _chapterProgressController.close();
@@ -893,11 +949,6 @@ class ProgressProvider extends ChangeNotifier
     _overallStatsController.add(_overallStats);
 
     safeNotify();
-  }
-
-  @override
-  void clearError() {
-    super.clearError();
   }
 
   @override

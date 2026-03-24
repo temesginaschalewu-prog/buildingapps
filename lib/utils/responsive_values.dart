@@ -383,6 +383,206 @@ class ResponsiveValues {
   static double gridSpacing(BuildContext context) => spacingM(context);
   static double gridRunSpacing(BuildContext context) => spacingM(context);
 
+  static EdgeInsets onboardingHeaderPadding(BuildContext context) {
+    if (ScreenSize.isDesktop(context)) {
+      return const EdgeInsets.fromLTRB(24, 24, 24, 12);
+    }
+    if (ScreenSize.isTablet(context)) {
+      return const EdgeInsets.fromLTRB(20, 20, 20, 12);
+    }
+    return const EdgeInsets.fromLTRB(16, 16, 16, 8);
+  }
+
+  static EdgeInsets onboardingFooterPadding(BuildContext context) {
+    if (ScreenSize.isDesktop(context)) return const EdgeInsets.all(24);
+    if (ScreenSize.isTablet(context)) return const EdgeInsets.all(20);
+    return const EdgeInsets.all(16);
+  }
+
+  static double onboardingListSpacing(BuildContext context) {
+    if (ScreenSize.isDesktop(context)) return 16;
+    if (ScreenSize.isTablet(context)) return 14;
+    return 12;
+  }
+
+  static double schoolSelectionIconContainerSize(BuildContext context) {
+    if (ScreenSize.isDesktop(context)) return 40;
+    if (ScreenSize.isTablet(context)) return 38;
+    return 34;
+  }
+
+  static double schoolSelectionTitleFont(BuildContext context) {
+    return ScreenSize.fontSize(
+      context: context,
+      base: 15,
+      tablet: 16,
+      desktop: 17,
+      largeScreen: 18,
+    );
+  }
+
+  static double supportActionIconContainerSize(BuildContext context) {
+    if (ScreenSize.isDesktop(context)) return 40;
+    if (ScreenSize.isTablet(context)) return 38;
+    return 34;
+  }
+
+  static double featureCardIconContainerSize(BuildContext context) {
+    if (ScreenSize.isDesktop(context)) return 42;
+    if (ScreenSize.isTablet(context)) return 39;
+    return 36;
+  }
+
+  static EdgeInsets sectionLoadingPadding(BuildContext context) {
+    if (ScreenSize.isDesktop(context)) return const EdgeInsets.all(24);
+    if (ScreenSize.isTablet(context)) return const EdgeInsets.all(20);
+    return const EdgeInsets.all(16);
+  }
+
+  static double successStateOuterSize(BuildContext context) {
+    return ScreenSize.responsiveDouble(
+      context: context,
+      mobile: 204,
+      tablet: 238,
+      desktop: 272,
+      largeScreen: 288,
+    );
+  }
+
+  static double sidebarBrandIconContainerSize(BuildContext context) {
+    return ScreenSize.responsiveDouble(
+      context: context,
+      mobile: 36,
+      tablet: 39,
+      desktop: 42,
+      largeScreen: 44,
+    );
+  }
+
+  static double sidebarAvatarSize(BuildContext context) {
+    return ScreenSize.responsiveDouble(
+      context: context,
+      mobile: 56,
+      tablet: 60,
+      desktop: 64,
+      largeScreen: 68,
+    );
+  }
+
+  static double sidebarAvatarInitialsFontSize(BuildContext context) {
+    return ScreenSize.fontSize(
+      context: context,
+      base: 15,
+      tablet: 16,
+      desktop: 17,
+      largeScreen: 18,
+    );
+  }
+
+  static double profileAvatarActionSize(BuildContext context) {
+    return ScreenSize.responsiveDouble(
+      context: context,
+      mobile: 28,
+      tablet: 30,
+      desktop: 32,
+      largeScreen: 34,
+    );
+  }
+
+  static double listItemIconContainerSize(BuildContext context) {
+    return ScreenSize.responsiveDouble(
+      context: context,
+      mobile: 40,
+      tablet: 42,
+      desktop: 44,
+      largeScreen: 46,
+    );
+  }
+
+  static double listItemIconSize(BuildContext context) {
+    return ScreenSize.responsiveDouble(
+      context: context,
+      mobile: 20,
+      tablet: 21,
+      desktop: 22,
+      largeScreen: 24,
+    );
+  }
+
+  static EdgeInsets modalInsetPaddingSmall(BuildContext context) {
+    if (ScreenSize.isDesktop(context)) return const EdgeInsets.all(16);
+    if (ScreenSize.isTablet(context)) return const EdgeInsets.all(12);
+    return const EdgeInsets.all(8);
+  }
+
+  static double modalHandleWidth(BuildContext context) {
+    return ScreenSize.responsiveDouble(
+      context: context,
+      mobile: 40,
+      tablet: 44,
+      desktop: 48,
+      largeScreen: 52,
+    );
+  }
+
+  static double modalHandleHeight(BuildContext context) {
+    return ScreenSize.responsiveDouble(
+      context: context,
+      mobile: 4,
+      tablet: 4,
+      desktop: 5,
+      largeScreen: 5,
+    );
+  }
+
+  static EdgeInsets modalHeaderPadding(BuildContext context) {
+    if (ScreenSize.isDesktop(context)) return const EdgeInsets.all(20);
+    if (ScreenSize.isTablet(context)) return const EdgeInsets.all(18);
+    return const EdgeInsets.all(16);
+  }
+
+  static EdgeInsets mediaOverlayChipPadding(BuildContext context) {
+    if (ScreenSize.isDesktop(context)) {
+      return const EdgeInsets.symmetric(horizontal: 14, vertical: 7);
+    }
+    if (ScreenSize.isTablet(context)) {
+      return const EdgeInsets.symmetric(horizontal: 13, vertical: 6);
+    }
+    return const EdgeInsets.symmetric(horizontal: 12, vertical: 6);
+  }
+
+  static double mediaOverlayChipTextSize(BuildContext context) {
+    return ScreenSize.fontSize(
+      context: context,
+      base: 12,
+      tablet: 12,
+      desktop: 13,
+      largeScreen: 14,
+    );
+  }
+
+  static double selectionSheetLeadingSize(BuildContext context) {
+    return ScreenSize.responsiveDouble(
+      context: context,
+      mobile: 48,
+      tablet: 50,
+      desktop: 52,
+      largeScreen: 56,
+    );
+  }
+
+  static double homeGridHorizontalPadding(BuildContext context) {
+    if (ScreenSize.isDesktop(context)) return 16;
+    if (ScreenSize.isTablet(context)) return 14;
+    return 12;
+  }
+
+  static double homeCategoryGridAspectRatio(BuildContext context) {
+    if (ScreenSize.isDesktop(context)) return 0.74;
+    if (ScreenSize.isTablet(context)) return 0.73;
+    return 0.92;
+  }
+
   static double buttonHeightSmall(BuildContext context) {
     return ScreenSize.responsiveDouble(
         context: context, mobile: 32, tablet: 34, desktop: 36, largeScreen: 38);
@@ -419,13 +619,14 @@ class ResponsiveValues {
   }
 
   static double categoryCardHeight(BuildContext context) {
-    if (ScreenSize.isDesktop(context)) return 220;
-    if (ScreenSize.isMobile(context)) return 240;
-    return 260;
+    if (ScreenSize.isDesktop(context)) return 198;
+    if (ScreenSize.isMobile(context)) return 186;
+    return 204;
   }
 
   static double categoryCardTitleSize(BuildContext context) {
     if (ScreenSize.isDesktop(context)) return 14;
+    if (ScreenSize.isMobile(context)) return 13;
     return fontTitleSmall(context);
   }
 
@@ -436,25 +637,26 @@ class ResponsiveValues {
 
   static double categoryCardBadgeTextSize(BuildContext context) {
     if (ScreenSize.isDesktop(context)) return 10;
+    if (ScreenSize.isMobile(context)) return 8.5;
     return fontOverline(context);
   }
 
   static double categoryCardBadgeIconSize(BuildContext context) {
     if (ScreenSize.isDesktop(context)) return 9;
-    if (ScreenSize.isMobile(context)) return 8;
+    if (ScreenSize.isMobile(context)) return 7.5;
     return 9;
   }
 
   static double categoryCardBadgePadding(BuildContext context) {
     if (ScreenSize.isDesktop(context)) return 5;
-    if (ScreenSize.isMobile(context)) return 4;
+    if (ScreenSize.isMobile(context)) return 3.5;
     return 5;
   }
 
   static double desktopSidebarWidth(BuildContext context) =>
       spacingXXXXL(context) * 8;
   static double tabletSidebarWidth(BuildContext context) =>
-      spacingXXXXL(context) * 6;
+      spacingXXXXL(context) * 7.5;
   static double mobileDrawerWidth(BuildContext context) =>
       ScreenSize.getScreenWidth(context) * 0.7;
 

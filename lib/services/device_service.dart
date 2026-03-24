@@ -1,6 +1,3 @@
-// lib/services/device_service.dart
-// PRODUCTION-READY FINAL VERSION - WITH CACHE PRUNING
-
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
@@ -125,9 +122,7 @@ class DeviceService {
         expiredKeys.add(key);
       }
     });
-    for (final key in expiredKeys) {
-      _memoryCache.remove(key);
-    }
+    expiredKeys.forEach(_memoryCache.remove);
   }
 
   Future<void> saveDeviceInfo() async {
@@ -264,7 +259,7 @@ class DeviceService {
     // Try Hive
     try {
       final hiveKey = 'cache_$cacheKey';
-      Box? box = _getBoxForKey(key);
+      final Box? box = _getBoxForKey(key);
 
       if (box != null && box.containsKey(hiveKey)) {
         final value = box.get(hiveKey);
@@ -384,9 +379,7 @@ class DeviceService {
     final keysToRemove = _memoryCache.keys
         .where((key) => key.startsWith(prefix) || key.contains(prefix))
         .toList();
-    for (final key in keysToRemove) {
-      _memoryCache.remove(key);
-    }
+    keysToRemove.forEach(_memoryCache.remove);
 
     // Clear SharedPreferences
     for (final key in _prefs.getKeys()) {
@@ -398,6 +391,53 @@ class DeviceService {
 
     // Clear Hive (async, don't await)
     unawaited(_clearHiveCacheByPrefix(prefix));
+  }
+
+  Future<void> clearUserData(String userId) async {
+    final userPrefix = 'user_${userId}_';
+
+    final memoryKeys = _memoryCache.keys
+        .where((key) => key.contains(userPrefix))
+        .toList();
+    memoryKeys.forEach(_memoryCache.remove);
+
+    final prefKeys = _prefs.getKeys()
+        .where((key) =>
+            key.contains('${AppConstants.cachePrefix}$userPrefix') ||
+            key.contains(userPrefix))
+        .toList();
+    for (final key in prefKeys) {
+      await _prefs.remove(key);
+    }
+
+    try {
+      final boxes = [
+        _userBox,
+        _categoriesBox,
+        _coursesBox,
+        _chaptersBox,
+        _videosBox,
+        _notesBox,
+        _questionsBox,
+        _examsBox,
+        _subscriptionsBox,
+        _paymentsBox,
+        _notificationsBox,
+        _progressBox,
+      ];
+
+      for (final box in boxes) {
+        if (box == null) continue;
+        final keysToDelete = box.keys
+            .where((key) => key.toString().contains(userPrefix))
+            .toList();
+        for (final key in keysToDelete) {
+          await box.delete(key);
+        }
+      }
+    } catch (e) {
+      debugLog('DeviceService', 'Error clearing user-scoped cache: $e');
+    }
   }
 
   Future<void> _clearHiveCacheByPrefix(String prefix) async {
@@ -462,11 +502,13 @@ class DeviceService {
     if (type.contains('Note')) return AppConstants.cacheTTLNotes;
     if (type.contains('Question')) return AppConstants.cacheTTLQuestions;
     if (type.contains('Exam')) return AppConstants.cacheTTLExams;
-    if (type.contains('Subscription'))
+    if (type.contains('Subscription')) {
       return AppConstants.cacheTTLSubscriptions;
+    }
     if (type.contains('Payment')) return AppConstants.cacheTTLPayments;
-    if (type.contains('Notification'))
+    if (type.contains('Notification')) {
       return AppConstants.cacheTTLNotifications;
+    }
     if (type.contains('Streak')) return AppConstants.cacheTTLStreak;
     if (type.contains('School')) return AppConstants.cacheTTLSchools;
     if (type.contains('Setting')) return AppConstants.cacheTTLSettings;
@@ -479,29 +521,31 @@ class DeviceService {
       return value.map(_encodeValue).toList();
     } else if (value is Map) {
       return value;
-    } else if (value is Subscription)
+    } else if (value is Subscription) {
       return value.toJson();
-    else if (value is Payment)
+    } else if (value is Payment) {
       return value.toJson();
-    else if (value is Setting)
+    } else if (value is Setting) {
       return value.toJson();
-    else if (value is School)
+    } else if (value is School) {
       return value.toJson();
-    else if (value is Category)
+    } else if (value is Category) {
       return value.toJson();
-    else if (value is Course)
+    } else if (value is Course) {
       return value.toJson();
-    else if (value is Chapter)
+    } else if (value is Chapter) {
       return value.toJson();
-    else if (value is Exam)
+    } else if (value is Exam) {
       return value.toJson();
-    else if (value is ExamResult)
+    } else if (value is ExamResult) {
       return value.toJson();
-    else if (value is UserProgress)
+    } else if (value is UserProgress) {
       return value.toJson();
-    else if (value is User)
+    } else if (value is User) {
       return value.toJson();
-    else if (value is Notification) return value.toJson();
+    } else if (value is Notification) {
+      return value.toJson();
+    }
     return value;
   }
 
@@ -576,30 +620,42 @@ class DeviceService {
         }
       }
 
-      if (T == User && value is Map<String, dynamic>)
+      if (T == User && value is Map<String, dynamic>) {
         return User.fromJson(value) as T;
-      if (T == Subscription && value is Map)
+      }
+      if (T == Subscription && value is Map) {
         return Subscription.fromJson(value as Map<String, dynamic>) as T;
-      if (T == Payment && value is Map)
+      }
+      if (T == Payment && value is Map) {
         return Payment.fromJson(value as Map<String, dynamic>) as T;
-      if (T == Notification && value is Map<String, dynamic>)
+      }
+      if (T == Notification && value is Map<String, dynamic>) {
         return Notification.fromJson(value) as T;
-      if (T == Setting && value is Map)
+      }
+      if (T == Setting && value is Map) {
         return Setting.fromJson(value as Map<String, dynamic>) as T;
-      if (T == School && value is Map)
+      }
+      if (T == School && value is Map) {
         return School.fromJson(value as Map<String, dynamic>) as T;
-      if (T == Category && value is Map)
+      }
+      if (T == Category && value is Map) {
         return Category.fromJson(value as Map<String, dynamic>) as T;
-      if (T == Course && value is Map)
+      }
+      if (T == Course && value is Map) {
         return Course.fromJson(value as Map<String, dynamic>) as T;
-      if (T == Chapter && value is Map)
+      }
+      if (T == Chapter && value is Map) {
         return Chapter.fromJson(value as Map<String, dynamic>) as T;
-      if (T == Exam && value is Map)
+      }
+      if (T == Exam && value is Map) {
         return Exam.fromJson(value as Map<String, dynamic>) as T;
-      if (T == ExamResult && value is Map)
+      }
+      if (T == ExamResult && value is Map) {
         return ExamResult.fromJson(value as Map<String, dynamic>) as T;
-      if (T == UserProgress && value is Map)
+      }
+      if (T == UserProgress && value is Map) {
         return UserProgress.fromJson(value as Map<String, dynamic>) as T;
+      }
 
       return value as T?;
     } catch (e) {

@@ -222,7 +222,7 @@ class OfflineActionQueue {
         if (success) {
           _queue.removeAt(0);
           _queueCountController.add(_queue.length);
-          _saveQueue();
+          unawaited(_saveQueue());
         } else {
           // Move to end and retry later
           _queue.removeAt(0);

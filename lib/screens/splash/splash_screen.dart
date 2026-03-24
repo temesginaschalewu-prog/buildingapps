@@ -1,6 +1,3 @@
-// lib/screens/splash/splash_screen.dart
-// COMPLETE PRODUCTION-READY FINAL VERSION - FIXED TIMEOUT & AUTH FLOW
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -82,7 +79,7 @@ class _SplashScreenState extends State<SplashScreen>
     _timeoutTimer = Timer(_initTimeout, () {
       if (mounted && !_initializationComplete && !_navigated) {
         debugLog(
-            'SplashScreen', '⚠️ Initialization timeout - proceeding anyway');
+            'SplashScreen', 'Initialization timeout - proceeding anyway');
         _proceedToNextScreen();
       }
     });
@@ -110,21 +107,21 @@ class _SplashScreenState extends State<SplashScreen>
 
         if (hiveReady && connectivityReady) {
           debugLog('SplashScreen',
-              '✅ Critical services ready after ${stopwatch.elapsed.inMilliseconds}ms');
+              'Critical services ready after ${stopwatch.elapsed.inMilliseconds}ms');
 
           // Give auth provider a moment to initialize (but don't wait too long)
           await Future.delayed(const Duration(milliseconds: 500));
           return true;
         }
       } catch (e) {
-        debugLog('SplashScreen', '⚠️ Error checking services: $e');
+        debugLog('SplashScreen', 'Error checking services: $e');
       }
 
       await Future.delayed(const Duration(milliseconds: 100));
     }
 
     debugLog('SplashScreen',
-        '⚠️ Service initialization timeout after ${stopwatch.elapsed.inSeconds}s - proceeding anyway');
+        'Service initialization timeout after ${stopwatch.elapsed.inSeconds}s - proceeding anyway');
     return true;
   }
 
@@ -175,25 +172,25 @@ class _SplashScreenState extends State<SplashScreen>
       final user = authProvider.currentUser;
 
       debugLog('SplashScreen',
-          '✅ Auth check complete - isAuthenticated: $isAuthenticated');
+          'Auth check complete - isAuthenticated: $isAuthenticated');
 
       // Session check is handled by AuthProvider's _autoLogoutTimer
       // If session expired (>3 days), isAuthenticated will be false
 
       if (isAuthenticated) {
         if (user?.schoolId == null || user?.schoolId == 0) {
-          debugLog('SplashScreen', '➡️ Navigating to school selection');
+          debugLog('SplashScreen', 'Navigating to school selection');
           context.go('/school-selection');
         } else {
-          debugLog('SplashScreen', '➡️ Navigating to home');
+          debugLog('SplashScreen', 'Navigating to home');
           context.go('/');
         }
       } else {
-        debugLog('SplashScreen', '➡️ Navigating to login');
+        debugLog('SplashScreen', 'Navigating to login');
         context.go('/auth/login');
       }
     } catch (e) {
-      debugLog('SplashScreen', '❌ Error navigating: $e');
+      debugLog('SplashScreen', 'Error navigating: $e');
       // Fallback to login
       context.go('/auth/login');
     }
@@ -217,99 +214,103 @@ class _SplashScreenState extends State<SplashScreen>
             constraints: const BoxConstraints(maxWidth: 500),
             child: Padding(
               padding: ResponsiveValues.screenPadding(context),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  AnimatedBuilder(
-                    animation: _logoController,
-                    builder: (context, child) {
-                      return Opacity(
-                        opacity: _logoOpacityAnimation.value,
-                        child: Transform.scale(
-                          scale: _logoScaleAnimation.value,
-                          child: Container(
-                            padding: ResponsiveValues.dialogPadding(context),
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  AppColors.telegramBlue
-                                      .withValues(alpha: 0.12),
-                                  AppColors.telegramPurple
-                                      .withValues(alpha: 0.08),
-                                ],
-                              ),
-                              borderRadius: BorderRadius.circular(
-                                ResponsiveValues.radiusXLarge(context),
-                              ),
-                            ),
+              child: Padding(
+                padding: ResponsiveValues.dialogPadding(context),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AnimatedBuilder(
+                      animation: _logoController,
+                      builder: (context, child) {
+                        return Opacity(
+                          opacity: _logoOpacityAnimation.value,
+                          child: Transform.scale(
+                            scale: _logoScaleAnimation.value,
                             child: AppBrandLogo(
-                              size: ResponsiveValues.splashLogoSize(context) *
-                                  0.82,
+                              size:
+                                  ResponsiveValues.splashLogoSize(context) *
+                                      0.82,
                               borderRadius:
                                   ResponsiveValues.radiusXLarge(context),
                             ),
                           ),
-                        ),
-                      );
-                    },
-                  ),
-                  SizedBox(height: ResponsiveValues.spacingSplash(context)),
-                  SlideTransition(
-                    position: _textSlideAnimation,
-                    child: FadeTransition(
-                      opacity: _textOpacityAnimation,
-                      child: Column(
-                        children: [
-                          Text(
-                            'Family Academy',
-                            style: AppTextStyles.displaySmall(context)
-                                .copyWith(fontWeight: FontWeight.w700),
+                        );
+                      },
+                    ),
+                      SizedBox(height: ResponsiveValues.spacingSplash(context)),
+                      SlideTransition(
+                        position: _textSlideAnimation,
+                        child: FadeTransition(
+                          opacity: _textOpacityAnimation,
+                          child: Column(
+                            children: [
+                              Text(
+                                'Family Academy',
+                                style: AppTextStyles.displaySmall(context)
+                                    .copyWith(fontWeight: FontWeight.w700),
+                              ),
+                              SizedBox(
+                                  height: ResponsiveValues.spacingL(context)),
+                              Text(
+                                'Education, progress, and learning sync in one place.',
+                                style: AppTextStyles.bodyLarge(context).copyWith(
+                                  color: AppColors.getTextSecondary(context),
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
                           ),
-                          SizedBox(height: ResponsiveValues.spacingL(context)),
-                          Text(
-                            'Empowering Education',
-                            style: AppTextStyles.bodyLarge(context).copyWith(
-                              color: AppColors.getTextSecondary(context),
+                        ),
+                      ),
+                      SizedBox(height: ResponsiveValues.spacingXXL(context)),
+                      if (_hasError)
+                        Column(
+                          children: [
+                            Text(
+                              _errorMessage ?? 'Error',
+                              style: AppTextStyles.bodyMedium(context).copyWith(
+                                color: AppColors.telegramRed,
+                              ),
+                              textAlign: TextAlign.center,
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: ResponsiveValues.spacingXXL(context)),
-                  if (_hasError)
-                    Column(
-                      children: [
-                        Text(
-                          _errorMessage ?? 'Error',
-                          style: AppTextStyles.bodyMedium(context).copyWith(
-                            color: AppColors.telegramRed,
-                          ),
+                            SizedBox(height: ResponsiveValues.spacingM(context)),
+                            AppButton.primary(
+                              label: 'Retry',
+                              onPressed: () {
+                                setState(() {
+                                  _hasError = false;
+                                  _navigated = false;
+                                });
+                                _initializeApp();
+                              },
+                            ),
+                          ],
+                        )
+                      else
+                        Column(
+                          children: [
+                            const SizedBox(
+                              width: 40,
+                              height: 40,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 3,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  AppColors.telegramBlue,
+                                ),
+                              ),
+                            ),
+                            SizedBox(height: ResponsiveValues.spacingL(context)),
+                            Text(
+                              'Preparing your workspace',
+                              style: AppTextStyles.bodyMedium(context).copyWith(
+                                color: AppColors.getTextSecondary(context),
+                              ),
+                            ),
+                          ],
                         ),
-                        SizedBox(height: ResponsiveValues.spacingM(context)),
-                        AppButton.primary(
-                          label: 'Retry',
-                          onPressed: () {
-                            setState(() {
-                              _hasError = false;
-                              _navigated = false;
-                            });
-                            _initializeApp();
-                          },
-                        ),
-                      ],
-                    )
-                  else
-                    const SizedBox(
-                      width: 40,
-                      height: 40,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 3,
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                            AppColors.telegramBlue),
-                      ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

@@ -99,6 +99,7 @@ class AuthProvider extends ChangeNotifier
         email: data['email'],
         phone: data['phone'],
         profileImage: data['profileImage'],
+        schoolId: data['schoolId'],
       );
       return response.success;
     } catch (e) {
@@ -124,6 +125,7 @@ class AuthProvider extends ChangeNotifier
     final userId = await getCurrentUserId();
     if (userId != null) {
       await hiveService.clearUserData(userId);
+      await deviceService.clearUserData(userId);
 
       // ✅ FIXED: Remove clearUserQueue call
       // await connectivityService.clearUserQueue(userId ?? '');
@@ -261,9 +263,14 @@ class AuthProvider extends ChangeNotifier
         if (isDifferentUser) {
           log('🔄 Different user login detected');
           await hiveService.clearUserData(currentUserId);
+          await deviceService.clearUserData(currentUserId);
+          await storageService.clearUser();
+          await deviceService.clearCurrentUserId();
         }
 
         await session.setCurrentUser(user.id.toString());
+        await deviceService.setCurrentUserId(user.id.toString());
+        await deviceService.saveDeviceInfo();
 
         await storageService.saveUser(user);
         await storageService.saveToken(response.data!['token']);
@@ -293,9 +300,6 @@ class AuthProvider extends ChangeNotifier
         _lastLoginResult = null;
         markInitialized();
         setLoaded();
-
-        await deviceService.setCurrentUserId(user.id.toString());
-        await deviceService.saveDeviceInfo();
 
         _startAutoLogoutTimer();
         _startTokenRefreshTimer();
@@ -447,7 +451,21 @@ class AuthProvider extends ChangeNotifier
         final user = User.fromJson(userData as Map<String, dynamic>);
 
         final session = UserSession();
+        final currentUserId = await session.getCurrentUserId();
+        final isDifferentUser =
+            currentUserId != null && currentUserId != user.id.toString();
+
+        if (isDifferentUser) {
+          log('🔄 Different user registration detected');
+          await hiveService.clearUserData(currentUserId);
+          await deviceService.clearUserData(currentUserId);
+          await storageService.clearUser();
+          await deviceService.clearCurrentUserId();
+        }
+
         await session.setCurrentUser(user.id.toString());
+        await deviceService.setCurrentUserId(user.id.toString());
+        await deviceService.saveDeviceInfo();
 
         await storageService.saveUser(user);
         await storageService.saveToken(token);
@@ -473,9 +491,6 @@ class AuthProvider extends ChangeNotifier
         _lastLoginResult = null;
         markInitialized();
         setLoaded();
-
-        await deviceService.setCurrentUserId(user.id.toString());
-        await deviceService.saveDeviceInfo();
 
         _startAutoLogoutTimer();
         _startTokenRefreshTimer();
@@ -623,8 +638,10 @@ class AuthProvider extends ChangeNotifier
 
     if (userId != null) {
       await hiveService.clearUserData(userId);
+      await deviceService.clearUserData(userId);
     }
 
+    await storageService.clearUser();
     await deviceService.clearCurrentUserId();
     await storageService.clearTokens();
     await UserSession().completeLogout();
@@ -707,9 +724,21 @@ class AuthProvider extends ChangeNotifier
   Future<bool> validateToken() async {
     try {
       final response = await apiService.validateStudentToken();
-      return response.success;
+      if (response.success) return true;
+
+      final responseError = response.error;
+      final actionFromError =
+          responseError is Map ? responseError['action']?.toString() : null;
+      final actionFromData =
+          response.data is Map ? response.data!['action']?.toString() : null;
+      final action = actionFromError ?? actionFromData;
+
+      final shouldInvalidateSession = response.statusCode == 401 ||
+          (response.statusCode == 403 && action == 'device_deactivated');
+
+      return !shouldInvalidateSession;
     } catch (e) {
-      return false;
+      return true;
     }
   }
 
@@ -778,13 +807,33 @@ class AuthProvider extends ChangeNotifier
     try {
       final sessionValid =
           await storageService.isSessionValid(_sessionDuration);
-      if (!sessionValid) await logout(manual: false);
+      if (!sessionValid) {
+        await logout(manual: false);
+        return;
+      }
+
+      if (!connectivityService.isOnline || !_isAuthenticated) return;
+
+      final tokenValid = await validateToken();
+      if (!tokenValid && _isAuthenticated) {
+        await logout(manual: false);
+      }
     } catch (e) {}
   }
 
   @override
   Future<void> onOnlineRefresh() async {
     log('Online - refreshing auth state');
+    if (_isAuthenticated) {
+      final tokenValid = await validateToken();
+      if (!tokenValid) {
+        if (_isAuthenticated) {
+          await logout(manual: false);
+        }
+        return;
+      }
+    }
+
     if (_isAuthenticated && _currentUser != null) {
       await loadUser();
     }

@@ -24,14 +24,14 @@ class AppThemes {
         outlineVariant: AppColors.lightCardAlt,
       ),
       scaffoldBackgroundColor: AppColors.lightBackground
-          .withValues(alpha: 0.92), // More pronounced glass effect
+          .withValues(alpha: 1.0),
       appBarTheme: AppBarTheme(
         backgroundColor: AppColors.lightSurface.withValues(
-            alpha: 0.78), // Even less transparent for better definition
+            alpha: 0.92),
         foregroundColor: AppColors.lightTextPrimary,
-        elevation: 2, // Increase elevation for better definition
+        elevation: 1,
         shadowColor: AppColors.telegramBlue
-            .withValues(alpha: 0.12), // Slightly more visible shadow
+            .withValues(alpha: 0.08),
         centerTitle: false,
         titleTextStyle: const TextStyle(
           fontSize: 18,
@@ -66,14 +66,13 @@ class AppThemes {
       ),
       cardTheme: CardThemeData(
         color: AppColors.lightCard
-            .withValues(alpha: 0.98), // Add subtle transparency
-        elevation: 0.5, // Reduce elevation for subtlety
+            .withValues(alpha: 0.98),
+        elevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           side: BorderSide(
-            color: AppColors.lightDivider
-                .withValues(alpha: 0.3), // More subtle border
-            width: 0.5,
+            color: AppColors.lightDivider.withValues(alpha: 0.72),
+            width: 0.8,
           ),
         ),
         surfaceTintColor: Colors.transparent,
@@ -87,7 +86,7 @@ class AppThemes {
               AppColors.telegramBlue.withValues(alpha: 0.1),
           elevation: 0,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           textStyle: const TextStyle(
@@ -101,9 +100,9 @@ class AppThemes {
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.telegramBlue,
           backgroundColor: Colors.transparent,
-          side: const BorderSide(color: AppColors.telegramBlue),
+          side: BorderSide(color: AppColors.lightDivider.withValues(alpha: 0.9)),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           textStyle: const TextStyle(
@@ -126,7 +125,7 @@ class AppThemes {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: AppColors.lightCardAlt,
+        fillColor: AppColors.lightSurface,
         hintStyle: TextStyle(
           fontSize: 14,
           color: AppColors.lightTextSecondary.withValues(alpha: 0.7),
@@ -140,24 +139,30 @@ class AppThemes {
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(
+            color: AppColors.lightDivider.withValues(alpha: 0.9),
+          ),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(
+            color: AppColors.lightDivider.withValues(alpha: 0.9),
+          ),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.telegramBlue, width: 2),
+          borderRadius: BorderRadius.circular(16),
+          borderSide:
+              const BorderSide(color: AppColors.telegramBlue, width: 1.4),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           borderSide: const BorderSide(color: AppColors.telegramRed),
         ),
         focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.telegramRed, width: 2),
+          borderRadius: BorderRadius.circular(16),
+          borderSide:
+              const BorderSide(color: AppColors.telegramRed, width: 1.4),
         ),
       ),
       dialogTheme: const DialogThemeData(
@@ -310,12 +315,12 @@ class AppThemes {
       ),
       cardTheme: CardThemeData(
         color: AppColors.darkCard,
-        elevation: 1,
+        elevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           side: BorderSide(
-            color: AppColors.darkDivider.withValues(alpha: 0.5),
-            width: 0.5,
+            color: AppColors.darkDivider.withValues(alpha: 0.8),
+            width: 0.8,
           ),
         ),
         surfaceTintColor: Colors.transparent,
@@ -329,7 +334,7 @@ class AppThemes {
               AppColors.telegramBlueLight.withValues(alpha: 0.1),
           elevation: 0,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           textStyle: const TextStyle(
@@ -343,9 +348,9 @@ class AppThemes {
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.telegramBlueLight,
           backgroundColor: Colors.transparent,
-          side: const BorderSide(color: AppColors.telegramBlueLight),
+          side: BorderSide(color: AppColors.darkDivider.withValues(alpha: 0.95)),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           textStyle: const TextStyle(
@@ -368,7 +373,7 @@ class AppThemes {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: AppColors.darkSurface,
+        fillColor: AppColors.darkSurface.withValues(alpha: 0.92),
         hintStyle: TextStyle(
           fontSize: 14,
           color: AppColors.darkTextSecondary.withValues(alpha: 0.7),
@@ -382,25 +387,30 @@ class AppThemes {
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(
+            color: AppColors.darkDivider.withValues(alpha: 0.88),
+          ),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(
+            color: AppColors.darkDivider.withValues(alpha: 0.88),
+          ),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           borderSide:
-              const BorderSide(color: AppColors.telegramBlueLight, width: 2),
+              const BorderSide(color: AppColors.telegramBlueLight, width: 1.4),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           borderSide: const BorderSide(color: AppColors.telegramRed),
         ),
         focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.telegramRed, width: 2),
+          borderRadius: BorderRadius.circular(16),
+          borderSide:
+              const BorderSide(color: AppColors.telegramRed, width: 1.4),
         ),
       ),
       dialogTheme: const DialogThemeData(

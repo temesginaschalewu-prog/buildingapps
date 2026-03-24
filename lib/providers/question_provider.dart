@@ -982,11 +982,6 @@ class QuestionProvider extends ChangeNotifier
   }
 
   @override
-  void clearError() {
-    super.clearError();
-  }
-
-  @override
   void dispose() {
     stopBackgroundRefresh();
     _questionUpdateController.close();

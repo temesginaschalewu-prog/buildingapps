@@ -43,6 +43,8 @@ class CategoryProvider extends ChangeNotifier
 
   DateTime? _lastBackgroundRefresh;
   static const Duration _minBackgroundInterval = Duration(minutes: 2);
+  DateTime? _lastFetchTime;
+  static const Duration _minFetchInterval = Duration(minutes: 5);
 
   CategoryProvider({
     required this.apiService,
@@ -72,8 +74,12 @@ class CategoryProvider extends ChangeNotifier
       log('✅ Showing ${_categories.length} cached categories immediately');
     }
 
-    // ✅ Auto-refresh in background to get latest data (no user action needed)
-    if (!isOffline) {
+    final shouldBackgroundRefresh = !isOffline &&
+        (!_hasInitialData ||
+            _lastFetchTime == null ||
+            DateTime.now().difference(_lastFetchTime!) >= _minFetchInterval);
+
+    if (shouldBackgroundRefresh) {
       log('🔄 Auto-refreshing categories in background');
       // Small delay to not block UI
       Future.delayed(const Duration(milliseconds: 500), () {
@@ -136,6 +142,7 @@ class CategoryProvider extends ChangeNotifier
               _updateCategoryLists();
               _hasInitialData = true;
               _hasLoaded = true;
+              _lastFetchTime = DateTime.now();
               _categoriesUpdateController.add(_categories);
               log('✅ Loaded ${_categories.length} categories from Hive');
               return;
@@ -164,6 +171,7 @@ class CategoryProvider extends ChangeNotifier
         _updateCategoryLists();
         _hasInitialData = true;
         _hasLoaded = true;
+        _lastFetchTime = DateTime.now();
         _categoriesUpdateController.add(_categories);
 
         await _saveToHive();
@@ -262,6 +270,7 @@ class CategoryProvider extends ChangeNotifier
               _updateCategoryLists();
               _hasLoaded = true;
               _hasInitialData = true;
+              _lastFetchTime = DateTime.now();
               setLoaded();
               _categoriesUpdateController.add(_categories);
               log('✅ Loaded ${_categories.length} categories from Hive cache');
@@ -292,6 +301,7 @@ class CategoryProvider extends ChangeNotifier
           _updateCategoryLists();
           _hasLoaded = true;
           _hasInitialData = true;
+          _lastFetchTime = DateTime.now();
           setLoaded();
           _categoriesUpdateController.add(_categories);
           await _saveToHive();
@@ -335,6 +345,7 @@ class CategoryProvider extends ChangeNotifier
           _updateCategoryLists();
           _hasLoaded = true;
           _hasInitialData = true;
+          _lastFetchTime = DateTime.now();
           setLoaded();
           await _saveToHive();
           deviceService.saveCacheItem(
@@ -346,6 +357,16 @@ class CategoryProvider extends ChangeNotifier
           _categoriesUpdateController.add(_categories);
           log('✅ Categories loaded successfully');
         } else {
+          if (_categories.isNotEmpty) {
+            clearError();
+            _hasLoaded = true;
+            _hasInitialData = true;
+            setLoaded();
+            _categoriesUpdateController.add(_categories);
+            log('⚠️ API unavailable - keeping cached categories visible');
+            return;
+          }
+
           setError(response.message);
           log('❌ API error: ${response.message}');
           _hasLoaded = true;
@@ -360,6 +381,15 @@ class CategoryProvider extends ChangeNotifier
     } catch (e) {
       log('❌ Error: $e');
       _hasLoaded = true;
+      if (_categories.isNotEmpty) {
+        clearError();
+        _hasInitialData = true;
+        setLoaded();
+        _categoriesUpdateController.add(_categories);
+        log('⚠️ Request failed - using cached categories');
+        return;
+      }
+
       setLoaded();
       setError(e.toString());
       if (isManualRefresh) rethrow;

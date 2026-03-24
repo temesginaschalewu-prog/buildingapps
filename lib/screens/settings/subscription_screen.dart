@@ -1,6 +1,3 @@
-// lib/screens/settings/subscription_screen.dart
-// FIXED EMPTY STATE & SHIMMER TYPE
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -8,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import '../../models/subscription_model.dart';
+import '../../providers/settings_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../services/snackbar_service.dart';
 import '../../utils/ui_helpers.dart';
@@ -34,6 +32,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
   String? _errorMessage;
 
   late SubscriptionProvider _subscriptionProvider;
+  late SettingsProvider _settingsProvider;
 
   @override
   String get screenTitle => AppStrings.mySubscriptions;
@@ -84,6 +83,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _subscriptionProvider = Provider.of<SubscriptionProvider>(context);
+    _settingsProvider = Provider.of<SettingsProvider>(context);
   }
 
   @override
@@ -109,13 +109,22 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
       });
     } catch (e) {
       if (isNetworkError(e)) {
-        setState(() => isOffline);
+        setState(() {
+          _errorMessage = null;
+        });
         SnackbarService().showOffline(context, action: AppStrings.refresh);
       } else {
-        setState(() => _errorMessage = getUserFriendlyErrorMessage(e));
-        SnackbarService().showError(context, AppStrings.refreshFailed);
+        if (_subscriptionProvider.hasInitialData) {
+          setState(() => _errorMessage = null);
+          SnackbarService().showInfo(
+            context,
+            'We could not refresh subscriptions just now. Your saved subscriptions are still available.',
+          );
+        } else {
+          setState(() => _errorMessage = getUserFriendlyErrorMessage(e));
+          SnackbarService().showError(context, AppStrings.refreshFailed);
+        }
       }
-      rethrow;
     }
   }
 
@@ -172,11 +181,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                           'isFree': false,
                         },
                         'paymentType': 'repayment',
-                        'months':
-                            subscription.billingCycle == 'semester' ? 4 : 1,
-                        'duration_text': subscription.billingCycle == 'semester'
-                            ? AppStrings.fourMonths
-                            : AppStrings.oneMonth,
+                        'months': _settingsProvider
+                            .getBillingCycleMonths(subscription.billingCycle),
+                        'duration_text': _settingsProvider
+                            .getBillingCycleDurationText(
+                                subscription.billingCycle),
                       },
                     );
                   }
@@ -194,8 +203,12 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                   Row(
                     children: [
                       Container(
-                        width: ResponsiveValues.iconSizeXL(context) * 1.5,
-                        height: ResponsiveValues.iconSizeXL(context) * 1.5,
+                        width:
+                            ResponsiveValues.featureCardIconContainerSize(
+                                context),
+                        height:
+                            ResponsiveValues.featureCardIconContainerSize(
+                                context),
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
@@ -239,9 +252,9 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                               height: ResponsiveValues.spacingXS(context),
                             ),
                             Text(
-                              subscription.billingCycle == 'monthly'
-                                  ? AppStrings.monthlySubscription
-                                  : AppStrings.semesterSubscription,
+                              _settingsProvider.getBillingCyclePlanLabel(
+                                subscription.billingCycle,
+                              ),
                               style: AppTextStyles.bodySmall(context).copyWith(
                                 color: AppColors.getTextSecondary(
                                   context,
@@ -354,7 +367,9 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                             label: AppStrings.billingCycle,
                             value: subscription.billingCycle == 'monthly'
                                 ? AppStrings.monthly
-                                : AppStrings.semester,
+                                : _settingsProvider.getBillingCycleDurationText(
+                                    subscription.billingCycle,
+                                  ),
                           ),
                           if (subscription.price != null) ...[
                             SizedBox(
@@ -451,17 +466,13 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
     Color? valueColor,
   }) {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
           width: ResponsiveValues.iconSizeL(context),
           height: ResponsiveValues.iconSizeL(context),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                AppColors.telegramBlue.withValues(alpha: 0.2),
-                AppColors.telegramPurple.withValues(alpha: 0.1),
-              ],
-            ),
+            color: AppColors.telegramBlue.withValues(alpha: 0.1),
             shape: BoxShape.circle,
           ),
           child: Icon(
@@ -472,18 +483,26 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
         ),
         SizedBox(width: ResponsiveValues.spacingM(context)),
         Expanded(
-          child: Text(
-            label,
-            style: AppTextStyles.bodyMedium(
-              context,
-            ).copyWith(color: AppColors.getTextSecondary(context)),
-          ),
-        ),
-        Text(
-          value,
-          style: AppTextStyles.bodyMedium(context).copyWith(
-            color: valueColor ?? AppColors.getTextPrimary(context),
-            fontWeight: FontWeight.w600,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: AppTextStyles.labelMedium(context).copyWith(
+                  color: AppColors.getTextSecondary(context),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              SizedBox(height: ResponsiveValues.spacingXXS(context)),
+              Text(
+                value,
+                style: AppTextStyles.bodyMedium(context).copyWith(
+                  color: valueColor ?? AppColors.getTextPrimary(context),
+                  fontWeight: FontWeight.w600,
+                  height: 1.35,
+                ),
+              ),
+            ],
           ),
         ),
       ],
@@ -533,66 +552,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
       child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
-          if (isOffline && pendingCount > 0)
-            SliverToBoxAdapter(
-              child: Container(
-                margin: EdgeInsets.all(ResponsiveValues.spacingM(context)),
-                padding: ResponsiveValues.cardPadding(context),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      AppColors.info.withValues(alpha: 0.2),
-                      AppColors.info.withValues(alpha: 0.1),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(
-                    ResponsiveValues.radiusMedium(context),
-                  ),
-                  border: Border.all(
-                    color: AppColors.info.withValues(alpha: 0.3),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.schedule_rounded,
-                      color: AppColors.info,
-                      size: ResponsiveValues.iconSizeS(context),
-                    ),
-                    SizedBox(width: ResponsiveValues.spacingM(context)),
-                    Expanded(
-                      child: Text(
-                        '$pendingCount pending action${pendingCount > 1 ? 's' : ''}',
-                        style: AppTextStyles.bodySmall(
-                          context,
-                        ).copyWith(color: AppColors.info),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          SliverPadding(
-            padding: EdgeInsets.symmetric(
-              horizontal: ResponsiveValues.spacingL(context),
-              vertical: ResponsiveValues.spacingL(context),
-            ),
-            sliver: SliverToBoxAdapter(
-              child: Text(
-                isOffline
-                    ? AppStrings.offlineCachedSubscriptions
-                    : AppStrings.yourActiveExpiredSubscriptions,
-                style: AppTextStyles.bodyMedium(
-                  context,
-                ).copyWith(color: AppColors.getTextSecondary(context)),
-              ),
-            ),
-          ),
           if (activeSubscriptions.isNotEmpty) ...[
             SliverPadding(
               padding: EdgeInsets.fromLTRB(
                 ResponsiveValues.spacingL(context),
-                ResponsiveValues.spacingL(context),
+                ResponsiveValues.spacingM(context),
                 ResponsiveValues.spacingL(context),
                 ResponsiveValues.spacingS(context),
               ),
@@ -608,19 +572,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                     ),
                     Container(
                       padding: EdgeInsets.symmetric(
-                        horizontal: ResponsiveValues.spacingM(context),
-                        vertical: ResponsiveValues.spacingXS(context),
-                      ),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            AppColors.telegramGreen.withValues(alpha: 0.2),
-                            AppColors.telegramGreen.withValues(alpha: 0.1),
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(
-                          ResponsiveValues.radiusFull(context),
-                        ),
+                        horizontal: ResponsiveValues.spacingXS(context),
+                        vertical: ResponsiveValues.spacingXXS(context),
                       ),
                       child: Text(
                         '${activeSubscriptions.length}',
@@ -666,19 +619,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                     ),
                     Container(
                       padding: EdgeInsets.symmetric(
-                        horizontal: ResponsiveValues.spacingM(context),
-                        vertical: ResponsiveValues.spacingXS(context),
-                      ),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            AppColors.telegramRed.withValues(alpha: 0.2),
-                            AppColors.telegramRed.withValues(alpha: 0.1),
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(
-                          ResponsiveValues.radiusFull(context),
-                        ),
+                        horizontal: ResponsiveValues.spacingXS(context),
+                        vertical: ResponsiveValues.spacingXXS(context),
                       ),
                       child: Text(
                         '${expiredSubscriptions.length}',
@@ -705,10 +647,10 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
             ),
           ],
           if (isLoading && allSubscriptions.isNotEmpty)
-            const SliverToBoxAdapter(
+            SliverToBoxAdapter(
               child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Center(
+                padding: ResponsiveValues.sectionLoadingPadding(context),
+                child: const Center(
                   child: SizedBox(
                     width: 32,
                     height: 32,

@@ -1,6 +1,3 @@
-// lib/screens/main/profile_screen.dart
-// PRODUCTION STANDARD - FIXED LATE INITIALIZATION ERROR
-
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -20,6 +17,7 @@ import '../../providers/school_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/device_service.dart';
+import '../../services/notification_service.dart';
 import '../../services/snackbar_service.dart';
 import '../../services/offline_queue_manager.dart';
 import '../../widgets/common/base_screen_mixin.dart';
@@ -27,7 +25,6 @@ import '../../themes/app_themes.dart';
 import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_text_field.dart';
-import '../../widgets/common/app_shimmer.dart';
 import '../../widgets/common/app_dialog.dart';
 import '../../utils/helpers.dart';
 import '../../utils/responsive_values.dart';
@@ -48,6 +45,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+  int? _selectedSchoolId;
 
   File? _profileImageFile;
   bool _isEditing = false;
@@ -62,6 +60,15 @@ class _ProfileScreenState extends State<ProfileScreen>
   late UserProvider _userProvider;
   late SchoolProvider _schoolProvider;
   late ThemeProvider _themeProvider;
+
+  void _syncDraftFromUser(User? user, {bool force = false}) {
+    if (user == null) return;
+    if (!force && (_isEditing || _isUploadingImage)) return;
+
+    _emailController.text = user.email ?? '';
+    _phoneController.text = user.phone ?? '';
+    _selectedSchoolId = user.schoolId;
+  }
 
   @override
   String get screenTitle => AppStrings.profile;
@@ -78,7 +85,13 @@ class _ProfileScreenState extends State<ProfileScreen>
   bool get hasCachedData => _userProvider.hasInitialData;
 
   @override
-  dynamic get errorMessage => _cachedUser == null ? 'No user data' : null;
+  dynamic get errorMessage =>
+      _cachedUser == null ? 'We could not load your profile yet.' : null;
+
+  @override
+  List<Widget>? get appBarActions => [
+        if (_isEditing) _buildSaveButton() else _buildEditButton(),
+      ];
 
   @override
   void initState() {
@@ -104,12 +117,15 @@ class _ProfileScreenState extends State<ProfileScreen>
     _cachedUser = _userProvider.currentUser ?? authProvider.currentUser;
 
     if (_cachedUser != null) {
-      _emailController.text = _cachedUser!.email ?? '';
-      _phoneController.text = _cachedUser!.phone ?? '';
+      _syncDraftFromUser(_cachedUser);
 
       if (_cachedUser!.schoolId != null) {
-        _loadSchoolName(_cachedUser!.schoolId);
+        unawaited(_loadSchoolName(_cachedUser!.schoolId));
       }
+    }
+
+    if (_schoolProvider.schools.isEmpty) {
+      unawaited(_schoolProvider.loadSchools());
     }
 
     _loadNotificationSettings();
@@ -124,7 +140,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Future<void> _loadData() async {
-    _headerAnimationController.forward();
+    unawaited(_headerAnimationController.forward());
     await _loadNotificationSettings();
   }
 
@@ -138,8 +154,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     if (user != null) {
       setState(() {
         _cachedUser = user;
-        _emailController.text = user.email ?? '';
-        _phoneController.text = user.phone ?? '';
+        _syncDraftFromUser(user, force: true);
       });
       if (user.schoolId != null) {
         await _loadSchoolName(user.schoolId, forceRefresh: true);
@@ -318,6 +333,10 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
 
     try {
+      final draftEmail = _emailController.text;
+      final draftPhone = _phoneController.text;
+      final draftSchoolId = _selectedSchoolId;
+
       final apiService = context.read<ApiService>();
       final response = await apiService.uploadProfileImage(imageFile);
 
@@ -325,7 +344,6 @@ class _ProfileScreenState extends State<ProfileScreen>
 
       if (response.success && response.data != null) {
         final imageUrl = response.data!;
-        debugPrint('✅ Profile image uploaded: $imageUrl');
 
         final updateResponse =
             await _userProvider.updateProfile(profileImage: imageUrl);
@@ -336,10 +354,18 @@ class _ProfileScreenState extends State<ProfileScreen>
           await _userProvider.loadUserProfile(forceRefresh: true);
 
           setState(() {
-            _cachedUser = _userProvider.currentUser;
+            final refreshedUser = _userProvider.currentUser;
+            _cachedUser = refreshedUser != null
+                ? refreshedUser.copyWith(profileImage: imageUrl)
+                : _cachedUser?.copyWith(profileImage: imageUrl);
+            _emailController.text = draftEmail;
+            _phoneController.text = draftPhone;
+            _selectedSchoolId = draftSchoolId;
             _profileImageFile = null;
             _isUploadingImage = false;
           });
+
+          await _loadSchoolName(_selectedSchoolId);
 
           SnackbarService()
               .showSuccess(context, AppStrings.profileImageUpdated);
@@ -385,6 +411,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           data: {
             'email': email.isNotEmpty ? email : null,
             'phone': phone.isNotEmpty ? phone : null,
+            'schoolId': _selectedSchoolId,
           },
         );
 
@@ -414,6 +441,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           .updateProfile(
             email: email.isNotEmpty ? email : null,
             phone: phone.isNotEmpty ? phone : null,
+            schoolId: _selectedSchoolId,
           )
           .timeout(
             const Duration(seconds: 15),
@@ -427,8 +455,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
         setState(() {
           _cachedUser = _userProvider.currentUser;
-          _emailController.text = _userProvider.currentUser?.email ?? '';
-          _phoneController.text = _userProvider.currentUser?.phone ?? '';
+          _syncDraftFromUser(_userProvider.currentUser, force: true);
           _isEditing = false;
           _isSaving = false;
         });
@@ -466,7 +493,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   Widget _buildEditButton() {
     return AppButton.icon(
-      icon: isOffline ? Icons.wifi_off_rounded : Icons.edit_rounded,
+      icon: Icons.edit_rounded,
       onPressed: isOffline
           ? null
           : (_isEditing ? null : () => setState(() => _isEditing = true)),
@@ -559,8 +586,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                 child: GestureDetector(
                   onTap: _pickProfileImage,
                   child: Container(
-                    width: ResponsiveValues.iconSizeXL(context) * 1.2,
-                    height: ResponsiveValues.iconSizeXL(context) * 1.2,
+                    width: ResponsiveValues.profileAvatarActionSize(context),
+                    height: ResponsiveValues.profileAvatarActionSize(context),
                     decoration: const BoxDecoration(
                       gradient:
                           LinearGradient(colors: AppColors.telegramGradient),
@@ -603,38 +630,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                   .copyWith(fontWeight: FontWeight.w700),
               textAlign: TextAlign.center,
             ),
-            if (isOffline)
-              Padding(
-                padding:
-                    EdgeInsets.only(left: ResponsiveValues.spacingXS(context)),
-                child: Icon(
-                  Icons.wifi_off_rounded,
-                  size: ResponsiveValues.iconSizeXS(context),
-                  color: AppColors.warning,
-                ),
-              ),
-            if (pendingCount > 0)
-              Padding(
-                padding:
-                    EdgeInsets.only(left: ResponsiveValues.spacingXS(context)),
-                child: Container(
-                  padding: const EdgeInsets.all(2),
-                  decoration: const BoxDecoration(
-                      color: AppColors.info, shape: BoxShape.circle),
-                  constraints:
-                      const BoxConstraints(minWidth: 16, minHeight: 16),
-                  child: Center(
-                    child: Text(
-                      pendingCount > 9 ? '9+' : pendingCount.toString(),
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: ResponsiveValues.fontBadgeSmall(context),
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
           ],
         ),
         if (_schoolName != null) ...[
@@ -724,6 +719,33 @@ class _ProfileScreenState extends State<ProfileScreen>
                   return null;
                 },
               ),
+              SizedBox(height: ResponsiveValues.spacingL(context)),
+              DropdownButtonFormField<int>(
+                value: _selectedSchoolId != null &&
+                        _schoolProvider.schools
+                            .any((school) => school.id == _selectedSchoolId)
+                    ? _selectedSchoolId
+                    : null,
+                decoration: const InputDecoration(
+                  labelText: AppStrings.school,
+                  hintText: 'Choose your school',
+                  prefixIcon: Icon(Icons.school_outlined),
+                ),
+                items: _schoolProvider.schools
+                    .map(
+                      (school) => DropdownMenuItem<int>(
+                        value: school.id,
+                        child: Text(
+                          school.name,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: isOffline
+                    ? null
+                    : (value) => setState(() => _selectedSchoolId = value),
+              ),
               SizedBox(height: ResponsiveValues.spacingXL(context)),
               Row(
                 children: [
@@ -737,8 +759,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   SizedBox(width: ResponsiveValues.spacingM(context)),
                   Expanded(
                     child: AppButton.primary(
-                      label:
-                          isOffline ? AppStrings.queueChanges : AppStrings.save,
+                      label: AppStrings.save,
                       onPressed: _isSaving ? null : _saveProfile,
                       isLoading: _isSaving,
                       expanded: true,
@@ -795,15 +816,19 @@ class _ProfileScreenState extends State<ProfileScreen>
         child: Row(
           children: [
             Container(
-              width: 40,
-              height: 40,
+              width: ResponsiveValues.listItemIconContainerSize(context),
+              height: ResponsiveValues.listItemIconContainerSize(context),
               decoration: BoxDecoration(
                 color: AppColors.telegramBlue.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, size: 20, color: AppColors.telegramBlue),
+              child: Icon(
+                icon,
+                size: ResponsiveValues.listItemIconSize(context),
+                color: AppColors.telegramBlue,
+              ),
             ),
-            const SizedBox(width: 12),
+            SizedBox(width: ResponsiveValues.spacingM(context)),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -838,54 +863,81 @@ class _ProfileScreenState extends State<ProfileScreen>
     required VoidCallback onTap,
     Color? iconColor,
   }) {
-    return AppCard.menu(
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius:
-              BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
-          splashColor: AppColors.telegramBlue.withValues(alpha: 0.1),
-          highlightColor: Colors.transparent,
-          child: Container(
-            width: double.infinity,
-            constraints: const BoxConstraints(minHeight: 56),
-            padding: EdgeInsets.symmetric(
-                horizontal: ResponsiveValues.spacingL(context)),
-            alignment: Alignment.center,
-            child: Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        (iconColor ?? AppColors.telegramBlue)
-                            .withValues(alpha: 0.2),
-                        (iconColor ?? AppColors.telegramBlue)
-                            .withValues(alpha: 0.1),
-                      ],
-                    ),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(icon,
-                      size: 20, color: iconColor ?? AppColors.telegramBlue),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+        splashColor: AppColors.telegramBlue.withValues(alpha: 0.08),
+        highlightColor: Colors.transparent,
+        child: Container(
+          width: double.infinity,
+          constraints: const BoxConstraints(minHeight: 56),
+          padding: EdgeInsets.symmetric(
+            horizontal: ResponsiveValues.spacingL(context),
+            vertical: ResponsiveValues.spacingXS(context),
+          ),
+          alignment: Alignment.center,
+          child: Row(
+            children: [
+              Container(
+                width: ResponsiveValues.listItemIconContainerSize(context),
+                height: ResponsiveValues.listItemIconContainerSize(context),
+                decoration: BoxDecoration(
+                  color: (iconColor ?? AppColors.telegramBlue)
+                      .withValues(alpha: 0.10),
+                  shape: BoxShape.circle,
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: AppTextStyles.bodyMedium(context)
-                        .copyWith(fontWeight: FontWeight.w500),
-                  ),
+                child: Icon(
+                  icon,
+                  size: ResponsiveValues.listItemIconSize(context),
+                  color: iconColor ?? AppColors.telegramBlue,
                 ),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  size: 20,
-                  color: AppColors.getTextSecondary(context),
+              ),
+              SizedBox(width: ResponsiveValues.spacingM(context)),
+              Expanded(
+                child: Text(
+                  title,
+                  style: AppTextStyles.bodyMedium(context)
+                      .copyWith(fontWeight: FontWeight.w500),
                 ),
-              ],
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 20,
+                color: AppColors.getTextSecondary(context),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionTitle(String eyebrow, String title) {
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: ResponsiveValues.spacingM(context),
+      ),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: ResponsiveValues.spacingM(context),
+            vertical: ResponsiveValues.spacingXS(context),
+          ),
+          decoration: BoxDecoration(
+            color: AppColors.telegramBlue.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(
+              ResponsiveValues.radiusFull(context),
+            ),
+          ),
+          child: Text(
+            eyebrow,
+            style: AppTextStyles.labelSmall(context).copyWith(
+              color: AppColors.telegramBlue,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ),
@@ -894,41 +946,52 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _buildMenuSection() {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _buildMenuCard(
-          icon: Icons.subscriptions_outlined,
-          title: AppStrings.subscriptions,
-          onTap: () => context.push('/subscriptions'),
-        ),
-        _buildMenuCard(
-          icon: Icons.tv_outlined,
-          title: AppStrings.tvPairing,
-          onTap: () => context.push('/tv-pairing'),
-        ),
-        _buildMenuCard(
-          icon: Icons.family_restroom_outlined,
-          title: AppStrings.parentControls,
-          onTap: () => context.push('/parent-link'),
-        ),
-        _buildMenuCard(
-          icon: Icons.feedback_outlined,
-          title: AppStrings.feedback,
-          onTap: _openTelegramGroup,
-          iconColor: AppColors.telegramBlue,
-        ),
-        _buildMenuCard(
-          icon: Icons.support_outlined,
-          title: AppStrings.helpSupport,
-          onTap: () => context.push('/support'),
-        ),
-        _buildMenuCard(
-          icon: Icons.info_outline,
-          title: AppStrings.appInfo,
-          onTap: _showAppInfo,
-        ),
-      ],
+    final items = [
+      _buildMenuCard(
+        icon: Icons.subscriptions_outlined,
+        title: AppStrings.subscriptions,
+        onTap: () => context.push('/subscriptions'),
+      ),
+      _buildMenuCard(
+        icon: Icons.tv_outlined,
+        title: AppStrings.tvPairing,
+        onTap: () => context.push('/tv-pairing'),
+      ),
+      _buildMenuCard(
+        icon: Icons.family_restroom_outlined,
+        title: AppStrings.parentControls,
+        onTap: () => context.push('/parent-link'),
+      ),
+      _buildMenuCard(
+        icon: Icons.feedback_outlined,
+        title: AppStrings.feedback,
+        onTap: _openTelegramGroup,
+        iconColor: AppColors.telegramBlue,
+      ),
+      _buildMenuCard(
+        icon: Icons.support_outlined,
+        title: AppStrings.helpSupport,
+        onTap: () => context.push('/support'),
+      ),
+      _buildMenuCard(
+        icon: Icons.info_outline,
+        title: AppStrings.appInfo,
+        onTap: _showAppInfo,
+      ),
+    ];
+
+    return AppCard.solid(
+      hasShadow: false,
+      padding: EdgeInsets.zero,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 0; i < items.length; i++) ...[
+            items[i],
+            if (i != items.length - 1) const Divider(height: 1),
+          ],
+        ],
+      ),
     );
   }
 
@@ -954,26 +1017,29 @@ class _ProfileScreenState extends State<ProfileScreen>
     required bool value,
     required Function(bool)? onChanged,
   }) {
-    return AppCard.glass(
+    return SizedBox(
+      height: 60,
       child: Padding(
-        padding: ResponsiveValues.cardPadding(context),
+        padding: EdgeInsets.symmetric(
+          horizontal: ResponsiveValues.spacingL(context),
+          vertical: ResponsiveValues.spacingXS(context),
+        ),
         child: Row(
           children: [
             Container(
-              width: 40,
-              height: 40,
+              width: ResponsiveValues.listItemIconContainerSize(context),
+              height: ResponsiveValues.listItemIconContainerSize(context),
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    AppColors.telegramBlue.withValues(alpha: 0.2),
-                    AppColors.telegramPurple.withValues(alpha: 0.1),
-                  ],
-                ),
+                color: AppColors.telegramBlue.withValues(alpha: 0.10),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, size: 20, color: AppColors.telegramBlue),
+              child: Icon(
+                icon,
+                size: ResponsiveValues.listItemIconSize(context),
+                color: AppColors.telegramBlue,
+              ),
             ),
-            const SizedBox(width: 12),
+            SizedBox(width: ResponsiveValues.spacingM(context)),
             Expanded(
               child: Text(
                 title,
@@ -994,9 +1060,13 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _buildSettingsSection() {
-    return AppCard.glass(
+    return AppCard.solid(
+      hasShadow: false,
+      padding: EdgeInsets.zero,
       child: Padding(
-        padding: ResponsiveValues.cardPadding(context),
+        padding: EdgeInsets.symmetric(
+          vertical: ResponsiveValues.spacingXS(context),
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1020,21 +1090,103 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  void _showAppInfo() {
-    AppDialog.info(
+  Future<void> _showAppInfo() async {
+    final diagnostics = await NotificationService().getDiagnostics();
+    if (!mounted) return;
+
+    final notificationStatus = [
+      'Platform: ${diagnostics['platform']}',
+      'Push capable: ${diagnostics['push_capable_platform'] == true ? 'Yes' : 'No'}',
+      'Notifications enabled: ${diagnostics['notifications_enabled'] == true ? 'Yes' : 'No'}',
+      'Online: ${diagnostics['is_online'] == true ? 'Yes' : 'No'}',
+      'Signed in: ${diagnostics['is_authenticated'] == true ? 'Yes' : 'No'}',
+      'Service ready: ${diagnostics['service_initialized'] == true ? 'Yes' : 'No'}',
+      'Firebase ready: ${diagnostics['firebase_initialized'] == true ? 'Yes' : 'No'}',
+      'Token present: ${diagnostics['live_fcm_token_present'] == true || diagnostics['cached_fcm_token_present'] == true ? 'Yes' : 'No'}',
+      'Token queued: ${diagnostics['pending_fcm_token_present'] == true ? 'Yes' : 'No'}',
+      'Token: ${diagnostics['fcm_token_preview']}',
+    ].join('\n');
+
+    await AppDialog.show(
       context: context,
       title: AppStrings.familyAcademy,
-      message:
-          '${AppStrings.version} 1.5.0+1\n\n${AppStrings.empoweringStudents}\n\n© 2025 Family Academy',
+      message: '',
+      customContent: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '${AppStrings.version} 1.5.0+1',
+            style: AppTextStyles.titleMedium(context)
+                .copyWith(fontWeight: FontWeight.w700),
+          ),
+          SizedBox(height: ResponsiveValues.spacingS(context)),
+          Text(
+            AppStrings.empoweringStudents,
+            style: AppTextStyles.bodyMedium(context).copyWith(
+              color: AppColors.getTextSecondary(context),
+            ),
+          ),
+          SizedBox(height: ResponsiveValues.spacingL(context)),
+          Text(
+            'Notification Diagnostics',
+            style: AppTextStyles.titleSmall(context)
+                .copyWith(fontWeight: FontWeight.w700),
+          ),
+          SizedBox(height: ResponsiveValues.spacingS(context)),
+          Text(
+            notificationStatus,
+            style: AppTextStyles.bodySmall(context).copyWith(
+              color: AppColors.getTextSecondary(context),
+              height: 1.45,
+            ),
+          ),
+          SizedBox(height: ResponsiveValues.spacingL(context)),
+          Text(
+            '© 2026 Family Academy',
+            style: AppTextStyles.labelSmall(context).copyWith(
+              color: AppColors.getTextSecondary(context),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildLogoutButton() {
     return AppCard.glass(
-      child: AppButton.danger(
-        label: AppStrings.logout,
-        onPressed: _showLogoutConfirmation,
-        expanded: true,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: _showLogoutConfirmation,
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
+          child: Container(
+            width: double.infinity,
+            padding: EdgeInsets.symmetric(
+              horizontal: ResponsiveValues.spacingL(context),
+              vertical: ResponsiveValues.spacingM(context),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.logout_rounded,
+                  size: ResponsiveValues.iconSizeS(context),
+                  color: AppColors.telegramRed,
+                ),
+                SizedBox(width: ResponsiveValues.spacingS(context)),
+                Text(
+                  AppStrings.logout,
+                  style: AppTextStyles.labelLarge(context).copyWith(
+                    color: AppColors.telegramRed,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1058,55 +1210,30 @@ class _ProfileScreenState extends State<ProfileScreen>
   Widget buildContent(BuildContext context) {
     final user = _cachedUser;
     if (user == null) {
-      return buildErrorWidget('No user data available');
+      return buildErrorWidget(
+        'We could not load your profile yet.',
+        onRetry: onRefresh,
+      );
     }
 
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
-        SliverToBoxAdapter(
-          child: buildAppBar(),
-        ),
         SliverList(
           delegate: SliverChildListDelegate([
-            if (isOffline && pendingCount > 0)
-              Container(
-                margin: const EdgeInsets.all(8),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      AppColors.info.withValues(alpha: 0.2),
-                      AppColors.info.withValues(alpha: 0.1)
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                  border:
-                      Border.all(color: AppColors.info.withValues(alpha: 0.3)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.schedule_rounded,
-                        color: AppColors.info, size: 20),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        '$pendingCount pending change${pendingCount > 1 ? 's' : ''}',
-                        style: const TextStyle(color: AppColors.info),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             Container(
                 alignment: Alignment.center, child: _buildProfileHeader()),
             const SizedBox(height: 24),
+            _buildSectionTitle('Profile', 'Your details'),
             if (_isEditing) _buildEditProfileForm() else _buildInfoSection(),
             const SizedBox(height: 24),
+            _buildSectionTitle('Access', 'Learning and account tools'),
             _buildMenuSection(),
             const SizedBox(height: 24),
+            _buildSectionTitle('Preferences', 'Notifications and appearance'),
             _buildSettingsSection(),
             const SizedBox(height: 24),
+            _buildSectionTitle('Account', 'Sign out of this device'),
             _buildLogoutButton(),
             const SizedBox(height: 32),
           ]),
@@ -1117,6 +1244,6 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   @override
   Widget build(BuildContext context) {
-    return buildScreen(content: buildContent(context), showAppBar: false);
+    return buildScreen(content: buildContent(context));
   }
 }

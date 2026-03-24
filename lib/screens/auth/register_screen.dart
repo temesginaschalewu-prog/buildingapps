@@ -1,12 +1,9 @@
-// lib/screens/auth/register_screen.dart
-// PRODUCTION STANDARD - USING BASE SCREEN MIXIN
-
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../services/device_service.dart';
@@ -14,14 +11,12 @@ import '../../services/notification_service.dart';
 import '../../services/snackbar_service.dart';
 import '../../widgets/common/base_screen_mixin.dart';
 import '../../widgets/common/app_button.dart';
-import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_text_field.dart';
 import '../../widgets/common/app_brand_logo.dart';
 import '../../utils/responsive_values.dart';
 import '../../utils/router.dart';
 import '../../utils/helpers.dart';
 import '../../utils/constants.dart';
-import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 
@@ -140,6 +135,15 @@ class _RegisterScreenState extends State<RegisterScreen>
     return null;
   }
 
+  Future<void> _saveLastUsername(String username) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('last_username', username);
+    } catch (e) {
+      debugLog('RegisterScreen', 'Error saving last username: $e');
+    }
+  }
+
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
     if (!isMounted) return;
@@ -164,6 +168,7 @@ class _RegisterScreenState extends State<RegisterScreen>
           username, password, _deviceId!, _fcmToken);
 
       if (result['success'] == true && isMounted) {
+        await _saveLastUsername(username);
         SnackbarService().showSuccess(context, AppStrings.success);
 
         await Future.delayed(const Duration(milliseconds: 100));
@@ -196,6 +201,36 @@ class _RegisterScreenState extends State<RegisterScreen>
     }
   }
 
+  Widget _buildIntroCard() {
+    return Container(
+      margin: EdgeInsets.only(bottom: ResponsiveValues.spacingXL(context)),
+      child: Column(
+        children: [
+          AppBrandLogo(
+            size: ResponsiveValues.avatarSizeLarge(context),
+            borderRadius: ResponsiveValues.radiusLarge(context),
+          ),
+          SizedBox(height: ResponsiveValues.spacingL(context)),
+          Text(
+            AppStrings.createAccount,
+            style: AppTextStyles.headlineSmall(context)
+                .copyWith(fontWeight: FontWeight.w700),
+            textAlign: TextAlign.center,
+          ),
+          SizedBox(height: ResponsiveValues.spacingXS(context)),
+          Text(
+            'Set up your learning access in a few quick steps.',
+            style: AppTextStyles.bodyMedium(context).copyWith(
+              color: AppColors.getTextSecondary(context),
+              height: 1.45,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget buildContent(BuildContext context) {
     return Center(
@@ -203,139 +238,116 @@ class _RegisterScreenState extends State<RegisterScreen>
         padding: ResponsiveValues.screenPadding(context),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 400),
-          child: AppCard.glass(
-            child: Padding(
-              padding: ResponsiveValues.dialogPadding(context),
-              child: Form(
-                key: _formKey,
+          child: Column(
+            children: [
+              Padding(
+                padding: ResponsiveValues.dialogPadding(context),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Center(
-                      child: AppBrandLogo(
-                        size: ResponsiveValues.avatarSizeLarge(context),
-                        borderRadius: ResponsiveValues.radiusLarge(context),
+                    _buildIntroCard(),
+                    Container(
+                      padding: ResponsiveValues.dialogPadding(context),
+                      decoration: BoxDecoration(
+                        color: AppColors.getSurface(context).withValues(
+                          alpha: 0.72,
+                        ),
+                        borderRadius: BorderRadius.circular(
+                          ResponsiveValues.radiusXLarge(context),
+                        ),
+                        border: Border.all(
+                          color: AppColors.getDivider(context)
+                              .withValues(alpha: 0.55),
+                        ),
                       ),
-                    ),
-                    SizedBox(height: ResponsiveValues.spacingXL(context)),
-                    Text(
-                      AppStrings.createAccount,
-                      style: AppTextStyles.headlineMedium(context)
-                          .copyWith(fontWeight: FontWeight.bold),
-                      textAlign: TextAlign.center,
-                    ),
-                    SizedBox(height: ResponsiveValues.spacingS(context)),
-                    Text(
-                      AppStrings.joinFamilyAcademy,
-                      style: AppTextStyles.bodyLarge(context).copyWith(
-                        color: AppColors.getTextSecondary(context),
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    if (isOffline && pendingCount > 0)
-                      Padding(
-                        padding: EdgeInsets.only(
-                            top: ResponsiveValues.spacingL(context)),
-                        child: Container(
-                          padding: ResponsiveValues.cardPadding(context),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                AppColors.warning.withValues(alpha: 0.2),
-                                AppColors.warning.withValues(alpha: 0.1)
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            AppTextField(
+                              controller: _usernameController,
+                              label: AppStrings.username,
+                              hint: AppStrings.chooseUsername,
+                              prefixIcon: Icons.person_outline_rounded,
+                              enabled: !_isLoading,
+                              validator: _validateUsername,
+                            ),
+                            SizedBox(height: ResponsiveValues.spacingL(context)),
+                            AppTextField.password(
+                              controller: _passwordController,
+                              label: AppStrings.password,
+                              hint: AppStrings.createPassword,
+                              enabled: !_isLoading,
+                              validator: _validatePassword,
+                            ),
+                            SizedBox(height: ResponsiveValues.spacingL(context)),
+                            AppTextField.password(
+                              controller: _confirmPasswordController,
+                              label: AppStrings.confirmPassword,
+                              hint: AppStrings.confirmPassword,
+                              enabled: !_isLoading,
+                              validator: _validateConfirmPassword,
+                            ),
+                            SizedBox(
+                              height: ResponsiveValues.spacingXL(context),
+                            ),
+                            AppButton.primary(
+                              label: _deviceId == null
+                                  ? AppStrings.loading
+                                  : (isOffline
+                                      ? AppStrings.offlineMode
+                                      : AppStrings.createAccount),
+                              onPressed:
+                                  _deviceId == null || isOffline || _isLoading
+                                      ? null
+                                      : _register,
+                              isLoading: _isLoading,
+                              expanded: true,
+                            ),
+                            SizedBox(height: ResponsiveValues.spacingL(context)),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  AppStrings.alreadyHaveAccount,
+                                  style: AppTextStyles.bodyMedium(
+                                    context,
+                                  ).copyWith(
+                                    color: AppColors.getTextSecondary(context),
+                                  ),
+                                ),
+                                SizedBox(
+                                  width: ResponsiveValues.spacingXS(context),
+                                ),
+                                MouseRegion(
+                                  cursor: _isLoading
+                                      ? SystemMouseCursors.basic
+                                      : SystemMouseCursors.click,
+                                  child: GestureDetector(
+                                    onTap: _isLoading
+                                        ? null
+                                        : () => context.go('/auth/login'),
+                                    child: Text(
+                                      AppStrings.login,
+                                      style: AppTextStyles.bodyMedium(
+                                        context,
+                                      ).copyWith(
+                                        color: AppColors.telegramBlue,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ),
                               ],
                             ),
-                            borderRadius: BorderRadius.circular(
-                                ResponsiveValues.radiusMedium(context)),
-                            border: Border.all(
-                                color:
-                                    AppColors.warning.withValues(alpha: 0.3)),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(Icons.schedule_rounded,
-                                  color: AppColors.warning,
-                                  size: ResponsiveValues.iconSizeS(context)),
-                              SizedBox(
-                                  width: ResponsiveValues.spacingM(context)),
-                              Expanded(
-                                child: Text(
-                                  '$pendingCount pending action${pendingCount > 1 ? 's' : ''} will sync when online',
-                                  style: AppTextStyles.bodySmall(context)
-                                      .copyWith(color: AppColors.warning),
-                                ),
-                              ),
-                            ],
-                          ),
+                          ],
                         ),
                       ),
-                    SizedBox(height: ResponsiveValues.spacingXXL(context)),
-                    AppTextField(
-                      controller: _usernameController,
-                      label: AppStrings.username,
-                      hint: AppStrings.chooseUsername,
-                      prefixIcon: Icons.person_outline_rounded,
-                      enabled: !_isLoading,
-                      validator: _validateUsername,
-                    ),
-                    SizedBox(height: ResponsiveValues.spacingL(context)),
-                    AppTextField.password(
-                      controller: _passwordController,
-                      label: AppStrings.password,
-                      hint: AppStrings.createPassword,
-                      enabled: !_isLoading,
-                      validator: _validatePassword,
-                    ),
-                    SizedBox(height: ResponsiveValues.spacingL(context)),
-                    AppTextField.password(
-                      controller: _confirmPasswordController,
-                      label: AppStrings.confirmPassword,
-                      hint: AppStrings.confirmPassword,
-                      enabled: !_isLoading,
-                      validator: _validateConfirmPassword,
-                    ),
-                    SizedBox(height: ResponsiveValues.spacingXL(context)),
-                    AppButton.primary(
-                      label: _deviceId == null
-                          ? AppStrings.loading
-                          : (isOffline
-                              ? AppStrings.offlineMode
-                              : AppStrings.createAccount),
-                      onPressed: _deviceId == null || isOffline || _isLoading
-                          ? null
-                          : _register,
-                      isLoading: _isLoading,
-                      expanded: true,
-                    ),
-                    SizedBox(height: ResponsiveValues.spacingL(context)),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          AppStrings.alreadyHaveAccount,
-                          style: AppTextStyles.bodyMedium(context).copyWith(
-                            color: AppColors.getTextSecondary(context),
-                          ),
-                        ),
-                        SizedBox(width: ResponsiveValues.spacingXS(context)),
-                        GestureDetector(
-                          onTap: _isLoading
-                              ? null
-                              : () => context.go('/auth/login'),
-                          child: Text(
-                            AppStrings.login,
-                            style: AppTextStyles.bodyMedium(context).copyWith(
-                              color: AppColors.telegramBlue,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
                     ),
                   ],
                 ),
               ),
-            ),
+            ],
           ),
         ),
       ),

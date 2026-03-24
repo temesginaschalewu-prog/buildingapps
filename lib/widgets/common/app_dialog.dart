@@ -31,7 +31,8 @@ class AppDialog {
       builder: (context) => Dialog(
         backgroundColor: Colors.transparent,
         insetPadding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
-        child: AppCard.glass(
+        child: _buildGlassDialogSurface(
+          context,
           child: Padding(
             padding: ResponsiveValues.dialogPadding(context),
             child: Column(
@@ -40,12 +41,7 @@ class AppDialog {
                 Container(
                   padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        colors.first.withValues(alpha: 0.2),
-                        colors.first.withValues(alpha: 0.1)
-                      ],
-                    ),
+                    color: colors.first.withValues(alpha: 0.10),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
@@ -58,7 +54,7 @@ class AppDialog {
                 Text(
                   isOfflineDisabled ? 'Internet Required' : title,
                   style: AppTextStyles.titleLarge(context)
-                      .copyWith(fontWeight: FontWeight.w700),
+                      .copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.1),
                   textAlign: TextAlign.center,
                 ),
                 SizedBox(height: ResponsiveValues.spacingM(context)),
@@ -203,7 +199,8 @@ class AppDialog {
 
         return Dialog(
           backgroundColor: Colors.transparent,
-          child: AppCard.glass(
+          child: _buildGlassDialogSurface(
+            context,
             child: Padding(
               padding: ResponsiveValues.dialogPadding(context),
               child: Column(
@@ -212,15 +209,9 @@ class AppDialog {
                   Container(
                     padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
                     decoration: BoxDecoration(
-                      gradient: isOfflineDisabled
-                          ? const LinearGradient(colors: [
-                              AppColors.warning,
-                              AppColors.telegramOrange
-                            ])
-                          : const LinearGradient(colors: [
-                              AppColors.telegramRed,
-                              AppColors.telegramPink
-                            ]),
+                      color: isOfflineDisabled
+                          ? AppColors.warning.withValues(alpha: 0.14)
+                          : AppColors.telegramRed.withValues(alpha: 0.12),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
@@ -228,14 +219,16 @@ class AppDialog {
                           ? Icons.wifi_off_rounded
                           : Icons.delete_outline_rounded,
                       size: 32,
-                      color: Colors.white,
+                      color: isOfflineDisabled
+                          ? AppColors.warning
+                          : AppColors.telegramRed,
                     ),
                   ),
                   SizedBox(height: ResponsiveValues.spacingL(context)),
                   Text(
                     isOfflineDisabled ? 'Internet Required' : title,
                     style: AppTextStyles.titleLarge(context)
-                        .copyWith(fontWeight: FontWeight.w700),
+                        .copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.1),
                     textAlign: TextAlign.center,
                   ),
                   SizedBox(height: ResponsiveValues.spacingM(context)),
@@ -302,7 +295,8 @@ class AppDialog {
       context: context,
       builder: (context) => Dialog(
         backgroundColor: Colors.transparent,
-        child: AppCard.glass(
+        child: _buildGlassDialogSurface(
+          context,
           child: Padding(
             padding: ResponsiveValues.dialogPadding(context),
             child: Column(
@@ -389,7 +383,8 @@ class AppDialog {
         maxChildSize: 0.95,
         expand: false,
         builder: (context, scrollController) {
-          return AppCard.glass(
+          return _buildGlassDialogSurface(
+            context,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -397,10 +392,11 @@ class AppDialog {
                   width: 40,
                   height: 4,
                   margin: EdgeInsets.symmetric(
-                      vertical: ResponsiveValues.spacingM(context)),
+                    vertical: ResponsiveValues.spacingM(context),
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.getTextSecondary(context)
-                        .withValues(alpha: 0.3),
+                        .withValues(alpha: 0.22),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -424,7 +420,8 @@ class AppDialog {
       barrierDismissible: false,
       builder: (context) => Dialog(
         backgroundColor: Colors.transparent,
-        child: AppCard.glass(
+        child: _buildGlassDialogSurface(
+          context,
           child: Padding(
             padding: ResponsiveValues.dialogPadding(context),
             child: Column(
@@ -451,6 +448,39 @@ class AppDialog {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  static Widget _buildGlassDialogSurface(
+    BuildContext context, {
+    required Widget child,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return AppCard.solid(
+      padding: EdgeInsets.zero,
+      backgroundColor: Colors.transparent,
+      borderRadius: ResponsiveValues.radiusXLarge(context),
+      borderColor: AppColors.getDivider(context).withValues(
+        alpha: isDark ? 0.24 : 0.34,
+      ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              AppColors.getCard(context).withValues(alpha: isDark ? 0.64 : 0.76),
+              AppColors.getSurface(context)
+                  .withValues(alpha: isDark ? 0.52 : 0.62),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(
+            ResponsiveValues.radiusXLarge(context),
+          ),
+        ),
+        child: child,
       ),
     );
   }

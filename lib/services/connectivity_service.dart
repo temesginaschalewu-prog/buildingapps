@@ -1,18 +1,14 @@
-// lib/services/connectivity_service.dart
-// PRODUCTION FINAL - WITH CONNECTION QUALITY
-
 import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
-import 'package:familyacademyclient/themes/app_colors.dart';
 import 'package:familyacademyclient/utils/constants.dart';
 import 'package:flutter/material.dart';
+import 'snackbar_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/helpers.dart';
 
 enum ConnectionQuality { none, poor, fair, good, excellent }
 
-/// PRODUCTION-READY Connectivity Service with Connection Quality
 class ConnectivityService {
   static final ConnectivityService _instance = ConnectivityService._internal();
   factory ConnectivityService() => _instance;
@@ -61,17 +57,16 @@ class ConnectivityService {
         _handleConnectivityChange(isOnline);
       });
 
-      // Start periodic quality checks
+      // Re-check backend reachability periodically so cached/offline UI can
+      // switch states even when the network link itself has not changed.
       Timer.periodic(const Duration(seconds: 30), (_) {
-        if (_isOnline) {
-          unawaited(checkConnectionQuality());
-        }
+        unawaited(checkConnectivity());
       });
 
       _isInitialized = true;
-      debugLog('ConnectivityService', '✅ Initialized. Online: $_isOnline');
+      debugLog('ConnectivityService', 'Initialized. Online: $_isOnline');
     } catch (e) {
-      debugLog('ConnectivityService', '❌ Initialization error: $e');
+      debugLog('ConnectivityService', 'Initialization error: $e');
       _isOnline = true;
       _isInitialized = true;
     }
@@ -99,33 +94,28 @@ class ConnectivityService {
           results.isNotEmpty && results.first != ConnectivityResult.none;
 
       if (hasNetwork) {
-        final probeResults = await Future.wait([
-          _probeUrl('${AppConstants.apiBaseUrl}${AppConstants.healthEndpoint}'),
-          _probeUrl('https://connectivitycheck.gstatic.com/generate_204'),
-          _probeUrl('https://www.google.com/generate_204'),
-        ]);
+        final backendReachable =
+            await _probeUrl('${AppConstants.apiBaseUrl}${AppConstants.healthEndpoint}');
 
-        if (probeResults.any((ok) => ok)) {
-          _isOnline = true;
+        if (backendReachable) {
+          _handleConnectivityChange(true);
           unawaited(checkConnectionQuality());
         } else {
           debugLog(
             'ConnectivityService',
-            'Internet probes failed despite network link; keeping online=true to avoid false offline state',
+            'Backend is unreachable; switching to offline mode so cached data can be used',
           );
-          _isOnline = true;
+          _handleConnectivityChange(false);
         }
       } else {
-        _isOnline = false;
-        _connectionQuality = ConnectionQuality.none;
-        _connectionQualityController.add(_connectionQuality);
+        _handleConnectivityChange(false);
       }
 
       return _isOnline;
     } catch (e) {
       debugLog('ConnectivityService', 'Connectivity check error: $e');
-      _isOnline = true;
-      return true;
+      _handleConnectivityChange(false);
+      return false;
     }
   }
 
@@ -140,7 +130,7 @@ class ConnectivityService {
       final stopwatch = Stopwatch()..start();
       final dio = Dio();
       await dio.get(
-        'https://www.google.com/generate_204',
+        '${AppConstants.apiBaseUrl}${AppConstants.healthEndpoint}',
         options: Options(
           sendTimeout: const Duration(seconds: 5),
           receiveTimeout: const Duration(seconds: 5),
@@ -165,7 +155,7 @@ class ConnectivityService {
       debugLog('ConnectivityService',
           'Connection quality: $_connectionQuality (${latency}ms)');
     } catch (e) {
-      _connectionQuality = ConnectionQuality.poor;
+      _connectionQuality = ConnectionQuality.none;
       _connectionQualityController.add(_connectionQuality);
       debugLog('ConnectivityService', 'Failed to check quality: $e');
     }
@@ -239,20 +229,7 @@ class ConnectivityService {
     if (isOnline) return true;
 
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            action != null
-                ? 'Cannot $action while offline. Your changes will sync when online.'
-                : 'You are offline. Showing cached content.',
-          ),
-          backgroundColor: AppColors.warning,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-      );
+      SnackbarService().showOffline(context, action: action);
     }
 
     return false;

@@ -4,6 +4,7 @@
 import 'dart:io';
 import 'package:hive/hive.dart';
 import 'package:path_provider/path_provider.dart';
+import '../models/exam_question_model.dart';
 import '../models/adapters/hive_adapters.dart';
 import '../utils/helpers.dart';
 
@@ -68,6 +69,7 @@ class HiveService {
     Hive.registerAdapter(QuestionAdapter());
     Hive.registerAdapter(ExamAdapter());
     Hive.registerAdapter(ExamResultAdapter());
+    Hive.registerAdapter(ExamQuestionAdapter());
     Hive.registerAdapter(SubscriptionAdapter());
     Hive.registerAdapter(PaymentAdapter());
     Hive.registerAdapter(NotificationAdapter());
@@ -147,34 +149,36 @@ class HiveService {
 
   Future<void> clearUserData(String userId) async {
     try {
-      final keysToDelete = <String>[
-        'user_${userId}_profile',
-        'user_${userId}_categories',
-        'user_${userId}_courses',
-        'user_${userId}_chapters',
-        'user_${userId}_videos',
-        'user_${userId}_notes',
-        'user_${userId}_questions',
-        'user_${userId}_exams',
-        'user_${userId}_exam_results',
-        'user_${userId}_subscriptions',
-        'user_${userId}_payments',
-        'user_${userId}_notifications',
-        'user_${userId}_progress',
-        'user_${userId}_chatbot',
-        'user_${userId}_streak',
+      final userScopedBoxes = <String>[
+        'user_box',
+        'categories_box',
+        'courses_box',
+        'chapters_box',
+        'videos_box',
+        'notes_box',
+        'questions_box',
+        'exams_box',
+        'subscriptions_box',
+        'payments_box',
+        'notifications_box',
+        'progress_box',
+        'chatbot_messages_box',
+        'chatbot_conversations_box',
+        'chatbot_usage_box',
+        'streak_box',
       ];
 
-      for (final key in keysToDelete) {
+      for (final boxName in userScopedBoxes) {
         try {
-          final boxName = key.split('_').first;
-          if (isBoxOpen(boxName)) {
-            final box = await openBox<dynamic>(boxName);
+          final box = await openBox<dynamic>(boxName);
+          final keysToDelete = box.keys
+              .where((key) => key.toString().contains('user_${userId}_'))
+              .toList();
+          for (final key in keysToDelete) {
             await box.delete(key);
           }
         } catch (e) {
-          // Ignore errors for individual deletions
-          debugLog('HiveService', '⚠️ Error deleting $key: $e');
+          debugLog('HiveService', '⚠️ Error clearing $boxName: $e');
         }
       }
 

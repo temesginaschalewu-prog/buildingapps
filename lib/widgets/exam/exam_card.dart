@@ -1,3 +1,6 @@
+// lib/widgets/exam/exam_card.dart
+// PRODUCTION-READY FINAL VERSION - WITH PENDING PAYMENT CHECK
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -16,7 +19,6 @@ import '../../utils/responsive_values.dart';
 import '../common/app_card.dart';
 import '../common/app_dialog.dart';
 
-/// PRODUCTION-READY EXAM CARD with Payment Dialog
 class ExamCard extends StatelessWidget {
   final Exam exam;
   final VoidCallback onTap;
@@ -64,22 +66,13 @@ class ExamCard extends StatelessWidget {
             padding: ResponsiveValues.cardPadding(context),
             child: Row(
               children: [
-                // Icon
                 Container(
                   width: ResponsiveValues.iconSizeXXL(context),
                   height: ResponsiveValues.iconSizeXXL(context),
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: canTake
-                          ? [
-                              AppColors.telegramGreen.withValues(alpha: 0.2),
-                              AppColors.telegramGreen.withValues(alpha: 0.1)
-                            ]
-                          : [
-                              statusColor.withValues(alpha: 0.2),
-                              statusColor.withValues(alpha: 0.1)
-                            ],
-                    ),
+                    color: canTake
+                        ? AppColors.telegramGreen.withValues(alpha: 0.09)
+                        : statusColor.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(
                         ResponsiveValues.radiusLarge(context)),
                   ),
@@ -94,7 +87,6 @@ class ExamCard extends StatelessWidget {
                   ),
                 ),
                 SizedBox(width: ResponsiveValues.spacingL(context)),
-                // Content
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -102,7 +94,7 @@ class ExamCard extends StatelessWidget {
                       Text(
                         exam.title,
                         style: AppTextStyles.titleMedium(context)
-                            .copyWith(fontWeight: FontWeight.w600),
+                            .copyWith(fontWeight: FontWeight.w700),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -147,7 +139,6 @@ class ExamCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                // Status badge
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
@@ -167,6 +158,7 @@ class ExamCard extends StatelessWidget {
                           color: statusColor,
                           fontSize:
                               ResponsiveValues.fontStatusBadge(context) * 0.9,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ),
@@ -216,13 +208,6 @@ class ExamCard extends StatelessWidget {
       return;
     }
 
-    // ✅ FIX: Check if can take exam (already have access)
-    if (exam.canTakeExam) {
-      onTap();
-      return;
-    }
-
-    // Check if has subscription access
     final bool hasAccess =
         subscriptionProvider.hasActiveSubscriptionForCategory(exam.categoryId);
 
@@ -231,25 +216,29 @@ class ExamCard extends StatelessWidget {
       return;
     }
 
-    // If no access, check if online to show payment dialog
-    if (!connectivity.isOnline) {
-      SnackbarService().showOffline(context, action: 'make payment');
+    if (exam.canTakeExam) {
+      onTap();
       return;
     }
 
     final hasPendingPayment = paymentProvider.getPendingPayments().any(
-      (payment) =>
-          payment.categoryId == exam.categoryId ||
-          payment.categoryName.toLowerCase() == category.name.toLowerCase(),
-    );
+          (payment) =>
+              payment.categoryId == exam.categoryId ||
+              payment.categoryName.toLowerCase() == category.name.toLowerCase(),
+        );
 
     if (hasPendingPayment) {
       await AppDialog.info(
         context: context,
         title: 'Payment Pending',
         message:
-            'You already have a pending payment for "${category.name}". Please wait for admin verification.',
+            'You have a pending payment for "${category.name}". Please wait for admin verification.',
       );
+      return;
+    }
+
+    if (!connectivity.isOnline) {
+      SnackbarService().showOffline(context, action: 'make payment');
       return;
     }
 
@@ -257,7 +246,6 @@ class ExamCard extends StatelessWidget {
   }
 
   void _showPaymentDialog(BuildContext context, Category category) {
-    // Check if this is a renewal (user has expired subscription)
     final subscriptionProvider = context.read<SubscriptionProvider>();
     final hasExpiredSubscription = subscriptionProvider.expiredSubscriptions
         .any((sub) => sub.categoryId == category.id);

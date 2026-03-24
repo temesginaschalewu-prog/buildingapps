@@ -35,9 +35,11 @@ class NotificationProvider extends ChangeNotifier
   DateTime? _lastLoadTime;
   DateTime? _lastUnreadRefreshAt;
   Completer<void>? _unreadRefreshCompleter;
+  Completer<void>? _loadCompleter;
 
   static const Duration _cacheDuration = AppConstants.cacheTTLNotifications;
   static const Duration _minUnreadRefreshInterval = Duration(seconds: 20);
+  static const Duration _minFetchInterval = Duration(minutes: 5);
   @override
   Duration get refreshInterval => const Duration(minutes: 5);
 
@@ -45,8 +47,9 @@ class NotificationProvider extends ChangeNotifier
 
   int _apiCallCount = 0;
 
-  late StreamController<List<notification_model.Notification>>
-      _notificationsUpdateController;
+  final StreamController<List<notification_model.Notification>>
+      _notificationsUpdateController =
+      StreamController<List<notification_model.Notification>>.broadcast();
 
   DateTime? _lastBackgroundRefresh;
   static const Duration _minBackgroundInterval = Duration(minutes: 2);
@@ -57,8 +60,7 @@ class NotificationProvider extends ChangeNotifier
     required this.connectivityService,
     required this.hiveService,
     required this.offlineQueueManager,
-  }) : _notificationsUpdateController = StreamController<
-            List<notification_model.Notification>>.broadcast() {
+  }) {
     log('NotificationProvider constructor called');
     initializeOfflineAware(
       connectivity: connectivityService,
@@ -160,6 +162,18 @@ class NotificationProvider extends ChangeNotifier
     }
   }
 
+  bool get _hasFreshData =>
+      _lastLoadTime != null &&
+      DateTime.now().difference(_lastLoadTime!) < _minFetchInterval;
+
+  void _publishNotifications({bool notify = true}) {
+    _unreadCount = _notifications.where((n) => !n.isRead && n.isDelivered).length;
+    _notificationsUpdateController.add(_notifications);
+    if (notify) {
+      safeNotify();
+    }
+  }
+
   // ===== GETTERS =====
   List<notification_model.Notification> get notifications =>
       List.unmodifiable(_notifications);
@@ -173,11 +187,15 @@ class NotificationProvider extends ChangeNotifier
   bool get isLoaded => _lastLoadTime != null;
 
   List<notification_model.Notification> get unreadNotifications {
-    return _notifications.where((n) => !n.isRead).toList();
+    final items = _notifications.where((n) => !n.isRead).toList();
+    items.sort((a, b) => b.primaryTimestamp.compareTo(a.primaryTimestamp));
+    return items;
   }
 
   List<notification_model.Notification> get readNotifications {
-    return _notifications.where((n) => n.isRead).toList();
+    final items = _notifications.where((n) => n.isRead).toList();
+    items.sort((a, b) => b.primaryTimestamp.compareTo(a.primaryTimestamp));
+    return items;
   }
 
   // ===== LOAD NOTIFICATIONS - ✅ FIXED: CHECK CACHE FIRST, NO API CALL OFFLINE =====
@@ -199,16 +217,22 @@ class NotificationProvider extends ChangeNotifier
     if (_notifications.isNotEmpty && !forceRefresh) {
       log('✅ Already have ${_notifications.length} notifications, returning cached');
       setLoaded();
-      _notificationsUpdateController.add(_notifications);
+      _publishNotifications(notify: false);
+
+      if (!isOffline && !_hasFreshData && !isManualRefresh) {
+        unawaited(_refreshFromApi());
+      }
       return;
     }
 
-    if (isLoading && !forceRefresh) {
-      log('⏳ Already loading, skipping');
+    if (_loadCompleter != null && !forceRefresh) {
+      log('⏳ Already loading, waiting for existing request');
+      await _loadCompleter!.future;
       return;
     }
 
     setLoading();
+    _loadCompleter = Completer<void>();
 
     try {
       // ✅ STEP 1: ALWAYS try Hive cache first (fastest)
@@ -231,12 +255,14 @@ class NotificationProvider extends ChangeNotifier
             }
             if (notifications.isNotEmpty) {
               _notifications = notifications;
-              _unreadCount = _notifications
-                  .where((n) => !n.isRead && n.isDelivered)
-                  .length;
+              _lastLoadTime = DateTime.now();
               setLoaded();
-              _notificationsUpdateController.add(_notifications);
+              _publishNotifications(notify: false);
               log('✅ Using cached notifications from Hive');
+
+              if (!isOffline && !isManualRefresh) {
+                unawaited(_refreshFromApi());
+              }
               return;
             }
           }
@@ -261,13 +287,16 @@ class NotificationProvider extends ChangeNotifier
           }
           if (notifications.isNotEmpty) {
             _notifications = notifications;
-            _unreadCount =
-                _notifications.where((n) => !n.isRead && n.isDelivered).length;
+            _lastLoadTime = DateTime.now();
             setLoaded();
-            _notificationsUpdateController.add(_notifications);
+            _publishNotifications(notify: false);
 
             await _saveToHive();
             log('✅ Using cached notifications from DeviceService');
+
+            if (!isOffline && !isManualRefresh) {
+              unawaited(_refreshFromApi());
+            }
             return;
           }
         }
@@ -276,10 +305,16 @@ class NotificationProvider extends ChangeNotifier
       // ✅ STEP 3: Check offline status - NO API CALL WHEN OFFLINE
       if (isOffline) {
         log('STEP 3: Offline mode - no cached data available');
-        _notifications = [];
-        _unreadCount = 0;
+
+        if (_notifications.isNotEmpty) {
+          setLoaded();
+          _publishNotifications(notify: false);
+          log('✅ Offline - preserving cached notifications');
+          return;
+        }
+
         setLoaded();
-        _notificationsUpdateController.add(_notifications);
+        _publishNotifications(notify: false);
 
         if (isManualRefresh) {
           throw Exception(getUserFriendlyErrorMessage(
@@ -295,8 +330,6 @@ class NotificationProvider extends ChangeNotifier
 
       if (response.success && response.data != null) {
         _notifications = response.data ?? [];
-        _unreadCount =
-            _notifications.where((n) => !n.isRead && n.isDelivered).length;
         _lastLoadTime = DateTime.now();
         setLoaded();
         log('✅ Received ${_notifications.length} notifications from API');
@@ -310,13 +343,19 @@ class NotificationProvider extends ChangeNotifier
           isUserSpecific: true,
         );
 
-        _notificationsUpdateController.add(_notifications);
+        _publishNotifications(notify: false);
+        startBackgroundRefresh();
         log('✅ Success! Notifications loaded');
       } else {
-        setError(getUserFriendlyErrorMessage(response.message));
-        setLoaded();
         log('❌ API error: ${response.message}');
-        _notificationsUpdateController.add(_notifications);
+
+        if (_notifications.isNotEmpty) {
+          setLoaded();
+          _publishNotifications(notify: false);
+        } else {
+          setError(getUserFriendlyErrorMessage(response.message));
+          _publishNotifications(notify: false);
+        }
 
         if (isManualRefresh) {
           throw Exception(response.message);
@@ -324,19 +363,22 @@ class NotificationProvider extends ChangeNotifier
       }
     } catch (e) {
       log('❌ Error loading notifications: $e');
+      final recovered = await _recoverFromCache();
 
-      setError(getUserFriendlyErrorMessage(e));
-      setLoaded();
-
-      // Show empty state on error
-      _notifications = [];
-      _unreadCount = 0;
-      _notificationsUpdateController.add(_notifications);
+      if (recovered || _notifications.isNotEmpty) {
+        setLoaded();
+        _publishNotifications(notify: false);
+      } else {
+        setError(getUserFriendlyErrorMessage(e));
+        _publishNotifications(notify: false);
+      }
 
       if (isManualRefresh) {
         rethrow;
       }
     } finally {
+      _loadCompleter?.complete();
+      _loadCompleter = null;
       safeNotify();
     }
   }
@@ -406,7 +448,7 @@ class NotificationProvider extends ChangeNotifier
     }
   }
 
-  Future<void> _recoverFromCache() async {
+  Future<bool> _recoverFromCache() async {
     log('Attempting cache recovery');
     final userId = await UserSession().getCurrentUserId();
     if (userId != null && _notificationsBox != null) {
@@ -424,11 +466,10 @@ class NotificationProvider extends ChangeNotifier
           }
           if (notifications.isNotEmpty) {
             _notifications = notifications;
-            _unreadCount =
-                _notifications.where((n) => !n.isRead && n.isDelivered).length;
-            _notificationsUpdateController.add(_notifications);
+            _lastLoadTime = DateTime.now();
+            _publishNotifications(notify: false);
             log('✅ Recovered ${notifications.length} notifications from Hive after error');
-            return;
+            return true;
           }
         }
       } catch (e) {
@@ -451,15 +492,17 @@ class NotificationProvider extends ChangeNotifier
         }
         if (notifications.isNotEmpty) {
           _notifications = notifications;
-          _unreadCount =
-              _notifications.where((n) => !n.isRead && n.isDelivered).length;
-          _notificationsUpdateController.add(_notifications);
+          _lastLoadTime = DateTime.now();
+          _publishNotifications(notify: false);
           log('✅ Recovered ${notifications.length} notifications from DeviceService after error');
+          return true;
         }
       }
     } catch (e) {
       log('Error recovering from DeviceService: $e');
     }
+
+    return false;
   }
 
   // ===== MARK AS READ =====
@@ -483,8 +526,6 @@ class NotificationProvider extends ChangeNotifier
           sentBy: _notifications[index].sentBy,
         );
 
-        _unreadCount = unreadNotifications.length;
-
         await _saveToHive();
 
         deviceService.saveCacheItem(
@@ -494,8 +535,7 @@ class NotificationProvider extends ChangeNotifier
           isUserSpecific: true,
         );
 
-        _notificationsUpdateController.add(_notifications);
-        safeNotify();
+        _publishNotifications();
 
         if (connectivityService.isOnline) {
           unawaited(apiService.markNotificationAsRead(logId).catchError((e) {
@@ -554,8 +594,6 @@ class NotificationProvider extends ChangeNotifier
         );
       }).toList();
 
-      _unreadCount = 0;
-
       await _saveToHive();
 
       deviceService.saveCacheItem(
@@ -565,8 +603,7 @@ class NotificationProvider extends ChangeNotifier
         isUserSpecific: true,
       );
 
-      _notificationsUpdateController.add(_notifications);
-      safeNotify();
+      _publishNotifications();
 
       if (connectivityService.isOnline) {
         unawaited(apiService.markAllNotificationsAsRead());
@@ -583,7 +620,6 @@ class NotificationProvider extends ChangeNotifier
 
     try {
       _notifications.removeWhere((n) => n.logId == logId);
-      _unreadCount = unreadNotifications.length;
 
       await _saveToHive();
 
@@ -594,8 +630,7 @@ class NotificationProvider extends ChangeNotifier
         isUserSpecific: true,
       );
 
-      _notificationsUpdateController.add(_notifications);
-      safeNotify();
+      _publishNotifications();
 
       if (connectivityService.isOnline) {
         unawaited(apiService.deleteNotification(logId).catchError((e) {
@@ -607,6 +642,38 @@ class NotificationProvider extends ChangeNotifier
       log('✅ Notification $logId deleted');
     } catch (e) {
       log('Delete notification error: $e');
+    }
+  }
+
+  Future<void> deleteAllNotifications() async {
+    log('deleteAllNotifications()');
+
+    try {
+      _notifications.clear();
+      _unreadCount = 0;
+
+      await _saveToHive();
+
+      deviceService.saveCacheItem(
+        AppConstants.notificationsCacheKey,
+        <Map<String, dynamic>>[],
+        ttl: _cacheDuration,
+        isUserSpecific: true,
+      );
+
+      _publishNotifications();
+
+      if (connectivityService.isOnline) {
+        final response = await apiService.deleteAllNotifications();
+        if (!response.success) {
+          throw Exception(response.message);
+        }
+      }
+
+      log('✅ All notifications deleted');
+    } catch (e) {
+      log('Delete all notifications error: $e');
+      rethrow;
     }
   }
 
@@ -705,18 +772,7 @@ class NotificationProvider extends ChangeNotifier
     _notifications.clear();
     _unreadCount = 0;
     _lastLoadTime = null;
-
-    await _notificationsUpdateController.close();
-    _notificationsUpdateController =
-        StreamController<List<notification_model.Notification>>.broadcast();
-    _notificationsUpdateController.add(_notifications);
-
-    safeNotify();
-  }
-
-  @override
-  void clearError() {
-    super.clearError();
+    _publishNotifications();
   }
 
   @override

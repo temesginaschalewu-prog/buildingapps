@@ -11,6 +11,7 @@ import '../services/user_session.dart';
 import '../services/connectivity_service.dart';
 import '../services/hive_service.dart';
 import '../models/setting_model.dart';
+import '../utils/parsers.dart';
 import '../utils/api_response.dart';
 import '../utils/constants.dart';
 import '../utils/app_enums.dart';
@@ -191,6 +192,30 @@ class SettingsProvider extends ChangeNotifier
         value.contains('wa.me');
   }
 
+  String _normalizeTelegramUrl(String rawValue) {
+    final value = rawValue.trim();
+    if (value.isEmpty) return value;
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return value;
+    }
+    if (value.startsWith('t.me/')) {
+      return 'https://$value';
+    }
+    if (value.startsWith('@')) {
+      return 'https://t.me/${value.substring(1)}';
+    }
+    if (!value.contains('/') &&
+        !value.contains(' ') &&
+        !value.contains('.com')) {
+      return 'https://t.me/$value';
+    }
+    return value;
+  }
+
+  String _formatMonthsLabel(int months) {
+    return months == 1 ? '1 month' : '$months months';
+  }
+
   IconData _getPaymentMethodIcon(String methodKey, String name, String number) {
     final method = methodKey.toLowerCase();
     final nameLower = name.toLowerCase();
@@ -243,6 +268,60 @@ class SettingsProvider extends ChangeNotifier
 
   String? getSettingDisplayName(String key) {
     return _settingsMap[key]?.displayName;
+  }
+
+  int getBillingCycleMonths(String billingCycle) {
+    final normalizedCycle = billingCycle.trim().toLowerCase();
+    final candidates = [
+      'billing_cycle_${normalizedCycle}_months',
+      'subscription_${normalizedCycle}_months',
+      '${normalizedCycle}_duration_months',
+    ];
+
+    for (final key in candidates) {
+      final value = getSettingValue(key);
+      if (value != null && value.isNotEmpty) {
+        final parsed = int.tryParse(value.trim());
+        if (parsed != null && parsed > 0) {
+          return parsed;
+        }
+      }
+    }
+
+    return normalizedCycle == 'semester' ? 4 : 1;
+  }
+
+  String getBillingCycleDurationText(String billingCycle) {
+    return _formatMonthsLabel(getBillingCycleMonths(billingCycle));
+  }
+
+  String getBillingCyclePlanLabel(String billingCycle) {
+    final normalizedCycle = billingCycle.trim().toLowerCase();
+    final configuredLabel = getSettingValue('billing_cycle_${normalizedCycle}_label');
+    if (configuredLabel != null && configuredLabel.trim().isNotEmpty) {
+      return configuredLabel.trim();
+    }
+
+    final durationText = getBillingCycleDurationText(normalizedCycle);
+    if (normalizedCycle == 'monthly') {
+      return 'Monthly plan';
+    }
+    if (normalizedCycle == 'semester') {
+      return 'Semester plan ($durationText)';
+    }
+    return '${Parsers.toTitleCase(normalizedCycle)} plan ($durationText)';
+  }
+
+  String getBillingCycleDescription(String billingCycle) {
+    final normalizedCycle = billingCycle.trim().toLowerCase();
+    final configuredDescription =
+        getSettingValue('billing_cycle_${normalizedCycle}_description');
+    if (configuredDescription != null &&
+        configuredDescription.trim().isNotEmpty) {
+      return configuredDescription.trim();
+    }
+
+    return '${Parsers.toTitleCase(normalizedCycle)} (${getBillingCycleDurationText(normalizedCycle)})';
   }
 
   // ===== LOAD ALL SETTINGS =====
@@ -810,12 +889,20 @@ class SettingsProvider extends ChangeNotifier
     log('Building contact info list (cache miss)');
 
     final contacts = <ContactInfo>[];
-    final contactSettings = _settingsByCategory['contact'] ?? [];
+    final seenKeys = <String>{};
+    final contactSettings = <Setting>[
+      ...(_settingsByCategory['contact'] ?? const <Setting>[]),
+      ...(_settingsByCategory['telegram'] ?? const <Setting>[]),
+    ];
 
     for (final setting in contactSettings) {
       if (setting.settingValue == null || setting.settingValue!.isEmpty) {
         continue;
       }
+      if (seenKeys.contains(setting.settingKey)) {
+        continue;
+      }
+      seenKeys.add(setting.settingKey);
 
       final key = setting.settingKey.toLowerCase();
       final value = setting.settingValue!;
@@ -922,6 +1009,15 @@ class SettingsProvider extends ChangeNotifier
     return contacts;
   }
 
+  ContactInfo? getContactInfoByType(ContactType type) {
+    for (final contact in getContactInfoList()) {
+      if (contact.type == type) {
+        return contact;
+      }
+    }
+    return null;
+  }
+
   // ===== PAYMENT METHODS =====
   List<PaymentMethod> getPaymentMethods() {
     final methods = <PaymentMethod>[];
@@ -968,13 +1064,87 @@ class SettingsProvider extends ChangeNotifier
 
   // ===== PAYMENT INSTRUCTIONS =====
   String getPaymentInstructions() {
+    final verificationMessage = getPaymentVerificationMessage();
     return getSettingValue('payment_instructions') ??
         'Please follow these steps to complete your payment:\n'
             '1. Select a payment method\n'
             '2. Make the payment using the provided account details\n'
             '3. Upload proof of payment\n'
-            '4. Wait for admin verification (usually within 24 hours)\n'
+            '4. Wait for admin verification. $verificationMessage\n'
             '5. Your access will be activated once verified';
+  }
+
+  String getPaymentVerificationWindowText() {
+    final rawValue = getSettingValue('payment_verification_business_days');
+    final trimmed = rawValue?.trim();
+    if (trimmed != null && trimmed.isNotEmpty) {
+      return '$trimmed working days';
+    }
+    return '1-3 working days';
+  }
+
+  String getPaymentVerificationMessage() {
+    final configured = getSettingValue('payment_verification_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+
+    return 'Payments are usually verified within ${getPaymentVerificationWindowText()}';
+  }
+
+  String getPendingPaymentStatusMessage() {
+    return 'Please wait for admin verification (${getPaymentVerificationWindowText()})';
+  }
+
+  String getPaymentMethodsUnavailableMessage() {
+    final configured = getSettingValue('payment_methods_unavailable_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Payment options are not ready yet. Please refresh or contact support if this continues.';
+  }
+
+  List<String> getPaymentImportantNotes() {
+    final accountHolderMatch =
+        getSettingValue('payment_note_account_holder_match')?.trim();
+    final keepProof = getSettingValue('payment_note_keep_proof')?.trim();
+    final contactSupport =
+        getSettingValue('payment_note_contact_support')?.trim();
+    final notification = getSettingValue('payment_note_notification')?.trim();
+
+    final notes = <String>[];
+
+    if (accountHolderMatch != null && accountHolderMatch.isNotEmpty) {
+      notes.add(accountHolderMatch);
+    } else {
+      notes.add(
+        'Make sure the account holder name matches the bank or mobile money account you used.',
+      );
+    }
+
+    notes.add(getPaymentVerificationMessage());
+
+    if (keepProof != null && keepProof.isNotEmpty) {
+      notes.add(keepProof);
+    } else {
+      notes.add('Keep your payment proof until your payment is verified.');
+    }
+
+    if (contactSupport != null && contactSupport.isNotEmpty) {
+      notes.add(contactSupport);
+    } else {
+      notes.add(
+        'Contact support if your payment is still not verified after the expected review window.',
+      );
+    }
+
+    if (notification != null && notification.isNotEmpty) {
+      notes.add(notification);
+    } else {
+      notes.add('You will receive a notification once your payment is verified.');
+    }
+
+    return notes;
   }
 
   // ===== SUPPORT CONTACT METHODS =====
@@ -1003,24 +1173,223 @@ class SettingsProvider extends ChangeNotifier
     return 'Monday - Friday: 9:00 AM - 5:00 PM';
   }
 
+  int getSupportResponseHours() {
+    final rawValue = getSettingValue('support_response_hours');
+    final parsed = rawValue != null ? int.tryParse(rawValue.trim()) : null;
+    if (parsed != null && parsed > 0) {
+      return parsed;
+    }
+    return 24;
+  }
+
+  String getSupportResponseBadgeLabel() {
+    final hours = getSupportResponseHours();
+    return '${hours}H';
+  }
+
+  String getSupportResponseMessage() {
+    final configured = getSettingValue('support_response_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+
+    final hours = getSupportResponseHours();
+    return 'We typically respond within $hours hours during business days';
+  }
+
+  String getRefundPolicyMessage() {
+    final configured = getSettingValue('refund_policy_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Payments are non-refundable once verified. Please contact support if you have any issues.';
+  }
+
+  List<Map<String, String>> getSupportFaqItems() {
+    final paymentMethodsAnswer =
+        getSettingValue('support_faq_payment_methods_answer')?.trim();
+    final passwordAnswer =
+        getSettingValue('support_faq_password_answer')?.trim();
+    final offlineAccessAnswer =
+        getSettingValue('support_faq_offline_access_answer')?.trim();
+
+    final contactChannels = <String>[];
+    if (getContactInfoByType(ContactType.phone) != null) {
+      contactChannels.add('phone');
+    }
+    if (getContactInfoByType(ContactType.email) != null) {
+      contactChannels.add('email');
+    }
+    if (getContactInfoByType(ContactType.telegram) != null) {
+      contactChannels.add('Telegram');
+    }
+    if (getContactInfoByType(ContactType.whatsapp) != null) {
+      contactChannels.add('WhatsApp');
+    }
+
+    final readableChannels = contactChannels.isEmpty
+        ? 'the Contact tab'
+        : '${contactChannels.join(', ')} and the Contact tab';
+
+    return [
+      {
+        'question': 'How do I reset my password?',
+        'answer': passwordAnswer != null && passwordAnswer.isNotEmpty
+            ? passwordAnswer
+            : 'Go to Profile -> Settings -> Change Password. You will need your current password to set a new one.',
+      },
+      {
+        'question': 'What payment methods are accepted?',
+        'answer': paymentMethodsAnswer != null && paymentMethodsAnswer.isNotEmpty
+            ? paymentMethodsAnswer
+            : 'We accept the payment methods currently enabled by the administrator. Check the Payment screen for the latest options.',
+      },
+      {
+        'question': 'How long does payment verification take?',
+        'answer':
+            '${getPaymentVerificationMessage()}. You will receive a notification once your payment is verified.',
+      },
+      {
+        'question': 'Can I access content offline?',
+        'answer': offlineAccessAnswer != null && offlineAccessAnswer.isNotEmpty
+            ? offlineAccessAnswer
+            : 'Yes. Videos and notes can be downloaded for offline access. Your progress will sync when you are back online.',
+      },
+      {
+        'question': 'How do I contact support?',
+        'answer':
+            'You can reach us through $readableChannels. ${getSupportResponseMessage()}.',
+      },
+      {
+        'question': 'What is the refund policy?',
+        'answer': getRefundPolicyMessage(),
+      },
+    ];
+  }
+
+  int getParentLinkTokenExpiryMinutes() {
+    final rawValue = getSettingValue('parent_link_token_expiry_minutes');
+    final parsed = rawValue != null ? int.tryParse(rawValue.trim()) : null;
+    if (parsed != null && parsed > 0) {
+      return parsed;
+    }
+    return 30;
+  }
+
+  String getParentLinkTokenWindowText() {
+    final minutes = getParentLinkTokenExpiryMinutes();
+    if (minutes % 60 == 0) {
+      final hours = minutes ~/ 60;
+      return hours == 1 ? '1 hour' : '$hours hours';
+    }
+    return minutes == 1 ? '1 minute' : '$minutes minutes';
+  }
+
+  int getDevicePairingExpiryMinutes() {
+    final rawValue = getSettingValue('device_pairing_expiry_minutes');
+    final parsed = rawValue != null ? int.tryParse(rawValue.trim()) : null;
+    if (parsed != null && parsed > 0) {
+      return parsed;
+    }
+    return 10;
+  }
+
+  String getDevicePairingWindowText() {
+    final minutes = getDevicePairingExpiryMinutes();
+    if (minutes % 60 == 0) {
+      final hours = minutes ~/ 60;
+      return hours == 1 ? '1 hour' : '$hours hours';
+    }
+    return minutes == 1 ? '1 minute' : '$minutes minutes';
+  }
+
+  int getDeviceChangeMaxApprovals() {
+    final rawValue = getSettingValue('device_change_max_approvals');
+    final parsed = rawValue != null ? int.tryParse(rawValue.trim()) : null;
+    if (parsed != null && parsed > 0) {
+      return parsed;
+    }
+    return 2;
+  }
+
+  int getDeviceChangeWindowDays() {
+    final rawValue = getSettingValue('device_change_window_days');
+    final parsed = rawValue != null ? int.tryParse(rawValue.trim()) : null;
+    if (parsed != null && parsed > 0) {
+      return parsed;
+    }
+    return 30;
+  }
+
+  String getDeviceChangeLimitMessage() {
+    final configured = getSettingValue('device_change_limit_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'For security, device changes are limited to ${getDeviceChangeMaxApprovals()} every ${getDeviceChangeWindowDays()} days.';
+  }
+
+  String getDeviceChangeLimitSummary() {
+    final approvals = getDeviceChangeMaxApprovals();
+    final days = getDeviceChangeWindowDays();
+    final changeLabel = approvals == 1 ? 'change' : 'changes';
+    final dayLabel = days == 1 ? 'day' : 'days';
+    return '$approvals $changeLabel every $days $dayLabel';
+  }
+
+  String getChapterComingSoonMessage() {
+    final configured = getSettingValue('chapter_coming_soon_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'This chapter will be available soon. Stay tuned for updates.';
+  }
+
   // ===== TELEGRAM BOT URL =====
   String? getTelegramBotUrl() {
-    final contactSettings = _settingsByCategory['contact'] ?? [];
+    const preferredKeys = [
+      'parent_telegram_bot_url',
+      'telegram_bot_url',
+      'support_telegram_bot_url',
+      'support_telegram_url',
+      'telegram_url',
+      'telegram_bot_username',
+      'support_telegram_username',
+    ];
 
-    for (final setting in contactSettings) {
-      final value = setting.settingValue;
-      if (value != null && value.isNotEmpty) {
-        if (value.contains('t.me') ||
-            value.contains('telegram') ||
-            setting.settingKey.toLowerCase().contains('bot') ||
-            setting.settingKey.toLowerCase().contains('telegram') ||
-            setting.displayName.toLowerCase().contains('telegram') ||
-            setting.displayName.toLowerCase().contains('bot')) {
-          return value;
+    for (final key in preferredKeys) {
+      final value = getSettingValue(key);
+      if (value != null && value.trim().isNotEmpty) {
+        return _normalizeTelegramUrl(value);
+      }
+    }
+
+    final candidateCategories = ['parent_link', 'telegram', 'contact'];
+    for (final category in candidateCategories) {
+      final categorySettings = _settingsByCategory[category] ?? const <Setting>[];
+      for (final setting in categorySettings) {
+        final value = setting.settingValue;
+        if (value == null || value.trim().isEmpty) {
+          continue;
+        }
+
+        final key = setting.settingKey.toLowerCase();
+        final display = setting.displayName.toLowerCase();
+        final looksLikeTelegramValue = value.contains('t.me') ||
+            value.startsWith('@') ||
+            value.toLowerCase().contains('telegram');
+        final looksLikeTelegramKey = key.contains('telegram') ||
+            key.contains('bot') ||
+            display.contains('telegram') ||
+            display.contains('bot');
+
+        if (looksLikeTelegramValue || looksLikeTelegramKey) {
+          return _normalizeTelegramUrl(value);
         }
       }
     }
-    return 'https://t.me/FamilyAcademy_notify_Bot';
+
+    return null;
   }
 
   @override

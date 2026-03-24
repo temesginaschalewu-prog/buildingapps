@@ -1,13 +1,9 @@
-// lib/screens/category/category_detail_screen.dart
-// COMPLETE FINAL VERSION - PROPER SHIMMER & LOADING
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:pull_to_refresh/pull_to_refresh.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 
 import '../../models/category_model.dart';
 import '../../models/payment_model.dart';
@@ -17,15 +13,14 @@ import '../../providers/category_provider.dart';
 import '../../providers/course_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../providers/payment_provider.dart';
+import '../../providers/settings_provider.dart';
 import '../../widgets/common/base_screen_mixin.dart';
 import '../../widgets/course/course_card.dart';
-import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_shimmer.dart';
 import '../../widgets/common/app_dialog.dart';
 import '../../widgets/common/access_banner.dart';
 import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
-import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/helpers.dart';
@@ -51,14 +46,13 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
 
   bool _hasCachedData = false;
   bool _isLoading = true;
-  bool _hasLoadedOnce = false;
-
-  final RefreshController _refreshController = RefreshController();
+  final RefreshController _coursesRefreshController = RefreshController();
 
   late CategoryProvider _categoryProvider;
   late CourseProvider _courseProvider;
   late SubscriptionProvider _subscriptionProvider;
   late PaymentProvider _paymentProvider;
+  late SettingsProvider _settingsProvider;
 
   @override
   String get screenTitle => _category?.name ?? AppStrings.category;
@@ -105,21 +99,12 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
     _courseProvider = Provider.of<CourseProvider>(context);
     _subscriptionProvider = Provider.of<SubscriptionProvider>(context);
     _paymentProvider = Provider.of<PaymentProvider>(context);
+    _settingsProvider = Provider.of<SettingsProvider>(context);
 
     _subscriptionProvider.subscriptionUpdates.listen((_) {
       if (isMounted && _category != null) _updateAccessStatus();
     });
 
-    // Mark as loaded if we have data
-    if (_category != null && _hasCachedData) {
-      _hasLoadedOnce = true;
-    }
-  }
-
-  @override
-  void dispose() {
-    _refreshController.dispose();
-    super.dispose();
   }
 
   Future<void> _initialize() async {
@@ -129,7 +114,6 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
       if (isMounted) {
         setState(() {
           _isLoading = false;
-          _hasLoadedOnce = true;
         });
       }
       unawaited(_loadCourses());
@@ -142,6 +126,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
   Future<void> _loadFromCache() async {
     try {
       final deviceService = context.read<DeviceService>();
+      final knownAccess = _subscriptionProvider
+          .hasActiveSubscriptionForCategory(widget.categoryId);
       final cachedCategory =
           await deviceService.getCacheItem<Map<String, dynamic>>(
         'category_${widget.categoryId}',
@@ -150,15 +136,21 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
 
       if (cachedCategory != null) {
         _category = Category.fromJson(cachedCategory['category']);
-        _hasAccess = cachedCategory['has_access'] ?? false;
-        _hasPendingPayment = cachedCategory['has_pending_payment'] ?? false;
-        _rejectionReason = cachedCategory['rejection_reason'];
+        _hasAccess = knownAccess || (cachedCategory['has_access'] ?? false);
+        _hasPendingPayment =
+            _hasAccess ? false : (cachedCategory['has_pending_payment'] ?? false);
+        _rejectionReason = _hasAccess ? null : cachedCategory['rejection_reason'];
         _hasCachedData = true;
         debugLog('CategoryDetail', '✅ Loaded from cache');
       } else {
         if (_categoryProvider.categories.isNotEmpty) {
           _category = _categoryProvider.getCategoryById(widget.categoryId);
-          if (_category != null) _hasCachedData = true;
+          if (_category != null) {
+            _hasAccess = knownAccess;
+            _hasPendingPayment = false;
+            _rejectionReason = null;
+            _hasCachedData = true;
+          }
         }
       }
     } catch (e) {
@@ -185,7 +177,6 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
         if (isMounted) {
           setState(() {
             _isLoading = false;
-            _hasLoadedOnce = true;
           });
         }
         await _saveToCache();
@@ -229,7 +220,6 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
   @override
   Future<void> onRefresh() async {
     if (isOffline) {
-      _refreshController.refreshFailed();
       SnackbarService().showOffline(context, action: AppStrings.refresh);
       return;
     }
@@ -253,11 +243,16 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
       if (!isMounted) return;
 
       await _saveToCache();
-      _refreshController.refreshCompleted();
-      setState(() => _hasLoadedOnce = true);
+      setState(() {});
     } catch (e) {
-      _refreshController.refreshFailed();
-      rethrow;
+      if (isMounted) {
+        SnackbarService().showInfo(
+          context,
+          _hasCachedData
+              ? 'We could not refresh this category just now. Your saved content is still available.'
+              : AppStrings.refreshFailed,
+        );
+      }
     }
   }
 
@@ -290,6 +285,11 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
       await _paymentProvider.loadPayments(
           forceRefresh: forceRefresh && !isOffline,
           isManualRefresh: isManualRefresh);
+      if (_hasAccess) {
+        _hasPendingPayment = false;
+        _rejectionReason = null;
+        return;
+      }
       final pendingPayments = _paymentProvider.getPendingPayments();
       _hasPendingPayment = pendingPayments.any(_matchesPaymentToCategory);
 
@@ -315,8 +315,9 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
 
   bool _matchesPaymentToCategory(Payment payment) {
     if (_category == null) return false;
-    if (payment.categoryId != null && payment.categoryId == _category!.id)
+    if (payment.categoryId != null && payment.categoryId == _category!.id) {
       return true;
+    }
     return payment.categoryName.toLowerCase() == _category!.name.toLowerCase();
   }
 
@@ -354,8 +355,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
         {
           'category': _category!.toJson(),
           'has_access': _hasAccess,
-          'has_pending_payment': _hasPendingPayment,
-          'rejection_reason': _rejectionReason,
+          'has_pending_payment': _hasAccess ? false : _hasPendingPayment,
+          'rejection_reason': _hasAccess ? null : _rejectionReason,
           'timestamp': DateTime.now().toIso8601String(),
         },
         ttl: const Duration(hours: 1),
@@ -400,11 +401,16 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
       context: context,
       title: AppStrings.paymentPending,
       message:
-          '${AppStrings.youHavePendingPayment} ${_category?.name}. ${AppStrings.pleaseWaitForVerification}',
+          '${AppStrings.youHavePendingPayment} ${_category?.name}. ${_settingsProvider.getPendingPaymentStatusMessage()}',
     );
   }
 
   void _showRejectedPaymentDialog() {
+    final bool hasExpiredSubscription =
+        _subscriptionProvider.allSubscriptions.any(
+      (sub) => sub.categoryId == _category!.id && sub.isExpired,
+    );
+
     AppDialog.warning(
       context: context,
       title: AppStrings.paymentRejected,
@@ -414,7 +420,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
     ).then((_) {
       context.push('/payment', extra: {
         'category': _category,
-        'paymentType': 'first_time',
+        'paymentType': hasExpiredSubscription ? 'repayment' : 'first_time',
       });
     });
   }
@@ -424,7 +430,11 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
 
     if (_category!.isFree) return AccessBanner.freeCategory();
     if (_hasAccess) return AccessBanner.fullAccess();
-    if (_hasPendingPayment) return AccessBanner.paymentPending();
+    if (_hasPendingPayment) {
+      return AccessBanner.paymentPending(
+        message: _settingsProvider.getPendingPaymentStatusMessage(),
+      );
+    }
     if (_rejectionReason != null) {
       return AccessBanner.paymentRejected(
         reason: _rejectionReason!,
@@ -439,9 +449,9 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
 
     final headerHeight = ScreenSize.responsiveDouble(
       context: context,
-      mobile: 200.0,
-      tablet: 250.0,
-      desktop: 300.0,
+      mobile: 180.0,
+      tablet: 220.0,
+      desktop: 260.0,
     );
 
     return Stack(
@@ -519,36 +529,6 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-              if (_category!.price != null &&
-                  _category!.price! > 0 &&
-                  !isOffline) ...[
-                SizedBox(height: ResponsiveValues.spacingM(context)),
-                Container(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: ResponsiveValues.spacingM(context),
-                    vertical: ResponsiveValues.spacingXS(context),
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.telegramBlue,
-                    borderRadius: BorderRadius.circular(
-                        ResponsiveValues.radiusFull(context)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.attach_money,
-                          size: 16, color: Colors.white),
-                      Text(
-                        _category!.priceDisplay,
-                        style: AppTextStyles.labelSmall(context).copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
             ],
           ),
         ),
@@ -606,6 +586,70 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
 
   Widget _buildHeaderShimmer() => const AppShimmer(type: ShimmerType.rectangle);
 
+  Widget _buildCoursesSection(List<dynamic> courses, bool isLoadingCourses) {
+    if ((isLoading || isLoadingCourses) &&
+        courses.isEmpty &&
+        !_hasCachedData &&
+        !isOffline) {
+      return ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: ResponsiveValues.screenPadding(context),
+        itemCount: 5,
+        itemBuilder: (context, index) => Padding(
+          padding: EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
+          child: AppShimmer(type: ShimmerType.courseCard, index: index),
+        ),
+      );
+    }
+
+    if (courses.isEmpty) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: ResponsiveValues.screenPadding(context),
+        children: [
+          SizedBox(height: ResponsiveValues.spacingXXL(context)),
+          Center(
+            child: buildEmptyWidget(
+              dataType: AppStrings.courses,
+              customMessage: isOffline
+                  ? AppStrings.noCachedCourses
+                  : AppStrings.coursesWillAppearHere,
+              isOffline: isOffline,
+            ),
+          ),
+        ],
+      );
+    }
+
+    return ListView.builder(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: ResponsiveValues.screenPadding(context),
+      itemCount: courses.length,
+      itemBuilder: (context, index) {
+        final course = courses[index];
+        return Padding(
+          padding: EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
+          child: CourseCard(
+            course: course,
+            categoryId: widget.categoryId,
+            onTap: () => context.push('/course/${course.id}', extra: {
+              'course': course,
+              'category': _category,
+              'hasAccess': _hasAccess,
+            }),
+            index: index,
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _coursesRefreshController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget buildContent(BuildContext context) {
     final courses = _courseProvider.getCoursesByCategory(widget.categoryId);
@@ -621,136 +665,34 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
       );
     }
 
-    return SmartRefresher(
-      controller: _refreshController,
-      onRefresh: handleRefresh,
-      header: WaterDropHeader(
-        waterDropColor: AppColors.telegramBlue,
-        refresh: SizedBox(
-          width: ResponsiveValues.iconSizeL(context),
-          height: ResponsiveValues.iconSizeL(context),
-          child: const CircularProgressIndicator(
-            strokeWidth: 2,
-            valueColor: AlwaysStoppedAnimation(AppColors.telegramBlue),
+    return Column(
+      children: [
+        _buildHeader(),
+        _buildAccessBanner(),
+        Expanded(
+          child: SmartRefresher(
+            controller: _coursesRefreshController,
+            onRefresh: () async {
+              await onRefresh();
+              if (mounted) {
+                _coursesRefreshController.refreshCompleted();
+              }
+            },
+            header: WaterDropHeader(
+              waterDropColor: AppColors.telegramBlue,
+              refresh: SizedBox(
+                width: ResponsiveValues.iconSizeL(context),
+                height: ResponsiveValues.iconSizeL(context),
+                child: const CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation(AppColors.telegramBlue),
+                ),
+              ),
+            ),
+            child: _buildCoursesSection(courses, isLoadingCourses),
           ),
         ),
-      ),
-      child: CustomScrollView(
-        physics: const BouncingScrollPhysics(),
-        slivers: [
-          SliverToBoxAdapter(child: _buildHeader()),
-          SliverToBoxAdapter(child: _buildAccessBanner()),
-          if (isOffline && pendingCount > 0)
-            SliverToBoxAdapter(
-              child: Container(
-                margin: EdgeInsets.all(ResponsiveValues.spacingM(context)),
-                padding: ResponsiveValues.cardPadding(context),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      AppColors.info.withValues(alpha: 0.2),
-                      AppColors.info.withValues(alpha: 0.1)
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(
-                      ResponsiveValues.radiusMedium(context)),
-                  border:
-                      Border.all(color: AppColors.info.withValues(alpha: 0.3)),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.schedule_rounded,
-                        color: AppColors.info,
-                        size: ResponsiveValues.iconSizeS(context)),
-                    SizedBox(width: ResponsiveValues.spacingM(context)),
-                    Expanded(
-                      child: Text(
-                        AppStrings.pendingChangesLabel(pendingCount),
-                        style: AppTextStyles.bodySmall(context)
-                            .copyWith(color: AppColors.info),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          SliverPadding(
-            padding: ResponsiveValues.screenPadding(context),
-            sliver: SliverToBoxAdapter(
-              child: Text(
-                AppStrings.courses,
-                style: AppTextStyles.titleLarge(context)
-                    .copyWith(fontWeight: FontWeight.w700),
-              ),
-            ),
-          ),
-          SliverPadding(
-            padding: ResponsiveValues.screenPadding(context),
-            sliver: SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  // Show shimmer only if loading and no courses AND no cached data
-                  if ((isLoading || isLoadingCourses) &&
-                      courses.isEmpty &&
-                      !_hasCachedData &&
-                      !isOffline) {
-                    return Padding(
-                      padding: EdgeInsets.only(
-                          bottom: ResponsiveValues.spacingL(context)),
-                      child: AppShimmer(
-                          type: ShimmerType.courseCard, index: index),
-                    );
-                  }
-
-                  if (index < courses.length) {
-                    final course = courses[index];
-                    return Padding(
-                      padding: EdgeInsets.only(
-                          bottom: ResponsiveValues.spacingL(context)),
-                      child: CourseCard(
-                        course: course,
-                        categoryId: widget.categoryId,
-                        onTap: () =>
-                            context.push('/course/${course.id}', extra: {
-                          'course': course,
-                          'category': _category,
-                          'hasAccess': _hasAccess,
-                        }),
-                        index: index,
-                      ),
-                    );
-                  }
-
-                  if (!(isLoading || isLoadingCourses) &&
-                      courses.isEmpty &&
-                      index == 0) {
-                    return Center(
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(
-                            vertical: ResponsiveValues.spacingXXL(context)),
-                        child: buildEmptyWidget(
-                          dataType: AppStrings.courses,
-                          customMessage: isOffline
-                              ? AppStrings.noCachedCourses
-                              : AppStrings.coursesWillAppearHere,
-                          isOffline: isOffline,
-                        ),
-                      ),
-                    );
-                  }
-
-                  return null;
-                },
-                childCount: courses.isNotEmpty
-                    ? courses.length
-                    : (isLoading || isLoadingCourses ? 5 : 1),
-              ),
-            ),
-          ),
-          SliverToBoxAdapter(
-              child: SizedBox(height: ResponsiveValues.spacingXXL(context))),
-        ],
-      ),
+      ],
     );
   }
 
@@ -758,7 +700,6 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
   Widget build(BuildContext context) {
     return buildScreen(
       content: buildContent(context),
-      showAppBar: true,
       showRefreshIndicator: false,
     );
   }

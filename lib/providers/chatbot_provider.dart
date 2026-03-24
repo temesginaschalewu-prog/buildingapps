@@ -106,7 +106,7 @@ class ChatbotProvider extends ChangeNotifier
     // ✅ CRITICAL: Always load conversations when screen opens
     if (!_hasLoadedConversations && !isOffline) {
       log('🔄 Loading conversations on init');
-      await loadConversations(forceRefresh: false);
+      await loadConversations();
     }
 
     // ✅ If we have cached data, notify listeners
@@ -405,6 +405,13 @@ class ChatbotProvider extends ChangeNotifier
     log('loadConversations() CALL #$callId - forceRefresh: $forceRefresh, isManualRefresh: $isManualRefresh');
 
     if (isManualRefresh && isOffline) {
+      if (_conversations.isNotEmpty) {
+        clearError();
+        _hasLoadedConversations = true;
+        _hasInitialData = true;
+        safeNotify();
+        return;
+      }
       throw Exception(getUserFriendlyErrorMessage(
           'Network error. Please check your internet connection.'));
     }
@@ -466,6 +473,12 @@ class ChatbotProvider extends ChangeNotifier
         _isLoadingConversations = false;
         _isLoadingMore = false;
 
+        if (_conversations.isNotEmpty) {
+          clearError();
+          safeNotify();
+          return;
+        }
+
         if (isManualRefresh) {
           throw Exception(getUserFriendlyErrorMessage(
               'Network error. Please check your internet connection.'));
@@ -504,17 +517,26 @@ class ChatbotProvider extends ChangeNotifier
         await _saveToCache();
         log('✅ Loaded ${newConversations.length} conversations from API');
       } else {
+        if (_conversations.isNotEmpty) {
+          clearError();
+          log('⚠️ API refresh failed, keeping cached conversations');
+          return;
+        }
         if (isManualRefresh) {
           throw Exception(response.message);
         }
       }
     } catch (e) {
-      setError(getUserFriendlyErrorMessage('Failed to load conversations'));
+      if (_conversations.isNotEmpty) {
+        clearError();
+      } else {
+        setError(getUserFriendlyErrorMessage('Failed to load conversations'));
+      }
       log('Error loading conversations: $e');
 
       _hasLoadedConversations = true;
 
-      if (isManualRefresh) {
+      if (isManualRefresh && _conversations.isEmpty) {
         rethrow;
       }
     } finally {

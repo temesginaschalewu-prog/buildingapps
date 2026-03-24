@@ -1,6 +1,3 @@
-// lib/screens/exam/exam_screen.dart
-// COMPLETE FINAL VERSION - PROPER SHIMMER & LOADING
-
 import 'dart:async';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
@@ -48,6 +45,7 @@ class ExamScreen extends StatefulWidget {
 class _ExamScreenState extends State<ExamScreen>
     with BaseScreenMixin<ExamScreen>, TickerProviderStateMixin {
   late Exam _exam;
+  bool _examReady = false;
   int _currentQuestionIndex = 0;
   Map<int, String?> _answers = {};
   bool _isSubmitting = false;
@@ -64,6 +62,7 @@ class _ExamScreenState extends State<ExamScreen>
   final Map<int, Map<String, dynamic>> _answerDetails = {};
   bool _showResults = false;
   bool _hasReachedMaxAttempts = false;
+  int? _activeExamResultId;
 
   String? _currentUserId;
 
@@ -72,9 +71,14 @@ class _ExamScreenState extends State<ExamScreen>
   late SubscriptionProvider _subscriptionProvider;
   late AuthProvider _authProvider;
   late OfflineQueueManager _queueManager;
+  bool _providersBound = false;
+  bool _examInitializationStarted = false;
 
   @override
-  String get screenTitle => _exam.title;
+  String get screenTitle {
+    if (_showResults) return AppStrings.examResults;
+    return _examReady ? _exam.title : AppStrings.exam;
+  }
 
   @override
   String? get screenSubtitle => null;
@@ -101,33 +105,105 @@ class _ExamScreenState extends State<ExamScreen>
   Widget? get appBarLeading => IconButton(
         icon: Icon(Icons.arrow_back_rounded,
             color: AppColors.getTextPrimary(context)),
-        onPressed: () => context.pop(),
+        onPressed: _isSubmitting
+            ? null
+            : () async {
+                if (_examReady && !_showInstructions && !_showResults) {
+                  final confirm = await AppDialog.confirm(
+                    context: context,
+                    title: AppStrings.leaveExam,
+                    message: AppStrings.progressWillBeSaved,
+                    confirmText: AppStrings.leave,
+                    cancelText: AppStrings.stay,
+                  );
+                  if (confirm == true && isMounted) {
+                    await _saveProgressToCache();
+                    if (!isMounted) return;
+                    context.pop();
+                  }
+                  return;
+                }
+
+                context.pop();
+              },
       );
 
   @override
-  void initState() {
-    super.initState();
-    _initializeExam();
+  List<Widget>? get appBarActions {
+    if (!_examReady || _showInstructions || _showResults || _hasReachedMaxAttempts) {
+      return null;
+    }
+
+    final timeColor = _remainingTime.inMinutes < 5
+        ? AppColors.telegramRed
+        : AppColors.telegramBlue;
+
+    return [
+      Container(
+        margin: EdgeInsets.only(right: ResponsiveValues.spacingM(context)),
+        padding: EdgeInsets.symmetric(
+          horizontal: ResponsiveValues.spacingM(context),
+          vertical: ResponsiveValues.spacingXS(context),
+        ),
+        decoration: BoxDecoration(
+          color: timeColor.withValues(alpha: 0.1),
+          borderRadius:
+              BorderRadius.circular(ResponsiveValues.radiusFull(context)),
+          border: Border.all(color: timeColor.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.timer_rounded,
+              size: ResponsiveValues.iconSizeXS(context),
+              color: timeColor,
+            ),
+            SizedBox(width: ResponsiveValues.spacingXS(context)),
+            Text(
+              _getTimeString(),
+              style: AppTextStyles.labelMedium(context).copyWith(
+                color: timeColor,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ];
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _examProvider = Provider.of<ExamProvider>(context);
-    _questionProvider = Provider.of<ExamQuestionProvider>(context);
-    _subscriptionProvider = Provider.of<SubscriptionProvider>(context);
-    _authProvider = Provider.of<AuthProvider>(context);
-    _queueManager = Provider.of<OfflineQueueManager>(context);
+    if (!_providersBound) {
+      _examProvider = context.read<ExamProvider>();
+      _questionProvider = context.read<ExamQuestionProvider>();
+      _subscriptionProvider = context.read<SubscriptionProvider>();
+      _authProvider = context.read<AuthProvider>();
+      _queueManager = context.read<OfflineQueueManager>();
+      _questionProvider.setContext(context);
+      _providersBound = true;
 
-    _getCurrentUserId();
+      unawaited(_getCurrentUserId());
+    }
 
-    if (widget.exam == null) {
-      final routeExam = ModalRoute.of(context)?.settings.arguments;
-      if (routeExam is Exam) {
-        _exam = routeExam;
-        _initializeExamSettings();
-        _checkExamAccess();
-      }
+    if (!_examInitializationStarted) {
+      _examInitializationStarted = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _initializeExam();
+      });
+    }
+
+      if (widget.exam == null) {
+        final routeExam = ModalRoute.of(context)?.settings.arguments;
+        if (routeExam is Exam) {
+          _exam = routeExam;
+          _examReady = true;
+          _initializeExamSettings();
+          _checkExamAccess();
+        }
     }
 
     // Mark as loaded if we have data
@@ -161,6 +237,7 @@ class _ExamScreenState extends State<ExamScreen>
   void _initializeExam() {
     if (widget.exam != null) {
       _exam = widget.exam!;
+      _examReady = true;
       _initializeExamSettings();
       _checkExamAccess();
     } else {
@@ -254,12 +331,6 @@ class _ExamScreenState extends State<ExamScreen>
 
     if (isMounted) {
       setState(() => _checkingAccess = false);
-      if (_hasAccess && !_hasLoadedQuestions && !_hasReachedMaxAttempts) {
-        await _loadExamQuestions();
-        if (!isMounted) return;
-        _hasLoadedQuestions = true;
-        _hasLoadedOnce = true;
-      }
     }
   }
 
@@ -278,6 +349,7 @@ class _ExamScreenState extends State<ExamScreen>
       if (cachedExam != null) {
         setState(() {
           _exam = cachedExam!;
+          _examReady = true;
           _initializeExamSettings();
         });
         await _checkExamAccess();
@@ -294,6 +366,7 @@ class _ExamScreenState extends State<ExamScreen>
         if (loadedExam != null && isMounted) {
           setState(() {
             _exam = loadedExam;
+            _examReady = true;
             _initializeExamSettings();
           });
           await _checkExamAccess();
@@ -316,8 +389,106 @@ class _ExamScreenState extends State<ExamScreen>
   Future<void> _loadExamQuestions() async {
     try {
       await _questionProvider.loadExamQuestions(_exam.id);
+      final loadedQuestions = _questionProvider.getQuestionsByExam(_exam.id);
+      if (loadedQuestions.isNotEmpty && isMounted) {
+        setState(() {
+          _hasLoadedQuestions = true;
+          _hasLoadedOnce = true;
+        });
+      }
     } catch (e) {
       // Error handled by provider
+    }
+  }
+
+  List<ExamQuestion> _mapStartedExamQuestions(List<dynamic> rawQuestions) {
+    return rawQuestions.asMap().entries.map((entry) {
+      final index = entry.key;
+      final raw = entry.value;
+      final question = raw is Map<String, dynamic>
+          ? raw
+          : Map<String, dynamic>.from(raw as Map);
+
+      return ExamQuestion(
+        id: (question['id'] as num?)?.toInt() ?? index + 1,
+        examId: _exam.id,
+        questionId: (question['id'] as num?)?.toInt() ?? index + 1,
+        displayOrder: index + 1,
+        marks: (question['marks'] as num?)?.toInt() ?? 1,
+        questionText: question['question_text']?.toString() ?? '',
+        optionA: question['option_a']?.toString(),
+        optionB: question['option_b']?.toString(),
+        optionC: question['option_c']?.toString(),
+        optionD: question['option_d']?.toString(),
+        optionE: question['option_e']?.toString(),
+        optionF: question['option_f']?.toString(),
+        difficulty: (question['difficulty']?.toString() ?? 'medium').toLowerCase(),
+        hasAnswer: false,
+      );
+    }).toList();
+  }
+
+  Future<void> _beginExam() async {
+    if (_hasReachedMaxAttempts || !_examReady) return;
+
+    if (isOffline) {
+      await _loadExamQuestions();
+      if (!isMounted) return;
+
+      final offlineQuestions = _questionProvider.getQuestionsByExam(_exam.id);
+      if (offlineQuestions.isEmpty) {
+        SnackbarService().showOffline(context, action: AppStrings.exam);
+        return;
+      }
+
+      setState(() {
+        _showInstructions = false;
+        _hasLoadedQuestions = true;
+        _hasLoadedOnce = true;
+      });
+      _startTimer();
+      return;
+    }
+
+    AppDialog.showLoading(context, message: AppStrings.loading);
+    try {
+      final startResponse = await _questionProvider.apiService.startExam(_exam.id);
+      if (!isMounted) return;
+
+      if (!startResponse.success || startResponse.data == null) {
+        throw ApiError(message: startResponse.message);
+      }
+
+      final startData = startResponse.data!;
+      _activeExamResultId = (startData['exam_result_id'] as num?)?.toInt();
+      final rawQuestions = startData['questions'];
+      final startedQuestions =
+          rawQuestions is List ? _mapStartedExamQuestions(rawQuestions) : <ExamQuestion>[];
+
+      if (startedQuestions.isEmpty) {
+        throw ApiError(message: AppStrings.couldNotLoadExamQuestions);
+      }
+
+      await _questionProvider.seedExamQuestions(_exam.id, startedQuestions);
+      if (!isMounted) return;
+
+      setState(() {
+        _showInstructions = false;
+        _hasLoadedQuestions = true;
+        _hasLoadedOnce = true;
+        if (_currentQuestionIndex >= startedQuestions.length) {
+          _currentQuestionIndex = 0;
+        }
+      });
+      _startTimer();
+    } on ApiError catch (e) {
+      SnackbarService().showError(context, e.userFriendlyMessage);
+    } catch (e) {
+      SnackbarService().showError(context, AppStrings.couldNotLoadExamQuestions);
+    } finally {
+      if (isMounted) {
+        AppDialog.hideLoading(context);
+      }
     }
   }
 
@@ -544,15 +715,18 @@ class _ExamScreenState extends State<ExamScreen>
         };
       }).toList();
 
-      final startResponse =
-          await _questionProvider.apiService.startExam(_exam.id);
-      if (!isMounted) return;
+      int examResultId = _activeExamResultId ?? 0;
 
-      int examResultId = 0;
-      if (startResponse.data is Map<String, dynamic>) {
-        final data = startResponse.data as Map<String, dynamic>;
-        examResultId = data['exam_result_id'] ??
-            (data['data'] is Map ? data['data']['exam_result_id'] : 0);
+      if (examResultId == 0) {
+        final startResponse =
+            await _questionProvider.apiService.startExam(_exam.id);
+        if (!isMounted) return;
+
+        if (startResponse.data is Map<String, dynamic>) {
+          final data = startResponse.data as Map<String, dynamic>;
+          examResultId = data['exam_result_id'] ??
+              (data['data'] is Map ? data['data']['exam_result_id'] : 0);
+        }
       }
 
       if (examResultId == 0) {
@@ -666,100 +840,136 @@ class _ExamScreenState extends State<ExamScreen>
         : '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 
+  Widget _buildExamPill({
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: ResponsiveValues.spacingM(context),
+        vertical: ResponsiveValues.spacingS(context),
+      ),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: ResponsiveValues.iconSizeS(context), color: color),
+          SizedBox(width: ResponsiveValues.spacingS(context)),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                value,
+                style: AppTextStyles.labelLarge(context).copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              Text(
+                label,
+                style: AppTextStyles.labelSmall(context).copyWith(
+                  color: AppColors.getTextSecondary(context),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildExamSummaryCard({
+    required String title,
+    required String subtitle,
+    required List<Widget> pills,
+  }) {
+    return Padding(
+      padding: ResponsiveValues.cardPadding(context),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: AppTextStyles.headlineSmall(context).copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          SizedBox(height: ResponsiveValues.spacingXS(context)),
+          Text(
+            subtitle,
+            style: AppTextStyles.bodyMedium(context).copyWith(
+              color: AppColors.getTextSecondary(context),
+              height: 1.45,
+            ),
+          ),
+          SizedBox(height: ResponsiveValues.spacingL(context)),
+          Wrap(
+            spacing: ResponsiveValues.spacingS(context),
+            runSpacing: ResponsiveValues.spacingS(context),
+            children: pills,
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildResultsScreen() {
     final questions = _questionProvider.getQuestionsByExam(_exam.id);
 
-    return Scaffold(
-      backgroundColor: AppColors.getBackground(context),
-      appBar: AppBar(
-        title: Text(AppStrings.examResults,
-            style: AppTextStyles.appBarTitle(context)),
-        backgroundColor: AppColors.getBackground(context),
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back_rounded,
-              color: AppColors.getTextPrimary(context)),
-          onPressed: () => GoRouter.of(context).pop(),
-        ),
-      ),
-      body: SingleChildScrollView(
-        padding: ResponsiveValues.screenPadding(context),
-        child: Column(
-          children: [
-            AppCard.glass(
-              child: Padding(
-                padding: ResponsiveValues.dialogPadding(context),
-                child: Column(
-                  children: [
-                    Text(
-                      AppStrings.yourScore,
-                      style: AppTextStyles.titleMedium(context)
-                          .copyWith(color: Colors.white),
-                    ),
-                    SizedBox(height: ResponsiveValues.spacingM(context)),
-                    Text(
+    return SingleChildScrollView(
+      padding: ResponsiveValues.screenPadding(context),
+      child: Column(
+        children: [
+            _buildExamSummaryCard(
+              title: AppStrings.examResults,
+              subtitle: (_submittedResult?.passed ?? false)
+                  ? 'You passed this attempt and can review each answer below.'
+                  : 'This attempt is complete. Review the answers and explanations below.',
+              pills: [
+                _buildExamPill(
+                  icon: Icons.analytics_rounded,
+                  label: 'Score',
+                  value:
                       '${_submittedResult?.score.toStringAsFixed(1) ?? '0'}%',
-                      style: AppTextStyles.displayLarge(context).copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -1,
-                      ),
-                    ),
-                    SizedBox(height: ResponsiveValues.spacingS(context)),
-                    Container(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: ResponsiveValues.spacingL(context),
-                        vertical: ResponsiveValues.spacingS(context),
-                      ),
-                      decoration: BoxDecoration(
-                        color: (_submittedResult?.passed ?? false)
-                            ? AppColors.telegramGreen
-                            : AppColors.telegramRed,
-                        borderRadius: BorderRadius.circular(
-                            ResponsiveValues.radiusFull(context)),
-                      ),
-                      child: Text(
-                        (_submittedResult?.passed ?? false)
-                            ? AppStrings.passed
-                            : AppStrings.failed,
-                        style: AppTextStyles.labelLarge(context).copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    SizedBox(height: ResponsiveValues.spacingL(context)),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        _buildScoreStat(
-                          AppStrings.correct,
-                          '${_submittedResult?.correctAnswers ?? 0}',
-                          AppColors.telegramGreen,
-                        ),
-                        _buildScoreStat(
-                          AppStrings.total,
-                          '${_submittedResult?.totalQuestions ?? 0}',
-                          Colors.white,
-                        ),
-                        _buildScoreStat(
-                          AppStrings.time,
-                          _formatTime(_submittedResult?.timeTaken ?? 0),
-                          Colors.white70,
-                        ),
-                      ],
-                    ),
-                  ],
+                  color: (_submittedResult?.passed ?? false)
+                      ? AppColors.telegramGreen
+                      : AppColors.telegramRed,
                 ),
-              ),
+                _buildExamPill(
+                  icon: Icons.check_circle_outline_rounded,
+                  label: AppStrings.correct,
+                  value: '${_submittedResult?.correctAnswers ?? 0}',
+                  color: AppColors.telegramGreen,
+                ),
+                _buildExamPill(
+                  icon: Icons.timer_outlined,
+                  label: AppStrings.time,
+                  value: _formatTime(_submittedResult?.timeTaken ?? 0),
+                  color: AppColors.telegramBlue,
+                ),
+                _buildExamPill(
+                  icon: Icons.verified_rounded,
+                  label: AppStrings.status,
+                  value: (_submittedResult?.passed ?? false)
+                      ? AppStrings.passed
+                      : AppStrings.failed,
+                  color: (_submittedResult?.passed ?? false)
+                      ? AppColors.telegramGreen
+                      : AppColors.telegramRed,
+                ),
+              ],
             ),
             SizedBox(height: ResponsiveValues.spacingXL(context)),
-            Text(
-              AppStrings.answerReview,
-              style: AppTextStyles.titleLarge(context).copyWith(
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.5,
-              ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: _buildSectionEyebrow(AppStrings.answerReview),
             ),
             SizedBox(height: ResponsiveValues.spacingL(context)),
             ...List.generate(questions.length, (index) {
@@ -911,27 +1121,8 @@ class _ExamScreenState extends State<ExamScreen>
               onPressed: () => GoRouter.of(context).pop(),
               expanded: true,
             ),
-          ],
-        ),
+        ],
       ),
-    );
-  }
-
-  Widget _buildScoreStat(String label, String value, Color color) {
-    return Column(
-      children: [
-        Text(
-          value,
-          style: AppTextStyles.titleLarge(context).copyWith(
-            color: color,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        Text(
-          label,
-          style: AppTextStyles.caption(context).copyWith(color: Colors.white70),
-        ),
-      ],
     );
   }
 
@@ -994,74 +1185,49 @@ class _ExamScreenState extends State<ExamScreen>
     return '${minutes}m ${remainingSeconds}s';
   }
 
-  Widget _buildInstructionsScreen() {
-    return Scaffold(
-      backgroundColor: AppColors.getBackground(context),
-      appBar: AppBar(
-        title: Text(
-          _exam.title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: AppTextStyles.appBarTitle(context),
-        ),
-        backgroundColor: AppColors.getBackground(context),
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back_rounded,
-              color: AppColors.getTextPrimary(context)),
-          onPressed: () => GoRouter.of(context).pop(),
-        ),
+  Widget _buildSectionEyebrow(String label) {
+    return Text(
+      label.toUpperCase(),
+      style: AppTextStyles.overline(context).copyWith(
+        color: AppColors.getTextSecondary(context),
+        letterSpacing: 1.1,
       ),
-      body: SingleChildScrollView(
-        padding: ResponsiveValues.screenPadding(context),
-        child: Column(
-          children: [
-            AppCard.glass(
-              child: Padding(
-                padding: ResponsiveValues.cardPadding(context),
-                child: Row(
-                  children: [
-                    Container(
-                      padding:
-                          EdgeInsets.all(ResponsiveValues.spacingM(context)),
-                      decoration: BoxDecoration(
-                          color: AppColors.blueFaded, shape: BoxShape.circle),
-                      child: const Icon(Icons.info_rounded,
-                          color: AppColors.telegramBlue, size: 24),
-                    ),
-                    SizedBox(width: ResponsiveValues.spacingL(context)),
-                    Expanded(
-                      child: Column(
-                        children: [
-                          Text(
-                            AppStrings.instructions,
-                            style: AppTextStyles.titleSmall(context).copyWith(
-                              color: AppColors.telegramBlue,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: -0.3,
-                            ),
-                          ),
-                          SizedBox(height: ResponsiveValues.spacingXS(context)),
-                          Text(
-                            AppStrings.pleaseReadCarefully,
-                            style: AppTextStyles.bodySmall(context).copyWith(
-                              color: AppColors.getTextSecondary(context),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+    );
+  }
+
+  Widget _buildInstructionsScreen() {
+    return SingleChildScrollView(
+      padding: ResponsiveValues.screenPadding(context),
+      child: Column(
+        children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSectionEyebrow('Exam'),
+                SizedBox(height: ResponsiveValues.spacingXXS(context)),
+                Text(
+                  _exam.title,
+                  style: AppTextStyles.headlineSmall(context).copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
-              ),
+                SizedBox(height: ResponsiveValues.spacingXS(context)),
+                Text(
+                  AppStrings.pleaseReadCarefully,
+                  style: AppTextStyles.bodyMedium(context).copyWith(
+                    color: AppColors.getTextSecondary(context),
+                    height: 1.5,
+                  ),
+                ),
+              ],
             ),
+          ),
             SizedBox(height: ResponsiveValues.spacingXL(context)),
-            Text(
-              AppStrings.examDetails,
-              style: AppTextStyles.titleLarge(context).copyWith(
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.5,
-              ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: _buildSectionEyebrow(AppStrings.examDetails),
             ),
             SizedBox(height: ResponsiveValues.spacingL(context)),
             _buildDetailItem(
@@ -1117,10 +1283,7 @@ class _ExamScreenState extends State<ExamScreen>
                   label: isOffline
                       ? AppStrings.startOfflineMode
                       : AppStrings.startExamNow,
-                  onPressed: () {
-                    setState(() => _showInstructions = false);
-                    _startTimer();
-                  },
+                  onPressed: _beginExam,
                   expanded: true,
                 ),
               ),
@@ -1133,8 +1296,7 @@ class _ExamScreenState extends State<ExamScreen>
                 expanded: true,
               ),
             ),
-          ],
-        ),
+        ],
       ),
     );
   }
@@ -1153,7 +1315,9 @@ class _ExamScreenState extends State<ExamScreen>
             width: ResponsiveValues.iconSizeL(context),
             height: ResponsiveValues.iconSizeL(context),
             decoration: BoxDecoration(
-                color: AppColors.blueFaded, shape: BoxShape.circle),
+              color: AppColors.telegramBlue.withValues(alpha: 0.08),
+              shape: BoxShape.circle,
+            ),
             child: Icon(
               icon,
               size: ResponsiveValues.iconSizeXS(context),
@@ -1192,156 +1356,75 @@ class _ExamScreenState extends State<ExamScreen>
 
   Widget _buildExamInterface() {
     final questions = _questionProvider.getQuestionsByExam(_exam.id);
+    if (questions.isEmpty) {
+      return Center(
+        child: buildEmptyWidget(
+          dataType: AppStrings.questions,
+          customMessage: isOffline
+              ? AppStrings.noCachedQuestionsAvailable
+              : AppStrings.couldNotLoadExamQuestions,
+          isOffline: isOffline,
+        ),
+      );
+    }
     final currentQuestion = questions[_currentQuestionIndex];
     final totalQuestions = questions.length;
-    final answeredQuestions = _answers.length;
-    final timeColor = _remainingTime.inMinutes < 5
-        ? AppColors.telegramRed
-        : AppColors.telegramBlue;
 
-    return Scaffold(
-      backgroundColor: AppColors.getBackground(context),
-      appBar: AppBar(
-        title: Text(
-          _exam.title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: AppTextStyles.appBarTitle(context),
-        ),
-        backgroundColor: AppColors.getBackground(context),
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back_rounded,
-              color: AppColors.getTextPrimary(context)),
-          onPressed: _isSubmitting
-              ? null
-              : () async {
-                  final confirm = await AppDialog.confirm(
-                    context: context,
-                    title: AppStrings.leaveExam,
-                    message: AppStrings.progressWillBeSaved,
-                    confirmText: AppStrings.leave,
-                    cancelText: AppStrings.stay,
-                  );
-                  if (confirm == true && isMounted) {
-                    await _saveProgressToCache();
-                    if (!isMounted) return;
-                    GoRouter.of(context).pop();
-                  }
-                },
-        ),
-        actions: [
-          Container(
-            margin: EdgeInsets.only(right: ResponsiveValues.spacingM(context)),
-            padding: EdgeInsets.symmetric(
-              horizontal: ResponsiveValues.spacingM(context),
-              vertical: ResponsiveValues.spacingXS(context),
+    return Column(
+      children: [
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              ResponsiveValues.spacingM(context),
+              ResponsiveValues.spacingS(context),
+              ResponsiveValues.spacingM(context),
+              ResponsiveValues.spacingM(context),
             ),
-            decoration: BoxDecoration(
-              color: timeColor.withValues(alpha: 0.1),
-              borderRadius:
-                  BorderRadius.circular(ResponsiveValues.radiusFull(context)),
-              border: Border.all(color: timeColor.withValues(alpha: 0.3)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  Icons.timer_rounded,
-                  size: ResponsiveValues.iconSizeXS(context),
-                  color: timeColor,
-                ),
-                SizedBox(width: ResponsiveValues.spacingXS(context)),
                 Text(
-                  _getTimeString(),
+                  'Question ${_currentQuestionIndex + 1} of $totalQuestions',
                   style: AppTextStyles.labelMedium(context).copyWith(
-                    color: timeColor,
+                    color: AppColors.getTextSecondary(context),
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-              ],
-            ),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          AppCard.glass(
-            child: Padding(
-              padding: ResponsiveValues.cardPadding(context),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                SizedBox(height: ResponsiveValues.spacingS(context)),
+                ClipRRect(
+                  borderRadius:
+                      BorderRadius.circular(ResponsiveValues.radiusFull(context)),
+                  child: Stack(
                     children: [
-                      Text(
-                        '${AppStrings.question} ${_currentQuestionIndex + 1} ${AppStrings.of} $totalQuestions',
-                        style: AppTextStyles.bodyMedium(context),
-                      ),
                       Container(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: ResponsiveValues.spacingM(context),
-                          vertical: ResponsiveValues.spacingXS(context),
-                        ),
+                        height: ResponsiveValues.progressBarHeight(context),
                         decoration: BoxDecoration(
-                          color: AppColors.blueFaded,
+                          color: AppColors.getSurface(context)
+                              .withValues(alpha: 0.3),
                           borderRadius: BorderRadius.circular(
-                              ResponsiveValues.radiusFull(context)),
-                          border: Border.all(
-                            color:
-                                AppColors.telegramBlue.withValues(alpha: 0.3),
+                            ResponsiveValues.radiusFull(context),
                           ),
                         ),
-                        child: Text(
-                          '$answeredQuestions/$totalQuestions ${AppStrings.answered}',
-                          style: AppTextStyles.labelSmall(context).copyWith(
-                            color: AppColors.telegramBlue,
-                            fontWeight: FontWeight.w600,
+                      ),
+                      FractionallySizedBox(
+                        widthFactor: totalQuestions == 0
+                            ? 0
+                            : _answers.length / totalQuestions,
+                        child: Container(
+                          height: ResponsiveValues.progressBarHeight(context),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: AppColors.blueGradient,
+                            ),
+                            borderRadius: BorderRadius.circular(
+                              ResponsiveValues.radiusFull(context),
+                            ),
                           ),
                         ),
                       ),
                     ],
                   ),
-                  SizedBox(height: ResponsiveValues.spacingS(context)),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(
-                        ResponsiveValues.radiusFull(context)),
-                    child: Stack(
-                      children: [
-                        Container(
-                          height: ResponsiveValues.progressBarHeight(context),
-                          decoration: BoxDecoration(
-                            color: AppColors.getSurface(context)
-                                .withValues(alpha: 0.3),
-                            borderRadius: BorderRadius.circular(
-                                ResponsiveValues.radiusFull(context)),
-                          ),
-                        ),
-                        FractionallySizedBox(
-                          widthFactor: answeredQuestions / totalQuestions,
-                          child: Container(
-                            height: ResponsiveValues.progressBarHeight(context),
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                  colors: AppColors.blueGradient),
-                              borderRadius: BorderRadius.circular(
-                                  ResponsiveValues.radiusFull(context)),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: AppColors.telegramBlue
-                                      .withValues(alpha: 0.5),
-                                  blurRadius:
-                                      ResponsiveValues.spacingXS(context),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
           Expanded(
@@ -1400,13 +1483,35 @@ class _ExamScreenState extends State<ExamScreen>
               ),
             ),
           ),
-        ],
-      ),
+      ],
     );
   }
 
   @override
   Widget buildContent(BuildContext context) {
+    if (!_examReady) {
+      return Center(
+        child: AppCard.glass(
+          child: Padding(
+            padding: ResponsiveValues.dialogPadding(context),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const AppShimmer(type: ShimmerType.circle),
+                const SizedBox(height: 16),
+                Text(
+                  AppStrings.loading,
+                  style: AppTextStyles.bodyMedium(context).copyWith(
+                    color: AppColors.getTextSecondary(context),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     if (_showResults && _submittedResult != null) {
       return _buildResultsScreen();
     }
@@ -1567,11 +1672,16 @@ class _ExamScreenState extends State<ExamScreen>
                   AppButton.primary(
                     label: AppStrings.purchaseAccess,
                     onPressed: () {
+                      final hasExpiredSubscription = context
+                          .read<SubscriptionProvider>()
+                          .expiredSubscriptions
+                          .any((sub) => sub.categoryId == _exam.categoryId);
                       GoRouter.of(context).pop();
                       GoRouter.of(context).push('/payment', extra: {
                         'category': _exam.categoryName,
                         'categoryId': _exam.categoryId,
-                        'paymentType': 'first_time',
+                        'paymentType':
+                            hasExpiredSubscription ? 'repayment' : 'first_time',
                         'context': 'exam',
                         'examId': _exam.id,
                         'examTitle': _exam.title,
@@ -1613,7 +1723,7 @@ class _ExamScreenState extends State<ExamScreen>
     }
 
     final questions = _questionProvider.getQuestionsByExam(_exam.id);
-    if (questions.isEmpty && !_hasLoadedOnce) {
+    if (questions.isEmpty) {
       return Center(
         child: buildEmptyWidget(
           dataType: AppStrings.questions,
@@ -1633,7 +1743,6 @@ class _ExamScreenState extends State<ExamScreen>
   Widget build(BuildContext context) {
     return buildScreen(
       content: buildContent(context),
-      showAppBar: true,
       showRefreshIndicator: false,
     );
   }

@@ -3,14 +3,12 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../providers/streak_provider.dart';
 import '../../providers/exam_provider.dart';
 import '../../providers/progress_provider.dart';
-import '../../providers/category_provider.dart';
 import '../../widgets/common/base_screen_mixin.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_shimmer.dart';
@@ -18,8 +16,6 @@ import '../../widgets/progress/achievement_badge.dart';
 import '../../utils/responsive_values.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
-import '../../themes/app_themes.dart';
-import '../../utils/helpers.dart';
 import '../../utils/constants.dart';
 
 class ProgressScreen extends StatefulWidget {
@@ -39,6 +35,12 @@ class _ProgressScreenState extends State<ProgressScreen>
   late ExamProvider _examProvider;
   late ProgressProvider _progressProvider;
   late AuthProvider _authProvider;
+  bool _providersBound = false;
+  VoidCallback? _streakListener;
+  VoidCallback? _examListener;
+  StreamSubscription? _progressUpdatesSubscription;
+  StreamSubscription? _overallStatsSubscription;
+  String? _boundUserId;
 
   final Map<String, bool> _loadingSections = {
     'stats': true,
@@ -85,12 +87,32 @@ class _ProgressScreenState extends State<ProgressScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _streakProvider = Provider.of<StreakProvider>(context);
-    _examProvider = Provider.of<ExamProvider>(context);
-    _progressProvider = Provider.of<ProgressProvider>(context);
-    _authProvider = Provider.of<AuthProvider>(context);
+    final authProvider = context.read<AuthProvider>();
+    final currentUserId = authProvider.currentUser?.id.toString();
+
+    if (_providersBound && _boundUserId == currentUserId) return;
+
+    if (_providersBound) {
+      _progressUpdatesSubscription?.cancel();
+      _overallStatsSubscription?.cancel();
+      if (_streakListener != null) {
+        _streakProvider.removeListener(_streakListener!);
+      }
+      if (_examListener != null) {
+        _examProvider.removeListener(_examListener!);
+      }
+      _hasData = false;
+      _loadingSections.updateAll((key, value) => true);
+    }
+
+    _streakProvider = context.read<StreakProvider>();
+    _examProvider = context.read<ExamProvider>();
+    _progressProvider = context.read<ProgressProvider>();
+    _authProvider = authProvider;
+    _boundUserId = currentUserId;
 
     _setupStreamListeners();
+    _providersBound = true;
 
     // ✅ Mark if we have data after first load - FIXED: use correct properties
     if (_progressProvider.hasLoadedOverall ||
@@ -104,45 +126,58 @@ class _ProgressScreenState extends State<ProgressScreen>
   void dispose() {
     _backgroundRefreshTimer?.cancel();
     _debounceTimer?.cancel();
+    _progressUpdatesSubscription?.cancel();
+    _overallStatsSubscription?.cancel();
+    if (_providersBound) {
+      if (_streakListener != null) {
+        _streakProvider.removeListener(_streakListener!);
+      }
+      if (_examListener != null) {
+        _examProvider.removeListener(_examListener!);
+      }
+    }
     super.dispose();
   }
 
   void _setupStreamListeners() {
-    _progressProvider.progressUpdates.listen((progress) {
+    _progressUpdatesSubscription = _progressProvider.progressUpdates.listen((_) {
       if (isMounted) {
         _debounceTimer?.cancel();
         _debounceTimer = Timer(const Duration(milliseconds: 300), () {
           if (isMounted) {
-            setState(() => _updateLoadingStates());
+            setState(_updateLoadingStates);
             _hasData = true;
           }
         });
       }
     });
 
-    _progressProvider.overallStatsUpdates.listen((stats) {
+    _overallStatsSubscription =
+        _progressProvider.overallStatsUpdates.listen((_) {
       if (isMounted) {
         _debounceTimer?.cancel();
         _debounceTimer = Timer(const Duration(milliseconds: 300), () {
           if (isMounted) {
-            setState(() => _updateLoadingStates());
+            setState(_updateLoadingStates);
             _hasData = true;
           }
         });
       }
     });
 
-    _streakProvider.addListener(() {
+    _streakListener = () {
       if (isMounted && _streakProvider.streak != null) {
         setState(() => _hasData = true);
       }
-    });
+    };
+    _streakProvider.addListener(_streakListener!);
 
-    _examProvider.addListener(() {
+    _examListener = () {
       if (isMounted && _examProvider.hasLoadedResults) {
         setState(() => _hasData = true);
       }
-    });
+    };
+    _examProvider.addListener(_examListener!);
   }
 
   void _updateLoadingStates() {
@@ -181,7 +216,7 @@ class _ProgressScreenState extends State<ProgressScreen>
   }
 
   Widget _buildStatShimmer() {
-    return AppCard.glass(
+    return AppCard.solid(
       child: Container(
         width: ResponsiveValues.statCircleSize(context),
         height: ResponsiveValues.statCircleSize(context),
@@ -200,7 +235,7 @@ class _ProgressScreenState extends State<ProgressScreen>
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        AppCard.glass(
+        AppCard.solid(
           child: Container(
             width: ResponsiveValues.statCircleSize(context),
             height: ResponsiveValues.statCircleSize(context),
@@ -279,6 +314,36 @@ class _ProgressScreenState extends State<ProgressScreen>
     );
   }
 
+  Widget _buildSectionHeader({
+    required String title,
+    String? description,
+  }) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: AppTextStyles.titleLarge(context).copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          if (description != null) ...[
+            SizedBox(height: ResponsiveValues.spacingXS(context)),
+            Text(
+              description,
+              style: AppTextStyles.bodySmall(context).copyWith(
+                color: AppColors.getTextSecondary(context),
+                height: 1.45,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildOverviewSection({
     required int totalChaptersAttempted,
     required int chaptersCompleted,
@@ -290,7 +355,7 @@ class _ProgressScreenState extends State<ProgressScreen>
         : 0.0;
 
     if (isLoading && !hasCachedData) {
-      return AppCard.glass(
+      return AppCard.solid(
         child: Padding(
           padding: ResponsiveValues.cardPadding(context),
           child: Column(
@@ -333,13 +398,12 @@ class _ProgressScreenState extends State<ProgressScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          AppStrings.progressOverview,
-          style: AppTextStyles.titleLarge(context)
-              .copyWith(fontWeight: FontWeight.w700),
+        _buildSectionHeader(
+          title: AppStrings.progressOverview,
+          description:
+              'A quick view of how steadily you are learning across chapters, questions, and study time.',
         ),
-        SizedBox(height: ResponsiveValues.spacingL(context)),
-        AppCard.glass(
+        AppCard.solid(
           child: Padding(
             padding: ResponsiveValues.cardPadding(context),
             child: Column(
@@ -389,11 +453,18 @@ class _ProgressScreenState extends State<ProgressScreen>
                       ),
                     ),
                     Container(
-                      width: ResponsiveValues.iconSizeXL(context) * 1.5,
-                      height: ResponsiveValues.iconSizeXL(context) * 1.5,
+                      width:
+                          ResponsiveValues.featureCardIconContainerSize(
+                              context),
+                      height:
+                          ResponsiveValues.featureCardIconContainerSize(
+                              context),
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                            colors: AppColors.purpleGradient),
+                        color: const Color(0xFF2C7FB4).withValues(alpha: 0.14),
+                        border: Border.all(
+                          color:
+                              const Color(0xFF2C7FB4).withValues(alpha: 0.18),
+                        ),
                         borderRadius: BorderRadius.circular(
                             ResponsiveValues.radiusMedium(context)),
                       ),
@@ -473,7 +544,7 @@ class _ProgressScreenState extends State<ProgressScreen>
     final examResults = _examProvider.myExamResults;
 
     if (isLoading && !hasCachedData) {
-      return AppCard.glass(
+      return AppCard.solid(
         child: Padding(
           padding: ResponsiveValues.cardPadding(context),
           child: Column(
@@ -503,10 +574,8 @@ class _ProgressScreenState extends State<ProgressScreen>
       try {
         if (exam.passed == true) passedCount++;
         final score = exam.score;
-        if (score != null) {
-          totalScore += score;
-          validExams++;
-        }
+        totalScore += score;
+        validExams++;
       } catch (e) {}
     }
 
@@ -515,13 +584,12 @@ class _ProgressScreenState extends State<ProgressScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          AppStrings.examPerformance,
-          style: AppTextStyles.titleLarge(context)
-              .copyWith(fontWeight: FontWeight.w700),
+        _buildSectionHeader(
+          title: AppStrings.examPerformance,
+          description:
+              'Recent results, pass rate, and average score across your completed exams.',
         ),
-        SizedBox(height: ResponsiveValues.spacingL(context)),
-        AppCard.glass(
+        AppCard.solid(
           child: Padding(
             padding: ResponsiveValues.cardPadding(context),
             child: Column(
@@ -673,7 +741,7 @@ class _ProgressScreenState extends State<ProgressScreen>
     final scoreText =
         exam.formattedScore?.toString() ?? '${score.toStringAsFixed(1)}%';
 
-    return AppCard.glass(
+    return AppCard.solid(
       child: Container(
         padding: ResponsiveValues.cardPadding(context),
         child: Row(
@@ -682,16 +750,12 @@ class _ProgressScreenState extends State<ProgressScreen>
               width: ResponsiveValues.iconSizeXL(context),
               height: ResponsiveValues.iconSizeXL(context),
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: passed
-                      ? [
-                          AppColors.telegramGreen.withValues(alpha: 0.2),
-                          AppColors.telegramGreen.withValues(alpha: 0.1)
-                        ]
-                      : [
-                          AppColors.telegramRed.withValues(alpha: 0.2),
-                          AppColors.telegramRed.withValues(alpha: 0.1)
-                        ],
+                color: (passed ? AppColors.telegramGreen : AppColors.telegramRed)
+                    .withValues(alpha: 0.12),
+                border: Border.all(
+                  color:
+                      (passed ? AppColors.telegramGreen : AppColors.telegramRed)
+                          .withValues(alpha: 0.18),
                 ),
                 borderRadius: BorderRadius.circular(
                     ResponsiveValues.radiusSmall(context)),
@@ -736,19 +800,15 @@ class _ProgressScreenState extends State<ProgressScreen>
                           vertical: ResponsiveValues.spacingXS(context),
                         ),
                         decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: passed
-                                ? [
-                                    AppColors.telegramGreen
-                                        .withValues(alpha: 0.2),
-                                    AppColors.telegramGreen
-                                        .withValues(alpha: 0.1)
-                                  ]
-                                : [
-                                    AppColors.telegramRed
-                                        .withValues(alpha: 0.2),
-                                    AppColors.telegramRed.withValues(alpha: 0.1)
-                                  ],
+                          color: (passed
+                                  ? AppColors.telegramGreen
+                                  : AppColors.telegramRed)
+                              .withValues(alpha: 0.12),
+                          border: Border.all(
+                            color: (passed
+                                    ? AppColors.telegramGreen
+                                    : AppColors.telegramRed)
+                                .withValues(alpha: 0.18),
                           ),
                           borderRadius: BorderRadius.circular(
                               ResponsiveValues.radiusMedium(context)),
@@ -804,7 +864,7 @@ class _ProgressScreenState extends State<ProgressScreen>
     final overallCompletion = stats['overall_completion_percentage'] ?? 0;
 
     if (isLoading && !hasCachedData) {
-      return AppCard.glass(
+      return AppCard.solid(
         child: Padding(
           padding: ResponsiveValues.cardPadding(context),
           child: AppShimmer(
@@ -847,13 +907,12 @@ class _ProgressScreenState extends State<ProgressScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          AppStrings.learningMetrics,
-          style: AppTextStyles.titleLarge(context)
-              .copyWith(fontWeight: FontWeight.w700),
+        _buildSectionHeader(
+          title: AppStrings.learningMetrics,
+          description:
+              'Your broader learning activity across videos, notes, questions, and exams.',
         ),
-        SizedBox(height: ResponsiveValues.spacingL(context)),
-        AppCard.glass(
+        AppCard.solid(
           child: Padding(
             padding: ResponsiveValues.cardPadding(context),
             child: Column(
@@ -911,7 +970,7 @@ class _ProgressScreenState extends State<ProgressScreen>
     final achievements = _progressProvider.achievements;
 
     if (isLoading && !hasCachedData) {
-      return AppCard.glass(
+      return AppCard.solid(
         child: Padding(
           padding: ResponsiveValues.cardPadding(context),
           child: Column(
@@ -943,13 +1002,11 @@ class _ProgressScreenState extends State<ProgressScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          AppStrings.achievements,
-          style: AppTextStyles.titleLarge(context)
-              .copyWith(fontWeight: FontWeight.w700),
+        _buildSectionHeader(
+          title: AppStrings.achievements,
+          description: 'Milestones you have unlocked along the way.',
         ),
-        SizedBox(height: ResponsiveValues.spacingL(context)),
-        AppCard.glass(
+        AppCard.solid(
           child: Padding(
             padding: ResponsiveValues.cardPadding(context),
             child: GridView.builder(
@@ -1026,39 +1083,6 @@ class _ProgressScreenState extends State<ProgressScreen>
           padding: EdgeInsets.all(ResponsiveValues.sectionPadding(context)),
           sliver: SliverList(
             delegate: SliverChildListDelegate([
-              if (isOffline && pendingCount > 0)
-                Container(
-                  margin: EdgeInsets.only(
-                      bottom: ResponsiveValues.spacingL(context)),
-                  padding: ResponsiveValues.cardPadding(context),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        AppColors.info.withValues(alpha: 0.2),
-                        AppColors.info.withValues(alpha: 0.1)
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(
-                        ResponsiveValues.radiusMedium(context)),
-                    border: Border.all(
-                        color: AppColors.info.withValues(alpha: 0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.schedule_rounded,
-                          color: AppColors.info,
-                          size: ResponsiveValues.iconSizeS(context)),
-                      SizedBox(width: ResponsiveValues.spacingM(context)),
-                      Expanded(
-                        child: Text(
-                          '$pendingCount pending change${pendingCount > 1 ? 's' : ''}',
-                          style: AppTextStyles.bodySmall(context)
-                              .copyWith(color: AppColors.info),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
               _buildStatsSection(
                 streakCount: streakCount,
                 chaptersCompleted: chaptersCompleted,

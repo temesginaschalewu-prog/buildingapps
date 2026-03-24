@@ -1,8 +1,6 @@
-// lib/providers/base_provider.dart
-// COMPLETE FIXED VERSION - WITH SAFE CONTEXT PATTERN
-
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import '../services/connectivity_service.dart';
 import '../services/offline_queue_manager.dart';
 import '../utils/helpers.dart';
@@ -14,6 +12,8 @@ mixin BaseProvider<T extends ChangeNotifier> on ChangeNotifier {
   String? _errorMessage;
   bool _isInitialized = false;
   final List<StreamSubscription> _subscriptions = [];
+  bool _disposed = false;
+  bool _notifyScheduled = false;
 
   ProviderState get state => _state;
   bool get isLoading => _state == ProviderState.loading;
@@ -46,13 +46,13 @@ mixin BaseProvider<T extends ChangeNotifier> on ChangeNotifier {
 
   void setError(String message) {
     setState(ProviderState.error, error: message);
-    _state = ProviderState.loaded;
-    safeNotify();
   }
 
   void clearError() {
-    if (_state == ProviderState.error) {
-      _state = ProviderState.initial;
+    if (_errorMessage != null) {
+      if (_state == ProviderState.error) {
+        _state = ProviderState.initial;
+      }
       _errorMessage = null;
       safeNotify();
     }
@@ -64,13 +64,22 @@ mixin BaseProvider<T extends ChangeNotifier> on ChangeNotifier {
   }
 
   void safeNotify() {
-    if (hasListeners) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (hasListeners) {
-          notifyListeners();
-        }
-      });
+    if (_disposed || !hasListeners || _notifyScheduled) return;
+
+    final binding = WidgetsBinding.instance;
+    if (binding.schedulerPhase == SchedulerPhase.idle ||
+        binding.schedulerPhase == SchedulerPhase.postFrameCallbacks) {
+      notifyListeners();
+      return;
     }
+
+    _notifyScheduled = true;
+    binding.addPostFrameCallback((_) {
+      _notifyScheduled = false;
+      if (!_disposed && hasListeners) {
+        notifyListeners();
+      }
+    });
   }
 
   void addSubscription(StreamSubscription subscription) {
@@ -78,6 +87,7 @@ mixin BaseProvider<T extends ChangeNotifier> on ChangeNotifier {
   }
 
   void disposeSubscriptions() {
+    _disposed = true;
     for (final sub in _subscriptions) {
       sub.cancel();
     }
@@ -109,21 +119,24 @@ mixin BaseProvider<T extends ChangeNotifier> on ChangeNotifier {
 }
 
 mixin OfflineAwareProvider<T extends ChangeNotifier> on BaseProvider<T> {
-  late final ConnectivityService connectivityService;
-  late final OfflineQueueManager queueManager;
+  late final ConnectivityService _connectivityService;
+  late final OfflineQueueManager _queueManager;
+
+  ConnectivityService get connectivityService => _connectivityService;
+  OfflineQueueManager get queueManager => _queueManager;
 
   void initializeOfflineAware({
     required ConnectivityService connectivity,
     required OfflineQueueManager queue,
   }) {
-    connectivityService = connectivity;
-    queueManager = queue;
+    _connectivityService = connectivity;
+    _queueManager = queue;
 
     addSubscription(
-      connectivityService.onConnectivityChanged.listen(_onConnectivityChanged),
+      _connectivityService.onConnectivityChanged.listen(_onConnectivityChanged),
     );
 
-    if (!connectivityService.isOnline) {
+    if (!_connectivityService.isOnline) {
       setOffline();
     }
   }

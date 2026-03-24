@@ -1,12 +1,8 @@
-// lib/screens/course/course_detail_screen.dart
-// COMPLETE FINAL VERSION - PROPER SHIMMER & LOADING
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:pull_to_refresh/pull_to_refresh.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 
 import '../../models/course_model.dart';
 import '../../models/payment_model.dart';
@@ -19,16 +15,19 @@ import '../../providers/exam_provider.dart';
 import '../../providers/course_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../providers/payment_provider.dart';
+import '../../providers/settings_provider.dart';
 import '../../services/device_service.dart';
+import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
-import '../../widgets/common/base_screen_mixin.dart';
+import '../../services/offline_queue_manager.dart';
 import '../../widgets/chapter/chapter_card.dart';
 import '../../widgets/common/access_banner.dart';
 import '../../widgets/exam/exam_card.dart';
 import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_shimmer.dart';
+import '../../widgets/common/app_empty_state.dart';
 import '../../widgets/common/app_dialog.dart';
-import '../../themes/app_themes.dart';
+import '../../widgets/common/app_bar.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/responsive_values.dart';
@@ -54,9 +53,10 @@ class CourseDetailScreen extends StatefulWidget {
 }
 
 class _CourseDetailScreenState extends State<CourseDetailScreen>
-    with BaseScreenMixin<CourseDetailScreen>, TickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late TabController _tabController;
-  final RefreshController _refreshController = RefreshController();
+  final RefreshController _chaptersRefreshController = RefreshController();
+  final RefreshController _examsRefreshController = RefreshController();
 
   Course? _course;
   Category? _category;
@@ -65,52 +65,24 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
   String? _rejectionReason;
 
   bool _hasCachedData = false;
+  bool _isOffline = false;
+  bool _isRefreshing = false;
   bool _isLoading = true;
-  bool _hasLoadedOnce = false;
+  int _pendingCount = 0;
 
   bool _chaptersLoaded = false;
   bool _examsLoaded = false;
   bool _chaptersLoading = false;
   bool _examsLoading = false;
 
-  late CourseProvider _courseProvider;
-  late ChapterProvider _chapterProvider;
-  late ExamProvider _examProvider;
-  late SubscriptionProvider _subscriptionProvider;
-  late PaymentProvider _paymentProvider;
-  late CategoryProvider _categoryProvider;
+  StreamSubscription? _subscriptionListener;
+  StreamSubscription? _connectivitySubscription;
+  bool _paymentListenerAttached = false;
+  PaymentProvider? _paymentProviderRef;
+  late SettingsProvider _settingsProvider;
 
-  @override
-  String get screenTitle => _course?.name ?? AppStrings.course;
-
-  @override
-  String? get screenSubtitle =>
-      isOffline ? AppStrings.offlineMode : AppStrings.courseContent;
-
-  // ✅ CRITICAL: Only show loading if no cached data AND loading
-  @override
-  bool get isLoading => _isLoading && !_hasCachedData;
-
-  @override
-  bool get hasCachedData => _hasCachedData;
-
-  @override
-  dynamic get errorMessage =>
-      _course == null ? AppStrings.courseNotFound : null;
-
-  // ✅ Shimmer type for course detail (chapters)
-  @override
-  ShimmerType get shimmerType => ShimmerType.chapterCard;
-
-  @override
-  int get shimmerItemCount => 5;
-
-  @override
-  Widget? get appBarLeading => IconButton(
-        icon: Icon(Icons.arrow_back_rounded,
-            color: AppColors.getTextPrimary(context)),
-        onPressed: () => context.pop(),
-      );
+  // ✅ Flag to prevent operations after dispose
+  bool _isDisposed = false;
 
   @override
   void initState() {
@@ -122,51 +94,111 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _courseProvider = Provider.of<CourseProvider>(context);
-    _chapterProvider = Provider.of<ChapterProvider>(context);
-    _examProvider = Provider.of<ExamProvider>(context);
-    _subscriptionProvider = Provider.of<SubscriptionProvider>(context);
-    _paymentProvider = Provider.of<PaymentProvider>(context);
-    _categoryProvider = Provider.of<CategoryProvider>(context);
-
-    _subscriptionProvider.subscriptionUpdates.listen((_) {
-      if (isMounted && _category != null) _updateAccessStatus();
-    });
-
-    // Mark as loaded if we have data
-    if (_course != null && _hasCachedData) {
-      _hasLoadedOnce = true;
-    }
+    _settingsProvider = Provider.of<SettingsProvider>(context);
+    _setupListeners();
   }
 
   @override
   void dispose() {
+    _isDisposed = true;
+    if (_paymentListenerAttached && _paymentProviderRef != null) {
+      _paymentProviderRef!.removeListener(_handlePaymentProviderChange);
+    }
     _tabController.dispose();
-    _refreshController.dispose();
+    _chaptersRefreshController.dispose();
+    _examsRefreshController.dispose();
+    _subscriptionListener?.cancel();
+    _connectivitySubscription?.cancel();
     super.dispose();
   }
 
   Future<void> _initialize() async {
+    await _checkConnectivity();
+    _setupConnectivityListener();
     await _loadFromCache();
 
     if (_course != null && _hasCachedData) {
-      if (isMounted) {
-        setState(() {
-          _isLoading = false;
-          _hasLoadedOnce = true;
-        });
+      if (!_isOffline) {
+        await _loadPaymentInfo(forceRefresh: true);
+        await _saveToCache();
+      }
+      if (mounted && !_isDisposed) {
+        setState(() => _isLoading = false);
       }
       unawaited(_loadChapters());
       unawaited(_loadExams());
-      if (!isOffline) unawaited(_refreshInBackground());
+      if (!_isOffline) {
+        unawaited(_refreshInBackground());
+      }
     } else {
       await _loadFreshData();
+    }
+  }
+
+  void _setupConnectivityListener() {
+    final connectivityService = context.read<ConnectivityService>();
+    _connectivitySubscription?.cancel();
+    _connectivitySubscription =
+        connectivityService.onConnectivityChanged.listen((isOnline) {
+      if (mounted && !_isDisposed) {
+        setState(() {
+          _isOffline = !isOnline;
+          final queueManager = context.read<OfflineQueueManager>();
+          _pendingCount = queueManager.pendingCount;
+        });
+        if (isOnline && !_isRefreshing && _course != null) {
+          unawaited(_refreshInBackground());
+        }
+      }
+    });
+  }
+
+  void _setupListeners() {
+    final subscriptionProvider = context.read<SubscriptionProvider>();
+    _subscriptionListener?.cancel();
+    _subscriptionListener =
+        subscriptionProvider.subscriptionUpdates.listen((_) {
+      if (mounted && !_isDisposed && _category != null) _updateAccessStatus();
+    });
+
+    final paymentProvider = context.read<PaymentProvider>();
+    _paymentProviderRef = paymentProvider;
+    if (!_paymentListenerAttached) {
+      paymentProvider.addListener(_handlePaymentProviderChange);
+      _paymentListenerAttached = true;
+    }
+  }
+
+  void _handlePaymentProviderChange() {
+    if (_isDisposed || !mounted || _category == null) return;
+    _syncPaymentInfoFromProvider();
+    if (mounted && !_isDisposed) setState(() {});
+  }
+
+  bool _looksLikeNetworkError(Object error) {
+    final message = error.toString().toLowerCase();
+    return message.contains('network error') ||
+        message.contains('socket') ||
+        message.contains('connection') ||
+        message.contains('offline');
+  }
+
+  Future<void> _checkConnectivity() async {
+    final connectivityService = context.read<ConnectivityService>();
+    await connectivityService.checkConnectivity();
+    if (mounted && !_isDisposed) {
+      setState(() {
+        _isOffline = !connectivityService.isOnline;
+        final queueManager = context.read<OfflineQueueManager>();
+        _pendingCount = queueManager.pendingCount;
+      });
     }
   }
 
   Future<void> _loadFromCache() async {
     try {
       final deviceService = context.read<DeviceService>();
+      final subscriptionProvider = context.read<SubscriptionProvider>();
       final cachedCourse =
           await deviceService.getCacheItem<Map<String, dynamic>>(
         'course_${widget.courseId}',
@@ -180,14 +212,34 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
             ? Category.fromJson(
                 cachedCourse['category'] as Map<String, dynamic>)
             : widget.category;
-        _hasAccess = cachedCourse['has_access'] ?? false;
-        _hasPendingPayment = cachedCourse['has_pending_payment'] ?? false;
+        final knownAccess = _category != null
+            ? subscriptionProvider
+                .hasActiveSubscriptionForCategory(_category!.id)
+            : false;
+        _hasAccess = knownAccess || (cachedCourse['has_access'] ?? false);
+        _hasPendingPayment =
+            _hasAccess ? false : (cachedCourse['has_pending_payment'] ?? false);
+        _rejectionReason = _hasAccess ? null : cachedCourse['rejection_reason'];
         _hasCachedData = true;
         debugLog('CourseDetailScreen', '✅ Loaded course from cache');
-      } else if (widget.course != null) {
+        return;
+      }
+
+      final restoredFromProviders = await _restoreFromSavedProviders();
+      if (restoredFromProviders) {
+        return;
+      }
+
+      if (widget.course != null) {
         _course = widget.course;
         _category = widget.category;
-        _hasAccess = widget.hasAccess ?? false;
+        _hasAccess = (widget.hasAccess ?? false) ||
+            (_category != null
+                ? subscriptionProvider
+                    .hasActiveSubscriptionForCategory(_category!.id)
+                : false);
+        _hasPendingPayment = _hasAccess ? false : _hasPendingPayment;
+        _rejectionReason = _hasAccess ? null : _rejectionReason;
         _hasCachedData = true;
         debugLog('CourseDetailScreen', '✅ Using passed course data');
       }
@@ -196,56 +248,149 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     }
   }
 
-  Future<void> _loadFreshData() async {
-    if (!isOffline) {
-      try {
-        if (_categoryProvider.categories.isEmpty) {
-          await _categoryProvider.loadCategories();
-        }
+  Future<bool> _restoreFromSavedProviders() async {
+    try {
+      final categoryProvider = context.read<CategoryProvider>();
+      final courseProvider = context.read<CourseProvider>();
+      final subscriptionProvider = context.read<SubscriptionProvider>();
 
-        _course ??= await _findCourse();
-        if (_course == null && !isOffline) {
-          await _categoryProvider.loadCategories(forceRefresh: true);
-          _course = await _findCourse(forceRefreshCourses: true);
-        }
-        if (_course == null) throw Exception(AppStrings.courseNotFound);
-
-        if (_category == null && _course!.categoryId > 0) {
-          _category = _categoryProvider.getCategoryById(_course!.categoryId);
-        }
-
-        await _checkAccessStatus();
-        await Future.wait([_loadChapters(), _loadExams()]);
-        await _saveToCache();
-
-        if (isMounted) {
-          setState(() {
-            _isLoading = false;
-            _hasLoadedOnce = true;
-          });
-        }
-        if (!isOffline) unawaited(_refreshPaymentInfoInBackground());
-      } catch (e) {
-        debugLog('CourseDetailScreen', 'Error loading fresh data: $e');
-        if (isMounted) setState(() => _isLoading = false);
+      if (categoryProvider.categories.isEmpty) {
+        await categoryProvider.loadCategories();
       }
-    } else {
-      setState(() => _isLoading = false);
+
+      Course? restoredCourse = courseProvider.getCourseById(widget.courseId);
+      Category? restoredCategory = restoredCourse != null
+          ? categoryProvider.getCategoryById(restoredCourse.categoryId)
+          : null;
+
+      if (restoredCourse == null) {
+        for (final category in categoryProvider.categories) {
+          if (!courseProvider.hasLoadedCategory(category.id)) {
+            await courseProvider.loadCoursesByCategory(
+              category.id,
+              hasAccess: widget.hasAccess ??
+                  subscriptionProvider
+                      .hasActiveSubscriptionForCategory(category.id),
+            );
+          }
+
+          final categoryCourses = courseProvider.getCoursesByCategory(category.id);
+          try {
+            restoredCourse =
+                categoryCourses.firstWhere((course) => course.id == widget.courseId);
+            restoredCategory = category;
+            break;
+          } catch (_) {
+            continue;
+          }
+        }
+      }
+
+      if (restoredCourse == null) {
+        return false;
+      }
+
+      _course = restoredCourse;
+      _category = restoredCategory ??
+          widget.category ??
+          categoryProvider.getCategoryById(restoredCourse.categoryId);
+      _hasAccess = widget.hasAccess ??
+          (_category != null
+              ? subscriptionProvider
+                  .hasActiveSubscriptionForCategory(_category!.id)
+              : false);
+      if (_hasAccess) {
+        _hasPendingPayment = false;
+        _rejectionReason = null;
+      }
+      _hasCachedData = true;
+      debugLog(
+        'CourseDetailScreen',
+        '✅ Restored course from saved provider caches',
+      );
+      return true;
+    } catch (e) {
+      debugLog(
+        'CourseDetailScreen',
+        '⚠️ Failed provider cache recovery: $e',
+      );
+      return false;
     }
   }
 
-  Future<Course?> _findCourse({bool forceRefreshCourses = false}) async {
-    for (final category in _categoryProvider.categories) {
-      if (!_courseProvider.hasLoadedCategory(category.id) ||
+  Future<void> _loadFreshData() async {
+    final connectivityService = context.read<ConnectivityService>();
+
+    if (!connectivityService.isOnline) {
+      if (mounted && !_isDisposed) {
+        setState(() {
+          _isOffline = true;
+          _isLoading = false;
+        });
+      }
+      return;
+    }
+
+    try {
+      final courseProvider = context.read<CourseProvider>();
+      final categoryProvider = context.read<CategoryProvider>();
+      if (categoryProvider.categories.isEmpty) {
+        await categoryProvider.loadCategories();
+      }
+
+      _course ??= await _findCourse(courseProvider, categoryProvider);
+      if (_course == null && !_isOffline) {
+        await categoryProvider.loadCategories(forceRefresh: true);
+        _course = await _findCourse(
+          courseProvider,
+          categoryProvider,
+          forceRefreshCourses: true,
+        );
+      }
+      if (_course == null) throw Exception(AppStrings.courseNotFound);
+
+      if (_category == null && _course!.categoryId > 0) {
+        _category = categoryProvider.getCategoryById(_course!.categoryId);
+      }
+
+      await _checkAccessStatus();
+
+      await Future.wait([
+        _loadChapters(),
+        _loadExams(),
+      ]);
+
+      await _saveToCache();
+
+      if (mounted && !_isDisposed) {
+        setState(() => _isLoading = false);
+      }
+
+      if (!_isOffline) {
+        unawaited(_refreshPaymentInfoInBackground());
+      }
+    } catch (e) {
+      debugLog('CourseDetailScreen', 'Error loading fresh data: $e');
+      if (mounted && !_isDisposed) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<Course?> _findCourse(
+      CourseProvider courseProvider, CategoryProvider categoryProvider,
+      {bool forceRefreshCourses = false}) async {
+    for (final category in categoryProvider.categories) {
+      if (!courseProvider.hasLoadedCategory(category.id) ||
           forceRefreshCourses) {
-        await _courseProvider.loadCoursesByCategory(
+        await courseProvider.loadCoursesByCategory(
           category.id,
           forceRefresh: forceRefreshCourses,
           hasAccess: widget.hasAccess ?? _hasAccess,
         );
       }
 
-      final courses = _courseProvider.getCoursesByCategory(category.id);
+      final courses = courseProvider.getCoursesByCategory(category.id);
       final foundCourse = courses.firstWhere(
         (c) => c.id == widget.courseId,
         orElse: () => Course(id: 0, name: '', categoryId: 0, chapterCount: 0),
@@ -259,138 +404,197 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
   }
 
   Future<void> _refreshInBackground() async {
-    if (isRefreshing) return;
+    if (_isRefreshing || _isDisposed) return;
+    if (mounted && !_isDisposed) setState(() => _isRefreshing = true);
 
     try {
+      final courseProvider = context.read<CourseProvider>();
       if (_course != null && _category != null) {
-        await _courseProvider.refreshCoursesWithAccessCheck(
+        await courseProvider.refreshCoursesWithAccessCheck(
             _category!.id, _hasAccess);
       }
 
-      if (!isMounted) return;
+      if (_isDisposed || !mounted) return;
+
       await _checkAccessStatus(forceCheck: true);
-      if (!isMounted) return;
+      if (_isDisposed || !mounted) return;
 
       unawaited(_refreshPaymentInfoInBackground(forceRefresh: true));
       unawaited(_loadChapters(forceRefresh: true));
       unawaited(_loadExams(forceRefresh: true));
+
       await _saveToCache();
-    } catch (e) {
-      debugLog('CourseDetailScreen', 'Background refresh error: $e');
+    } finally {
+      if (mounted && !_isDisposed) setState(() => _isRefreshing = false);
     }
   }
 
-  @override
-  Future<void> onRefresh() async {
-    if (isOffline) {
-      _refreshController.refreshFailed();
+  Future<void> _manualRefresh() async {
+    if (_isRefreshing || _isDisposed) return;
+
+    final connectivityService = context.read<ConnectivityService>();
+
+    if (!connectivityService.isOnline) {
       SnackbarService().showOffline(context, action: AppStrings.refresh);
+      if (mounted && !_isDisposed) setState(() => _isOffline = true);
       return;
     }
 
+    if (mounted && !_isDisposed) setState(() => _isRefreshing = true);
+
     try {
+      final courseProvider = context.read<CourseProvider>();
       if (_course != null && _category != null) {
-        await _courseProvider.refreshCoursesWithAccessCheck(
+        await courseProvider.refreshCoursesWithAccessCheck(
             _category!.id, _hasAccess);
       }
 
-      if (!isMounted) return;
+      if (_isDisposed || !mounted) return;
+
       await _checkAccessStatus(forceCheck: true);
-      if (!isMounted) return;
+      if (_isDisposed || !mounted) return;
 
       await _loadPaymentInfo(forceRefresh: true);
-      if (!isMounted) return;
+      if (_isDisposed || !mounted) return;
 
-      await Future.wait(
-          [_loadChapters(forceRefresh: true), _loadExams(forceRefresh: true)]);
+      await Future.wait([
+        _loadChapters(forceRefresh: true),
+        _loadExams(forceRefresh: true),
+      ]);
+
       await _saveToCache();
-      _refreshController.refreshCompleted();
-      setState(() => _hasLoadedOnce = true);
+      if (mounted && !_isDisposed) setState(() => _isOffline = false);
+
+      SnackbarService().showSuccess(context, AppStrings.courseUpdated);
     } catch (e) {
-      _refreshController.refreshFailed();
-      rethrow;
+      if (_isDisposed || !mounted) return;
+      if (_looksLikeNetworkError(e)) {
+        if (mounted && !_isDisposed) setState(() => _isOffline = true);
+        SnackbarService().showOffline(context, action: AppStrings.refresh);
+      } else {
+        if (mounted && !_isDisposed) setState(() => _isOffline = false);
+        SnackbarService().showInfo(
+          context,
+          _hasCachedData
+              ? 'We could not refresh this course just now. Your saved content is still available.'
+              : AppStrings.refreshFailed,
+        );
+      }
+    } finally {
+      if (mounted && !_isDisposed) setState(() => _isRefreshing = false);
     }
   }
 
   Future<void> _checkAccessStatus({bool forceCheck = false}) async {
-    if (_category == null) return;
+    if (_category == null || _isDisposed) return;
+    final subscriptionProvider = context.read<SubscriptionProvider>();
 
-    if (!isOffline && forceCheck) {
-      _hasAccess = await _subscriptionProvider
+    if (!_isOffline && forceCheck) {
+      _hasAccess = await subscriptionProvider
           .checkHasActiveSubscriptionForCategory(_category!.id);
     } else {
       _hasAccess =
-          _subscriptionProvider.hasActiveSubscriptionForCategory(_category!.id);
+          subscriptionProvider.hasActiveSubscriptionForCategory(_category!.id);
     }
   }
 
   Future<void> _updateAccessStatus() async {
-    if (_category == null) return;
+    if (_category == null || _isDisposed) return;
+    final subscriptionProvider = context.read<SubscriptionProvider>();
     final newAccess =
-        _subscriptionProvider.hasActiveSubscriptionForCategory(_category!.id);
-    if (newAccess != _hasAccess && isMounted) {
-      setState(() => _hasAccess = newAccess);
+        subscriptionProvider.hasActiveSubscriptionForCategory(_category!.id);
+    if (newAccess != _hasAccess && mounted && !_isDisposed) {
+      if (mounted && !_isDisposed) setState(() => _hasAccess = newAccess);
       unawaited(_saveToCache());
     }
   }
 
   Future<void> _loadPaymentInfo({bool forceRefresh = false}) async {
-    if (_category == null) return;
+    if (_category == null || _isDisposed) return;
+    final paymentProvider = context.read<PaymentProvider>();
     try {
-      await _paymentProvider.loadPayments(
-          forceRefresh: forceRefresh && !isOffline);
-      final pendingPayments = _paymentProvider.getPendingPayments();
-      _hasPendingPayment = pendingPayments.any(_matchesPaymentToCategory);
-
-      final rejectedPayments = _paymentProvider.getRejectedPayments();
-      final recentRejected = rejectedPayments.firstWhere(
-        _matchesPaymentToCategory,
-        orElse: () => Payment(
-          id: 0,
-          paymentType: '',
-          amount: 0,
-          paymentMethod: '',
-          status: '',
-          createdAt: DateTime.now(),
-          categoryName: '',
-        ),
-      );
-      _rejectionReason =
-          recentRejected.id != 0 ? recentRejected.rejectionReason : null;
+      await paymentProvider.loadPayments(
+          forceRefresh: forceRefresh && !_isOffline);
+      if (mounted && !_isDisposed) _syncPaymentInfoFromProvider();
     } catch (e) {
       debugLog('CourseDetailScreen', 'Error loading payment info: $e');
     }
   }
 
+  void _syncPaymentInfoFromProvider() {
+    if (_category == null || _isDisposed) return;
+
+    final paymentProvider = context.read<PaymentProvider>();
+    if (_hasAccess) {
+      final changed = _hasPendingPayment || _rejectionReason != null;
+      _hasPendingPayment = false;
+      _rejectionReason = null;
+
+      if (changed && mounted && !_isDisposed) {
+        if (mounted && !_isDisposed) setState(() {});
+        unawaited(_saveToCache());
+      }
+      return;
+    }
+
+    final pendingPayments = paymentProvider.getPendingPayments();
+    final hasPendingPayment = pendingPayments.any(_matchesPaymentToCategory);
+
+    final rejectedPayments = paymentProvider.getRejectedPayments();
+    final recentRejected =
+        rejectedPayments.where(_matchesPaymentToCategory).fold<Payment?>(
+              null,
+              (latest, payment) =>
+                  latest == null || payment.createdAt.isAfter(latest.createdAt)
+                      ? payment
+                      : latest,
+            );
+    final rejectionReason = recentRejected?.rejectionReason;
+
+    final changed = hasPendingPayment != _hasPendingPayment ||
+        rejectionReason != _rejectionReason;
+
+    _hasPendingPayment = hasPendingPayment;
+    _rejectionReason = rejectionReason;
+
+    if (changed && mounted && !_isDisposed) {
+      if (mounted && !_isDisposed) setState(() {});
+      unawaited(_saveToCache());
+    }
+  }
+
   bool _matchesPaymentToCategory(Payment payment) {
     if (_category == null) return false;
-    if (payment.categoryId != null && payment.categoryId == _category!.id)
+    if (payment.categoryId != null && payment.categoryId == _category!.id) {
       return true;
+    }
     return payment.categoryName.toLowerCase() == _category!.name.toLowerCase();
   }
 
   Future<void> _refreshPaymentInfoInBackground(
       {bool forceRefresh = false}) async {
     await _loadPaymentInfo(forceRefresh: forceRefresh);
-    if (!isMounted) return;
-    setState(() {});
+    if (_isDisposed || !mounted) return;
+    if (mounted && !_isDisposed) setState(() {});
     unawaited(_saveToCache());
   }
 
   Future<void> _loadChapters({bool forceRefresh = false}) async {
-    if (_course == null) return;
+    if (_course == null || _isDisposed) return;
 
-    setState(() => _chaptersLoading = true);
+    if (mounted && !_isDisposed) setState(() => _chaptersLoading = true);
+
+    final chapterProvider = context.read<ChapterProvider>();
 
     try {
-      if (isOffline) {
-        await _chapterProvider.loadChaptersByCourse(_course!.id);
+      if (_isOffline) {
+        await chapterProvider.loadChaptersByCourse(_course!.id);
       } else {
-        await _chapterProvider.loadChaptersByCourse(_course!.id,
+        await chapterProvider.loadChaptersByCourse(_course!.id,
             forceRefresh: forceRefresh);
       }
     } finally {
-      if (isMounted) {
+      if (mounted && !_isDisposed) {
         setState(() {
           _chaptersLoading = false;
           _chaptersLoaded = true;
@@ -400,19 +604,21 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
   }
 
   Future<void> _loadExams({bool forceRefresh = false}) async {
-    if (_course == null) return;
+    if (_course == null || _isDisposed) return;
 
-    setState(() => _examsLoading = true);
+    if (mounted && !_isDisposed) setState(() => _examsLoading = true);
+
+    final examProvider = context.read<ExamProvider>();
 
     try {
-      if (isOffline) {
-        await _examProvider.loadExamsByCourse(_course!.id);
+      if (_isOffline) {
+        await examProvider.loadExamsByCourse(_course!.id);
       } else {
-        await _examProvider.loadExamsByCourse(_course!.id,
+        await examProvider.loadExamsByCourse(_course!.id,
             forceRefresh: forceRefresh);
       }
     } finally {
-      if (isMounted) {
+      if (mounted && !_isDisposed) {
         setState(() {
           _examsLoading = false;
           _examsLoaded = true;
@@ -422,7 +628,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
   }
 
   Future<void> _saveToCache() async {
-    if (_course == null) return;
+    if (_course == null || _isDisposed) return;
     try {
       final deviceService = context.read<DeviceService>();
       deviceService.saveCacheItem(
@@ -431,8 +637,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
           'course': _course!.toJson(),
           'category': _category?.toJson(),
           'has_access': _hasAccess,
-          'has_pending_payment': _hasPendingPayment,
-          'rejection_reason': _rejectionReason,
+          'has_pending_payment': _hasAccess ? false : _hasPendingPayment,
+          'rejection_reason': _hasAccess ? null : _rejectionReason,
           'timestamp': DateTime.now().toIso8601String(),
         },
         ttl: const Duration(hours: 1),
@@ -443,29 +649,76 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     }
   }
 
-  void _handleChapterTap(Chapter chapter) {
-    if (isOffline) {
+  Future<bool> _hasOfflineChapterContent(Chapter chapter) async {
+    try {
+      final deviceService = context.read<DeviceService>();
+
+      final cachedVideos =
+          await deviceService.getCacheItem<Map<String, dynamic>>(
+        'cached_videos_chapter_${chapter.id}',
+        isUserSpecific: true,
+      );
+      if (cachedVideos != null && cachedVideos.isNotEmpty) {
+        return true;
+      }
+
+      final cachedNotes =
+          await deviceService.getCacheItem<Map<String, dynamic>>(
+        'cached_notes_chapter_${chapter.id}',
+        isUserSpecific: true,
+      );
+      return cachedNotes != null && cachedNotes.isNotEmpty;
+    } catch (e) {
+      debugLog('CourseDetailScreen', 'Error checking chapter offline cache: $e');
+      return false;
+    }
+  }
+
+  Future<void> _handleChapterTap(Chapter chapter) async {
+    if (_isOffline) {
+      final hasOfflineContent =
+          chapter.isFree || _hasAccess || await _hasOfflineChapterContent(chapter);
+
+      if (hasOfflineContent) {
+        if (!mounted || _isDisposed) return;
+        unawaited(context.push('/chapter/${chapter.id}', extra: {
+          'chapter': chapter,
+          'course': _course,
+          'category': _category,
+          'hasAccess': true,
+        }));
+        return;
+      }
+
       SnackbarService().showOffline(context, action: AppStrings.openChapter);
       return;
     }
 
+    if (_hasPendingPayment) {
+      _showPendingPaymentDialog();
+      return;
+    }
+
     if (chapter.isFree || _hasAccess) {
-      context.push('/chapter/${chapter.id}', extra: {
+      unawaited(context.push('/chapter/${chapter.id}', extra: {
         'chapter': chapter,
         'course': _course,
         'category': _category,
         'hasAccess': _hasAccess,
-      });
-    } else if (_hasPendingPayment) {
-      _showPendingPaymentDialog();
+      }));
     } else {
       _showPaymentDialog();
     }
   }
 
   void _handleExamTap(Exam exam) {
-    if (isOffline) {
+    if (_isOffline) {
       SnackbarService().showOffline(context, action: AppStrings.startExam);
+      return;
+    }
+
+    if (_hasPendingPayment) {
+      _showPendingPaymentDialog();
       return;
     }
 
@@ -487,25 +740,37 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
       return;
     }
 
+    final subscriptionProvider = context.read<SubscriptionProvider>();
+    final hasExpiredSubscription = subscriptionProvider.expiredSubscriptions
+        .any((sub) => sub.categoryId == _category!.id);
+
+    final paymentType = hasExpiredSubscription ? 'repayment' : 'first_time';
+
     AppDialog.confirm(
       context: context,
       title: AppStrings.unlockContent,
-      message:
-          '${AppStrings.purchase} "${_category!.name}" ${AppStrings.toAccessAllContent}',
-      confirmText: AppStrings.purchaseAccess,
+      message: hasExpiredSubscription
+          ? 'Your subscription for "${_category!.name}" has expired. Renew to access all content.'
+          : '${AppStrings.purchase} "${_category!.name}" ${AppStrings.toAccessAllContent}',
+      confirmText:
+          hasExpiredSubscription ? 'Renew Now' : AppStrings.purchaseAccess,
     ).then((confirmed) {
-      if (confirmed == true && !isOffline) {
+      if (confirmed == true && !_isOffline && mounted && !_isDisposed) {
         context.push('/payment', extra: {
           'category': _category,
-          'paymentType': _hasAccess ? 'repayment' : 'first_time',
+          'paymentType': paymentType,
         });
-      } else if (isOffline) {
+      } else if (_isOffline && mounted) {
         SnackbarService().showOffline(context, action: AppStrings.makePayment);
       }
     });
   }
 
   void _showRejectedPaymentDialog() {
+    final subscriptionProvider = context.read<SubscriptionProvider>();
+    final hasExpiredSubscription = subscriptionProvider.expiredSubscriptions
+        .any((sub) => sub.categoryId == _category!.id);
+
     AppDialog.warning(
       context: context,
       title: AppStrings.paymentRejected,
@@ -513,10 +778,10 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
           ? '${AppStrings.reason}: $_rejectionReason'
           : AppStrings.yourPaymentWasRejected,
     ).then((_) {
-      if (!isOffline) {
+      if (!_isOffline && mounted && !_isDisposed) {
         context.push('/payment', extra: {
           'category': _category,
-          'paymentType': 'first_time',
+          'paymentType': hasExpiredSubscription ? 'repayment' : 'first_time',
         });
       }
     });
@@ -527,78 +792,117 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
       context: context,
       title: AppStrings.paymentPending,
       message:
-          '${AppStrings.youHavePendingPayment} ${_category?.name}. ${AppStrings.pleaseWaitForVerification}',
+          '${AppStrings.youHavePendingPayment} ${_category?.name}. ${_settingsProvider.getPendingPaymentStatusMessage()}',
     );
   }
 
   Widget _buildAccessBanner() {
     if (_category == null) return const SizedBox.shrink();
 
-    if (_category!.isFree) return AccessBanner.freeCategory();
-    if (_hasAccess) return AccessBanner.fullAccess();
-    if (_hasPendingPayment) return AccessBanner.paymentPending();
+    if (_category!.isFree) {
+      return AccessBanner.freeCategory();
+    }
+
+    if (_hasAccess) {
+      return AccessBanner.fullAccess();
+    }
+
+    if (_hasPendingPayment) {
+      return AccessBanner.paymentPending(
+        message: _settingsProvider.getPendingPaymentStatusMessage(),
+      );
+    }
+
     if (_rejectionReason != null) {
       return AccessBanner.paymentRejected(
         reason: _rejectionReason!,
         onPayNow: _showPaymentDialog,
       );
     }
-    return AccessBanner.limitedAccess(onPurchase: _showPaymentDialog);
+
+    return AccessBanner.limitedAccess(
+      onPurchase: _showPaymentDialog,
+    );
   }
 
-  Widget _buildHeader() {
+  Widget _buildTabs() {
     return Container(
-      padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            _course!.name,
-            style: AppTextStyles.headlineMedium(context).copyWith(
-              fontWeight: FontWeight.w700,
-            ),
+      margin: EdgeInsets.only(top: ResponsiveValues.spacingS(context)),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: AppColors.getDivider(context).withValues(alpha: 0.7),
+            width: 0.6,
           ),
-          if (_course!.description?.isNotEmpty == true) ...[
-            SizedBox(height: ResponsiveValues.spacingS(context)),
-            Text(
-              _course!.description!,
-              style: AppTextStyles.bodyMedium(context).copyWith(
-                color: AppColors.getTextSecondary(context),
-              ),
-            ),
-          ],
+        ),
+      ),
+      child: TabBar(
+        controller: _tabController,
+        tabs: const [
+          Tab(text: AppStrings.chapters),
+          Tab(text: AppStrings.exams),
         ],
+        labelStyle: AppTextStyles.labelMedium(context).copyWith(
+          fontWeight: FontWeight.w700,
+        ),
+        unselectedLabelStyle: AppTextStyles.labelMedium(context),
+        indicatorColor: AppColors.telegramBlue,
+        indicatorWeight: 2.5,
+        labelColor: AppColors.telegramBlue,
+        unselectedLabelColor: AppColors.getTextSecondary(context),
       ),
     );
   }
 
-  Widget _buildChaptersList() {
-    final chapters = _chapterProvider.getChaptersByCourse(_course!.id);
+  Widget _buildChaptersList(List<Chapter> chapters) {
+    final chapterProvider = context.watch<ChapterProvider>();
     final isLoading =
-        _chaptersLoading || _chapterProvider.isLoadingForCourse(_course!.id);
+        _chaptersLoading || chapterProvider.isLoadingForCourse(_course!.id);
+    final hasLoaded =
+        _chaptersLoaded || chapterProvider.hasLoadedForCourse(_course!.id);
 
-    // Show shimmer only if loading and no chapters AND no cached data
-    if (isLoading && chapters.isEmpty && !_hasCachedData && !isOffline) {
-      return buildLoadingShimmer();
-    }
+    // ✅ FIXED: Only show shimmer if NO cached data AND loading
+    final shouldShowShimmer = isLoading &&
+        chapters.isEmpty &&
+        !hasLoaded &&
+        !_hasCachedData &&
+        !_isOffline;
 
-    if (chapters.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-              vertical: ResponsiveValues.spacingXXL(context)),
-          child: buildEmptyWidget(
-            dataType: AppStrings.chapters,
-            customMessage: isOffline
-                ? 'No cached chapters available'
-                : 'No chapters available for this course',
-            isOffline: isOffline,
-          ),
+    if (shouldShowShimmer) {
+      return ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: ResponsiveValues.screenPadding(context),
+        itemCount: 5,
+        itemBuilder: (context, index) => Padding(
+          padding: EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
+          child: AppShimmer(type: ShimmerType.chapterCard, index: index),
         ),
       );
     }
 
+    if (chapters.isEmpty) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.symmetric(
+          horizontal: ResponsiveValues.spacingL(context),
+          vertical: ResponsiveValues.spacingXXL(context),
+        ),
+        children: [
+          AppEmptyState.noData(
+            dataType: AppStrings.chapters,
+            customMessage: _isOffline
+                ? AppStrings.noCachedChapters
+                : 'Chapters for this course will appear here.',
+            onRefresh: _manualRefresh,
+            isOffline: _isOffline,
+            pendingCount: _pendingCount,
+          ),
+        ],
+      );
+    }
+
     return ListView.builder(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: ResponsiveValues.screenPadding(context),
       itemCount: chapters.length,
       itemBuilder: (context, index) {
@@ -618,33 +922,55 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     );
   }
 
-  Widget _buildExamsList() {
-    final exams = _examProvider.getExamsByCourse(_course!.id);
+  Widget _buildExamsList(List<Exam> exams) {
+    final examProvider = context.watch<ExamProvider>();
     final isLoading =
-        _examsLoading || _examProvider.isLoadingForCourse(_course!.id);
+        _examsLoading || examProvider.isLoadingForCourse(_course!.id);
+    final hasLoaded =
+        _examsLoaded || examProvider.hasLoadedForCourse(_course!.id);
 
-    // Show shimmer only if loading and no exams AND no cached data
-    if (isLoading && exams.isEmpty && !_hasCachedData && !isOffline) {
-      return buildLoadingShimmer();
-    }
+    // ✅ FIXED: Only show shimmer if NO cached data AND loading
+    final shouldShowShimmer = isLoading &&
+        exams.isEmpty &&
+        !hasLoaded &&
+        !_hasCachedData &&
+        !_isOffline;
 
-    if (exams.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-              vertical: ResponsiveValues.spacingXXL(context)),
-          child: buildEmptyWidget(
-            dataType: AppStrings.exams,
-            customMessage: isOffline
-                ? 'No cached exams available'
-                : 'No exams available for this course',
-            isOffline: isOffline,
-          ),
+    if (shouldShowShimmer) {
+      return ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: ResponsiveValues.screenPadding(context),
+        itemCount: 5,
+        itemBuilder: (context, index) => Padding(
+          padding: EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
+          child: AppShimmer(type: ShimmerType.examCard, index: index),
         ),
       );
     }
 
+    if (exams.isEmpty) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.symmetric(
+          horizontal: ResponsiveValues.spacingL(context),
+          vertical: ResponsiveValues.spacingXXL(context),
+        ),
+        children: [
+          AppEmptyState.noData(
+            dataType: AppStrings.exams,
+            customMessage: _isOffline
+                ? AppStrings.noCachedExams
+                : 'Exams for this course will appear here.',
+            onRefresh: _manualRefresh,
+            isOffline: _isOffline,
+            pendingCount: _pendingCount,
+          ),
+        ],
+      );
+    }
+
     return ListView.builder(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: ResponsiveValues.screenPadding(context),
       itemCount: exams.length,
       itemBuilder: (context, index) {
@@ -661,20 +987,18 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     );
   }
 
-  @override
-  Widget buildContent(BuildContext context) {
-    if (_course == null && !_hasCachedData) {
-      return buildErrorWidget(
-        isOffline
-            ? AppStrings.noCachedDataAvailable
-            : AppStrings.courseDoesNotExist,
-        onRetry: onRefresh,
-      );
-    }
-
+  Widget _buildRefreshableTab({
+    required Widget child,
+    required RefreshController controller,
+  }) {
     return SmartRefresher(
-      controller: _refreshController,
-      onRefresh: handleRefresh,
+      controller: controller,
+      onRefresh: () async {
+        await _manualRefresh();
+        if (mounted && !_isDisposed) {
+          controller.refreshCompleted();
+        }
+      },
       header: WaterDropHeader(
         waterDropColor: AppColors.telegramBlue,
         refresh: SizedBox(
@@ -686,49 +1010,27 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
           ),
         ),
       ),
-      child: Column(
+      child: child,
+    );
+  }
+
+  Widget _buildSkeletonLoader() {
+    return Scaffold(
+      backgroundColor: AppColors.getBackground(context),
+      appBar: CustomAppBar(
+        title: AppStrings.course,
+        subtitle: AppStrings.loading,
+        leading: AppButton.icon(
+            icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
+      ),
+      body: Column(
         children: [
-          if (isOffline && pendingCount > 0)
-            Container(
-              margin: EdgeInsets.all(ResponsiveValues.spacingM(context)),
-              padding: ResponsiveValues.cardPadding(context),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    AppColors.info.withValues(alpha: 0.2),
-                    AppColors.info.withValues(alpha: 0.1)
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(
-                    ResponsiveValues.radiusMedium(context)),
-                border:
-                    Border.all(color: AppColors.info.withValues(alpha: 0.3)),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.schedule_rounded,
-                      color: AppColors.info,
-                      size: ResponsiveValues.iconSizeS(context)),
-                  SizedBox(width: ResponsiveValues.spacingM(context)),
-                  Expanded(
-                    child: Text(
-                      '$pendingCount pending change${pendingCount > 1 ? 's' : ''}',
-                      style: AppTextStyles.bodySmall(context)
-                          .copyWith(color: AppColors.info),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          _buildAccessBanner(),
-          _buildHeader(),
           Container(
             decoration: BoxDecoration(
               border: Border(
                 bottom: BorderSide(
-                  color: AppColors.getDivider(context).withValues(alpha: 0.5),
-                  width: 0.5,
-                ),
+                    color: AppColors.getDivider(context).withValues(alpha: 0.5),
+                    width: 0.5),
               ),
             ),
             child: TabBar(
@@ -746,12 +1048,19 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
             ),
           ),
           Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildChaptersList(),
-                _buildExamsList(),
-              ],
+            child: Padding(
+              padding: ResponsiveValues.screenPadding(context),
+              child: ListView.separated(
+                itemCount: 5,
+                separatorBuilder: (_, __) =>
+                    SizedBox(height: ResponsiveValues.spacingL(context)),
+                itemBuilder: (context, index) => AppShimmer(
+                  type: index % 2 == 0
+                      ? ShimmerType.chapterCard
+                      : ShimmerType.examCard,
+                  index: index,
+                ),
+              ),
             ),
           ),
         ],
@@ -761,10 +1070,73 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
 
   @override
   Widget build(BuildContext context) {
-    return buildScreen(
-      content: buildContent(context),
-      showAppBar: true,
-      showRefreshIndicator: false,
+    final chapterProvider = context.watch<ChapterProvider>();
+    final examProvider = context.watch<ExamProvider>();
+
+    final chapters = _course != null
+        ? chapterProvider.getChaptersByCourse(_course!.id)
+        : <Chapter>[];
+    final exams =
+        _course != null ? examProvider.getExamsByCourse(_course!.id) : <Exam>[];
+
+    // ✅ CRITICAL: Only show shimmer if loading AND no cached data
+    if (_isLoading && !_hasCachedData) {
+      return _buildSkeletonLoader();
+    }
+
+    if (_course == null) {
+      return Scaffold(
+        backgroundColor: AppColors.getBackground(context),
+        appBar: CustomAppBar(
+          title: AppStrings.course,
+          subtitle: AppStrings.notFound,
+          leading: AppButton.icon(
+              icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
+          showOfflineIndicator: _isOffline,
+        ),
+        body: Center(
+          child: AppEmptyState.error(
+            title: AppStrings.courseNotFound,
+            message: _isOffline
+                ? AppStrings.noCachedDataAvailable
+                : AppStrings.courseDoesNotExist,
+            onRetry: _manualRefresh,
+          ),
+        ),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: AppColors.getBackground(context),
+      appBar: CustomAppBar(
+        title: _course!.name,
+        subtitle:
+            _isOffline ? AppStrings.offlineMode : AppStrings.courseContent,
+        leading: AppButton.icon(
+            icon: Icons.arrow_back_rounded, onPressed: () => context.pop()),
+        showOfflineIndicator: _isOffline,
+      ),
+      body: Column(
+            children: [
+              _buildAccessBanner(),
+              _buildTabs(),
+              Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildRefreshableTab(
+                  child: _buildChaptersList(chapters),
+                  controller: _chaptersRefreshController,
+                ),
+                _buildRefreshableTab(
+                  child: _buildExamsList(exams),
+                  controller: _examsRefreshController,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

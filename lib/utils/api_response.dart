@@ -1,6 +1,3 @@
-// lib/utils/api_response.dart
-// PRODUCTION-READY FINAL VERSION
-
 import '../utils/helpers.dart';
 
 class ApiResponse<T> {
@@ -305,18 +302,22 @@ class ApiError implements Exception {
       return getUserFriendlyErrorMessage(
           'Network error. Please check your internet connection.');
     }
-    if (isTimeout)
+    if (isTimeout) {
       return getUserFriendlyErrorMessage(
           'Request took too long. Please try again.');
-    if (isUnauthorized)
+    }
+    if (isUnauthorized) {
       return getUserFriendlyErrorMessage(
           'Your session has expired. Please login again.');
-    if (isNotFound)
+    }
+    if (isNotFound) {
       return getUserFriendlyErrorMessage(
           'The requested resource was not found.');
-    if (isServerError)
+    }
+    if (isServerError) {
       return getUserFriendlyErrorMessage(
           'Server error. Please try again later.');
+    }
     return message;
   }
 

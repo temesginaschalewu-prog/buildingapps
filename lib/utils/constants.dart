@@ -151,6 +151,12 @@ class AppConstants {
   static String userStreakKey(String userId) => 'user_${userId}_streak';
   static String userProfileKey(String userId) => 'user_${userId}_profile';
   static String userChatbotKey(String userId) => 'user_${userId}_chatbot';
+  static String userDataKeyFor(String userId) => 'user_${userId}_data';
+  static String selectedSchoolIdKeyFor(String userId) =>
+      'user_${userId}_selected_school_id';
+  static String parentLinkStatusKeyFor(String userId) =>
+      'user_${userId}_parent_link_status';
+  static String parentTokenKeyFor(String userId) => 'user_${userId}_parent_token';
 
   // Sync & Queue Keys
   static const String lastSyncTimeKey = 'last_sync_time';
@@ -207,7 +213,7 @@ class AppConstants {
   static String examProgressEndpoint(int examResultId) =>
       '$apiVersion/exam-results/$examResultId/progress';
   static String submitExamEndpoint(int examResultId) =>
-      '$apiVersion/exam-results/$examResultId/submit';
+      '$apiVersion/exams/submit/$examResultId';
 
   // Exam Results
   static String userExamResultsEndpoint(int userId) =>
@@ -338,7 +344,7 @@ class AppStrings {
   static const String passwordsDoNotMatch = 'Passwords do not match';
 
   // Welcome messages
-  static const String welcomeBack = 'Welcome Back';
+  static const String welcomeBack = 'Welcome back';
   static const String signInToContinue = 'Sign in to continue learning';
   static const String home = 'Home';
   static const String createAccount = 'Create Account';
@@ -376,10 +382,10 @@ class AppStrings {
   static const String networkError =
       'Network error. Please check your connection.';
   static const String timeoutError = 'Request timed out. Please try again.';
-  static const String refreshFailed = 'Refresh failed. Please try again.';
+  static const String refreshFailed = 'Could not refresh right now. Please try again.';
   static const String categoryNotFound = 'Category not found';
-  static const String courseNotFound = 'Course not found';
-  static const String chapterNotFound = 'Chapter not found';
+  static const String courseNotFound = 'We could not find this course';
+  static const String chapterNotFound = 'We could not find this chapter';
   static const String notFound = 'Not found';
 
   // Success
@@ -390,28 +396,28 @@ class AppStrings {
   static const String chapterUpdated = 'Chapter updated';
 
   // Empty states
-  static const String noData = 'No data available';
+  static const String noData = 'Nothing to show yet';
   static const String noResults = 'No results found';
   static const String offlineMode = 'Offline';
   static const String cachedData = 'Showing cached data';
   static const String noCachedDataAvailable =
-      'No cached data available. Please check your connection.';
+      'Reconnect to load the latest information.';
   static const String categoryDoesNotExist =
       'The category you\'re looking for doesn\'t exist.';
   static const String noCachedCourses =
-      'No cached courses available. Connect to load courses.';
+      'Reconnect to load your courses.';
   static const String coursesWillAppearHere =
-      'Courses will appear here when available.';
+      'Courses will appear here when they are ready.';
   static const String categoriesWillAppearHere =
-      'Categories will appear here when available.';
+      'Categories will appear here when they are ready.';
   static const String noCachedChapters =
-      'No cached chapters available. Connect to load chapters.';
+      'Reconnect to load the latest chapters.';
   static const String chaptersWillAppearHere =
-      'Chapters will appear here when available.';
+      'Chapters will appear here when they are ready.';
   static const String noCachedExams =
-      'No cached exams available. Connect to load exams.';
+      'Reconnect to load the latest exams.';
   static const String examsWillAppearHere =
-      'Exams will appear here when available.';
+      'Exams will appear here when they are ready.';
 
   // Video player
   static const String playVideo = 'Play Video';
@@ -487,8 +493,6 @@ class AppStrings {
   static const String paymentRejected = 'Payment Rejected';
   static const String uploadProof = 'Upload Proof';
   static const String youHavePendingPayment = 'You have a pending payment for';
-  static const String pleaseWaitForVerification =
-      'Please wait for admin verification (1-3 working days).';
   static const String reason = 'Reason';
   static const String yourPaymentWasRejected =
       'Your previous payment was rejected.';
@@ -496,6 +500,12 @@ class AppStrings {
   // Notifications
   static const String notifications = 'Notifications';
   static const String markAllRead = 'Mark all as read';
+  static const String deleteAll = 'Delete all';
+  static const String deleteAllNotifications = 'Delete all notifications';
+  static const String deleteAllNotificationsConfirm =
+      'This will remove every notification from your inbox. This action cannot be undone.';
+  static const String allNotificationsDeleted =
+      'All notifications were deleted.';
   static const String noNotifications = 'No notifications';
 
   // Device
@@ -603,18 +613,18 @@ class AppStrings {
   // Chapter screen
   static const String authenticationRequired = 'Authentication required';
   static const String noVideosForChapter =
-      'There are no videos for this chapter yet.';
+      'Videos for this chapter will appear here.';
   static const String noNotesForChapter =
-      'There are no notes for this chapter yet.';
+      'Notes for this chapter will appear here.';
   static const String noCachedVideos =
-      'No cached videos available. Connect to load videos.';
+      'Reconnect to load the latest videos for this chapter.';
   static const String noCachedNotes =
-      'No cached notes available. Connect to load notes.';
+      'Reconnect to load the latest notes for this chapter.';
   static const String noCachedQuestions =
-      'No cached questions available. Connect to load questions.';
+      'Reconnect to load the latest practice questions.';
   static const String practiceQuestionsComingSoon =
-      'Practice questions will be added soon.';
-  static const String chapterLocked = 'Chapter Locked';
+      'Practice questions are on the way.';
+  static const String chapterLocked = 'Chapter locked';
   static const String chapterComingSoonMessage =
       'This chapter will be available soon. Stay tuned for updates!';
   static const String accessRequiresSubscription = 'Access to';
@@ -809,8 +819,8 @@ class AppStrings {
   static const String chat = 'chat';
 
   // Profile
-  static const String loadingProfile = 'Loading profile...';
-  static const String manageAccount = 'Manage your account';
+  static const String loadingProfile = 'Loading your profile';
+  static const String manageAccount = 'Account settings';
 
   static const String enterEmail = 'email@example.com';
   static const String enterPhone = '+1 (123) 456-7890';
@@ -820,22 +830,22 @@ class AppStrings {
   static const String profileUpdated = 'Profile updated';
   static const String profileUpdatedSuccess = 'Profile updated successfully';
   static const String profileUpdate = 'Profile update';
-  static const String failedToQueueUpdate = 'Failed to queue update';
-  static const String failedToLoadProfile = 'Failed to load profile';
+  static const String failedToQueueUpdate = 'Could not save this update right now';
+  static const String failedToLoadProfile = 'Could not load your profile';
   static const String tryAgainLater = 'Please try again later';
   static const String noCachedProfile =
-      'No cached profile available. Please check your connection.';
+      'Reconnect to load your latest profile details.';
   static const String uploadImage = 'upload image';
   static const String imageTooLarge = 'Image size too large. Max 10MB.';
-  static const String failedToProcessImage = 'Failed to process image';
-  static const String failedToPickImage = 'Failed to pick image';
+  static const String failedToProcessImage = 'Could not process that image';
+  static const String failedToPickImage = 'Could not pick that image';
   static const String profileImageUpdated = 'Profile image updated';
-  static const String failedToUploadImage = 'Failed to upload image';
+  static const String failedToUploadImage = 'Could not upload that image';
   static const String notificationsEnabled = 'Notifications enabled';
   static const String notificationsDisabled = 'Notifications disabled';
   static const String failedToUpdateNotifications =
-      'Failed to update notification settings';
-  static const String profileUpdateFailed = 'Failed to update profile';
+      'Could not update notification settings';
+  static const String profileUpdateFailed = 'Could not update your profile';
   static const String darkMode = 'Dark Mode';
   static const String tvPairing = 'TV Pairing';
   static const String connectYourTv = 'Connect Your TV';
@@ -843,12 +853,12 @@ class AppStrings {
       'Stream Family Academy content directly to your Android TV';
   static const String offlineConnectToPairTv =
       'You are offline. Please connect to pair a TV device.';
-  static const String tvDevicePaired = 'TV Device Paired';
+  static const String tvDevicePaired = 'TV device paired';
   static const String tvDevicePairedSuccessfully =
       'TV device paired successfully';
   static const String tvDeviceUnpairedSuccessfully =
       'TV device unpaired successfully';
-  static const String unpairTvDeviceTitle = 'Unpair TV Device';
+  static const String unpairTvDeviceTitle = 'Unpair TV device';
   static const String unpairTvDeviceConfirm =
       'Are you sure you want to unpair your TV device? You will need to pair it again to stream content.';
   static const String unpairingFailed = 'Unpairing failed';
@@ -859,42 +869,40 @@ class AppStrings {
   static const String deviceStatusUpdated = 'Device status updated';
   static const String offlineMessagesLabel = 'offline messages';
   static const String usernameNotFoundLoginAgain =
-      'Username not found. Please login again.';
+      'We could not confirm your account. Please sign in again.';
   static const String ready = 'Ready';
   static const String connected = 'Connected';
   static const String online = 'Online';
   static const String mode = 'Mode';
   static const String pairingCode = 'Pairing Code';
   static const String invalidDeviceChangeRequest =
-      'Invalid device change request';
+      'This device approval request is invalid';
   static const String passwordRequiredForDeviceChange =
-      'Password is required to confirm device change';
+      'Enter your password to approve this device change';
   static const String confirmDeviceChangePrompt =
-      'Please confirm the device change';
+      'Please confirm that you want to approve this device';
   static const String maxDeviceChangesReached =
-      'You have reached the maximum device changes';
+      'You have reached the device change limit';
   static const String deviceChangesLimitedMessage =
-      'Device changes are limited to 2 per month for security reasons.';
+      'For security, device changes are limited to 2 per month.';
   static const String offlineCompleteDeviceChange =
-      'You are offline. Please connect to complete device change.';
+      'Reconnect to approve this device change.';
   static const String initializingDeviceInformation =
-      'Initializing device information...';
-  static const String invalidRequest = 'Invalid Request';
+      'Checking device details';
+  static const String invalidRequest = 'Request unavailable';
   static const String noDeviceChangeDataProvided =
-      'No device change data provided.';
+      'The details for this device approval are missing.';
   static const String deviceSetupFailed = 'Device setup failed';
   static const String deviceNotReady = 'Device not ready';
   static const String loginAction = 'login';
   static const String registerAction = 'register';
-  static const String noConversationsTitle = 'No Conversations';
+  static const String noConversationsTitle = 'No conversations';
   static const String startNewChatToBeginShort = 'Start a new chat to begin!';
   static const String cancelDeviceChange = 'Cancel Device Change';
   static const String cancelDeviceChangeConfirm =
       'Are you sure you want to cancel? You will not be able to login on this device.';
   static const String loginAfterDeviceChangeFailed =
       'Login after device change failed';
-  static const String maximumDeviceChangesReachedSupport =
-      'Maximum device changes (2 per month) reached. Please contact support.';
   static const String accessDeniedCheckPassword =
       'Access denied. Please check your password.';
   static const String deviceChangeFailedTryAgain =
@@ -914,35 +922,37 @@ class AppStrings {
   static const String cannotOpenTelegram = 'Could not open Telegram';
 
   // Offline
-  static const String offlineCachedData = 'Offline mode - showing cached data';
-  static const String trackLearningJourney = 'Track your learning journey';
-  static const String dayStreak = 'Day Streak';
+  static const String offlineCachedData = 'Showing saved progress';
+  static const String trackLearningJourney = 'See how your learning is growing';
+  static const String dayStreak = 'Day streak';
 
-  static const String progressOverview = 'Progress Overview';
-  static const String chapterCompletion = 'Chapter Completion';
-  static const String questionAccuracy = 'Question Accuracy';
+  static const String progressOverview = 'Progress overview';
+  static const String chapterCompletion = 'Chapter completion';
+  static const String questionAccuracy = 'Question accuracy';
 
   static const String hours = 'hours';
 
   static const String achievement = 'Achievement';
   static const String moreAchievements = 'more achievements';
   static const String exam = 'Exam';
-  static const String avgScore = 'Avg Score';
+  static const String avgScore = 'Avg score';
   static const String moreExams = 'more exams';
-  static const String overallCompletion = 'Overall Completion';
-  static const String videosCompleted = 'Videos Completed';
-  static const String notesViewed = 'Notes Viewed';
-  static const String questionsAttempted = 'Questions Attempted';
-  static const String examsPassedTaken = 'Exams (Passed/Taken)';
-  static const String averageExamScore = 'Average Exam Score';
+  static const String overallCompletion = 'Overall completion';
+  static const String videosCompleted = 'Videos completed';
+  static const String notesViewed = 'Notes viewed';
+  static const String questionsAttempted = 'Questions attempted';
+  static const String examsPassedTaken = 'Exams passed / taken';
+  static const String averageExamScore = 'Average exam score';
   static const String general = 'General';
-  static const String noCachedExamResults = 'No cached exam results';
-  static const String noExamsTaken = 'No exams taken yet';
-  static const String connectToViewExamResults = 'Connect to view exam results';
+  static const String noCachedExamResults =
+      'Reconnect to load your exam history.';
+  static const String noExamsTaken = 'No exams yet';
+  static const String connectToViewExamResults =
+      'Reconnect to load your exam results.';
   static const String takeFirstExam =
-      'Take your first exam to see results here';
+      'Complete your first exam to see results here.';
   static const String offlineProgressMessage =
-      'You are offline. Connect to view your progress.';
+      'Reconnect to load your latest progress.';
   static const String progressUpdated = 'Progress updated';
 
   static const String notificationsUpdated = 'Notifications updated';
@@ -985,7 +995,7 @@ class AppStrings {
   static const String paymentDetails = 'Payment Details';
   static const String paymentMethod = 'Payment Method';
   static const String securePayment = 'Secure Payment';
-  static const String completeYourPayment = 'Complete Your Payment';
+  static const String completeYourPayment = 'Complete your payment';
   static const String submitYourPaymentProof =
       'Submit your payment proof so we can verify your access quickly.';
   static const String reviewPaymentBeforeSubmitting =
@@ -1037,39 +1047,29 @@ class AppStrings {
   static const String uploaded = 'Uploaded';
   static const String copiedToClipboard = 'Copied to clipboard';
   static const String paymentMethods = 'payment methods';
-  static const String paymentMethodsNotAvailable =
-      'Payment methods are not available.\nPlease try again or contact support.';
-  static const String loadingPaymentDetails = 'Loading payment details...';
-  static const String noPaymentDataProvided = 'No payment data provided';
-  static const String failedToInitialize = 'Failed to initialize';
-  static const String paymentError = 'Payment Error';
-  static const String importantNotes = 'Important Notes:';
-  static const String noteAccountHolderMatch =
-      'Make sure the account holder name matches the bank/mobile account';
-  static const String noteProcessingTime =
-      'Payments are processed within 24 hours';
-  static const String noteKeepProof = 'Keep your payment proof screenshot';
-  static const String noteContactSupport =
-      'Contact support if payment is not verified';
-  static const String noteNotification =
-      'You will be notified when payment is verified';
+  static const String loadingPaymentDetails = 'Loading payment details';
+  static const String noPaymentDataProvided =
+      'Payment details are missing for this request';
+  static const String failedToInitialize = 'Unable to open this screen';
+  static const String paymentError = 'Payment error';
+  static const String importantNotes = 'Important notes';
 
   // Payment Success
-  static const String paymentQueued = 'Payment Queued!';
-  static const String renewalSubmitted = 'Renewal Submitted!';
+  static const String paymentQueued = 'Payment queued';
+  static const String renewalSubmitted = 'Renewal submitted';
   static const String yourPaymentFor = 'Your payment for';
   static const String hasBeenSavedOffline =
       'has been saved offline. It will be submitted when you\'re back online.';
   static const String hasBeenSubmitted = 'has been submitted successfully.';
   static const String yourPaymentHasBeenSubmitted =
       'Your payment has been submitted successfully.';
-  static const String queuedForSync = 'Queued for Sync';
-  static const String pendingVerification = 'Pending Verification';
+  static const String queuedForSync = 'Queued for sync';
+  static const String pendingVerification = 'Pending verification';
   static const String amount = 'Amount';
   static const String method = 'Method';
   static const String accountHolder = 'Account Holder';
   static const String status = 'Status';
-  static const String continueToHome = 'Continue to Home';
+  static const String continueToHome = 'Continue to home';
 
   static const String redirectingIn = 'Redirecting in';
   static const String seconds = 'seconds';
@@ -1084,7 +1084,7 @@ class AppStrings {
 
   // Parent Link
   static const String parentLink = 'Parent Link';
-  static const String refreshing = 'Refreshing...';
+  static const String refreshing = 'Updating';
   static const String connectWithParents = 'Connect with parents';
   static const String parentConnected = 'Parent Connected';
   static const String disconnectParent = 'Disconnect Parent';
@@ -1123,7 +1123,7 @@ class AppStrings {
   static const String statusUpdated = 'Status updated';
 
   // Subscriptions
-  static const String mySubscriptions = 'My Subscriptions';
+  static const String mySubscriptions = 'My subscriptions';
   static const String manageSubscriptions = 'Manage your subscriptions';
   static const String offlineCachedSubscriptions =
       'Offline mode - showing cached subscriptions';
@@ -1132,12 +1132,12 @@ class AppStrings {
 
   static const String subscriptionsUpdated = 'Subscriptions updated';
   static const String noCachedSubscriptions =
-      'No cached subscriptions available.';
+      'Reconnect to load your latest subscriptions.';
   static const String noSubscriptionsYet =
-      'You don\'t have any subscriptions yet.\nBrowse categories to get started.';
-  static const String unknownCategory = 'Unknown Category';
-  static const String monthlySubscription = 'Monthly Subscription';
-  static const String semesterSubscription = 'Semester Subscription';
+      'You do not have any subscriptions yet. Browse categories to get started.';
+  static const String unknownCategory = 'Unknown category';
+  static const String monthlySubscription = 'Monthly plan';
+  static const String semesterSubscription = 'Semester plan';
   static const String days = 'days';
   static const String used = 'used';
   static const String startDate = 'Start Date';
@@ -1160,23 +1160,18 @@ class AppStrings {
   static const String faq = 'FAQ';
   static const String actions = 'Actions';
   static const String contactInformation = 'Contact Information';
-  static const String noContactInfo = 'No contact information available';
+  static const String noContactInfo =
+      'Contact details are not available right now';
   static const String contactMethodsWillAppear =
       'Contact methods will appear here when configured by admin';
   static const String responseTime = 'Response Time';
   static const String quickResponse = 'Quick Response';
-  static const String respondWithin24Hours =
-      'We typically respond within 24 hours during business days';
-  static const String hours24 = '24H';
   static const String frequentlyAskedQuestions = 'Frequently Asked Questions';
   static const String stillNeedHelp = 'Still Need Help?';
   static const String contactUsDirectly = 'Contact Us Directly';
   static const String ifQuestionNotAnswered =
       'If your question isn\'t answered here, please reach out to our support team using the contact information provided.';
   static const String quickActions = 'Quick Actions';
-  static const String chatWithUs = 'Chat with Us';
-  static const String startLiveChat = 'Start a live chat';
-  static const String liveChatComingSoon = 'Live chat coming soon';
   static const String supportHours = 'Support Hours';
   static const String weAreHereToHelp = 'We\'re Here to Help';
   static const String getHelpWith =
@@ -1186,38 +1181,6 @@ class AppStrings {
   static const String viewOnMap = 'View on map';
   static const String tapToCopy = 'Tap to copy';
   static const String tapToContact = 'Tap to contact';
-  static const List<Map<String, String>> faqd = [
-    {
-      'question': 'How do I reset my password?',
-      'answer':
-          'Go to Profile → Settings → Change Password. You will need your current password to set a new one.',
-    },
-    {
-      'question': 'What payment methods are accepted?',
-      'answer':
-          'We accept Teletbirr, Bank Transfer, and other local payment methods. Check the Payment section for available options.',
-    },
-    {
-      'question': 'How long does payment verification take?',
-      'answer':
-          'Payment verification typically takes 1-3 working days. You will receive a notification once your payment is verified.',
-    },
-    {
-      'question': 'Can I access content offline?',
-      'answer':
-          'Yes! Videos and notes can be downloaded for offline access. Your progress will sync when you\'re back online.',
-    },
-    {
-      'question': 'How do I contact support?',
-      'answer':
-          'You can reach us through the Contact tab, email, or Telegram. We typically respond within 24 hours.',
-    },
-    {
-      'question': 'What is the refund policy?',
-      'answer':
-          'Payments are non-refundable once verified. Please contact support if you have any issues.',
-    },
-  ];
 
   // School Selection
   static const String selectSchool = 'Select School';
@@ -1225,10 +1188,11 @@ class AppStrings {
   static const String otherSchool = 'Other School';
   static const String mySchoolNotListed = 'My school is not listed';
   static const String offlineCachedSchools =
-      'You are offline. Showing cached schools.';
+      'You are offline. Showing saved schools.';
   static const String continueWithOtherSchool = 'Continue with Other School';
   static const String continueToLearning = 'Continue to Learning';
-  static const String sessionExpired = 'Session expired. Please login again.';
+  static const String sessionExpired =
+      'Your session expired. Please sign in again.';
   static const String schoolSelected = 'School selected successfully';
   static const String failedToSelectSchool = 'Failed to select school';
   static const String proceedingWithoutSchool =

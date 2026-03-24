@@ -399,7 +399,7 @@ class ChapterProvider extends ChangeNotifier
   }
 
   // ✅ FIXED: Background refresh with rate limiting
-  Map<dynamic, dynamic> _lastBackgroundRefreshForCourse = {};
+  final Map<dynamic, dynamic> _lastBackgroundRefreshForCourse = {};
   static const Duration _minBackgroundInterval = Duration(minutes: 2);
 
   Future<void> _refreshInBackground(int courseId) async {

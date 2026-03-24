@@ -1,9 +1,7 @@
-// lib/screens/notifications/notification_screen.dart
-// PRODUCTION STANDARD - PROPER EMPTY STATE & SHIMMER TYPE
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
@@ -13,13 +11,11 @@ import '../../services/snackbar_service.dart';
 import '../../widgets/common/base_screen_mixin.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_button.dart';
-import '../../widgets/common/app_shimmer.dart';
 import '../../widgets/common/app_dialog.dart';
 import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/responsive_values.dart';
-import '../../utils/helpers.dart';
 import '../../utils/constants.dart';
 
 class NotificationsScreen extends StatefulWidget {
@@ -41,13 +37,17 @@ class _NotificationsScreenState extends State<NotificationsScreen>
 
   late AnimationController _fabAnimationController;
   late NotificationProvider _provider;
+  bool _providerBound = false;
 
   @override
   String get screenTitle => AppStrings.notifications;
 
   @override
   String? get screenSubtitle =>
-      isOffline ? AppStrings.offlineMode : 'Inbox, alerts, and updates';
+      isOffline ? AppStrings.offlineMode : null;
+
+  @override
+  bool get showNotification => false;
 
   @override
   bool get isLoading =>
@@ -75,6 +75,66 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         ),
         onPressed: () => context.pop(),
       );
+
+  @override
+  List<Widget>? get appBarActions => _providerBound &&
+          _provider.notifications.isNotEmpty
+      ? [
+          PopupMenuButton<String>(
+            icon: Icon(
+              Icons.more_vert_rounded,
+              color: AppColors.getTextPrimary(context),
+            ),
+            onSelected: (value) {
+              switch (value) {
+                case 'mark_all_read':
+                  _showMarkAllAsReadDialog();
+                  break;
+                case 'delete_all':
+                  _showDeleteAllDialog();
+                  break;
+              }
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem<String>(
+                value: 'mark_all_read',
+                child: Row(
+                  children: [
+                    const Icon(Icons.mark_email_read_rounded, size: 18),
+                    SizedBox(width: ResponsiveValues.spacingS(context)),
+                    Expanded(
+                      child: Text(
+                        isOffline
+                            ? AppStrings.queueAllRead
+                            : AppStrings.markAllRead,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'delete_all',
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.delete_sweep_rounded,
+                      size: 18,
+                      color: AppColors.telegramRed,
+                    ),
+                    SizedBox(width: ResponsiveValues.spacingS(context)),
+                    const Expanded(
+                      child: Text(
+                        AppStrings.deleteAll,
+                        style: TextStyle(color: AppColors.telegramRed),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ]
+      : null;
 
   @override
   void initState() {
@@ -113,18 +173,33 @@ class _NotificationsScreenState extends State<NotificationsScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _provider = Provider.of<NotificationProvider>(context);
+    if (_providerBound) return;
 
-    if (_provider.notifications.isNotEmpty) {
-      setState(() {
-        _isInitialLoad = false;
-        _hasMore = _provider.notifications.length >= _pageSize;
-      });
-    }
+    _provider = context.read<NotificationProvider>();
+    _provider.addListener(_handleProviderChanged);
+    _providerBound = true;
+
+    _handleProviderChanged();
+  }
+
+  void _handleProviderChanged() {
+    if (!isMounted) return;
+
+    final hasNotifications = _provider.notifications.isNotEmpty;
+    setState(() {
+      _isInitialLoad = false;
+      _hasMore = _provider.notifications.length >= _pageSize;
+      if (!hasNotifications) {
+        _isLoadingMore = false;
+      }
+    });
   }
 
   @override
   void dispose() {
+    if (_providerBound) {
+      _provider.removeListener(_handleProviderChanged);
+    }
     _scrollController.dispose();
     _scrollTimer?.cancel();
     _fabAnimationController.dispose();
@@ -178,17 +253,44 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     }
   }
 
+  DateTime _notificationMoment(AppNotification.Notification notification) {
+    return notification.primaryTimestamp;
+  }
+
+  String _formatNotificationTimestamp(AppNotification.Notification notification) {
+    final timestamp = _notificationMoment(notification);
+    return DateFormat('MMM d, yyyy • h:mm a').format(timestamp);
+  }
+
+  String _notificationCategoryLabel(AppNotification.Notification notification) {
+    final title = notification.title.toLowerCase();
+    if (title.contains('payment') || title.contains('subscription')) {
+      return 'Payment';
+    }
+    if (title.contains('exam')) return 'Exam';
+    if (title.contains('video')) return 'Video';
+    if (title.contains('note')) return 'Note';
+    if (title.contains('chapter')) return 'Chapter';
+    if (title.contains('streak') || title.contains('progress')) return 'Progress';
+    if (title.contains('motivation') || title.contains('reminder')) return 'Reminder';
+    return 'Notification';
+  }
+
   Color _getNotificationColor(AppNotification.Notification notification) {
     final title = notification.title.toLowerCase();
     if (title.contains('payment')) return AppColors.telegramGreen;
-    if (title.contains('exam') || title.contains('result'))
+    if (title.contains('exam') || title.contains('result')) {
       return AppColors.telegramYellow;
-    if (title.contains('streak') || title.contains('progress'))
+    }
+    if (title.contains('streak') || title.contains('progress')) {
       return AppColors.telegramGreen;
-    if (title.contains('expiring') || title.contains('expired'))
+    }
+    if (title.contains('expiring') || title.contains('expired')) {
       return AppColors.telegramRed;
-    if (title.contains('system') || title.contains('announcement'))
+    }
+    if (title.contains('system') || title.contains('announcement')) {
       return AppColors.telegramBlue;
+    }
     return AppColors.telegramBlue;
   }
 
@@ -226,70 +328,116 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       children: [
         Padding(
           padding: ResponsiveValues.screenPadding(context),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: ResponsiveValues.iconSizeXXL(context) * 1.5,
-                height: ResponsiveValues.iconSizeXXL(context) * 1.5,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      iconColor.withValues(alpha: 0.2),
-                      iconColor.withValues(alpha: 0.05),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(
-                    ResponsiveValues.radiusMedium(context),
-                  ),
-                ),
-                child: Icon(
-                  iconData,
-                  size: ResponsiveValues.iconSizeXL(context),
-                  color: iconColor,
-                ),
-              ),
-              SizedBox(width: ResponsiveValues.spacingL(context)),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      notification.title,
-                      style: AppTextStyles.titleLarge(
-                        context,
-                      ).copyWith(fontWeight: FontWeight.w600),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: ResponsiveValues.iconSizeXXL(context) * 1.3,
+                    height: ResponsiveValues.iconSizeXXL(context) * 1.3,
+                    decoration: BoxDecoration(
+                      color: iconColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(
+                        ResponsiveValues.radiusMedium(context),
+                      ),
                     ),
-                    SizedBox(height: ResponsiveValues.spacingXS(context)),
-                    Text(
-                      notification.timeAgo,
-                      style: AppTextStyles.bodySmall(
-                        context,
-                      ).copyWith(color: AppColors.getTextSecondary(context)),
+                    child: Icon(
+                      iconData,
+                      size: ResponsiveValues.iconSizeXL(context),
+                      color: iconColor,
                     ),
-                  ],
-                ),
+                  ),
+                  SizedBox(width: ResponsiveValues.spacingL(context)),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          notification.title,
+                          style: AppTextStyles.titleLarge(
+                            context,
+                          ).copyWith(fontWeight: FontWeight.w700),
+                        ),
+                        SizedBox(height: ResponsiveValues.spacingXS(context)),
+                        Text(
+                          notification.timeAgo,
+                          style: AppTextStyles.bodySmall(context).copyWith(
+                            color: AppColors.getTextSecondary(context),
+                          ),
+                        ),
+                        SizedBox(height: ResponsiveValues.spacingXS(context)),
+                        Text(
+                          _formatNotificationTimestamp(notification),
+                          style: AppTextStyles.bodySmall(context).copyWith(
+                            color: AppColors.getTextSecondary(context)
+                                .withValues(alpha: 0.8),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              if (!notification.isRead)
-                AppButton.icon(
-                  icon: Icons.mark_email_read_rounded,
-                  onPressed: () {
-                    _provider.markAsRead(notification.logId);
-                    Navigator.pop(context);
-                  },
-                ),
+              SizedBox(height: ResponsiveValues.spacingM(context)),
+              Wrap(
+                spacing: ResponsiveValues.spacingS(context),
+                runSpacing: ResponsiveValues.spacingS(context),
+                children: [
+                  _buildDetailPill(
+                    icon: Icons.sell_rounded,
+                    label: _notificationCategoryLabel(notification),
+                    color: AppColors.telegramBlue,
+                  ),
+                  _buildDetailPill(
+                    icon: notification.isRead
+                        ? Icons.drafts_rounded
+                        : Icons.mark_email_unread_rounded,
+                    label: notification.isRead ? 'Read' : 'Unread',
+                    color: notification.isRead
+                        ? AppColors.telegramGray
+                        : AppColors.telegramBlue,
+                  ),
+                  _buildDetailPill(
+                    icon: notification.isPending
+                        ? Icons.schedule_rounded
+                        : Icons.notifications_active_rounded,
+                    label: notification.isPending
+                        ? 'Queued'
+                        : (notification.isFailed ? 'Failed' : 'Delivered'),
+                    color: notification.isPending
+                        ? AppColors.warning
+                        : (notification.isFailed
+                            ? AppColors.telegramRed
+                            : AppColors.telegramGreen),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
-        Divider(
-          color: AppColors.getDivider(context),
-          height: ResponsiveValues.spacingL(context),
-        ),
-        Expanded(
-          child: SingleChildScrollView(
-            padding: ResponsiveValues.screenPadding(context),
-            child: Text(
-              notification.message,
-              style: AppTextStyles.bodyLarge(context).copyWith(height: 1.6),
+        Flexible(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.35,
+            ),
+            child: SingleChildScrollView(
+              padding: ResponsiveValues.screenPadding(context),
+              child: Container(
+                width: double.infinity,
+                padding: ResponsiveValues.cardPadding(context),
+                decoration: BoxDecoration(
+                  color: AppColors.getSurface(context).withValues(alpha: 0.45),
+                  borderRadius: BorderRadius.circular(
+                    ResponsiveValues.radiusLarge(context),
+                  ),
+                ),
+                child: Text(
+                  notification.message,
+                  style: AppTextStyles.bodyLarge(context).copyWith(height: 1.6),
+                ),
+              ),
             ),
           ),
         ),
@@ -297,6 +445,20 @@ class _NotificationsScreenState extends State<NotificationsScreen>
           padding: ResponsiveValues.screenPadding(context),
           child: Row(
             children: [
+              if (!notification.isRead) ...[
+                Expanded(
+                  child: AppButton.glass(
+                    label: AppStrings.markAsRead,
+                    icon: Icons.mark_email_read_rounded,
+                    onPressed: () {
+                      _provider.markAsRead(notification.logId);
+                      Navigator.pop(context);
+                    },
+                    expanded: true,
+                  ),
+                ),
+                SizedBox(width: ResponsiveValues.spacingM(context)),
+              ],
               Expanded(
                 child: AppButton.outline(
                   label: AppStrings.close,
@@ -323,6 +485,41 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     );
   }
 
+  Widget _buildDetailPill({
+    required IconData icon,
+    required String label,
+    required Color color,
+  }) {
+    final pillBackground = color.withValues(alpha: 0.18);
+    final pillBorder = color.withValues(alpha: 0.36);
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: ResponsiveValues.spacingM(context),
+        vertical: ResponsiveValues.spacingS(context),
+      ),
+      decoration: BoxDecoration(
+        color: pillBackground,
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
+        border: Border.all(color: pillBorder),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: ResponsiveValues.iconSizeS(context), color: color),
+          SizedBox(width: ResponsiveValues.spacingXS(context)),
+          Text(
+            label,
+            style: AppTextStyles.labelSmall(context).copyWith(
+              color: color,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showActionSheet(AppNotification.Notification notification) {
     AppDialog.showBottomSheet(
       context: context,
@@ -330,15 +527,19 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         mainAxisSize: MainAxisSize.min,
         children: [
           ListTile(
-            leading: AppCard.glass(
-              child: Container(
-                width: ResponsiveValues.iconSizeXL(context),
-                height: ResponsiveValues.iconSizeXL(context),
-                padding: EdgeInsets.all(ResponsiveValues.spacingS(context)),
-                child: const Icon(
-                  Icons.delete_rounded,
-                  color: AppColors.telegramRed,
+            leading: Container(
+              width: ResponsiveValues.iconSizeXL(context),
+              height: ResponsiveValues.iconSizeXL(context),
+              decoration: BoxDecoration(
+                color: AppColors.telegramRed.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(
+                  ResponsiveValues.radiusMedium(context),
                 ),
+              ),
+              padding: EdgeInsets.all(ResponsiveValues.spacingS(context)),
+              child: const Icon(
+                Icons.delete_rounded,
+                color: AppColors.telegramRed,
               ),
             ),
             title: Text(
@@ -354,15 +555,19 @@ class _NotificationsScreenState extends State<NotificationsScreen>
           ),
           if (!notification.isRead)
             ListTile(
-              leading: AppCard.glass(
-                child: Container(
-                  width: ResponsiveValues.iconSizeXL(context),
-                  height: ResponsiveValues.iconSizeXL(context),
-                  padding: EdgeInsets.all(ResponsiveValues.spacingS(context)),
-                  child: const Icon(
-                    Icons.mark_email_read_rounded,
-                    color: AppColors.telegramBlue,
+              leading: Container(
+                width: ResponsiveValues.iconSizeXL(context),
+                height: ResponsiveValues.iconSizeXL(context),
+                decoration: BoxDecoration(
+                  color: AppColors.telegramBlue.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(
+                    ResponsiveValues.radiusMedium(context),
                   ),
+                ),
+                padding: EdgeInsets.all(ResponsiveValues.spacingS(context)),
+                child: const Icon(
+                  Icons.mark_email_read_rounded,
+                  color: AppColors.telegramBlue,
                 ),
               ),
               title: Text(
@@ -377,15 +582,19 @@ class _NotificationsScreenState extends State<NotificationsScreen>
               },
             ),
           ListTile(
-            leading: AppCard.glass(
-              child: Container(
-                width: ResponsiveValues.iconSizeXL(context),
-                height: ResponsiveValues.iconSizeXL(context),
-                padding: EdgeInsets.all(ResponsiveValues.spacingS(context)),
-                child: Icon(
-                  Icons.close_rounded,
-                  color: AppColors.getTextSecondary(context),
+            leading: Container(
+              width: ResponsiveValues.iconSizeXL(context),
+              height: ResponsiveValues.iconSizeXL(context),
+              decoration: BoxDecoration(
+                color: AppColors.getSurface(context),
+                borderRadius: BorderRadius.circular(
+                  ResponsiveValues.radiusMedium(context),
                 ),
+              ),
+              padding: EdgeInsets.all(ResponsiveValues.spacingS(context)),
+              child: Icon(
+                Icons.close_rounded,
+                color: AppColors.getTextSecondary(context),
               ),
             ),
             title: Text(
@@ -452,6 +661,38 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     });
   }
 
+  void _showDeleteAllDialog() {
+    if (isOffline) {
+      SnackbarService().showOffline(context, action: AppStrings.deleteAll);
+      return;
+    }
+
+    AppDialog.delete(
+      context: context,
+      title: AppStrings.deleteAllNotifications,
+      message: AppStrings.deleteAllNotificationsConfirm,
+    ).then((confirmed) async {
+      if (confirmed == true) {
+        try {
+          AppDialog.showLoading(context, message: AppStrings.deleting);
+          await _provider.deleteAllNotifications();
+          AppDialog.hideLoading(context);
+          SnackbarService().showSuccess(
+            context,
+            AppStrings.allNotificationsDeleted,
+          );
+        } catch (e) {
+          AppDialog.hideLoading(context);
+          SnackbarService().showError(
+            context,
+            AppStrings.failedToDeleteNotification,
+          );
+          await _provider.loadNotifications(forceRefresh: true);
+        }
+      }
+    });
+  }
+
   Widget _buildSectionHeader(String title, int count) {
     return Padding(
       padding: EdgeInsets.fromLTRB(
@@ -462,152 +703,32 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       ),
       child: Row(
         children: [
-          Container(
-            width: 4,
-            height: ResponsiveValues.spacingXL(context),
-            decoration: BoxDecoration(
-              color: AppColors.telegramBlue,
-              borderRadius: BorderRadius.circular(999),
-            ),
-          ),
-          SizedBox(width: ResponsiveValues.spacingM(context)),
           Text(
             title,
-            style: AppTextStyles.titleLarge(
-              context,
-            ).copyWith(fontWeight: FontWeight.w800),
+            style: AppTextStyles.titleSmall(context).copyWith(
+              color: AppColors.getTextSecondary(context),
+              fontWeight: FontWeight.w700,
+            ),
           ),
           SizedBox(width: ResponsiveValues.spacingS(context)),
-          AppCard.glass(
-            child: Container(
-              padding: EdgeInsets.symmetric(
-                horizontal: ResponsiveValues.spacingS(context),
-                vertical: ResponsiveValues.spacingXXS(context),
-              ),
-              child: Text(
-                count.toString(),
-                style: AppTextStyles.labelSmall(context).copyWith(
-                  color: AppColors.telegramBlue,
-                  fontWeight: FontWeight.w600,
-                ),
+          Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: ResponsiveValues.spacingS(context),
+              vertical: ResponsiveValues.spacingXXS(context),
+            ),
+            decoration: BoxDecoration(
+              color: AppColors.telegramBlue.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(
+                ResponsiveValues.radiusFull(context),
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHeroCard() {
-    final unreadCount = _provider.unreadNotifications.length;
-    final totalCount = _provider.notifications.length;
-    final readCount = totalCount - unreadCount;
-
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        ResponsiveValues.spacingL(context),
-        ResponsiveValues.spacingM(context),
-        ResponsiveValues.spacingL(context),
-        ResponsiveValues.spacingL(context),
-      ),
-      child: AppCard.glass(
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.telegramBlue.withValues(alpha: 0.1),
-                AppColors.telegramPurple.withValues(alpha: 0.06),
-                Colors.transparent,
-              ],
+            child: Text(
+              '$count',
+              style: AppTextStyles.labelSmall(context).copyWith(
+                color: AppColors.telegramBlue,
+                fontWeight: FontWeight.w700,
+              ),
             ),
-            borderRadius: BorderRadius.circular(
-              ResponsiveValues.radiusLarge(context),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Stay on top of updates.',
-                style: AppTextStyles.displaySmall(
-                  context,
-                ).copyWith(fontWeight: FontWeight.w800, letterSpacing: -0.3),
-              ),
-              SizedBox(height: ResponsiveValues.spacingS(context)),
-              Text(
-                'Important account activity, study updates, and payment status all live here.',
-                style: AppTextStyles.bodyMedium(
-                  context,
-                ).copyWith(color: AppColors.getTextSecondary(context)),
-              ),
-              SizedBox(height: ResponsiveValues.spacingL(context)),
-              Wrap(
-                spacing: ResponsiveValues.spacingM(context),
-                runSpacing: ResponsiveValues.spacingM(context),
-                children: [
-                  _buildHeroMetric(
-                    label: 'Unread',
-                    value: '$unreadCount',
-                    icon: Icons.mark_email_unread_rounded,
-                    color: AppColors.telegramBlue,
-                  ),
-                  _buildHeroMetric(
-                    label: 'Read',
-                    value: '$readCount',
-                    icon: Icons.done_all_rounded,
-                    color: AppColors.telegramGreen,
-                  ),
-                  _buildHeroMetric(
-                    label: 'Sync',
-                    value:
-                        isOffline ? AppStrings.offlineMode : AppStrings.active,
-                    icon: isOffline
-                        ? Icons.wifi_off_rounded
-                        : Icons.cloud_done_rounded,
-                    color:
-                        isOffline ? AppColors.warning : AppColors.telegramTeal,
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeroMetric({
-    required String label,
-    required String value,
-    required IconData icon,
-    required Color color,
-  }) {
-    return Container(
-      constraints: const BoxConstraints(minWidth: 110),
-      padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(
-          ResponsiveValues.radiusLarge(context),
-        ),
-        border: Border.all(color: color.withValues(alpha: 0.14)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: color, size: ResponsiveValues.iconSizeS(context)),
-          SizedBox(height: ResponsiveValues.spacingS(context)),
-          Text(
-            value,
-            style: AppTextStyles.titleLarge(
-              context,
-            ).copyWith(fontWeight: FontWeight.w800),
-          ),
-          Text(
-            label,
-            style: AppTextStyles.labelMedium(context).copyWith(color: color),
           ),
         ],
       ),
@@ -622,7 +743,6 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     final iconData = _getNotificationIcon(notification);
     final iconColor = _getNotificationColor(notification);
     final timeText = notification.timeAgo;
-
     return Dismissible(
       key: Key('notification_${notification.logId}'),
       direction: DismissDirection.endToStart,
@@ -663,8 +783,12 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
-                      width: ResponsiveValues.iconSizeXL(context) * 1.5,
-                      height: ResponsiveValues.iconSizeXL(context) * 1.5,
+                      width:
+                          ResponsiveValues.featureCardIconContainerSize(
+                              context),
+                      height:
+                          ResponsiveValues.featureCardIconContainerSize(
+                              context),
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
@@ -709,7 +833,9 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                                 Container(
                                   width: ResponsiveValues.spacingS(context),
                                   height: ResponsiveValues.spacingS(context),
-                                  margin: const EdgeInsets.only(left: 4),
+                                  margin: EdgeInsets.only(
+                                    left: ResponsiveValues.spacingXXS(context),
+                                  ),
                                   decoration: const BoxDecoration(
                                     color: AppColors.telegramBlue,
                                     shape: BoxShape.circle,
@@ -717,7 +843,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                                 ),
                             ],
                           ),
-                          const SizedBox(height: 4),
+                          SizedBox(height: ResponsiveValues.spacingXXS(context)),
                           Text(
                             notification.message,
                             style: AppTextStyles.bodySmall(context).copyWith(
@@ -727,7 +853,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          const SizedBox(height: 8),
+                          SizedBox(height: ResponsiveValues.spacingS(context)),
                           Row(
                             children: [
                               Icon(
@@ -736,7 +862,9 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                                 color: AppColors.getTextSecondary(context)
                                     .withValues(alpha: 0.5),
                               ),
-                              const SizedBox(width: 4),
+                              SizedBox(
+                                width: ResponsiveValues.spacingXXS(context),
+                              ),
                               Text(
                                 timeText,
                                 style: AppTextStyles.caption(context).copyWith(
@@ -744,122 +872,37 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                                       .withValues(alpha: 0.5),
                                 ),
                               ),
-                              const Spacer(),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  _formatNotificationTimestamp(notification),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppTextStyles.caption(context).copyWith(
+                                    color: AppColors.getTextSecondary(context)
+                                        .withValues(alpha: 0.45),
+                                  ),
+                                  textAlign: TextAlign.end,
+                                ),
+                              ),
                               if (notification.isFailed)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 2,
+                                Padding(
+                                  padding: EdgeInsets.only(
+                                    left: ResponsiveValues.spacingS(context),
                                   ),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.telegramRed.withValues(
-                                      alpha: 0.1,
-                                    ),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: AppColors.telegramRed
-                                          .withValues(alpha: 0.3),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    AppStrings.failed,
-                                    style: AppTextStyles.statusBadge(
-                                      context,
-                                    ).copyWith(
-                                      color: AppColors.telegramRed,
-                                      fontSize: ResponsiveValues
-                                          .fontNotificationBadge(
-                                        context,
-                                      ),
-                                    ),
-                                  ),
-                                )
-                              else if (notification.isPending)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.warning.withValues(
-                                      alpha: 0.1,
-                                    ),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: AppColors.warning.withValues(
-                                        alpha: 0.3,
-                                      ),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    AppStrings.pending,
-                                    style: AppTextStyles.statusBadge(
-                                      context,
-                                    ).copyWith(
-                                      color: AppColors.warning,
-                                      fontSize: ResponsiveValues
-                                          .fontNotificationBadge(
-                                        context,
-                                      ),
-                                    ),
+                                  child: _buildStatusBadge(
+                                    label: AppStrings.failed,
+                                    color: AppColors.telegramRed,
                                   ),
                                 )
                               else if (!notification.isRead && !isOffline)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 2,
+                                Padding(
+                                  padding: EdgeInsets.only(
+                                    left: ResponsiveValues.spacingS(context),
                                   ),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.telegramBlue
-                                        .withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: AppColors.telegramBlue
-                                          .withValues(alpha: 0.3),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    AppStrings.new_,
-                                    style: AppTextStyles.statusBadge(
-                                      context,
-                                    ).copyWith(
-                                      color: AppColors.telegramBlue,
-                                      fontSize: ResponsiveValues
-                                          .fontNotificationBadge(
-                                        context,
-                                      ),
-                                    ),
-                                  ),
-                                )
-                              else if (isOffline && !notification.isRead)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.warning.withValues(
-                                      alpha: 0.1,
-                                    ),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: AppColors.warning.withValues(
-                                        alpha: 0.3,
-                                      ),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    AppStrings.pending,
-                                    style: AppTextStyles.statusBadge(
-                                      context,
-                                    ).copyWith(
-                                      color: AppColors.warning,
-                                      fontSize: ResponsiveValues
-                                          .fontNotificationBadge(
-                                        context,
-                                      ),
-                                    ),
+                                  child: _buildStatusBadge(
+                                    label: AppStrings.new_,
+                                    color: AppColors.telegramBlue,
                                   ),
                                 ),
                             ],
@@ -883,6 +926,35 @@ class _NotificationsScreenState extends State<NotificationsScreen>
           duration: AppThemes.animationMedium,
           delay: (index * 30).ms,
         );
+  }
+
+  Widget _buildStatusBadge({
+    required String label,
+    required Color color,
+  }) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: ResponsiveValues.spacingS(context),
+        vertical: ResponsiveValues.spacingXXS(context),
+      ),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(
+          ResponsiveValues.radiusLarge(context),
+        ),
+        border: Border.all(
+          color: color.withValues(alpha: 0.38),
+        ),
+      ),
+      child: Text(
+        label,
+        style: AppTextStyles.statusBadge(context).copyWith(
+          color: color,
+          fontSize: ResponsiveValues.fontNotificationBadge(context),
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
   }
 
   @override
@@ -912,45 +984,6 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       controller: _scrollController,
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
-        if (isOffline && pendingCount > 0)
-          SliverToBoxAdapter(
-            child: Container(
-              margin: EdgeInsets.all(ResponsiveValues.spacingM(context)),
-              padding: ResponsiveValues.cardPadding(context),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    AppColors.info.withValues(alpha: 0.2),
-                    AppColors.info.withValues(alpha: 0.1),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(
-                  ResponsiveValues.radiusMedium(context),
-                ),
-                border: Border.all(
-                  color: AppColors.info.withValues(alpha: 0.3),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.schedule_rounded,
-                    color: AppColors.info,
-                    size: ResponsiveValues.iconSizeS(context),
-                  ),
-                  SizedBox(width: ResponsiveValues.spacingM(context)),
-                  Expanded(
-                    child: Text(
-                      AppStrings.pendingActionsSyncLabel(pendingCount),
-                      style: AppTextStyles.bodySmall(
-                        context,
-                      ).copyWith(color: AppColors.info),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
         if (unreadNotifications.isNotEmpty) ...[
           SliverToBoxAdapter(
             child: _buildSectionHeader(

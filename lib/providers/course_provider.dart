@@ -269,9 +269,15 @@ class CourseProvider extends ChangeNotifier
     );
 
     try {
-      await _inFlightRequests[categoryId];
+      final request = _inFlightRequests[categoryId];
+      if (request != null) {
+        await request;
+      }
     } finally {
-      _inFlightRequests.remove(categoryId);
+      final removedRequest = _inFlightRequests.remove(categoryId);
+      if (removedRequest != null) {
+        unawaited(removedRequest);
+      }
     }
   }
 
@@ -507,7 +513,7 @@ class CourseProvider extends ChangeNotifier
       }
     } finally {
       _activeRequests--;
-      _processNextCourseRequest();
+      unawaited(_processNextCourseRequest());
     }
   }
 
@@ -687,11 +693,6 @@ class CourseProvider extends ChangeNotifier
     _coursesUpdateController.add({});
 
     safeNotify();
-  }
-
-  @override
-  void clearError() {
-    super.clearError();
   }
 
   @override

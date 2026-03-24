@@ -1,6 +1,3 @@
-// lib/services/notification_service.dart
-// PRODUCTION-READY FINAL VERSION
-
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
@@ -71,7 +68,9 @@ class NotificationService {
       tz.initializeTimeZones();
       await _initLocalNotifications();
 
-      if (PlatformHelper.isMobile) {
+      if (PlatformHelper.isAndroid ||
+          PlatformHelper.isIOS ||
+          PlatformHelper.isMacOS) {
         try {
           if (Firebase.apps.isEmpty) {
             await Firebase.initializeApp();
@@ -85,7 +84,9 @@ class NotificationService {
         }
       }
 
-      if (PlatformHelper.isMobile) {
+      if (PlatformHelper.isAndroid ||
+          PlatformHelper.isIOS ||
+          PlatformHelper.isMacOS) {
         await _initFirebaseMessaging();
         await _requestPermissions();
         _setupTokenRefreshListener();
@@ -145,7 +146,9 @@ class NotificationService {
 
   Future<void> _initFirebaseMessaging() async {
     try {
-      if (PlatformHelper.isMobile) {
+      if (PlatformHelper.isAndroid ||
+          PlatformHelper.isIOS ||
+          PlatformHelper.isMacOS) {
         _firebaseMessaging = FirebaseMessaging.instance;
         _fcmToken = await _firebaseMessaging!.getToken();
         if (_fcmToken != null) {
@@ -171,7 +174,10 @@ class NotificationService {
 
   Future<void> _setupMessageListeners() async {
     try {
-      if (PlatformHelper.isMobile && _firebaseMessaging != null) {
+      if ((PlatformHelper.isAndroid ||
+              PlatformHelper.isIOS ||
+              PlatformHelper.isMacOS) &&
+          _firebaseMessaging != null) {
         FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
         FirebaseMessaging.onMessageOpenedApp.listen(_handleMessageOpenedApp);
 
@@ -188,7 +194,10 @@ class NotificationService {
 
   Future<void> _requestPermissions() async {
     try {
-      if (PlatformHelper.isMobile && _firebaseMessaging != null) {
+      if ((PlatformHelper.isAndroid ||
+              PlatformHelper.isIOS ||
+              PlatformHelper.isMacOS) &&
+          _firebaseMessaging != null) {
         await _firebaseMessaging!.requestPermission();
       }
     } catch (e) {
@@ -197,7 +206,10 @@ class NotificationService {
   }
 
   void _setupTokenRefreshListener() {
-    if (_firebaseMessaging != null && PlatformHelper.isMobile) {
+    if (_firebaseMessaging != null &&
+        (PlatformHelper.isAndroid ||
+            PlatformHelper.isIOS ||
+            PlatformHelper.isMacOS)) {
       _firebaseMessaging!.onTokenRefresh.listen((newToken) async {
         _fcmToken = newToken;
         await _saveFCMToken(newToken);
@@ -221,7 +233,11 @@ class NotificationService {
   }
 
   Future<void> sendFcmTokenToBackendIfAuthenticated() async {
-    if (!PlatformHelper.isMobile) return;
+    if (!(PlatformHelper.isAndroid ||
+        PlatformHelper.isIOS ||
+        PlatformHelper.isMacOS)) {
+      return;
+    }
 
     try {
       if (_fcmToken == null) return;
@@ -251,7 +267,11 @@ class NotificationService {
   }
 
   Future<void> syncPendingFcmToken() async {
-    if (!PlatformHelper.isMobile) return;
+    if (!(PlatformHelper.isAndroid ||
+        PlatformHelper.isIOS ||
+        PlatformHelper.isMacOS)) {
+      return;
+    }
 
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -275,6 +295,38 @@ class NotificationService {
     } catch (e) {
       debugLog('NotificationService', 'Error sending token to backend: $e');
     }
+  }
+
+  Future<Map<String, dynamic>> getDiagnostics() async {
+    final prefs = await SharedPreferences.getInstance();
+    final cachedToken = prefs.getString(AppConstants.fcmTokenCacheKey);
+    final pendingToken = prefs.getString('pending_fcm_token');
+    final authToken = prefs.getString(AppConstants.tokenKey);
+    final connectivity = _connectivityService ?? ConnectivityService();
+
+    return {
+      'push_capable_platform': PlatformHelper.isAndroid ||
+          PlatformHelper.isIOS ||
+          PlatformHelper.isMacOS,
+      'platform': PlatformHelper.platformName,
+      'service_initialized': _isInitialized,
+      'firebase_initialized': Firebase.apps.isNotEmpty,
+      'notifications_enabled':
+          prefs.getBool(AppConstants.notificationsEnabledKey) ?? true,
+      'is_online': connectivity.isOnline,
+      'is_authenticated': authToken != null && authToken.isNotEmpty,
+      'live_fcm_token_present': _fcmToken != null && _fcmToken!.isNotEmpty,
+      'cached_fcm_token_present': cachedToken != null && cachedToken.isNotEmpty,
+      'pending_fcm_token_present':
+          pendingToken != null && pendingToken.isNotEmpty,
+      'fcm_token_preview': _maskToken(_fcmToken ?? cachedToken),
+    };
+  }
+
+  String _maskToken(String? token) {
+    if (token == null || token.isEmpty) return 'Not available';
+    if (token.length <= 12) return token;
+    return '${token.substring(0, 8)}...${token.substring(token.length - 4)}';
   }
 
   String _generateNotificationId(RemoteMessage message) {

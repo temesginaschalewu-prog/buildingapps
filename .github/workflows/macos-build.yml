@@ -1,0 +1,55 @@
+name: Build macOS App
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Enable macOS Desktop
+        run: flutter config --enable-macos-desktop
+
+      - name: Clean
+        run: flutter clean
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Create .env file
+        run: |
+          cat > .env <<'EOF'
+          BASE_URL=https://family-academy-backend-a12l.onrender.com/
+          API_VERSION=v1
+          API_BASE_URL=https://family-academy-backend-a12l.onrender.com/api/v1
+          APP_NAME=Family Academy
+          APP_VERSION=1.5.0
+          APP_ENVIRONMENT=production
+          EOF
+
+      - name: Build macOS Release
+        run: flutter build macos --release
+
+      - name: Package macOS app
+        run: |
+          mkdir -p artifacts
+          ditto -c -k --sequesterRsrc --keepParent build/macos/Build/Products/Release/familyacademyclient.app artifacts/family-academy-macos.zip
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: family-academy-macos
+          path: artifacts/family-academy-macos.zip
+          compression-level: 0

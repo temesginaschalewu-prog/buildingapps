@@ -1,6 +1,4 @@
-// lib/main.dart
-// PRODUCTION-READY FINAL VERSION
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:familyacademyclient/app.dart';
@@ -41,11 +39,14 @@ import 'package:media_kit/media_kit.dart' as media_kit;
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  debugPrint('🔥 Background message received');
+  debugPrint('Background message received');
 }
 
 void main() async {
-  debugPrint('🚀 APP STARTING - PRODUCTION MODE WITH FULL OFFLINE SUPPORT');
+  if (kReleaseMode) {
+    debugPrint = (String? message, {int? wrapWidth}) {};
+  }
+
   PlatformHelper.logPlatformInfo();
 
   WidgetsFlutterBinding.ensureInitialized();
@@ -53,27 +54,25 @@ void main() async {
   // Initialize MediaKit for ALL platforms
   try {
     media_kit.MediaKit.ensureInitialized();
-    debugPrint('✅ MediaKit initialized successfully');
+    debugPrint('MediaKit initialized successfully');
   } catch (e) {
-    debugPrint('⚠️ MediaKit initialization error: $e');
+    debugPrint('MediaKit initialization error: $e');
   }
 
   // Initialize Hive
   try {
     await HiveService().init();
-    debugPrint('✅ Hive initialized successfully');
+    debugPrint('Hive initialized successfully');
   } catch (e) {
-    debugPrint(
-        '⚠️ Hive initialization error (continuing with memory-only mode): $e');
+    debugPrint('Hive initialization error (continuing with memory-only mode): $e');
   }
 
   // Initialize Offline Queue Manager
   try {
     await OfflineQueueManager().initialize();
-    debugPrint('✅ OfflineQueueManager initialized');
+    debugPrint('OfflineQueueManager initialized');
   } catch (e) {
-    debugPrint(
-        '⚠️ OfflineQueueManager initialization error (continuing with limited offline): $e');
+    debugPrint('OfflineQueueManager initialization error (continuing with limited offline): $e');
   }
 
   // Initialize PlatformHelper
@@ -82,20 +81,22 @@ void main() async {
   // Load environment variables
   try {
     await dotenv.load();
-    debugPrint('✅ Environment loaded');
+    debugPrint('Environment loaded');
   } catch (e) {
-    debugPrint('⚠️ No .env file found - using defaults');
+    debugPrint('No .env file found - using defaults');
   }
 
-  // Initialize Firebase for mobile platforms
-  if (PlatformHelper.isMobile) {
+  // Initialize Firebase for push-capable platforms
+  if (PlatformHelper.isAndroid ||
+      PlatformHelper.isIOS ||
+      PlatformHelper.isMacOS) {
     try {
       await Firebase.initializeApp();
-      debugPrint('✅ Firebase initialized');
+      debugPrint('Firebase initialized');
       FirebaseMessaging.onBackgroundMessage(
           _firebaseMessagingBackgroundHandler);
     } catch (e) {
-      debugPrint('⚠️ Firebase error: $e');
+      debugPrint('Firebase error: $e');
     }
   }
 
@@ -103,13 +104,13 @@ void main() async {
   if (PlatformHelper.isMobile) {
     try {
       await ScreenProtectionService.initialize();
-      debugPrint('✅ Screen protection initialized');
+      debugPrint('Screen protection initialized');
     } catch (e) {
-      debugPrint('⚠️ Screen protection error: $e');
+      debugPrint('Screen protection error: $e');
     }
   }
 
-  debugPrint('🔄 Initializing core services...');
+  debugPrint('Initializing core services...');
 
   // STEP 1: Create service instances
   final storageService = StorageService();
@@ -187,200 +188,8 @@ void main() async {
             hiveService: context.read<HiveService>(),
           ),
         ),
-
-        // User Provider
-        ChangeNotifierProvider<UserProvider>(
-          create: (context) => UserProvider(
-            apiService: context.read<ApiService>(),
-            deviceService: context.read<DeviceService>(),
-            connectivityService: context.read<ConnectivityService>(),
-            hiveService: context.read<HiveService>(),
-            offlineQueueManager: context.read<OfflineQueueManager>(),
-          ),
-        ),
-
-        // School Provider
-        ChangeNotifierProvider<SchoolProvider>(
-          create: (context) => SchoolProvider(
-            apiService: context.read<ApiService>(),
-            deviceService: context.read<DeviceService>(),
-            connectivityService: context.read<ConnectivityService>(),
-            hiveService: context.read<HiveService>(),
-          ),
-        ),
-
-        // Settings Provider
-        ChangeNotifierProvider<SettingsProvider>(
-          create: (context) => SettingsProvider(
-            apiService: context.read<ApiService>(),
-            deviceService: context.read<DeviceService>(),
-            connectivityService: context.read<ConnectivityService>(),
-            hiveService: context.read<HiveService>(),
-          ),
-        ),
-
-        // Category Provider
-        ChangeNotifierProvider<CategoryProvider>(
-          create: (context) => CategoryProvider(
-            apiService: context.read<ApiService>(),
-            deviceService: context.read<DeviceService>(),
-            connectivityService: context.read<ConnectivityService>(),
-            hiveService: context.read<HiveService>(),
-          ),
-        ),
-
-        // Subscription Provider
-        ChangeNotifierProvider<SubscriptionProvider>(
-          create: (context) => SubscriptionProvider(
-            apiService: context.read<ApiService>(),
-            deviceService: context.read<DeviceService>(),
-            connectivityService: context.read<ConnectivityService>(),
-            hiveService: context.read<HiveService>(),
-            offlineQueueManager: context.read<OfflineQueueManager>(),
-          ),
-        ),
-
-        // Payment Provider
-        ChangeNotifierProvider<PaymentProvider>(
-          create: (context) => PaymentProvider(
-            apiService: context.read<ApiService>(),
-            deviceService: context.read<DeviceService>(),
-            connectivityService: context.read<ConnectivityService>(),
-            hiveService: context.read<HiveService>(),
-            offlineQueueManager: context.read<OfflineQueueManager>(),
-          ),
-        ),
-
-        // Notification Provider
-        ChangeNotifierProvider<NotificationProvider>(
-          create: (context) => NotificationProvider(
-            apiService: context.read<ApiService>(),
-            deviceService: context.read<DeviceService>(),
-            connectivityService: context.read<ConnectivityService>(),
-            hiveService: context.read<HiveService>(),
-            offlineQueueManager: context.read<OfflineQueueManager>(),
-          ),
-        ),
-
-        // Parent Link Provider
-        ChangeNotifierProvider<ParentLinkProvider>(
-          create: (context) => ParentLinkProvider(
-            apiService: context.read<ApiService>(),
-            deviceService: context.read<DeviceService>(),
-            connectivityService: context.read<ConnectivityService>(),
-            hiveService: context.read<HiveService>(),
-            offlineQueueManager: context.read<OfflineQueueManager>(),
-          ),
-        ),
-
-        // Course Provider
-        ChangeNotifierProvider<CourseProvider>(
-          create: (context) => CourseProvider(
-            apiService: context.read<ApiService>(),
-            deviceService: context.read<DeviceService>(),
-            connectivityService: context.read<ConnectivityService>(),
-            hiveService: context.read<HiveService>(),
-          ),
-        ),
-
-        // Chapter Provider
-        ChangeNotifierProvider<ChapterProvider>(
-          create: (context) => ChapterProvider(
-            apiService: context.read<ApiService>(),
-            deviceService: context.read<DeviceService>(),
-            connectivityService: context.read<ConnectivityService>(),
-            hiveService: context.read<HiveService>(),
-          ),
-        ),
-
-        // Video Provider
-        ChangeNotifierProvider<VideoProvider>(
-          create: (context) => VideoProvider(
-            apiService: context.read<ApiService>(),
-            deviceService: context.read<DeviceService>(),
-            connectivityService: context.read<ConnectivityService>(),
-            hiveService: context.read<HiveService>(),
-            offlineQueueManager: context.read<OfflineQueueManager>(),
-          ),
-        ),
-
-        // Note Provider
-        ChangeNotifierProvider<NoteProvider>(
-          create: (context) => NoteProvider(
-            apiService: context.read<ApiService>(),
-            deviceService: context.read<DeviceService>(),
-            connectivityService: context.read<ConnectivityService>(),
-            hiveService: context.read<HiveService>(),
-          ),
-        ),
-
-        // Question Provider
-        ChangeNotifierProvider<QuestionProvider>(
-          create: (context) => QuestionProvider(
-            apiService: context.read<ApiService>(),
-            deviceService: context.read<DeviceService>(),
-            connectivityService: context.read<ConnectivityService>(),
-            hiveService: context.read<HiveService>(),
-            offlineQueueManager: context.read<OfflineQueueManager>(),
-          ),
-        ),
-
-        // Exam Provider
-        ChangeNotifierProvider<ExamProvider>(
-          create: (context) => ExamProvider(
-            apiService: context.read<ApiService>(),
-            deviceService: context.read<DeviceService>(),
-            connectivityService: context.read<ConnectivityService>(),
-            hiveService: context.read<HiveService>(),
-            offlineQueueManager: context.read<OfflineQueueManager>(),
-          ),
-        ),
-
-        // Exam Question Provider
-        ChangeNotifierProvider<ExamQuestionProvider>(
-          create: (context) => ExamQuestionProvider(
-            apiService: context.read<ApiService>(),
-            deviceService: context.read<DeviceService>(),
-            connectivityService: context.read<ConnectivityService>(),
-            hiveService: context.read<HiveService>(),
-            offlineQueueManager: context.read<OfflineQueueManager>(),
-          ),
-        ),
-
-        // Streak Provider
-        ChangeNotifierProvider<StreakProvider>(
-          create: (context) => StreakProvider(
-            apiService: context.read<ApiService>(),
-            deviceService: context.read<DeviceService>(),
-            connectivityService: context.read<ConnectivityService>(),
-            hiveService: context.read<HiveService>(),
-            offlineQueueManager: context.read<OfflineQueueManager>(),
-          ),
-        ),
-
-        // Progress Provider
-        ChangeNotifierProvider<ProgressProvider>(
-          create: (context) => ProgressProvider(
-            apiService: context.read<ApiService>(),
-            deviceService: context.read<DeviceService>(),
-            streakProvider: context.read<StreakProvider>(),
-            connectivityService: context.read<ConnectivityService>(),
-            hiveService: context.read<HiveService>(),
-            offlineQueueManager: context.read<OfflineQueueManager>(),
-          ),
-        ),
-
-        // Chatbot Provider
-        ChangeNotifierProvider<ChatbotProvider>(
-          create: (context) => ChatbotProvider(
-            apiService: context.read<ApiService>(),
-            connectivityService: context.read<ConnectivityService>(),
-            hiveService: context.read<HiveService>(),
-            offlineQueueManager: context.read<OfflineQueueManager>(),
-          ),
-        ),
       ],
-      child: FamilyAcademyApp(
+      child: _SessionScopedProviders(
         apiService: apiService,
         notificationService: notificationService,
       ),
@@ -388,4 +197,190 @@ void main() async {
   );
 
   debugPrint('✅ App launched successfully with full offline support');
+}
+
+class _SessionScopedProviders extends StatelessWidget {
+  final ApiService apiService;
+  final NotificationService notificationService;
+
+  const _SessionScopedProviders({
+    required this.apiService,
+    required this.notificationService,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final authProvider = context.watch<AuthProvider>();
+    final sessionScopeKey = ValueKey<String>(
+      authProvider.currentUser?.id.toString() ?? 'guest',
+    );
+
+    return KeyedSubtree(
+      key: sessionScopeKey,
+      child: MultiProvider(
+        providers: [
+          ChangeNotifierProvider<UserProvider>(
+            create: (context) => UserProvider(
+              apiService: context.read<ApiService>(),
+              deviceService: context.read<DeviceService>(),
+              connectivityService: context.read<ConnectivityService>(),
+              hiveService: context.read<HiveService>(),
+              offlineQueueManager: context.read<OfflineQueueManager>(),
+            ),
+          ),
+          ChangeNotifierProvider<SchoolProvider>(
+            create: (context) => SchoolProvider(
+              apiService: context.read<ApiService>(),
+              deviceService: context.read<DeviceService>(),
+              connectivityService: context.read<ConnectivityService>(),
+              hiveService: context.read<HiveService>(),
+            ),
+          ),
+          ChangeNotifierProvider<SettingsProvider>(
+            create: (context) => SettingsProvider(
+              apiService: context.read<ApiService>(),
+              deviceService: context.read<DeviceService>(),
+              connectivityService: context.read<ConnectivityService>(),
+              hiveService: context.read<HiveService>(),
+            ),
+          ),
+          ChangeNotifierProvider<CategoryProvider>(
+            create: (context) => CategoryProvider(
+              apiService: context.read<ApiService>(),
+              deviceService: context.read<DeviceService>(),
+              connectivityService: context.read<ConnectivityService>(),
+              hiveService: context.read<HiveService>(),
+            ),
+          ),
+          ChangeNotifierProvider<SubscriptionProvider>(
+            create: (context) => SubscriptionProvider(
+              apiService: context.read<ApiService>(),
+              deviceService: context.read<DeviceService>(),
+              connectivityService: context.read<ConnectivityService>(),
+              hiveService: context.read<HiveService>(),
+              offlineQueueManager: context.read<OfflineQueueManager>(),
+            ),
+          ),
+          ChangeNotifierProvider<PaymentProvider>(
+            create: (context) => PaymentProvider(
+              apiService: context.read<ApiService>(),
+              deviceService: context.read<DeviceService>(),
+              connectivityService: context.read<ConnectivityService>(),
+              hiveService: context.read<HiveService>(),
+              offlineQueueManager: context.read<OfflineQueueManager>(),
+            ),
+          ),
+          ChangeNotifierProvider<NotificationProvider>(
+            create: (context) => NotificationProvider(
+              apiService: context.read<ApiService>(),
+              deviceService: context.read<DeviceService>(),
+              connectivityService: context.read<ConnectivityService>(),
+              hiveService: context.read<HiveService>(),
+              offlineQueueManager: context.read<OfflineQueueManager>(),
+            ),
+          ),
+          ChangeNotifierProvider<ParentLinkProvider>(
+            create: (context) => ParentLinkProvider(
+              apiService: context.read<ApiService>(),
+              deviceService: context.read<DeviceService>(),
+              connectivityService: context.read<ConnectivityService>(),
+              hiveService: context.read<HiveService>(),
+              offlineQueueManager: context.read<OfflineQueueManager>(),
+            ),
+          ),
+          ChangeNotifierProvider<CourseProvider>(
+            create: (context) => CourseProvider(
+              apiService: context.read<ApiService>(),
+              deviceService: context.read<DeviceService>(),
+              connectivityService: context.read<ConnectivityService>(),
+              hiveService: context.read<HiveService>(),
+            ),
+          ),
+          ChangeNotifierProvider<ChapterProvider>(
+            create: (context) => ChapterProvider(
+              apiService: context.read<ApiService>(),
+              deviceService: context.read<DeviceService>(),
+              connectivityService: context.read<ConnectivityService>(),
+              hiveService: context.read<HiveService>(),
+            ),
+          ),
+          ChangeNotifierProvider<VideoProvider>(
+            create: (context) => VideoProvider(
+              apiService: context.read<ApiService>(),
+              deviceService: context.read<DeviceService>(),
+              connectivityService: context.read<ConnectivityService>(),
+              hiveService: context.read<HiveService>(),
+              offlineQueueManager: context.read<OfflineQueueManager>(),
+            ),
+          ),
+          ChangeNotifierProvider<NoteProvider>(
+            create: (context) => NoteProvider(
+              apiService: context.read<ApiService>(),
+              deviceService: context.read<DeviceService>(),
+              connectivityService: context.read<ConnectivityService>(),
+              hiveService: context.read<HiveService>(),
+            ),
+          ),
+          ChangeNotifierProvider<QuestionProvider>(
+            create: (context) => QuestionProvider(
+              apiService: context.read<ApiService>(),
+              deviceService: context.read<DeviceService>(),
+              connectivityService: context.read<ConnectivityService>(),
+              hiveService: context.read<HiveService>(),
+              offlineQueueManager: context.read<OfflineQueueManager>(),
+            ),
+          ),
+          ChangeNotifierProvider<ExamProvider>(
+            create: (context) => ExamProvider(
+              apiService: context.read<ApiService>(),
+              deviceService: context.read<DeviceService>(),
+              connectivityService: context.read<ConnectivityService>(),
+              hiveService: context.read<HiveService>(),
+              offlineQueueManager: context.read<OfflineQueueManager>(),
+            ),
+          ),
+          ChangeNotifierProvider<ExamQuestionProvider>(
+            create: (context) => ExamQuestionProvider(
+              apiService: context.read<ApiService>(),
+              deviceService: context.read<DeviceService>(),
+              connectivityService: context.read<ConnectivityService>(),
+              hiveService: context.read<HiveService>(),
+              offlineQueueManager: context.read<OfflineQueueManager>(),
+            ),
+          ),
+          ChangeNotifierProvider<StreakProvider>(
+            create: (context) => StreakProvider(
+              apiService: context.read<ApiService>(),
+              deviceService: context.read<DeviceService>(),
+              connectivityService: context.read<ConnectivityService>(),
+              hiveService: context.read<HiveService>(),
+              offlineQueueManager: context.read<OfflineQueueManager>(),
+            ),
+          ),
+          ChangeNotifierProvider<ProgressProvider>(
+            create: (context) => ProgressProvider(
+              apiService: context.read<ApiService>(),
+              deviceService: context.read<DeviceService>(),
+              streakProvider: context.read<StreakProvider>(),
+              connectivityService: context.read<ConnectivityService>(),
+              hiveService: context.read<HiveService>(),
+              offlineQueueManager: context.read<OfflineQueueManager>(),
+            ),
+          ),
+          ChangeNotifierProvider<ChatbotProvider>(
+            create: (context) => ChatbotProvider(
+              apiService: context.read<ApiService>(),
+              connectivityService: context.read<ConnectivityService>(),
+              hiveService: context.read<HiveService>(),
+              offlineQueueManager: context.read<OfflineQueueManager>(),
+            ),
+          ),
+        ],
+        child: FamilyAcademyApp(
+          apiService: apiService,
+          notificationService: notificationService,
+        ),
+      ),
+    );
+  }
 }

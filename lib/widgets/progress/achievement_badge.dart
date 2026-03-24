@@ -33,22 +33,12 @@ class AchievementBadge extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: ResponsiveValues.iconSizeXL(context) * 1.5,
-              height: ResponsiveValues.iconSizeXL(context) * 1.5,
+              width: ResponsiveValues.featureCardIconContainerSize(context),
+              height: ResponsiveValues.featureCardIconContainerSize(context),
               decoration: BoxDecoration(
-                gradient: unlocked
-                    ? LinearGradient(
-                        colors: [
-                          color.withValues(alpha: 0.2),
-                          color.withValues(alpha: 0.1)
-                        ],
-                      )
-                    : LinearGradient(
-                        colors: [
-                          AppColors.telegramGray.withValues(alpha: 0.1),
-                          AppColors.telegramGray.withValues(alpha: 0.05)
-                        ],
-                      ),
+                color: unlocked
+                    ? color.withValues(alpha: 0.08)
+                    : AppColors.telegramGray.withValues(alpha: 0.06),
                 shape: BoxShape.circle,
               ),
               child: Center(
@@ -64,7 +54,7 @@ class AchievementBadge extends StatelessWidget {
               title,
               style: AppTextStyles.labelMedium(context).copyWith(
                 color: unlocked ? color : AppColors.getTextSecondary(context),
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
               ),
               textAlign: TextAlign.center,
               maxLines: 2,

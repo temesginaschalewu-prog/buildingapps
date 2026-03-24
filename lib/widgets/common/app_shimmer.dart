@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import '../../themes/app_colors.dart';
 import '../../utils/responsive_values.dart';
 
 class AppShimmer extends StatelessWidget {
@@ -29,15 +30,15 @@ class AppShimmer extends StatelessWidget {
 
     final effectiveBaseColor = baseColor ??
         (isDark
-                ? (isOffline ? Colors.grey[700]! : Colors.grey[800]!)
-                : (isOffline ? Colors.grey[200]! : Colors.grey[300]!))
-            .withValues(alpha: isOffline ? 0.2 : 0.3);
+                ? AppColors.darkCard
+                : AppColors.shimmerBase)
+            .withValues(alpha: isOffline ? 0.24 : 0.5);
 
     final effectiveHighlightColor = highlightColor ??
         (isDark
-                ? (isOffline ? Colors.grey[600]! : Colors.grey[700]!)
-                : (isOffline ? Colors.grey[100]! : Colors.grey[100]!))
-            .withValues(alpha: isOffline ? 0.4 : 0.6);
+                ? AppColors.darkSurface.withValues(alpha: 0.82)
+                : AppColors.shimmerHighlight)
+            .withValues(alpha: isOffline ? 0.45 : 0.9);
 
     return Animate(
       effects: [FadeEffect(duration: 400.ms, delay: (index * 50).ms)],
@@ -98,7 +99,7 @@ class AppShimmer extends StatelessWidget {
     return Container(
       height: cardHeight,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.getCard(context),
         borderRadius:
             BorderRadius.circular(ResponsiveValues.radiusXLarge(context)),
       ),
@@ -108,10 +109,10 @@ class AppShimmer extends StatelessWidget {
           Positioned.fill(
             child: Container(
               decoration: BoxDecoration(
-                gradient: LinearGradient(
+                gradient: const LinearGradient(
                   colors: [
-                    Colors.grey[300]!,
-                    Colors.grey[400]!,
+                    AppColors.shimmerBase,
+                    AppColors.shimmerHighlight,
                   ],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
@@ -129,9 +130,9 @@ class AppShimmer extends StatelessWidget {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Colors.black.withValues(alpha: 0.3),
+                    Colors.black.withValues(alpha: 0.10),
                     Colors.transparent,
-                    Colors.black.withValues(alpha: 0.5),
+                    Colors.black.withValues(alpha: 0.36),
                   ],
                   stops: const [0.0, 0.5, 1.0],
                 ),
@@ -148,7 +149,7 @@ class AppShimmer extends StatelessWidget {
               width: isDesktop ? 80 : 100,
               height: titleSize + 4,
               decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.4),
+                color: Colors.black.withValues(alpha: 0.20),
                 borderRadius: BorderRadius.circular(
                     ResponsiveValues.radiusSmall(context)),
               ),
@@ -162,9 +163,9 @@ class AppShimmer extends StatelessWidget {
               width: isDesktop ? 60 : 70,
               height: isDesktop ? 18 : 22,
               decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.4),
-                borderRadius: BorderRadius.circular(
-                    ResponsiveValues.radiusSmall(context)),
+                color: Colors.black.withValues(alpha: 0.22),
+                borderRadius:
+                    BorderRadius.circular(ResponsiveValues.radiusFull(context)),
               ),
             ),
           ),
@@ -176,9 +177,9 @@ class AppShimmer extends StatelessWidget {
               width: isDesktop ? 50 : 60,
               height: badgeTextSize + 4,
               decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.4),
-                borderRadius: BorderRadius.circular(
-                    ResponsiveValues.radiusSmall(context)),
+                color: Colors.black.withValues(alpha: 0.22),
+                borderRadius:
+                    BorderRadius.circular(ResponsiveValues.radiusFull(context)),
               ),
             ),
           ),
@@ -576,7 +577,7 @@ class AppShimmer extends StatelessWidget {
   }
 
   Widget _SchoolCardShimmer(BuildContext context) {
-    final iconSize = ResponsiveValues.iconSizeXL(context) * 1.5;
+    final iconSize = ResponsiveValues.featureCardIconContainerSize(context);
 
     return Container(
       padding: ResponsiveValues.cardPadding(context),
@@ -588,7 +589,7 @@ class AppShimmer extends StatelessWidget {
             decoration: BoxDecoration(
                 color: Colors.white, borderRadius: BorderRadius.circular(12)),
           ),
-          const SizedBox(width: 16),
+          SizedBox(width: ResponsiveValues.spacingL(context)),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

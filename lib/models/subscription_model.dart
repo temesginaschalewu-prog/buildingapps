@@ -62,6 +62,16 @@ class Subscription {
         return Parsers.parseInt(json['category_id']);
       }
 
+      if (json['category'] is Map<String, dynamic>) {
+        final category = json['category'] as Map<String, dynamic>;
+        if (category['id'] != null) {
+          return Parsers.parseInt(category['id']);
+        }
+        if (category['category_id'] != null) {
+          return Parsers.parseInt(category['category_id']);
+        }
+      }
+
       final categoryName = json['category_name']?.toString() ?? '';
       if (categoryName == 'grade 9') return 1;
       if (categoryName == 'category 10') return 6;
@@ -82,7 +92,11 @@ class Subscription {
           : null,
       createdAt: Parsers.parseDate(json['created_at']),
       updatedAt: Parsers.parseDate(json['updated_at']),
-      categoryName: json['category_name']?.toString(),
+      categoryName: json['category_name']?.toString() ??
+          (json['category'] is Map<String, dynamic>
+              ? (json['category']['name']?.toString() ??
+                  json['category']['category_name']?.toString())
+              : null),
       price: json['price'] != null ? Parsers.parseDouble(json['price']) : null,
     );
   }

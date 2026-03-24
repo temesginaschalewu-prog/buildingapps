@@ -305,8 +305,14 @@ class ParentLinkProvider extends ChangeNotifier
   Future<void> clearCache() async {
     log('clearCache()');
 
-    await deviceService.removeCacheItem(AppConstants.parentLinkStatusKey);
-    await deviceService.removeCacheItem(AppConstants.parentTokenKey);
+    await deviceService.removeCacheItem(
+      AppConstants.parentLinkStatusKey,
+      isUserSpecific: true,
+    );
+    await deviceService.removeCacheItem(
+      AppConstants.parentTokenKey,
+      isUserSpecific: true,
+    );
 
     final userId = await UserSession().getCurrentUserId();
     if (userId != null) {
@@ -343,8 +349,14 @@ class ParentLinkProvider extends ChangeNotifier
 
     try {
       log('Clearing old cache');
-      await deviceService.removeCacheItem(AppConstants.parentTokenKey);
-      await deviceService.removeCacheItem(AppConstants.parentLinkStatusKey);
+      await deviceService.removeCacheItem(
+        AppConstants.parentTokenKey,
+        isUserSpecific: true,
+      );
+      await deviceService.removeCacheItem(
+        AppConstants.parentLinkStatusKey,
+        isUserSpecific: true,
+      );
 
       final userId = await UserSession().getCurrentUserId();
       if (userId != null) {
@@ -399,6 +411,7 @@ class ParentLinkProvider extends ChangeNotifier
           'expires_at': _tokenExpiresAt!.toIso8601String(),
         },
         ttl: const Duration(minutes: 30),
+        isUserSpecific: true,
       );
 
       _startCountdownTimer();
@@ -445,7 +458,10 @@ class ParentLinkProvider extends ChangeNotifier
 
     try {
       if (forceRefresh) {
-        await deviceService.removeCacheItem(AppConstants.parentLinkStatusKey);
+        await deviceService.removeCacheItem(
+          AppConstants.parentLinkStatusKey,
+          isUserSpecific: true,
+        );
       }
 
       // STEP 1: Try Hive first
@@ -494,6 +510,7 @@ class ParentLinkProvider extends ChangeNotifier
         log('STEP 2: Checking DeviceService cache');
         final cached = await deviceService.getCacheItem<Map<String, dynamic>>(
           AppConstants.parentLinkStatusKey,
+          isUserSpecific: true,
         );
         if (cached != null) {
           final cachedParentLink = ParentLink.fromJson(cached);
@@ -550,6 +567,7 @@ class ParentLinkProvider extends ChangeNotifier
             AppConstants.parentLinkStatusKey,
             _parentLinkData!.toJson(),
             ttl: const Duration(minutes: 5),
+            isUserSpecific: true,
           );
         }
 
@@ -628,7 +646,10 @@ class ParentLinkProvider extends ChangeNotifier
   Future<void> refreshParentLinkStatus() async {
     log('refreshParentLinkStatus()');
 
-    await deviceService.removeCacheItem(AppConstants.parentLinkStatusKey);
+    await deviceService.removeCacheItem(
+      AppConstants.parentLinkStatusKey,
+      isUserSpecific: true,
+    );
 
     final userId = await UserSession().getCurrentUserId();
     if (userId != null && _parentLinkBox != null) {
@@ -664,8 +685,14 @@ class ParentLinkProvider extends ChangeNotifier
       final response = await apiService.unlinkParent();
 
       if (response.success) {
-        await deviceService.removeCacheItem(AppConstants.parentLinkStatusKey);
-        await deviceService.removeCacheItem(AppConstants.parentTokenKey);
+        await deviceService.removeCacheItem(
+          AppConstants.parentLinkStatusKey,
+          isUserSpecific: true,
+        );
+        await deviceService.removeCacheItem(
+          AppConstants.parentTokenKey,
+          isUserSpecific: true,
+        );
 
         final userId = await UserSession().getCurrentUserId();
         if (userId != null) {
@@ -749,8 +776,14 @@ class ParentLinkProvider extends ChangeNotifier
       }
     }
 
-    await deviceService.removeCacheItem(AppConstants.parentLinkStatusKey);
-    await deviceService.removeCacheItem(AppConstants.parentTokenKey);
+    await deviceService.removeCacheItem(
+      AppConstants.parentLinkStatusKey,
+      isUserSpecific: true,
+    );
+    await deviceService.removeCacheItem(
+      AppConstants.parentTokenKey,
+      isUserSpecific: true,
+    );
     await deviceService.removeCacheItem(AppConstants.serverTimeInfoKey);
 
     _stopCountdownTimer();

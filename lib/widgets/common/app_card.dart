@@ -288,28 +288,46 @@ class AppCard extends StatelessWidget {
 
   Widget _buildGlassCard(BuildContext context, double borderRadius) {
     final offlineColor = isOffline ? AppColors.warning : AppColors.telegramBlue;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final baseSurface = AppColors.getCard(context);
+    final defaultBorder = AppColors.getDivider(context).withValues(
+      alpha: isDark ? 0.52 : 0.78,
+    );
+    final accentBorder = borderColor?.withValues(alpha: isDark ? 0.26 : 0.18);
 
     return BackdropFilter(
-      filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+      filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
       child: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
             colors: [
-              AppColors.getCard(context)
-                  .withValues(alpha: isOffline ? 0.3 : 0.4),
-              AppColors.getCard(context)
-                  .withValues(alpha: isOffline ? 0.15 : 0.2),
+              baseSurface.withValues(alpha: isDark ? 0.88 : 0.97),
+              (isDark ? AppColors.getSurface(context) : baseSurface)
+                  .withValues(alpha: isDark ? 0.82 : 0.93),
             ],
           ),
           borderRadius: BorderRadius.circular(borderRadius),
           border: Border.all(
             color: isOffline
-                ? offlineColor.withValues(alpha: 0.2)
-                : (borderColor?.withValues(alpha: 0.3) ??
-                    AppColors.telegramBlue.withValues(alpha: 0.2)),
+                ? offlineColor.withValues(alpha: 0.26)
+                : (accentBorder ?? defaultBorder),
           ),
+          boxShadow: hasShadow
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: isDark ? 0.16 : 0.04),
+                    blurRadius: isDark ? 18 : 14,
+                    offset: const Offset(0, 6),
+                  ),
+                  if (!isDark)
+                    BoxShadow(
+                      color: Colors.white.withValues(alpha: 0.6),
+                      spreadRadius: -2,
+                    ),
+                ]
+              : null,
         ),
         padding: padding ?? _getDefaultPadding(context),
         child: child,
@@ -322,14 +340,17 @@ class AppCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: backgroundColor ?? AppColors.getCard(context),
         borderRadius: BorderRadius.circular(borderRadius),
-        border: borderColor != null ? Border.all(color: borderColor!) : null,
+        border: Border.all(
+          color: borderColor ??
+              AppColors.getDivider(context).withValues(alpha: 0.65),
+        ),
         boxShadow: hasShadow
             ? [
                 BoxShadow(
-                    color:
-                        Colors.black.withValues(alpha: isOffline ? 0.02 : 0.05),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2))
+                  color: Colors.black.withValues(alpha: isOffline ? 0.03 : 0.05),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
               ]
             : null,
       ),

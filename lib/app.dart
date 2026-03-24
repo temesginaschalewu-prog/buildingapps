@@ -1,6 +1,3 @@
-// lib/app.dart
-// PRODUCTION-READY FINAL VERSION - FIXED CONNECTIVITY CALLS
-
 import 'dart:async';
 import 'dart:convert';
 
@@ -49,6 +46,8 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
   bool _appInitialized = false;
   bool _overlayReady = false;
   final List<Map<String, dynamic>> _pendingSnackbars = [];
+  DateTime? _lastDataRefreshAt;
+  static const Duration _minRefreshInterval = Duration(minutes: 2);
 
   @override
   void initState() {
@@ -143,6 +142,9 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
           SnackbarType.success,
         );
 
+        await widget.notificationService.syncPendingFcmToken();
+        await widget.notificationService.sendFcmTokenToBackendIfAuthenticated();
+
         final queueManager =
             Provider.of<queue.OfflineQueueManager>(context, listen: false);
         await queueManager.processQueue();
@@ -219,9 +221,9 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
       case AppLifecycleState.resumed:
         _isAppInForeground = true;
         ScreenProtectionService.enableOnResume();
-        _refreshAllData();
+        unawaited(_refreshAllData());
         if (_overlayReady) {
-          _syncPendingActions();
+          unawaited(_syncPendingActions());
         }
         break;
       case AppLifecycleState.paused:
@@ -255,6 +257,12 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
 
       widget.notificationService.apiService = widget.apiService;
 
+      final subscriptionProvider =
+          Provider.of<SubscriptionProvider>(context, listen: false);
+      final categoryProvider =
+          Provider.of<CategoryProvider>(context, listen: false);
+      subscriptionProvider.setCategoryProvider(categoryProvider);
+
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       _deviceDeactivatedSubscription =
           authProvider.deviceDeactivated.listen((message) {
@@ -263,11 +271,20 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
               message ?? 'Device has been deactivated.');
         }
       });
+      authProvider.registerOnLoginCallback(() {
+        unawaited(widget.notificationService.syncPendingFcmToken());
+        unawaited(widget.notificationService.sendFcmTokenToBackendIfAuthenticated());
+      });
 
       await authProvider.initialize();
 
       widget.notificationService.notificationStream
           .listen(_handleNotificationData);
+
+      if (authProvider.isAuthenticated) {
+        await widget.notificationService.syncPendingFcmToken();
+        await widget.notificationService.sendFcmTokenToBackendIfAuthenticated();
+      }
 
       setState(() => _appInitialized = true);
       debugLog('FamilyAcademyApp', 'App initialization complete');
@@ -311,10 +328,20 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
 
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     if (authProvider.isAuthenticated) {
+      await widget.notificationService.syncPendingFcmToken();
+      await widget.notificationService.sendFcmTokenToBackendIfAuthenticated();
+      final now = DateTime.now();
+      if (_lastDataRefreshAt != null &&
+          now.difference(_lastDataRefreshAt!) < _minRefreshInterval) {
+        return;
+      }
+      _lastDataRefreshAt = now;
+
       final subscriptionProvider =
           Provider.of<SubscriptionProvider>(context, listen: false);
       final categoryProvider =
           Provider.of<CategoryProvider>(context, listen: false);
+      subscriptionProvider.setCategoryProvider(categoryProvider);
 
       unawaited(subscriptionProvider.loadSubscriptions().catchError(
           (e) => debugLog('FamilyAcademyApp', 'Refresh error: $e')));
@@ -381,6 +408,7 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
           Provider.of<SubscriptionProvider>(context, listen: false);
       final categoryProvider =
           Provider.of<CategoryProvider>(context, listen: false);
+      subscriptionProvider.setCategoryProvider(categoryProvider);
 
       subscriptionProvider.refreshAfterPaymentVerification().then((_) {
         if (mounted) {

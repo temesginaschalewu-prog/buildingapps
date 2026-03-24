@@ -10,8 +10,8 @@ import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
+import '../../utils/responsive_values.dart';
 import '../common/app_card.dart';
-import '../common/app_dialog.dart';
 
 class VideoCard extends StatefulWidget {
   final Video video;
@@ -40,10 +40,13 @@ class _VideoCardState extends State<VideoCard>
     with SingleTickerProviderStateMixin {
   late VideoProvider _videoProvider;
   late AnimationController _pulseController;
+  VoidCallback? _providerListener;
 
   bool _isDownloaded = false;
   bool _isDownloading = false;
   double _downloadProgress = 0.0;
+  VideoQualityLevel? _downloadedQuality;
+  int _viewCount = 0;
   StreamSubscription? _updateSubscription;
 
   @override
@@ -55,9 +58,13 @@ class _VideoCardState extends State<VideoCard>
       duration: const Duration(milliseconds: 1500),
     )..repeat(reverse: true);
 
+    _viewCount = widget.video.viewCount;
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _videoProvider = context.read<VideoProvider>();
       _updateDownloadState();
+      _providerListener = _updateDownloadState;
+      _videoProvider.addListener(_providerListener!);
 
       _updateSubscription = _videoProvider.videoUpdates.listen((update) {
         if (!mounted) return;
@@ -67,6 +74,10 @@ class _VideoCardState extends State<VideoCard>
           if (update['type'] == 'download_progress') {
             setState(() {
               _downloadProgress = update['progress'] ?? 0.0;
+            });
+          } else if (update['type'] == 'view_count_updated') {
+            setState(() {
+              _viewCount = update['view_count'] ?? _viewCount;
             });
           }
         }
@@ -80,12 +91,19 @@ class _VideoCardState extends State<VideoCard>
         _isDownloaded = _videoProvider.isVideoDownloaded(widget.video.id);
         _isDownloading = _videoProvider.isDownloading(widget.video.id);
         _downloadProgress = _videoProvider.getDownloadProgress(widget.video.id);
+        _downloadedQuality = _videoProvider.getDownloadQuality(widget.video.id);
+        _viewCount = _videoProvider.getViewCount(widget.video.id) > 0
+            ? _videoProvider.getViewCount(widget.video.id)
+            : widget.video.viewCount;
       });
     }
   }
 
   @override
   void dispose() {
+    if (_providerListener != null) {
+      _videoProvider.removeListener(_providerListener!);
+    }
     _pulseController.dispose();
     _updateSubscription?.cancel();
     super.dispose();
@@ -97,6 +115,7 @@ class _VideoCardState extends State<VideoCard>
     final hasQualities = qualities.length > 1;
     final screenWidth = MediaQuery.of(context).size.width;
     final isTablet = screenWidth > 600;
+    final downloadedQualityLabel = _downloadedQuality?.label;
 
     return AppCard.video(
       child: Column(
@@ -115,7 +134,7 @@ class _VideoCardState extends State<VideoCard>
                 children: [
                   // Thumbnail placeholder
                   Container(
-                    height: isTablet ? 220 : 180,
+                    height: isTablet ? 214 : 172,
                     width: double.infinity,
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
@@ -128,13 +147,13 @@ class _VideoCardState extends State<VideoCard>
                         top: Radius.circular(24),
                       ),
                     ),
-                    child: Center(
-                      child: Container(
-                        width: isTablet ? 80 : 64,
-                        height: isTablet ? 80 : 64,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.3),
-                          shape: BoxShape.circle,
+                      child: Center(
+                        child: Container(
+                          width: isTablet ? 76 : 60,
+                          height: isTablet ? 76 : 60,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.3),
+                            shape: BoxShape.circle,
                         ),
                         child: Icon(
                           Icons.play_arrow_rounded,
@@ -260,21 +279,34 @@ class _VideoCardState extends State<VideoCard>
                       right: 12,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
+                            horizontal: 10, vertical: 6),
                         decoration: BoxDecoration(
-                          color: Colors.green,
-                          borderRadius: BorderRadius.circular(12),
+                          color: AppColors.telegramGreen,
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.telegramGreen
+                                  .withValues(alpha: 0.28),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.check_circle,
+                            const Icon(Icons.check_circle,
                                 color: Colors.white, size: 14),
-                            SizedBox(width: 4),
+                            const SizedBox(width: 4),
                             Text(
-                              'Downloaded',
-                              style:
-                                  TextStyle(color: Colors.white, fontSize: 10),
+                              downloadedQualityLabel == null
+                                  ? 'Downloaded'
+                                  : 'Downloaded • $downloadedQualityLabel',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                           ],
                         ),
@@ -287,7 +319,12 @@ class _VideoCardState extends State<VideoCard>
 
           // Content
           Padding(
-            padding: const EdgeInsets.all(12),
+            padding: EdgeInsets.fromLTRB(
+              ResponsiveValues.spacingM(context),
+              ResponsiveValues.spacingM(context),
+              ResponsiveValues.spacingM(context),
+              ResponsiveValues.spacingS(context),
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -299,7 +336,7 @@ class _VideoCardState extends State<VideoCard>
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 8),
+                SizedBox(height: ResponsiveValues.spacingS(context)),
 
                 // Metadata row
                 Row(
@@ -309,14 +346,14 @@ class _VideoCardState extends State<VideoCard>
                       size: 16,
                       color: AppColors.getTextSecondary(context),
                     ),
-                    const SizedBox(width: 4),
+                    SizedBox(width: ResponsiveValues.spacingXXS(context)),
                     Text(
-                      '${widget.video.viewCount} views',
+                      '$_viewCount views',
                       style: AppTextStyles.caption(context).copyWith(
                         color: AppColors.getTextSecondary(context),
                       ),
                     ),
-                    const SizedBox(width: 16),
+                    SizedBox(width: ResponsiveValues.spacingM(context)),
                     Icon(
                       Icons.hd_rounded,
                       size: 16,
@@ -324,7 +361,7 @@ class _VideoCardState extends State<VideoCard>
                           ? AppColors.telegramBlue
                           : AppColors.getTextSecondary(context),
                     ),
-                    const SizedBox(width: 4),
+                    SizedBox(width: ResponsiveValues.spacingXXS(context)),
                     Text(
                       '${qualities.length} quality${qualities.length > 1 ? 'ies' : ''}',
                       style: AppTextStyles.caption(context).copyWith(
@@ -336,36 +373,6 @@ class _VideoCardState extends State<VideoCard>
                     ),
                   ],
                 ),
-
-                // Download progress bar (when downloading)
-                if (_isDownloading) ...[
-                  const SizedBox(height: 12),
-                  LinearProgressIndicator(
-                    value: _downloadProgress,
-                    backgroundColor: Colors.grey[300],
-                    valueColor: const AlwaysStoppedAnimation(Color(0xFF0088CC)),
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Downloading...',
-                        style: AppTextStyles.caption(context).copyWith(
-                          color: AppColors.telegramBlue,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      Text(
-                        '${(_downloadProgress * 100).toInt()}%',
-                        style: AppTextStyles.caption(context).copyWith(
-                          color: AppColors.getTextSecondary(context),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
               ],
             ),
           ),
@@ -374,20 +381,22 @@ class _VideoCardState extends State<VideoCard>
           Container(
             decoration: BoxDecoration(
               border: Border(
-                top: BorderSide(color: AppColors.getDivider(context)),
+                top: BorderSide(
+                  color: AppColors.getDivider(context).withValues(alpha: 0.75),
+                ),
               ),
             ),
             child: Row(
               children: [
                 // Play button
                 Expanded(
-                  child: Container(
-                    height: 56,
+                  child: SizedBox(
+                    height: 52,
                     child: TextButton(
                       onPressed: _isDownloading ? null : widget.onPlay,
                       style: TextButton.styleFrom(
                         shape: const RoundedRectangleBorder(),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -399,12 +408,11 @@ class _VideoCardState extends State<VideoCard>
                                 : AppColors.telegramBlue,
                             size: 24,
                           ),
-                          const SizedBox(width: 8),
+                          SizedBox(width: ResponsiveValues.spacingXS(context)),
                           Text(
                             'Play',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
+                            style: AppTextStyles.labelLarge(context).copyWith(
+                              fontWeight: FontWeight.w600,
                               color: _isDownloading
                                   ? Colors.grey
                                   : AppColors.telegramBlue,
@@ -422,8 +430,8 @@ class _VideoCardState extends State<VideoCard>
                 ),
                 // Download button
                 Expanded(
-                  child: Container(
-                    height: 56,
+                  child: SizedBox(
+                    height: 52,
                     child: TextButton(
                       onPressed: _isDownloading
                           ? _showCancelDownloadDialog
@@ -451,34 +459,33 @@ class _VideoCardState extends State<VideoCard>
                             },
                       style: TextButton.styleFrom(
                         shape: const RoundedRectangleBorder(),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(
                             _isDownloaded
-                                ? Icons.check_circle
+                                ? Icons.delete_outline_rounded
                                 : (_isDownloading
                                     ? Icons.hourglass_empty
                                     : Icons.download_rounded),
                             color: _isDownloaded
-                                ? Colors.green
+                                ? AppColors.telegramRed
                                 : (_isDownloading
                                     ? Colors.orange
                                     : AppColors.telegramBlue),
                             size: 24,
                           ),
-                          const SizedBox(width: 8),
+                          SizedBox(width: ResponsiveValues.spacingXS(context)),
                           Text(
                             _isDownloaded
-                                ? 'Downloaded'
+                                ? 'Remove'
                                 : (_isDownloading ? 'Downloading' : 'Download'),
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
+                            style: AppTextStyles.labelLarge(context).copyWith(
+                              fontWeight: FontWeight.w600,
                               color: _isDownloaded
-                                  ? Colors.green
+                                  ? AppColors.telegramRed
                                   : (_isDownloading
                                       ? Colors.orange
                                       : AppColors.telegramBlue),

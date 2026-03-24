@@ -185,7 +185,8 @@ class _AppTextFieldState extends State<AppTextField> {
                   : (_hasFocus
                       ? AppColors.telegramBlue
                       : AppColors.getTextSecondary(context)),
-              fontWeight: FontWeight.w500,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.1,
             ),
           ),
           SizedBox(height: ResponsiveValues.spacingXS(context)),
@@ -215,22 +216,23 @@ class _AppTextFieldState extends State<AppTextField> {
 
   Widget _buildTextField(
       BuildContext context, bool isEnabled, bool isOfflineDisabled) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final borderRadius =
-        BorderRadius.circular(ResponsiveValues.radiusMedium(context));
+        BorderRadius.circular(ResponsiveValues.radiusLarge(context));
 
     final idleBorderColor = isOfflineDisabled
         ? AppColors.warning.withValues(alpha: 0.6)
-        : AppColors.getDivider(context).withValues(alpha: 0.75);
+        : AppColors.getDivider(context).withValues(alpha: isDark ? 0.72 : 0.9);
     final focusedBorderColor =
         isOfflineDisabled ? AppColors.warning : AppColors.telegramBlue;
 
     final outlineBorder = OutlineInputBorder(
       borderRadius: borderRadius,
-      borderSide: BorderSide(color: idleBorderColor, width: 1.2),
+      borderSide: BorderSide(color: idleBorderColor),
     );
     final focusedBorder = OutlineInputBorder(
       borderRadius: borderRadius,
-      borderSide: BorderSide(color: focusedBorderColor, width: 1.8),
+      borderSide: BorderSide(color: focusedBorderColor, width: 1.4),
     );
     final errorBorder = OutlineInputBorder(
       borderRadius: borderRadius,
@@ -265,7 +267,7 @@ class _AppTextFieldState extends State<AppTextField> {
         hintStyle: AppTextStyles.bodyMedium(context).copyWith(
           color: isOfflineDisabled
               ? AppColors.warning.withValues(alpha: 0.5)
-              : AppColors.getTextSecondary(context).withValues(alpha: 0.6),
+              : AppColors.getTextSecondary(context).withValues(alpha: 0.58),
         ),
         errorStyle: AppTextStyles.bodySmall(context).copyWith(
           color: AppColors.telegramRed,
@@ -283,12 +285,14 @@ class _AppTextFieldState extends State<AppTextField> {
         disabledBorder: outlineBorder,
         contentPadding: EdgeInsets.symmetric(
           horizontal: ResponsiveValues.spacingL(context),
-          vertical: ResponsiveValues.spacingM(context),
+          vertical: ResponsiveValues.spacingM(context) - 1,
         ),
         counterText: '',
         isDense: false,
         filled: true,
-        fillColor: AppColors.getCard(context).withValues(alpha: 0.96),
+        fillColor: isDark
+            ? AppColors.getSurface(context).withValues(alpha: 0.88)
+            : AppColors.getSurface(context).withValues(alpha: 0.98),
       ),
     );
   }

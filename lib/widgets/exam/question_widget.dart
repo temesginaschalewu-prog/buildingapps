@@ -75,8 +75,9 @@ class _QuestionWidgetState extends State<QuestionWidget> {
     final options = widget.question.options;
     final optionLetters = ['A', 'B', 'C', 'D', 'E', 'F'];
 
-    final questionFontSize = ResponsiveValues.fontBodyLarge(context);
-    final padding = ResponsiveValues.cardPadding(context);
+    final double questionFontSize = ResponsiveValues.fontBodyLarge(context);
+    final EdgeInsetsGeometry contentPadding =
+        ResponsiveValues.cardPadding(context);
 
     final difficultyColor = _getDifficultyColor(widget.question.difficulty);
     final difficultyBgColor =
@@ -90,7 +91,7 @@ class _QuestionWidgetState extends State<QuestionWidget> {
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
             child: Container(
-              padding: EdgeInsets.all(padding as double),
+              padding: contentPadding,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
@@ -208,7 +209,7 @@ class _QuestionWidgetState extends State<QuestionWidget> {
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
             child: Container(
-              padding: padding,
+              padding: contentPadding,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,

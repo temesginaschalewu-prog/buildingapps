@@ -1,3 +1,6 @@
+// lib/widgets/chapter/chapter_card.dart
+// PRODUCTION-READY FINAL VERSION - WITH PENDING PAYMENT CHECK
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +11,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/payment_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../providers/category_provider.dart';
+import '../../providers/settings_provider.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
 import '../../themes/app_colors.dart';
@@ -17,7 +21,6 @@ import '../../utils/helpers.dart';
 import '../common/app_card.dart';
 import '../common/app_dialog.dart';
 
-/// PRODUCTION-READY CHAPTER CARD with Payment Dialog
 class ChapterCard extends StatelessWidget {
   final Chapter chapter;
   final int courseId;
@@ -57,28 +60,15 @@ class ChapterCard extends StatelessWidget {
             padding: ResponsiveValues.cardPadding(context),
             child: Row(
               children: [
-                // Icon with status
                 Container(
                   width: ResponsiveValues.iconSizeXXL(context),
                   height: ResponsiveValues.iconSizeXXL(context),
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: isComingSoon
-                          ? [
-                              AppColors.telegramYellow.withValues(alpha: 0.2),
-                              AppColors.telegramYellow.withValues(alpha: 0.1)
-                            ]
-                          : (canAccess
-                              ? [
-                                  AppColors.telegramGreen
-                                      .withValues(alpha: 0.2),
-                                  AppColors.telegramGreen.withValues(alpha: 0.1)
-                                ]
-                              : [
-                                  AppColors.telegramGray.withValues(alpha: 0.2),
-                                  AppColors.telegramGray.withValues(alpha: 0.1)
-                                ]),
-                    ),
+                    color: isComingSoon
+                        ? AppColors.telegramYellow.withValues(alpha: 0.10)
+                        : (canAccess
+                            ? AppColors.telegramGreen.withValues(alpha: 0.09)
+                            : AppColors.telegramGray.withValues(alpha: 0.08)),
                     borderRadius: BorderRadius.circular(
                         ResponsiveValues.radiusLarge(context)),
                   ),
@@ -97,7 +87,6 @@ class ChapterCard extends StatelessWidget {
                   ),
                 ),
                 SizedBox(width: ResponsiveValues.spacingL(context)),
-                // Content
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -105,7 +94,7 @@ class ChapterCard extends StatelessWidget {
                       Text(
                         chapter.name,
                         style: AppTextStyles.titleMedium(context)
-                            .copyWith(fontWeight: FontWeight.w600),
+                            .copyWith(fontWeight: FontWeight.w700),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -137,10 +126,8 @@ class ChapterCard extends StatelessWidget {
                               vertical: ResponsiveValues.spacingXXS(context),
                             ),
                             decoration: BoxDecoration(
-                              gradient: const LinearGradient(colors: [
-                                AppColors.telegramGreen,
-                                Color(0xFF34D399)
-                              ]),
+                              color:
+                                  AppColors.telegramGreen.withValues(alpha: 0.10),
                               borderRadius: BorderRadius.circular(
                                   ResponsiveValues.radiusFull(context)),
                             ),
@@ -148,10 +135,11 @@ class ChapterCard extends StatelessWidget {
                               'FREE PREVIEW',
                               style:
                                   AppTextStyles.statusBadge(context).copyWith(
-                                color: Colors.white,
+                                color: AppColors.telegramGreen,
                                 fontSize:
                                     ResponsiveValues.fontStatusBadge(context) *
                                         0.9,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                           ),
@@ -166,14 +154,8 @@ class ChapterCard extends StatelessWidget {
                               vertical: ResponsiveValues.spacingXXS(context),
                             ),
                             decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  AppColors.telegramYellow
-                                      .withValues(alpha: 0.2),
-                                  AppColors.telegramYellow
-                                      .withValues(alpha: 0.1)
-                                ],
-                              ),
+                              color:
+                                  AppColors.telegramYellow.withValues(alpha: 0.10),
                               borderRadius: BorderRadius.circular(
                                   ResponsiveValues.radiusFull(context)),
                             ),
@@ -192,7 +174,6 @@ class ChapterCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                // Arrow
                 Container(
                   width: ResponsiveValues.iconSizeL(context),
                   height: ResponsiveValues.iconSizeL(context),
@@ -238,6 +219,7 @@ class ChapterCard extends StatelessWidget {
     final subscriptionProvider = context.read<SubscriptionProvider>();
     final paymentProvider = context.read<PaymentProvider>();
     final categoryProvider = context.read<CategoryProvider>();
+    final settingsProvider = context.read<SettingsProvider>();
     final connectivity = context.read<ConnectivityService>();
 
     if (!authProvider.isAuthenticated) {
@@ -254,48 +236,51 @@ class ChapterCard extends StatelessWidget {
     final bool isComingSoon = chapter.status.toLowerCase() == 'coming_soon';
 
     if (isComingSoon) {
-      SnackbarService().showInfo(context, 'This chapter is coming soon!');
+      SnackbarService().showInfo(
+        context,
+        settingsProvider.getChapterComingSoonMessage(),
+      );
       return;
     }
 
-    // ✅ FIX: Check if we can access content (either free or have access)
     final bool hasAccess = chapter.canAccessContent ||
         subscriptionProvider.hasActiveSubscriptionForCategory(categoryId);
 
     if (hasAccess) {
-      // Can access regardless of online/offline
       onTap();
       return;
     }
 
-    // If no access, check if online to show payment dialog
-    if (!connectivity.isOnline) {
-      SnackbarService().showOffline(context, action: 'make payment');
-      return;
-    }
-
     final hasPendingPayment = paymentProvider.getPendingPayments().any(
-      (payment) =>
-          payment.categoryId == categoryId ||
-          payment.categoryName.toLowerCase() == category.name.toLowerCase(),
-    );
+          (payment) =>
+              payment.categoryId == categoryId ||
+              payment.categoryName.toLowerCase() == category.name.toLowerCase(),
+        );
 
     if (hasPendingPayment) {
       await AppDialog.info(
         context: context,
         title: 'Payment Pending',
         message:
-            'You already have a pending payment for "${category.name}". Please wait for admin verification.',
+            'You have a pending payment for "${category.name}". Please wait for admin verification.',
       );
       return;
     }
 
-    // Show payment dialog
+    if (!connectivity.isOnline && await _hasOfflineChapterContent(authProvider)) {
+      onTap();
+      return;
+    }
+
+    if (!connectivity.isOnline) {
+      SnackbarService().showOffline(context, action: 'make payment');
+      return;
+    }
+
     _showPaymentDialog(context, category);
   }
 
   void _showPaymentDialog(BuildContext context, Category category) {
-    // ✅ FIXED: Check if this is a renewal (user has expired subscription)
     final subscriptionProvider = context.read<SubscriptionProvider>();
     final hasExpiredSubscription = subscriptionProvider.expiredSubscriptions
         .any((sub) => sub.categoryId == category.id);
@@ -317,5 +302,25 @@ class ChapterCard extends StatelessWidget {
         });
       }
     });
+  }
+
+  Future<bool> _hasOfflineChapterContent(AuthProvider authProvider) async {
+    final userId = authProvider.currentUser?.id;
+    if (userId == null) return false;
+
+    final deviceService = authProvider.deviceService;
+    final videoPaths = await deviceService.getCacheItem<Map<String, dynamic>>(
+      'cached_videos_chapter_${chapter.id}_$userId',
+      isUserSpecific: true,
+    );
+    if (videoPaths != null && videoPaths.isNotEmpty) {
+      return true;
+    }
+
+    final notePaths = await deviceService.getCacheItem<Map<String, dynamic>>(
+      'cached_notes_chapter_${chapter.id}_$userId',
+      isUserSpecific: true,
+    );
+    return notePaths != null && notePaths.isNotEmpty;
   }
 }

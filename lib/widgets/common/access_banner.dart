@@ -52,12 +52,12 @@ class AccessBanner extends StatelessWidget {
     );
   }
 
-  factory AccessBanner.paymentPending() {
-    return const AccessBanner(
+  factory AccessBanner.paymentPending({String? message}) {
+    return AccessBanner(
       icon: Icons.schedule_rounded,
       color: AppColors.pending,
       title: 'Payment Pending',
-      message: 'Please wait for admin verification (1-3 working days)',
+      message: message ?? 'Please wait for admin verification',
     );
   }
 
@@ -82,22 +82,15 @@ class AccessBanner extends StatelessWidget {
         horizontal: ResponsiveValues.sectionPadding(context),
         vertical: ResponsiveValues.spacingS(context),
       ),
-      // ✅ FIX: Use AppCard.glass for the same glass effect as AppDialog
       child: AppCard.glass(
         child: Padding(
           padding: EdgeInsets.all(ResponsiveValues.sectionPadding(context)),
           child: Row(
             children: [
-              // Icon container with glass effect
               Container(
                 padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      color.withValues(alpha: 0.2),
-                      color.withValues(alpha: 0.1)
-                    ],
-                  ),
+                  color: color.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(
                       ResponsiveValues.radiusMedium(context)),
                 ),
@@ -113,7 +106,7 @@ class AccessBanner extends StatelessWidget {
                       title,
                       style: AppTextStyles.titleSmall(context).copyWith(
                         color: color,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                     SizedBox(height: ResponsiveValues.spacingXS(context)),

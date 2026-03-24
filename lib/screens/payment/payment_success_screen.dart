@@ -1,15 +1,14 @@
-// lib/screens/payment/payment_success_screen.dart
-// PRODUCTION STANDARD - WITH SHIMMER TYPE
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 
 import '../../models/category_model.dart';
 import '../../services/device_service.dart';
 import '../../providers/category_provider.dart';
+import '../../providers/settings_provider.dart';
+import '../../providers/subscription_provider.dart';
+import '../../providers/payment_provider.dart';
 import '../../widgets/common/base_screen_mixin.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_button.dart';
@@ -47,9 +46,6 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
   int _secondsRemaining = 12;
 
   late AnimationController _checkAnimationController;
-  late AnimationController _pulseAnimationController;
-  late Animation<double> _scaleAnimation;
-
   Timer? _redirectTimer;
 
   @override
@@ -67,7 +63,6 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
   @override
   dynamic get errorMessage => _hasError ? _errorMessage : null;
 
-  // ✅ Shimmer type for payment success screen
   @override
   ShimmerType get shimmerType => ShimmerType.paymentCard;
 
@@ -79,14 +74,10 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
     super.initState();
 
     _checkAnimationController =
-        AnimationController(vsync: this, duration: 800.ms);
-    _pulseAnimationController =
-        AnimationController(vsync: this, duration: 1.seconds)
-          ..repeat(reverse: true);
-    _scaleAnimation = Tween<double>(begin: 0.8, end: 1.2).animate(
-      CurvedAnimation(
-          parent: _pulseAnimationController, curve: Curves.easeInOut),
-    );
+        AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 800),
+        );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadData();
@@ -97,14 +88,11 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
   void dispose() {
     _redirectTimer?.cancel();
     _checkAnimationController.dispose();
-    _pulseAnimationController.dispose();
     super.dispose();
   }
 
   @override
-  Future<void> onRefresh() async {
-    // No refresh needed for success screen
-  }
+  Future<void> onRefresh() async {}
 
   Future<void> _loadData() async {
     try {
@@ -148,7 +136,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
       await _checkAnimationController.forward();
       _startRedirectTimer();
 
-      Future.delayed(1.seconds, () {
+      Future.delayed(const Duration(seconds: 1), () {
         if (isMounted) setState(() => _animationComplete = true);
       });
     } catch (e) {
@@ -161,13 +149,13 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
   }
 
   String _getAccessDurationText() {
-    return _billingCycle == 'semester'
-        ? AppStrings.fourMonths
-        : AppStrings.oneMonth;
+    return context
+        .read<SettingsProvider>()
+        .getBillingCycleDurationText(_billingCycle);
   }
 
   void _startRedirectTimer() {
-    _redirectTimer = Timer.periodic(1.seconds, (timer) {
+    _redirectTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_secondsRemaining > 0) {
         setState(() => _secondsRemaining--);
       } else {
@@ -178,7 +166,28 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
   }
 
   void _redirectToHome() {
-    if (isMounted) context.go('/');
+    if (!isMounted) return;
+    unawaited(_syncCriticalStateAndGoHome());
+  }
+
+  Future<void> _syncCriticalStateAndGoHome() async {
+    if (!isMounted) return;
+
+    final subscriptionProvider = context.read<SubscriptionProvider>();
+    final paymentProvider = context.read<PaymentProvider>();
+    final categoryProvider = context.read<CategoryProvider>();
+
+    try {
+      await subscriptionProvider.forceRefreshFromServer();
+      await paymentProvider.loadPayments(forceRefresh: true);
+      await categoryProvider.loadCategories(forceRefresh: true);
+    } catch (_) {
+      // We still navigate home even if refresh fails; home will retry.
+    }
+
+    if (isMounted) {
+      context.go('/');
+    }
   }
 
   Future<void> _tryToLoadFromCache() async {
@@ -227,74 +236,49 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
   }
 
   Widget _buildSuccessIcon() {
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        AnimatedBuilder(
-          animation: _pulseAnimationController,
-          builder: (context, child) {
-            return Container(
-              width: ResponsiveValues.avatarSizeLarge(context) *
-                  1.5 *
-                  _scaleAnimation.value,
-              height: ResponsiveValues.avatarSizeLarge(context) *
-                  1.5 *
-                  _scaleAnimation.value,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    (_isQueued ? AppColors.info : AppColors.telegramGreen)
-                        .withValues(alpha: 0.3),
-                    (_isQueued ? AppColors.info : AppColors.telegramGreen)
-                        .withValues(alpha: 0.1),
-                    Colors.transparent,
-                  ],
-                  stops: const [0.1, 0.5, 1.0],
-                ),
+    final accentColor = _isQueued ? AppColors.info : AppColors.telegramGreen;
+
+    return AnimatedBuilder(
+      animation: _checkAnimationController,
+      builder: (context, child) {
+        return Transform.scale(
+          scale: Curves.elasticOut.transform(_checkAnimationController.value),
+          child: Container(
+            width: ResponsiveValues.successStateOuterSize(context),
+            height: ResponsiveValues.successStateOuterSize(context),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppColors.getSurface(context).withValues(alpha: 0.72),
+              border: Border.all(
+                color: accentColor.withValues(alpha: 0.3),
+                width: 2,
               ),
-            );
-          },
-        ),
-        AnimatedBuilder(
-          animation: _checkAnimationController,
-          builder: (context, child) {
-            return Transform.scale(
-              scale:
-                  Curves.elasticOut.transform(_checkAnimationController.value),
+              boxShadow: [
+                BoxShadow(
+                  color: accentColor.withValues(alpha: 0.12),
+                  blurRadius: ResponsiveValues.spacingXL(context),
+                  spreadRadius: ResponsiveValues.spacingXS(context),
+                ),
+              ],
+            ),
+            child: Center(
               child: Container(
                 width: ResponsiveValues.avatarSizeLarge(context),
                 height: ResponsiveValues.avatarSizeLarge(context),
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: _isQueued
-                        ? [AppColors.info, AppColors.telegramBlue]
-                        : [
-                            AppColors.telegramGreen,
-                            AppColors.telegramGreen.withValues(alpha: 0.8)
-                          ],
-                  ),
                   shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color:
-                          (_isQueued ? AppColors.info : AppColors.telegramGreen)
-                              .withValues(alpha: 0.3),
-                      blurRadius: ResponsiveValues.spacingXL(context),
-                      spreadRadius: ResponsiveValues.spacingS(context),
-                    ),
-                  ],
+                  color: accentColor.withValues(alpha: 0.12),
                 ),
                 child: Icon(
                   _isQueued ? Icons.schedule_rounded : Icons.check_rounded,
-                  size: 60,
-                  color: Colors.white,
+                  size: 54,
+                  color: accentColor,
                 ),
               ),
-            );
-          },
-        ),
-      ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -312,10 +296,32 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
 
     return Column(
       children: [
+        Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: ResponsiveValues.spacingM(context),
+            vertical: ResponsiveValues.spacingS(context),
+          ),
+          decoration: BoxDecoration(
+            color: (_isQueued ? AppColors.info : AppColors.telegramGreen)
+                .withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(
+              ResponsiveValues.radiusFull(context),
+            ),
+          ),
+          child: Text(
+            _isQueued ? 'Saved for sync' : 'Submitted for review',
+            style: AppTextStyles.labelMedium(context).copyWith(
+              color: _isQueued ? AppColors.info : AppColors.telegramGreen,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        SizedBox(height: ResponsiveValues.spacingL(context)),
         Text(
           title,
-          style: AppTextStyles.displaySmall(context)
-              .copyWith(fontWeight: FontWeight.w700),
+          style: AppTextStyles.headlineSmall(context).copyWith(
+            fontWeight: FontWeight.w700,
+          ),
           textAlign: TextAlign.center,
         ),
         SizedBox(height: ResponsiveValues.spacingM(context)),
@@ -327,59 +333,27 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
           ),
           textAlign: TextAlign.center,
         ),
-        SizedBox(height: ResponsiveValues.spacingM(context)),
+        SizedBox(height: ResponsiveValues.spacingS(context)),
         Text(
           _isQueued
-              ? 'You have time to review this page before we return you home.'
-              : 'Please take a moment to review the payment details before we return you home.',
+              ? 'Your payment is saved and will sync once this device is back online.'
+              : 'Your payment has been sent for review.',
           style: AppTextStyles.bodyMedium(context).copyWith(
             color: AppColors.getTextSecondary(context),
             height: 1.5,
           ),
           textAlign: TextAlign.center,
         ),
-        SizedBox(height: ResponsiveValues.spacingM(context)),
-        Container(
-          padding: EdgeInsets.symmetric(
-            horizontal: ResponsiveValues.spacingL(context),
-            vertical: ResponsiveValues.spacingS(context),
+        SizedBox(height: ResponsiveValues.spacingL(context)),
+        Text(
+          _isQueued
+              ? 'Your payment details are safe on this device and will be sent automatically when you are back online.'
+              : 'We will review the payment and update your access as soon as it is confirmed.',
+          style: AppTextStyles.bodyMedium(context).copyWith(
+            color: AppColors.getTextSecondary(context),
+            height: 1.45,
           ),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                (_isQueued ? AppColors.info : AppColors.pending)
-                    .withValues(alpha: 0.2),
-                (_isQueued ? AppColors.info : AppColors.pending)
-                    .withValues(alpha: 0.1),
-              ],
-            ),
-            borderRadius:
-                BorderRadius.circular(ResponsiveValues.radiusFull(context)),
-            border: Border.all(
-              color: (_isQueued ? AppColors.info : AppColors.pending)
-                  .withValues(alpha: 0.3),
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                _isQueued ? Icons.schedule_rounded : Icons.pending_rounded,
-                size: 16,
-                color: _isQueued ? AppColors.info : AppColors.pending,
-              ),
-              SizedBox(width: ResponsiveValues.spacingXS(context)),
-              Text(
-                _isQueued
-                    ? AppStrings.queuedForSync
-                    : AppStrings.pendingVerification,
-                style: AppTextStyles.labelSmall(context).copyWith(
-                  color: _isQueued ? AppColors.info : AppColors.pending,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
+          textAlign: TextAlign.center,
         ),
         SizedBox(height: ResponsiveValues.spacingXL(context)),
         _buildPaymentDetails(),
@@ -467,17 +441,13 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
     Color? valueColor,
   }) {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
           width: ResponsiveValues.iconSizeL(context),
           height: ResponsiveValues.iconSizeL(context),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                AppColors.telegramBlue.withValues(alpha: 0.2),
-                AppColors.telegramPurple.withValues(alpha: 0.1),
-              ],
-            ),
+            color: AppColors.telegramBlue.withValues(alpha: 0.1),
             shape: BoxShape.circle,
           ),
           child: Icon(
@@ -488,20 +458,23 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
         ),
         SizedBox(width: ResponsiveValues.spacingM(context)),
         Expanded(
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 label,
-                style: AppTextStyles.bodyMedium(context).copyWith(
+                style: AppTextStyles.labelMedium(context).copyWith(
                   color: AppColors.getTextSecondary(context),
+                  fontWeight: FontWeight.w600,
                 ),
               ),
+              SizedBox(height: ResponsiveValues.spacingXXS(context)),
               Text(
                 value,
                 style: AppTextStyles.bodyMedium(context).copyWith(
                   color: valueColor ?? AppColors.getTextPrimary(context),
                   fontWeight: FontWeight.w600,
+                  height: 1.35,
                 ),
               ),
             ],
@@ -518,7 +491,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
           width: double.infinity,
           child: AppButton.primary(
             label: AppStrings.continueToHome,
-            onPressed: () => context.go('/'),
+            onPressed: _redirectToHome,
             expanded: true,
           ),
         ),
@@ -602,39 +575,6 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
       padding: ResponsiveValues.screenPadding(context),
       child: Column(
         children: [
-          if (pendingCount > 0)
-            Container(
-              margin:
-                  EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
-              padding: ResponsiveValues.cardPadding(context),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    AppColors.info.withValues(alpha: 0.2),
-                    AppColors.info.withValues(alpha: 0.1)
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(
-                    ResponsiveValues.radiusMedium(context)),
-                border:
-                    Border.all(color: AppColors.info.withValues(alpha: 0.3)),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.schedule_rounded,
-                      color: AppColors.info,
-                      size: ResponsiveValues.iconSizeS(context)),
-                  SizedBox(width: ResponsiveValues.spacingM(context)),
-                  Expanded(
-                    child: Text(
-                      '$pendingCount pending action${pendingCount > 1 ? 's' : ''}',
-                      style: AppTextStyles.bodySmall(context)
-                          .copyWith(color: AppColors.info),
-                    ),
-                  ),
-                ],
-              ),
-            ),
           _buildSuccessIcon(),
           SizedBox(height: ResponsiveValues.spacingXXL(context)),
           _buildSuccessContent(),

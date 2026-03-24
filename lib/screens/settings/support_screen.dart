@@ -1,13 +1,9 @@
-// lib/screens/settings/support_screen.dart
-// ADDED BACK BUTTON & SHIMMER TYPE
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:badges/badges.dart' as badges;
 import 'package:pull_to_refresh/pull_to_refresh.dart' hide RefreshIndicator;
 import 'package:url_launcher/url_launcher.dart';
 
@@ -106,9 +102,12 @@ class _SupportScreenState extends State<SupportScreen>
         await _settingsProvider.loadContactSettings();
       } catch (e) {
         if (!mounted) return;
+        final hasVisibleSupportData =
+            _settingsProvider.getContactInfoList().isNotEmpty;
         setState(() {
-          _hasError = true;
-          _errorMessage = getUserFriendlyErrorMessage(e);
+          _hasError = !hasVisibleSupportData;
+          _errorMessage =
+              hasVisibleSupportData ? null : getUserFriendlyErrorMessage(e);
         });
       }
     });
@@ -146,12 +145,23 @@ class _SupportScreenState extends State<SupportScreen>
         _errorMessage = null;
       });
     } catch (e) {
+      final hasVisibleSupportData =
+          _settingsProvider.getContactInfoList().isNotEmpty;
+
       setState(() {
-        _hasError = true;
-        _errorMessage = getUserFriendlyErrorMessage(e);
+        _hasError = !hasVisibleSupportData;
+        _errorMessage =
+            hasVisibleSupportData ? null : getUserFriendlyErrorMessage(e);
       });
       _refreshControllers[tabIndex].refreshFailed();
-      SnackbarService().showError(context, '${AppStrings.refreshFailed}: $e');
+      if (hasVisibleSupportData) {
+        SnackbarService().showInfo(
+          context,
+          'We could not refresh support details just now. Your saved contact information is still available.',
+        );
+      } else {
+        SnackbarService().showError(context, '${AppStrings.refreshFailed}: $e');
+      }
     }
   }
 
@@ -230,6 +240,36 @@ class _SupportScreenState extends State<SupportScreen>
     }
   }
 
+  ContactInfo? _getPrimaryInstantSupportContact() {
+    final contacts = _settingsProvider.getContactInfoList();
+    for (final preferredType in const [
+      ContactType.whatsapp,
+      ContactType.telegram,
+      ContactType.email,
+      ContactType.phone,
+    ]) {
+      try {
+        return contacts.firstWhere((contact) => contact.type == preferredType);
+      } catch (_) {
+        continue;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _handleQuickSupportAction() async {
+    final contact = _getPrimaryInstantSupportContact();
+    if (contact == null) {
+      SnackbarService().showInfo(
+        context,
+        'Your administrator has not configured a direct support contact yet.',
+      );
+      return;
+    }
+
+    await _handleContactTap(contact.type, contact.value);
+  }
+
   void _showCopyDialog(String value) {
     AppDialog.input(
       context: context,
@@ -274,19 +314,20 @@ class _SupportScreenState extends State<SupportScreen>
               child: Row(
                 children: [
                   Container(
-                    width: ResponsiveValues.iconSizeXL(context) * 1.5,
-                    height: ResponsiveValues.iconSizeXL(context) * 1.5,
+                    width: ResponsiveValues.supportActionIconContainerSize(
+                      context,
+                    ),
+                    height: ResponsiveValues.supportActionIconContainerSize(
+                      context,
+                    ),
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          color.withValues(alpha: 0.2),
-                          color.withValues(alpha: 0.05),
-                        ],
-                      ),
+                      color: color.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(
                         ResponsiveValues.radiusMedium(context),
                       ),
-                      border: Border.all(color: color, width: 1.5),
+                      border: Border.all(
+                        color: color.withValues(alpha: 0.18),
+                      ),
                     ),
                     child: Center(
                       child: Icon(
@@ -296,7 +337,7 @@ class _SupportScreenState extends State<SupportScreen>
                       ),
                     ),
                   ),
-                  const SizedBox(width: 16),
+                  SizedBox(width: ResponsiveValues.spacingL(context)),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -306,10 +347,10 @@ class _SupportScreenState extends State<SupportScreen>
                           title,
                           style: AppTextStyles.labelMedium(context).copyWith(
                             color: AppColors.getTextSecondary(context),
-                            fontWeight: FontWeight.w600,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
-                        const SizedBox(height: 4),
+                        SizedBox(height: ResponsiveValues.spacingXXS(context)),
                         Text(
                           value,
                           style: AppTextStyles.bodyMedium(
@@ -319,7 +360,7 @@ class _SupportScreenState extends State<SupportScreen>
                           overflow: TextOverflow.ellipsis,
                         ),
                         if (canTap && !isOffline) ...[
-                          const SizedBox(height: 8),
+                          SizedBox(height: ResponsiveValues.spacingS(context)),
                           Row(
                             children: [
                               Text(
@@ -332,7 +373,9 @@ class _SupportScreenState extends State<SupportScreen>
                                   context,
                                 ).copyWith(color: color),
                               ),
-                              const SizedBox(width: 4),
+                              SizedBox(
+                                width: ResponsiveValues.spacingXXS(context),
+                              ),
                               Icon(
                                 type == ContactType.other
                                     ? Icons.copy_rounded
@@ -394,8 +437,12 @@ class _SupportScreenState extends State<SupportScreen>
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Container(
-                  width: ResponsiveValues.iconSizeXL(context) * 1.5,
-                  height: ResponsiveValues.iconSizeXL(context) * 1.5,
+                  width: ResponsiveValues.supportActionIconContainerSize(
+                    context,
+                  ),
+                  height: ResponsiveValues.supportActionIconContainerSize(
+                    context,
+                  ),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
@@ -416,7 +463,7 @@ class _SupportScreenState extends State<SupportScreen>
                     ),
                   ),
                 ),
-                const SizedBox(height: 8),
+                SizedBox(height: ResponsiveValues.spacingS(context)),
                 Text(
                   title,
                   style: AppTextStyles.titleSmall(
@@ -426,7 +473,7 @@ class _SupportScreenState extends State<SupportScreen>
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 2),
+                SizedBox(height: ResponsiveValues.spacingXXS(context) / 2),
                 Text(
                   subtitle,
                   style: AppTextStyles.caption(
@@ -505,7 +552,7 @@ class _SupportScreenState extends State<SupportScreen>
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: ResponsiveValues.spacingL(context)),
             ],
           ),
         ),
@@ -565,45 +612,6 @@ class _SupportScreenState extends State<SupportScreen>
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
-        if (isOffline && pendingCount > 0)
-          SliverToBoxAdapter(
-            child: Container(
-              margin: EdgeInsets.all(ResponsiveValues.spacingM(context)),
-              padding: ResponsiveValues.cardPadding(context),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    AppColors.info.withValues(alpha: 0.2),
-                    AppColors.info.withValues(alpha: 0.1),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(
-                  ResponsiveValues.radiusMedium(context),
-                ),
-                border: Border.all(
-                  color: AppColors.info.withValues(alpha: 0.3),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.schedule_rounded,
-                    color: AppColors.info,
-                    size: ResponsiveValues.iconSizeS(context),
-                  ),
-                  SizedBox(width: ResponsiveValues.spacingM(context)),
-                  Expanded(
-                    child: Text(
-                      '$pendingCount pending action${pendingCount > 1 ? 's' : ''}',
-                      style: AppTextStyles.bodySmall(
-                        context,
-                      ).copyWith(color: AppColors.info),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
         SliverPadding(
           padding: EdgeInsets.symmetric(
             horizontal: ResponsiveValues.spacingL(context),
@@ -623,14 +631,14 @@ class _SupportScreenState extends State<SupportScreen>
                           size: ResponsiveValues.iconSizeXXL(context),
                           color: AppColors.getTextSecondary(context),
                         ),
-                        const SizedBox(height: 16),
+                        SizedBox(height: ResponsiveValues.spacingL(context)),
                         Text(
                           AppStrings.noContactInfo,
                           style: AppTextStyles.bodyLarge(context).copyWith(
                             color: AppColors.getTextSecondary(context),
                           ),
                         ),
-                        const SizedBox(height: 12),
+                        SizedBox(height: ResponsiveValues.spacingM(context)),
                         Text(
                           AppStrings.contactMethodsWillAppear,
                           style: AppTextStyles.bodySmall(context).copyWith(
@@ -652,10 +660,10 @@ class _SupportScreenState extends State<SupportScreen>
                         index: entry.key,
                       ),
                     ),
-              const SizedBox(height: 24),
+              SizedBox(height: ResponsiveValues.spacingXL(context)),
               _buildSectionHeader(AppStrings.responseTime),
               _buildResponseTimeCard(),
-              const SizedBox(height: 32),
+              SizedBox(height: ResponsiveValues.spacingXXL(context)),
             ]),
           ),
         ),
@@ -664,50 +672,11 @@ class _SupportScreenState extends State<SupportScreen>
   }
 
   Widget _buildFAQTab() {
-    const faqs = AppStrings.faqd;
+    final faqs = _settingsProvider.getSupportFaqItems();
 
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
-        if (isOffline && pendingCount > 0)
-          SliverToBoxAdapter(
-            child: Container(
-              margin: EdgeInsets.all(ResponsiveValues.spacingM(context)),
-              padding: ResponsiveValues.cardPadding(context),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    AppColors.info.withValues(alpha: 0.2),
-                    AppColors.info.withValues(alpha: 0.1),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(
-                  ResponsiveValues.radiusMedium(context),
-                ),
-                border: Border.all(
-                  color: AppColors.info.withValues(alpha: 0.3),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.schedule_rounded,
-                    color: AppColors.info,
-                    size: ResponsiveValues.iconSizeS(context),
-                  ),
-                  SizedBox(width: ResponsiveValues.spacingM(context)),
-                  Expanded(
-                    child: Text(
-                      '$pendingCount pending action${pendingCount > 1 ? 's' : ''}',
-                      style: AppTextStyles.bodySmall(
-                        context,
-                      ).copyWith(color: AppColors.info),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
         SliverPadding(
           padding: EdgeInsets.symmetric(
             horizontal: ResponsiveValues.spacingL(context),
@@ -723,7 +692,7 @@ class _SupportScreenState extends State<SupportScreen>
                       index: entry.key,
                     ),
                   ),
-              const SizedBox(height: 24),
+              SizedBox(height: ResponsiveValues.spacingXL(context)),
               _buildSectionHeader(AppStrings.stillNeedHelp),
               AppCard.glass(
                 child: Padding(
@@ -735,14 +704,14 @@ class _SupportScreenState extends State<SupportScreen>
                         size: ResponsiveValues.iconSizeXXXXL(context),
                         color: AppColors.telegramBlue,
                       ),
-                      const SizedBox(height: 16),
+                      SizedBox(height: ResponsiveValues.spacingL(context)),
                       Text(
                         AppStrings.contactUsDirectly,
                         style: AppTextStyles.titleMedium(
                           context,
                         ).copyWith(fontWeight: FontWeight.w600),
                       ),
-                      const SizedBox(height: 8),
+                      SizedBox(height: ResponsiveValues.spacingS(context)),
                       Text(
                         AppStrings.ifQuestionNotAnswered,
                         style: AppTextStyles.bodyMedium(
@@ -754,7 +723,7 @@ class _SupportScreenState extends State<SupportScreen>
                   ),
                 ),
               ),
-              const SizedBox(height: 32),
+              SizedBox(height: ResponsiveValues.spacingXXL(context)),
             ]),
           ),
         ),
@@ -766,45 +735,6 @@ class _SupportScreenState extends State<SupportScreen>
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
-        if (isOffline && pendingCount > 0)
-          SliverToBoxAdapter(
-            child: Container(
-              margin: EdgeInsets.all(ResponsiveValues.spacingM(context)),
-              padding: ResponsiveValues.cardPadding(context),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    AppColors.info.withValues(alpha: 0.2),
-                    AppColors.info.withValues(alpha: 0.1),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(
-                  ResponsiveValues.radiusMedium(context),
-                ),
-                border: Border.all(
-                  color: AppColors.info.withValues(alpha: 0.3),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.schedule_rounded,
-                    color: AppColors.info,
-                    size: ResponsiveValues.iconSizeS(context),
-                  ),
-                  SizedBox(width: ResponsiveValues.spacingM(context)),
-                  Expanded(
-                    child: Text(
-                      '$pendingCount pending action${pendingCount > 1 ? 's' : ''}',
-                      style: AppTextStyles.bodySmall(
-                        context,
-                      ).copyWith(color: AppColors.info),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
         SliverPadding(
           padding: EdgeInsets.symmetric(
             horizontal: ResponsiveValues.spacingL(context),
@@ -814,13 +744,13 @@ class _SupportScreenState extends State<SupportScreen>
             delegate: SliverChildListDelegate([
               _buildSectionHeader(AppStrings.quickActions),
               _buildQuickActionGrid(),
-              const SizedBox(height: 24),
+              SizedBox(height: ResponsiveValues.spacingXL(context)),
               _buildSectionHeader(AppStrings.supportHours),
               _buildSupportHoursCard(),
-              const SizedBox(height: 24),
+              SizedBox(height: ResponsiveValues.spacingXL(context)),
               _buildSectionHeader(AppStrings.responseTime),
               _buildResponseTimeCard(),
-              const SizedBox(height: 32),
+              SizedBox(height: ResponsiveValues.spacingXXL(context)),
             ]),
           ),
         ),
@@ -837,13 +767,10 @@ class _SupportScreenState extends State<SupportScreen>
       mainAxisSpacing: ResponsiveValues.gridRunSpacing(context),
       children: [
         _buildQuickActionCard(
-          AppStrings.chatWithUs,
-          AppStrings.startLiveChat,
+          'Message support',
+          'Open the main support contact',
           Icons.chat_rounded,
-          () => SnackbarService().showInfo(
-            context,
-            AppStrings.liveChatComingSoon,
-          ),
+          _handleQuickSupportAction,
           AppColors.telegramGreen,
         ),
         _buildQuickActionCard(
@@ -859,54 +786,72 @@ class _SupportScreenState extends State<SupportScreen>
   }
 
   Widget _buildResponseTimeCard() {
+    final responseBadge = _settingsProvider.getSupportResponseBadgeLabel();
+    final responseMessage = _settingsProvider.getSupportResponseMessage();
+
     return AppCard.glass(
       child: Padding(
         padding: ResponsiveValues.cardPadding(context),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            AnimatedBuilder(
-              animation: _pulseAnimationController,
-              builder: (context, child) {
-                return Transform.scale(
-                  scale: 1 + _pulseAnimationController.value * 0.05,
-                  child: badges.Badge(
-                    badgeContent: Text(
-                      AppStrings.hours24,
-                      style: AppTextStyles.caption(context).copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    badgeStyle: badges.BadgeStyle(
-                      badgeColor: AppColors.telegramGreen,
-                      padding: EdgeInsets.symmetric(
-                        horizontal: ResponsiveValues.spacingM(context),
-                        vertical: ResponsiveValues.spacingXS(context),
-                      ),
-                    ),
-                    child: Icon(
-                      Icons.timer_rounded,
-                      size: ResponsiveValues.iconSizeXXXL(context),
-                      color: AppColors.telegramGreen,
-                    ),
+            Row(
+              children: [
+                Container(
+                  width: ResponsiveValues.selectionSheetLeadingSize(context),
+                  height: ResponsiveValues.selectionSheetLeadingSize(context),
+                  decoration: BoxDecoration(
+                    color: AppColors.telegramGreen.withValues(alpha: 0.10),
+                    shape: BoxShape.circle,
                   ),
-                );
-              },
+                  child: Icon(
+                    Icons.timer_rounded,
+                    size: ResponsiveValues.iconSizeL(context),
+                    color: AppColors.telegramGreen,
+                  ),
+                ),
+                SizedBox(width: ResponsiveValues.spacingL(context)),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        AppStrings.quickResponse,
+                        style: AppTextStyles.titleMedium(
+                          context,
+                        ).copyWith(fontWeight: FontWeight.w700),
+                      ),
+                      SizedBox(height: ResponsiveValues.spacingXXS(context)),
+                      Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: ResponsiveValues.spacingM(context),
+                          vertical: ResponsiveValues.spacingXS(context),
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.telegramGreen.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(
+                            ResponsiveValues.radiusFull(context),
+                          ),
+                        ),
+                        child: Text(
+                          responseBadge,
+                          style: AppTextStyles.labelSmall(context).copyWith(
+                            color: AppColors.telegramGreen,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
+            SizedBox(height: ResponsiveValues.spacingL(context)),
             Text(
-              AppStrings.quickResponse,
-              style: AppTextStyles.titleMedium(
-                context,
-              ).copyWith(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              AppStrings.respondWithin24Hours,
+              responseMessage,
               style: AppTextStyles.bodyMedium(
                 context,
               ).copyWith(color: AppColors.getTextSecondary(context)),
-              textAlign: TextAlign.center,
             ),
           ],
         ),
@@ -930,7 +875,7 @@ class _SupportScreenState extends State<SupportScreen>
                   color: AppColors.telegramBlue,
                   size: ResponsiveValues.iconSizeS(context),
                 ),
-                const SizedBox(width: 8),
+                SizedBox(width: ResponsiveValues.spacingS(context)),
                 Text(
                   AppStrings.supportHours,
                   style: AppTextStyles.titleSmall(
@@ -939,7 +884,7 @@ class _SupportScreenState extends State<SupportScreen>
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            SizedBox(height: ResponsiveValues.spacingL(context)),
             Text(
               hours,
               style: AppTextStyles.bodyMedium(
@@ -957,30 +902,24 @@ class _SupportScreenState extends State<SupportScreen>
     return AppCard.glass(
       child: Container(
         padding: ResponsiveValues.dialogPadding(context),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(colors: AppColors.telegramGradient),
-          borderRadius: BorderRadius.circular(
-            ResponsiveValues.radiusXLarge(context),
-          ),
-        ),
         child: Row(
           children: [
             Container(
-              width: 48,
-              height: 48,
+              width: ResponsiveValues.selectionSheetLeadingSize(context),
+              height: ResponsiveValues.selectionSheetLeadingSize(context),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
+                color: AppColors.telegramBlue.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
               child: Center(
                 child: Icon(
                   Icons.support_agent_rounded,
-                  color: Colors.white,
+                  color: AppColors.telegramBlue,
                   size: ResponsiveValues.iconSizeL(context),
                 ),
               ),
             ),
-            const SizedBox(width: 16),
+            SizedBox(width: ResponsiveValues.spacingL(context)),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -988,16 +927,15 @@ class _SupportScreenState extends State<SupportScreen>
                   Text(
                     AppStrings.weAreHereToHelp,
                     style: AppTextStyles.titleLarge(context).copyWith(
-                      color: Colors.white,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  SizedBox(height: ResponsiveValues.spacingXXS(context)),
                   Text(
                     AppStrings.getHelpWith,
                     style: AppTextStyles.bodyMedium(
                       context,
-                    ).copyWith(color: Colors.white.withValues(alpha: 0.9)),
+                    ).copyWith(color: AppColors.getTextSecondary(context)),
                   ),
                 ],
               ),
@@ -1028,19 +966,27 @@ class _SupportScreenState extends State<SupportScreen>
           ),
           child: _buildHeroSection(),
         ),
-        TabBar(
-          controller: _tabController,
-          indicatorColor: AppColors.telegramBlue,
-          indicatorWeight: 3,
-          labelColor: AppColors.telegramBlue,
-          unselectedLabelColor: AppColors.getTextSecondary(context),
-          labelStyle: AppTextStyles.labelMedium(context),
-          unselectedLabelStyle: AppTextStyles.labelMedium(context),
-          tabs: const [
-            Tab(text: AppStrings.contact),
-            Tab(text: AppStrings.faq),
-            Tab(text: AppStrings.actions),
-          ],
+        Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: ResponsiveValues.spacingL(context),
+          ),
+          child: AppCard.solid(
+            hasShadow: false,
+            child: TabBar(
+              controller: _tabController,
+              indicatorColor: AppColors.telegramBlue,
+              indicatorWeight: 3,
+              labelColor: AppColors.telegramBlue,
+              unselectedLabelColor: AppColors.getTextSecondary(context),
+              labelStyle: AppTextStyles.labelMedium(context),
+              unselectedLabelStyle: AppTextStyles.labelMedium(context),
+              tabs: const [
+                Tab(text: AppStrings.contact),
+                Tab(text: AppStrings.faq),
+                Tab(text: AppStrings.actions),
+              ],
+            ),
+          ),
         ),
         Expanded(
           child: RefreshIndicator(

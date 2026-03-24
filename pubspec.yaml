@@ -28,7 +28,6 @@ dependencies:
   
   dio: ^5.9.0
   connectivity_plus: ^7.0.0
-  http: ^1.6.0
   
   
   intl: ^0.20.2
@@ -112,6 +111,5 @@ flutter:
           style: italic
 
   assets:
-    - .env
     - assets/images/
     - assets/icons/

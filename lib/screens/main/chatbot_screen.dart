@@ -1,6 +1,3 @@
-// lib/screens/main/chatbot_screen.dart
-// PRODUCTION STANDARD - WITH PULL-TO-REFRESH & PROPER LOADING
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -11,15 +8,15 @@ import '../../models/chatbot_model.dart';
 import '../../providers/chatbot_provider.dart';
 import '../../widgets/common/app_empty_state.dart';
 import '../../widgets/common/base_screen_mixin.dart';
+import '../../widgets/common/app_dialog.dart';
 import '../../services/snackbar_service.dart';
 import '../../utils/helpers.dart';
 import '../../utils/responsive.dart';
 import '../../utils/responsive_values.dart';
 import '../../widgets/common/app_card.dart';
-import '../../widgets/common/app_shimmer.dart';
 import '../../themes/app_colors.dart';
-import '../../themes/app_text_styles.dart';
 import '../../themes/app_themes.dart';
+import '../../themes/app_text_styles.dart';
 
 class ChatbotScreen extends StatefulWidget {
   final int? conversationId;
@@ -48,7 +45,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   late ChatbotProvider _provider;
 
   @override
-  String get screenTitle => _provider.currentConversation?.title ?? 'AI Tutor';
+  String get screenTitle =>
+      _provider.currentConversation?.title ?? 'Learning assistant';
 
   @override
   String? get screenSubtitle => _greeting;
@@ -78,6 +76,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           onPressed: () => _scaffoldKey.currentState?.openDrawer(),
         )
       : null;
+
+  @override
+  List<Widget>? get appBarActions => [_buildMessageCounter()];
 
   @override
   void initState() {
@@ -133,11 +134,11 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   void _setGreeting() {
     final hour = DateTime.now().hour;
     if (hour < 12) {
-      _greeting = 'Good Morning';
+      _greeting = 'Good morning';
     } else if (hour < 17) {
-      _greeting = 'Good Afternoon';
+      _greeting = 'Good afternoon';
     } else {
-      _greeting = 'Good Evening';
+      _greeting = 'Good evening';
     }
   }
 
@@ -174,7 +175,14 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       setState(() => _initialLoadDone = true);
     } catch (e) {
       _refreshController.refreshFailed();
-      rethrow;
+      if (isMounted) {
+        SnackbarService().showInfo(
+          context,
+          isOffline
+              ? 'You are offline. Showing your saved conversations.'
+              : 'We could not refresh conversations just now.',
+        );
+      }
     }
   }
 
@@ -219,14 +227,16 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   Widget _buildMessageCounter() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      padding: ResponsiveValues.mediaOverlayChipPadding(context),
       decoration: BoxDecoration(
         color: isOffline
-            ? AppColors.warning.withValues(alpha: 0.1)
+            ? AppColors.telegramBlue.withValues(alpha: 0.10)
             : (_provider.remainingMessages > 0
-                ? AppColors.telegramGreen.withValues(alpha: 0.1)
-                : AppColors.telegramRed.withValues(alpha: 0.1)),
-        borderRadius: BorderRadius.circular(20),
+                ? AppColors.telegramGreen.withValues(alpha: 0.10)
+                : AppColors.telegramRed.withValues(alpha: 0.10)),
+        borderRadius: BorderRadius.circular(
+          ResponsiveValues.radiusFull(context),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -235,12 +245,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
             Icons.message,
             size: 16,
             color: isOffline
-                ? AppColors.warning
+                ? AppColors.telegramBlue
                 : (_provider.remainingMessages > 0
                     ? AppColors.telegramGreen
                     : AppColors.telegramRed),
           ),
-          const SizedBox(width: 4),
+          SizedBox(width: ResponsiveValues.spacingXXS(context)),
           Text(
             isOffline
                 ? 'Offline'
@@ -248,7 +258,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
             style: TextStyle(
               fontWeight: FontWeight.w600,
               color: isOffline
-                  ? AppColors.warning
+                  ? AppColors.telegramBlue
                   : (_provider.remainingMessages > 0
                       ? AppColors.telegramGreen
                       : AppColors.telegramRed),
@@ -271,37 +281,51 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       return const Center(
         child: AppEmptyState(
           icon: Icons.chat_outlined,
-          title: 'No Conversations',
-          message: 'Start a new chat to begin!',
+          title: 'No conversations yet',
+          message: 'Start a new chat whenever you want help studying.',
         ),
       );
     }
 
     return Column(
       children: [
-        AppCard.glass(
-          child: Container(
-            padding: EdgeInsets.only(
-              top: MediaQuery.of(context).padding.top + 16,
-              left: 16,
-              right: 16,
-              bottom: 8,
-            ),
-            child: Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Conversations',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
+        Padding(
+          padding: EdgeInsets.fromLTRB(
+            ResponsiveValues.spacingL(context),
+            MediaQuery.of(context).padding.top + ResponsiveValues.spacingM(context),
+            ResponsiveValues.spacingL(context),
+            ResponsiveValues.spacingS(context),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Conversations',
+                      style: AppTextStyles.titleMedium(context).copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    SizedBox(height: ResponsiveValues.spacingXXS(context)),
+                    Text(
+                      'Pick up where you left off or start a new study chat.',
+                      style: AppTextStyles.bodySmall(context).copyWith(
+                        color: AppColors.getTextSecondary(context),
+                      ),
+                    ),
+                  ],
                 ),
-                IconButton(
-                  icon: const Icon(Icons.add_comment_outlined,
-                      color: AppColors.telegramBlue),
-                  onPressed: isOffline ? null : _showNewChatDialog,
+              ),
+              IconButton(
+                icon: const Icon(
+                  Icons.add_comment_outlined,
+                  color: AppColors.telegramBlue,
                 ),
-              ],
-            ),
+                onPressed: isOffline ? null : _showNewChatDialog,
+              ),
+            ],
           ),
         ),
         Expanded(
@@ -310,19 +334,34 @@ class _ChatbotScreenState extends State<ChatbotScreen>
             itemBuilder: (context, index) {
               final conv = _provider.conversations[index];
               final isSelected = _provider.currentConversation?.id == conv.id;
+              final isCompactSidebar =
+                  ScreenSize.isTablet(context) || ScreenSize.isDesktop(context);
 
               return ListTile(
+                dense: isCompactSidebar,
+                visualDensity: isCompactSidebar
+                    ? const VisualDensity(horizontal: -1, vertical: -2)
+                    : VisualDensity.standard,
+                minLeadingWidth: isCompactSidebar ? 36 : 40,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: isCompactSidebar ? 12 : 16,
+                  vertical: isCompactSidebar ? 2 : 6,
+                ),
                 leading: CircleAvatar(
+                  radius: isCompactSidebar ? 18 : 20,
                   backgroundColor: isSelected
                       ? AppColors.telegramBlue
                       : AppColors.getSurface(context),
                   child: Icon(
                     Icons.chat_outlined,
+                    size: isCompactSidebar ? 18 : 20,
                     color: isSelected ? Colors.white : AppColors.telegramBlue,
                   ),
                 ),
                 title: Text(
                   conv.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontWeight:
                         isSelected ? FontWeight.bold : FontWeight.normal,
@@ -333,8 +372,14 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                         conv.lastMessage!.replaceAll('*', ''),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.caption(context),
                       )
-                    : Text('${conv.messageCount} messages'),
+                    : Text(
+                        '${conv.messageCount} messages',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.caption(context),
+                      ),
                 onTap: () {
                   if (conv.id != _provider.currentConversation?.id) {
                     _provider.loadMessages(conv.id);
@@ -373,96 +418,67 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   void _showRenameDialog(BuildContext context, ChatbotConversation conv) {
-    final controller = TextEditingController(text: conv.title);
-    showDialog(
+    AppDialog.input(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Rename Conversation'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(hintText: 'Enter new title'),
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
-          TextButton(
-            onPressed: () async {
-              if (controller.text.trim().isNotEmpty) {
-                final success = await _provider.renameConversation(
-                    conv.id, controller.text.trim());
-                if (success && mounted) {
-                  SnackbarService()
-                      .showSuccess(context, 'Conversation renamed');
-                }
-                if (mounted) Navigator.pop(context);
-              }
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
+      title: 'Rename conversation',
+      initialValue: conv.title,
+      hintText: 'Enter a new title',
+      validator: (value) {
+        if (value == null || value.trim().isEmpty) {
+          return 'Please enter a title';
+        }
+        return null;
+      },
+    ).then((value) async {
+      final newTitle = value?.trim();
+      if (newTitle == null || newTitle.isEmpty || newTitle == conv.title) {
+        return;
+      }
+      final success = await _provider.renameConversation(conv.id, newTitle);
+      if (success && mounted) {
+        SnackbarService().showSuccess(context, 'Conversation renamed');
+      }
+    });
   }
 
   void _showDeleteDialog(BuildContext context, ChatbotConversation conv) {
-    showDialog(
+    AppDialog.delete(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Conversation'),
-        content: Text('Are you sure you want to delete "${conv.title}"?'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
-          TextButton(
-            onPressed: () async {
-              final success = await _provider.deleteConversation(conv.id);
-              if (success && mounted) {
-                SnackbarService().showSuccess(context, 'Conversation deleted');
-              }
-              if (mounted) Navigator.pop(context);
-            },
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
+      title: 'Delete conversation',
+      message: 'Delete "${conv.title}"? This cannot be undone.',
+    ).then((confirmed) async {
+      if (confirmed == true) {
+        final success = await _provider.deleteConversation(conv.id);
+        if (success && mounted) {
+          SnackbarService().showSuccess(context, 'Conversation deleted');
+        }
+      }
+    });
   }
 
   void _showNewChatDialog() {
-    showDialog(
+    AppDialog.confirm(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Start New Chat'),
-        content: const Text(
-            'This will clear the current conversation and start fresh.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _provider.clearCurrentConversation();
-              GoRouter.of(context).go('/chatbot');
-              setState(() => _initialLoadDone = false);
-            },
-            child: const Text('Start New'),
-          ),
-        ],
-      ),
-    );
+      title: 'Start a new chat',
+      message: 'This will clear the current conversation and start fresh.',
+      confirmText: 'Start new',
+    ).then((confirmed) {
+      if (confirmed == true) {
+        _provider.clearCurrentConversation();
+        GoRouter.of(context).go('/chatbot');
+        setState(() => _initialLoadDone = false);
+      }
+    });
   }
 
   Widget _buildInputArea() {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: ResponsiveValues.modalHeaderPadding(context),
       decoration: BoxDecoration(
         color: AppColors.getCard(context).withValues(alpha: 0.8),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(ResponsiveValues.radiusXXLarge(context)),
+        ),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -480,25 +496,30 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                             ? 'Ask about any subject...'
                             : 'Daily limit reached'),
                     border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 12),
+                      borderRadius: BorderRadius.circular(
+                        ResponsiveValues.radiusLarge(context),
+                      ),
+                    ),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: ResponsiveValues.spacingL(context),
+                      vertical: ResponsiveValues.spacingM(context),
+                    ),
                   ),
                   maxLines: 3,
                   minLines: 1,
                   onSubmitted: (_) => _sendMessage(),
                 ),
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: ResponsiveValues.spacingS(context)),
               if (_isSending)
-                const SizedBox(
-                  width: 48,
-                  height: 48,
+                SizedBox(
+                  width: ResponsiveValues.selectionSheetLeadingSize(context),
+                  height: ResponsiveValues.selectionSheetLeadingSize(context),
                   child: Center(
                     child: SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      width: ResponsiveValues.iconSizeL(context),
+                      height: ResponsiveValues.iconSizeL(context),
+                      child: const CircularProgressIndicator(strokeWidth: 2),
                     ),
                   ),
                 )
@@ -514,14 +535,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                 ),
             ],
           ),
-          if (isOffline && pendingCount > 0)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                '$pendingCount message${pendingCount > 1 ? 's' : ''} queued',
-                style: const TextStyle(color: AppColors.info),
-              ),
-            ),
         ],
       ),
     );
@@ -539,7 +552,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     if (hasMessages) {
       return ListView.builder(
         controller: _scrollController,
-        padding: const EdgeInsets.all(16),
+        padding: ResponsiveValues.modalHeaderPadding(context),
         itemCount: _provider.messages.length,
         itemBuilder: (context, index) {
           final message = _provider.messages[index];
@@ -549,16 +562,18 @@ class _ChatbotScreenState extends State<ChatbotScreen>
             alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
             child: Container(
               margin: EdgeInsets.only(
-                bottom: 8,
-                left: isUser ? 50 : 0,
-                right: isUser ? 0 : 50,
+                bottom: ResponsiveValues.spacingS(context),
+                left: isUser ? ResponsiveValues.spacingXXXXL(context) : 0,
+                right: isUser ? 0 : ResponsiveValues.spacingXXXXL(context),
               ),
-              padding: const EdgeInsets.all(12),
+              padding: ResponsiveValues.cardPadding(context),
               decoration: BoxDecoration(
                 color: isUser
                     ? AppColors.telegramBlue
                     : AppColors.getCard(context),
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(
+                  ResponsiveValues.radiusXLarge(context),
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -567,7 +582,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                     message.content.replaceAll('*', ''),
                     style: isUser ? const TextStyle(color: Colors.white) : null,
                   ),
-                  const SizedBox(height: 4),
+                  SizedBox(height: ResponsiveValues.spacingXXS(context)),
                   Align(
                     alignment: Alignment.bottomRight,
                     child: Text(
@@ -592,7 +607,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     if (!_provider.isLoadingMessages && !hasMessages) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
+          padding: EdgeInsets.symmetric(
+            horizontal: ResponsiveValues.spacingXXXXL(context),
+          ),
           child: AppEmptyState(
             icon: Icons.smart_toy,
             title: 'AI Learning Assistant',
@@ -606,7 +623,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
     return Center(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32),
+        padding: EdgeInsets.symmetric(
+          horizontal: ResponsiveValues.spacingXXXXL(context),
+        ),
         child: AppEmptyState(
           icon: Icons.smart_toy,
           title: 'AI Learning Assistant',
@@ -622,7 +641,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   @override
   Widget buildContent(BuildContext context) {
     return RefreshIndicator(
-      onRefresh: onRefresh,
+      onRefresh: handleRefresh,
       color: AppColors.telegramBlue,
       backgroundColor: AppColors.getSurface(context),
       child: Stack(
@@ -636,51 +655,24 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                   width: ScreenSize.isTablet(context)
                       ? ResponsiveValues.tabletSidebarWidth(context)
                       : ResponsiveValues.desktopSidebarWidth(context),
-                  margin: const EdgeInsets.only(right: 8),
+                  margin: EdgeInsets.only(
+                    right: ResponsiveValues.spacingS(context),
+                  ),
                   child: SlideTransition(
                     position: _slideAnimation,
-                    child: AppCard.glass(child: _buildConversationList()),
+                    child: AppCard.solid(
+                      padding: EdgeInsets.zero,
+                      backgroundColor:
+                          AppColors.getCard(context).withValues(alpha: 0.62),
+                      borderColor: AppColors.getDivider(context)
+                          .withValues(alpha: 0.28),
+                      child: _buildConversationList(),
+                    ),
                   ),
                 ),
               Expanded(child: _buildChatArea()),
             ],
           ),
-          if (isOffline && pendingCount > 0)
-            Positioned(
-              top: 16,
-              left: 16,
-              right: 16,
-              child: Material(
-                color: Colors.transparent,
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        AppColors.info.withValues(alpha: 0.2),
-                        AppColors.info.withValues(alpha: 0.1)
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                        color: AppColors.info.withValues(alpha: 0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.schedule_rounded,
-                          color: AppColors.info, size: 20),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          '$pendingCount offline message${pendingCount > 1 ? 's' : ''}',
-                          style: const TextStyle(color: AppColors.info),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
         ],
       ),
     );
@@ -695,12 +687,18 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           ? Drawer(
               width: ResponsiveValues.mobileDrawerWidth(context),
               backgroundColor: Colors.transparent,
-              child: AppCard.glass(child: _buildConversationList()),
+              child: AppCard.solid(
+                padding: EdgeInsets.zero,
+                backgroundColor:
+                    AppColors.getCard(context).withValues(alpha: 0.62),
+                borderColor:
+                    AppColors.getDivider(context).withValues(alpha: 0.28),
+                child: _buildConversationList(),
+              ),
             )
           : null,
       body: buildScreen(
           content: buildContent(context),
-          showAppBar: true,
           showRefreshIndicator: false), // RefreshIndicator is inside content
       bottomNavigationBar: _buildInputArea(),
     );

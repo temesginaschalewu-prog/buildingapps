@@ -1,25 +1,21 @@
-// lib/screens/settings/tv_pairing_screen.dart
-// ADDED SHIMMER TYPE
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 
 import '../../providers/device_provider.dart';
+import '../../providers/settings_provider.dart';
 import '../../services/snackbar_service.dart';
 import '../../widgets/common/base_screen_mixin.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_text_field.dart';
-import '../../widgets/common/app_shimmer.dart';
 import '../../widgets/common/app_dialog.dart';
-import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/responsive_values.dart';
 import '../../utils/helpers.dart';
+import '../../utils/constants.dart';
 
 class TvPairingScreen extends StatefulWidget {
   const TvPairingScreen({super.key});
@@ -35,17 +31,16 @@ class _TvPairingScreenState extends State<TvPairingScreen>
   bool _isLoading = false;
   String? _errorMessage;
 
-  late AnimationController _pulseAnimationController;
-  late AnimationController _scanAnimationController;
   late DeviceProvider _deviceProvider;
+  late SettingsProvider _settingsProvider;
 
   @override
-  String get screenTitle => 'TV Pairing';
+  String get screenTitle => AppStrings.tvPairing;
 
   @override
   String? get screenSubtitle => isRefreshing
-      ? 'Refreshing...'
-      : (isOffline ? 'Offline mode' : 'Connect your TV');
+      ? AppStrings.refreshing
+      : (isOffline ? AppStrings.offlineMode : AppStrings.connectYourTv);
 
   @override
   bool get isLoading => _isLoading && !_deviceProvider.isInitialized;
@@ -73,37 +68,22 @@ class _TvPairingScreenState extends State<TvPairingScreen>
       );
 
   @override
-  void initState() {
-    super.initState();
-
-    _pulseAnimationController = AnimationController(
-      vsync: this,
-      duration: 1.seconds,
-    )..repeat(reverse: true);
-    _scanAnimationController = AnimationController(
-      vsync: this,
-      duration: 2.seconds,
-    )..repeat();
-  }
-
-  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _deviceProvider = Provider.of<DeviceProvider>(context);
+    _settingsProvider = Provider.of<SettingsProvider>(context);
   }
 
   @override
   void dispose() {
     _codeController.dispose();
-    _pulseAnimationController.dispose();
-    _scanAnimationController.dispose();
     super.dispose();
   }
 
   @override
   Future<void> onRefresh() async {
     if (isOffline) {
-      SnackbarService().showOffline(context, action: 'refresh');
+      SnackbarService().showOffline(context, action: AppStrings.refresh);
       return;
     }
 
@@ -120,8 +100,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
         _isLoading = false;
         _errorMessage = getUserFriendlyErrorMessage(e);
       });
-      SnackbarService().showError(context, 'Failed to refresh');
-      rethrow;
+      SnackbarService().showError(context, AppStrings.refreshFailed);
     }
   }
 
@@ -129,17 +108,17 @@ class _TvPairingScreenState extends State<TvPairingScreen>
     final code = _codeController.text.trim();
 
     if (code.isEmpty) {
-      SnackbarService().showError(context, 'Please enter the pairing code');
+      SnackbarService().showError(context, AppStrings.enterPairingCode);
       return;
     }
 
     if (code.length != 6) {
-      SnackbarService().showError(context, 'Please enter a valid 6-digit code');
+      SnackbarService().showError(context, AppStrings.validSixDigitCode);
       return;
     }
 
     if (isOffline) {
-      SnackbarService().showOffline(context, action: 'pair device');
+      SnackbarService().showOffline(context, action: AppStrings.pairDevice);
       return;
     }
 
@@ -147,14 +126,17 @@ class _TvPairingScreenState extends State<TvPairingScreen>
 
     try {
       await _deviceProvider.verifyTvPairing(code);
-      SnackbarService().showSuccess(context, 'TV device paired successfully');
+      SnackbarService().showSuccess(
+        context,
+        AppStrings.tvDevicePairedSuccessfully,
+      );
       _codeController.clear();
       setState(() => _errorMessage = null);
     } catch (e) {
       setState(() => _errorMessage = getUserFriendlyErrorMessage(e));
       SnackbarService().showError(
         context,
-        'Pairing failed: ${getUserFriendlyErrorMessage(e)}',
+        'Could not pair this TV: ${getUserFriendlyErrorMessage(e)}',
       );
     } finally {
       setState(() => _isVerifying = false);
@@ -163,16 +145,15 @@ class _TvPairingScreenState extends State<TvPairingScreen>
 
   Future<void> _unpairDevice() async {
     if (isOffline) {
-      SnackbarService().showOffline(context, action: 'unpair device');
+      SnackbarService().showOffline(context, action: AppStrings.unpairDevice);
       return;
     }
 
     final confirmed = await AppDialog.confirm(
       context: context,
-      title: 'Unpair TV Device',
-      message:
-          'Are you sure you want to unpair your TV device? You will need to pair it again to stream content.',
-      confirmText: 'Unpair',
+      title: AppStrings.unpairTvDeviceTitle,
+      message: AppStrings.unpairTvDeviceConfirm,
+      confirmText: AppStrings.unlink,
     );
 
     if (confirmed == true) {
@@ -180,41 +161,84 @@ class _TvPairingScreenState extends State<TvPairingScreen>
         await _deviceProvider.unpairTvDevice();
         SnackbarService().showSuccess(
           context,
-          'TV device unpaired successfully',
+          AppStrings.tvDeviceUnpairedSuccessfully,
         );
         setState(() => _errorMessage = null);
       } catch (e) {
         setState(() => _errorMessage = getUserFriendlyErrorMessage(e));
         SnackbarService().showError(
           context,
-          'Unpairing failed: ${getUserFriendlyErrorMessage(e)}',
+          '${AppStrings.unpairingFailed}: ${getUserFriendlyErrorMessage(e)}',
         );
       }
     }
   }
 
   Widget _buildHeader() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Connect Your TV',
-          style: AppTextStyles.displaySmall(
-            context,
-          ).copyWith(fontWeight: FontWeight.w700),
+    return AppCard.glass(
+      child: Padding(
+        padding: ResponsiveValues.cardPadding(context),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              AppStrings.connectYourTv,
+              style: AppTextStyles.headlineSmall(context).copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            SizedBox(height: ResponsiveValues.spacingXS(context)),
+            Text(
+              'Pair one Android TV device to watch your courses on a larger screen.',
+              style: AppTextStyles.bodyMedium(context).copyWith(
+                color: AppColors.getTextSecondary(context),
+                height: 1.45,
+              ),
+            ),
+            SizedBox(height: ResponsiveValues.spacingL(context)),
+            Container(
+              width: double.infinity,
+              padding: EdgeInsets.symmetric(
+                horizontal: ResponsiveValues.spacingM(context),
+                vertical: ResponsiveValues.spacingM(context),
+              ),
+              decoration: BoxDecoration(
+                color: (isOffline
+                        ? AppColors.telegramYellow
+                        : AppColors.telegramBlue)
+                    .withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(
+                  ResponsiveValues.radiusMedium(context),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    isOffline ? Icons.wifi_off_rounded : Icons.tv_rounded,
+                    size: ResponsiveValues.iconSizeS(context),
+                    color: isOffline
+                        ? AppColors.telegramYellow
+                        : AppColors.telegramBlue,
+                  ),
+                  SizedBox(width: ResponsiveValues.spacingM(context)),
+                  Expanded(
+                    child: Text(
+                      isOffline
+                          ? 'TV pairing needs an internet connection, but your saved device status is still shown here.'
+                          : 'Only one TV stays paired at a time for a cleaner viewing setup.',
+                      style: AppTextStyles.bodySmall(context).copyWith(
+                        color: AppColors.getTextSecondary(context),
+                        height: 1.45,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-        SizedBox(height: ResponsiveValues.spacingS(context)),
-        Text(
-          'Stream Family Academy content directly to your Android TV',
-          style: AppTextStyles.bodyLarge(
-            context,
-          ).copyWith(color: AppColors.getTextSecondary(context)),
-        ),
-      ],
-    )
-        .animate()
-        .fadeIn(duration: AppThemes.animationMedium)
-        .slideY(begin: 0.1, end: 0, duration: AppThemes.animationMedium);
+      ),
+    );
   }
 
   Widget _buildPairedDeviceCard(String deviceId) {
@@ -223,62 +247,18 @@ class _TvPairingScreenState extends State<TvPairingScreen>
         padding: ResponsiveValues.dialogPadding(context),
         child: Column(
           children: [
-            Stack(
-              alignment: Alignment.center,
-              children: [
-                AnimatedBuilder(
-                  animation: _scanAnimationController,
-                  builder: (context, child) {
-                    return Transform.rotate(
-                      angle: _scanAnimationController.value * 2 * 3.14159,
-                      child: Container(
-                        width: ResponsiveValues.avatarSizeLarge(context) * 1.5,
-                        height: ResponsiveValues.avatarSizeLarge(context) * 1.5,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: RadialGradient(
-                            colors: [
-                              AppColors.telegramBlue.withValues(alpha: 0.3),
-                              AppColors.telegramBlue.withValues(alpha: 0.1),
-                              Colors.transparent,
-                            ],
-                            stops: const [0.2, 0.5, 1.0],
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                AnimatedBuilder(
-                  animation: _pulseAnimationController,
-                  builder: (context, child) {
-                    return Container(
-                      width: ResponsiveValues.avatarSizeLarge(context) *
-                          (1 + _pulseAnimationController.value * 0.05),
-                      height: ResponsiveValues.avatarSizeLarge(context) *
-                          (1 + _pulseAnimationController.value * 0.05),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            AppColors.telegramBlue.withValues(alpha: 0.2),
-                            AppColors.telegramPurple.withValues(alpha: 0.1),
-                          ],
-                        ),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: AppColors.telegramBlue,
-                          width: 3,
-                        ),
-                      ),
-                      child: Icon(
-                        Icons.tv_rounded,
-                        size: ResponsiveValues.iconSizeXXXL(context),
-                        color: AppColors.telegramBlue,
-                      ),
-                    );
-                  },
-                ),
-              ],
+            Container(
+              width: ResponsiveValues.avatarSizeLarge(context),
+              height: ResponsiveValues.avatarSizeLarge(context),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.telegramBlue.withValues(alpha: 0.12),
+              ),
+              child: Icon(
+                Icons.tv_rounded,
+                size: ResponsiveValues.iconSizeXXXL(context),
+                color: AppColors.telegramBlue,
+              ),
             ),
             SizedBox(height: ResponsiveValues.spacingXL(context)),
             Text(
@@ -314,6 +294,14 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                 ),
               ),
             ),
+            SizedBox(height: ResponsiveValues.spacingS(context)),
+            Text(
+              'Ready to stream on your paired device.',
+              style: AppTextStyles.bodySmall(context).copyWith(
+                color: AppColors.getTextSecondary(context),
+              ),
+              textAlign: TextAlign.center,
+            ),
             SizedBox(height: ResponsiveValues.spacingXL(context)),
             SizedBox(
               width: double.infinity,
@@ -327,11 +315,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
           ],
         ),
       ),
-    ).animate().fadeIn(duration: AppThemes.animationMedium).scale(
-          begin: const Offset(0.95, 0.95),
-          end: const Offset(1, 1),
-          duration: AppThemes.animationMedium,
-        );
+    );
   }
 
   Widget _buildPairingForm() {
@@ -347,12 +331,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                   width: ResponsiveValues.iconSizeXL(context),
                   height: ResponsiveValues.iconSizeXL(context),
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        AppColors.telegramBlue.withValues(alpha: 0.2),
-                        AppColors.telegramPurple.withValues(alpha: 0.1),
-                      ],
-                    ),
+                    color: AppColors.telegramBlue.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
@@ -397,10 +376,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
           ],
         ),
       ),
-    )
-        .animate()
-        .fadeIn(duration: AppThemes.animationMedium)
-        .slideY(begin: 0.1, end: 0, duration: AppThemes.animationMedium);
+    );
   }
 
   Widget _buildInstructionsCard() {
@@ -416,12 +392,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
                   width: ResponsiveValues.iconSizeL(context),
                   height: ResponsiveValues.iconSizeL(context),
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        AppColors.telegramBlue.withValues(alpha: 0.2),
-                        AppColors.telegramPurple.withValues(alpha: 0.1),
-                      ],
-                    ),
+                    color: AppColors.telegramBlue.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
@@ -454,36 +425,40 @@ class _TvPairingScreenState extends State<TvPairingScreen>
               'Enter the code above and tap "Pair Device".',
             ),
             SizedBox(height: ResponsiveValues.spacingL(context)),
-            AppCard.glass(
-              child: Padding(
-                padding: ResponsiveValues.cardPadding(context),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.lightbulb_rounded,
-                      color: AppColors.telegramYellow,
-                      size: ResponsiveValues.iconSizeS(context),
-                    ),
-                    SizedBox(width: ResponsiveValues.spacingM(context)),
-                    Expanded(
-                      child: Text(
-                        'You can only pair one TV device at a time. Unpairing will disconnect the current device.',
-                        style: AppTextStyles.bodySmall(context).copyWith(
-                          color: AppColors.getTextPrimary(context),
-                        ),
+            Container(
+              padding: ResponsiveValues.cardPadding(context),
+              decoration: BoxDecoration(
+                color: AppColors.telegramYellow.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(
+                  ResponsiveValues.radiusMedium(context),
+                ),
+                border: Border.all(
+                  color: AppColors.telegramYellow.withValues(alpha: 0.2),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.lightbulb_rounded,
+                    color: AppColors.telegramYellow,
+                    size: ResponsiveValues.iconSizeS(context),
+                  ),
+                  SizedBox(width: ResponsiveValues.spacingM(context)),
+                  Expanded(
+                    child: Text(
+                      'Your pairing code stays active for ${_settingsProvider.getDevicePairingWindowText()}. Only one TV can stay paired at a time.',
+                      style: AppTextStyles.bodySmall(context).copyWith(
+                        color: AppColors.getTextPrimary(context),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ],
         ),
       ),
-    )
-        .animate()
-        .fadeIn(duration: AppThemes.animationMedium, delay: 100.ms)
-        .slideY(begin: 0.1, end: 0, duration: AppThemes.animationMedium);
+    );
   }
 
   Widget _buildInstructionStep(int number, String text) {
@@ -496,22 +471,18 @@ class _TvPairingScreenState extends State<TvPairingScreen>
             width: ResponsiveValues.iconSizeL(context),
             height: ResponsiveValues.iconSizeL(context),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: AppColors.blueGradient),
+              color: AppColors.telegramBlue.withValues(alpha: 0.12),
               shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.telegramBlue.withValues(alpha: 0.3),
-                  blurRadius: ResponsiveValues.spacingXS(context),
-                  offset: Offset(0, ResponsiveValues.spacingXXS(context)),
-                ),
-              ],
             ),
             child: Center(
               child: Text(
                 number.toString(),
                 style: AppTextStyles.labelMedium(
                   context,
-                ).copyWith(color: Colors.white, fontWeight: FontWeight.w600),
+                ).copyWith(
+                  color: AppColors.telegramBlue,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
           ),
@@ -555,52 +526,9 @@ class _TvPairingScreenState extends State<TvPairingScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (pendingCount > 0)
-              Container(
-                margin: EdgeInsets.only(
-                  bottom: ResponsiveValues.spacingL(context),
-                ),
-                padding: ResponsiveValues.cardPadding(context),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      AppColors.info.withValues(alpha: 0.2),
-                      AppColors.info.withValues(alpha: 0.1),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(
-                    ResponsiveValues.radiusMedium(context),
-                  ),
-                  border: Border.all(
-                    color: AppColors.info.withValues(alpha: 0.3),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.schedule_rounded,
-                      color: AppColors.info,
-                      size: ResponsiveValues.iconSizeS(context),
-                    ),
-                    SizedBox(width: ResponsiveValues.spacingM(context)),
-                    Expanded(
-                      child: Text(
-                        '$pendingCount pending change${pendingCount > 1 ? 's' : ''}',
-                        style: AppTextStyles.bodySmall(
-                          context,
-                        ).copyWith(color: AppColors.info),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             _buildHeader(),
             SizedBox(height: ResponsiveValues.spacingL(context)),
-            if (isOffline && !hasTvDevice)
-              buildOfflineWidget(
-                message: 'You are offline. Please connect to pair a TV device.',
-              )
-            else if (hasTvDevice && tvDeviceId != null)
+            if (hasTvDevice && tvDeviceId != null)
               _buildPairedDeviceCard(tvDeviceId)
             else
               _buildPairingForm(),
@@ -617,8 +545,6 @@ class _TvPairingScreenState extends State<TvPairingScreen>
   Widget build(BuildContext context) {
     return buildScreen(
       content: buildContent(context),
-      showAppBar: true,
-      showRefreshIndicator: false,
     );
   }
 }

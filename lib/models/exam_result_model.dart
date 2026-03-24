@@ -127,8 +127,23 @@ class ExamResult {
   bool get isAbandoned => status == 'abandoned';
   bool get passed => totalQuestions > 0 && score >= passingScore;
 
-  double get percentage =>
-      totalQuestions > 0 ? (correctAnswers / totalQuestions) * 100 : 0;
+  double get percentage {
+    if (score > 0) return score;
+    if (answerDetails != null && answerDetails!.isNotEmpty) {
+      double earned = 0;
+      double possible = 0;
+      for (final item in answerDetails!) {
+        if (item is Map) {
+          earned += Parsers.parseDouble(item['marks_earned']);
+          possible += Parsers.parseDouble(item['marks_possible'], 1);
+        }
+      }
+      if (possible > 0) {
+        return (earned / possible) * 100;
+      }
+    }
+    return totalQuestions > 0 ? (correctAnswers / totalQuestions) * 100 : 0;
+  }
 
   String get formattedTime {
     final minutes = (timeTaken / 60).floor();
@@ -137,11 +152,7 @@ class ExamResult {
   }
 
   String get formattedScore {
-    if (score == 0 && totalQuestions > 0 && correctAnswers > 0) {
-      final calculatedScore = (correctAnswers / totalQuestions) * 100;
-      return '${calculatedScore.toStringAsFixed(1)}%';
-    }
-    return '${score.toStringAsFixed(1)}%';
+    return '${percentage.toStringAsFixed(1)}%';
   }
 
   String get statusDisplay {

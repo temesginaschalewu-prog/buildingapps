@@ -1,6 +1,3 @@
-// lib/utils/ui_helpers.dart
-// PRODUCTION-READY FINAL VERSION
-
 import 'package:familyacademyclient/utils/app_enums.dart';
 import 'package:flutter/material.dart';
 import '../themes/app_colors.dart';

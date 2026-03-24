@@ -13,17 +13,24 @@ class AppBrandLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(borderRadius),
-        color: Colors.white,
+        color: isDark ? AppColors.darkCard : Colors.white,
+        border: Border.all(
+          color: isDark
+              ? AppColors.getDivider(context).withValues(alpha: 0.5)
+              : AppColors.getDivider(context),
+        ),
         boxShadow: [
           BoxShadow(
-            color: AppColors.telegramBlue.withValues(alpha: 0.16),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
@@ -34,12 +41,15 @@ class AppBrandLogo extends StatelessWidget {
           fit: BoxFit.cover,
           errorBuilder: (context, error, stackTrace) {
             return Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(colors: AppColors.blueGradient),
+              decoration: BoxDecoration(
+                color: AppColors.getSurface(context),
               ),
-              child: const Center(
-                child:
-                    Icon(Icons.school_rounded, color: Colors.white, size: 36),
+              child: Center(
+                child: Icon(
+                  Icons.school_rounded,
+                  color: AppColors.getTextSecondary(context),
+                  size: 36,
+                ),
               ),
             );
           },

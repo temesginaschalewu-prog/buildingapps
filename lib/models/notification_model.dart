@@ -93,9 +93,11 @@ class Notification {
   bool get isFailed => deliveryStatus == 'failed';
   bool get isPending => deliveryStatus == 'pending';
 
+  DateTime get primaryTimestamp => deliveredAt ?? sentAt ?? receivedAt;
+
   String get timeAgo {
     final now = DateTime.now();
-    final difference = now.difference(receivedAt);
+    final difference = now.difference(primaryTimestamp);
 
     if (difference.inDays > 365) {
       return '${(difference.inDays / 365).floor()}y ago';

@@ -1,6 +1,3 @@
-// lib/utils/router.dart
-// PRODUCTION-READY FINAL VERSION
-
 import 'package:familyacademyclient/models/exam_model.dart';
 import 'package:familyacademyclient/utils/responsive_values.dart';
 import 'package:flutter/material.dart';
