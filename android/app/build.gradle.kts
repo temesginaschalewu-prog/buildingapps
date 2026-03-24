@@ -10,6 +10,8 @@ android {
     namespace = "com.example.familyacademyclient"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
+    val releaseKeystoreFile = file("keystore.jks")
+    val hasReleaseKeystore = releaseKeystoreFile.exists()
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -38,7 +40,7 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("keystore.jks")
+            storeFile = releaseKeystoreFile
             storePassword = System.getenv("KEYSTORE_PASSWORD") ?: ""
             keyAlias = System.getenv("KEY_ALIAS") ?: ""
             keyPassword = System.getenv("KEY_PASSWORD") ?: ""
@@ -52,7 +54,12 @@ android {
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig =
+                if (hasReleaseKeystore) {
+                    signingConfigs.getByName("release")
+                } else {
+                    signingConfigs.getByName("debug")
+                }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
