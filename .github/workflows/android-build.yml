@@ -60,12 +60,12 @@ jobs:
 
       - name: Create debug keystore for CI fallback signing
         run: |
-          mkdir -p ~/.android
-          if [ ! -f ~/.android/debug.keystore ]; then
+          mkdir -p ~/.android ~/.config/.android
+          if [ ! -f ~/.config/.android/debug.keystore ]; then
             keytool -genkeypair \
               -v \
               -storetype PKCS12 \
-              -keystore ~/.android/debug.keystore \
+              -keystore ~/.config/.android/debug.keystore \
               -storepass android \
               -keypass android \
               -alias androiddebugkey \
@@ -74,6 +74,7 @@ jobs:
               -validity 10000 \
               -dname "CN=Android Debug,O=Android,C=US"
           fi
+          cp ~/.config/.android/debug.keystore ~/.android/debug.keystore
 
       - name: Build Android APK
         run: flutter build apk --release
