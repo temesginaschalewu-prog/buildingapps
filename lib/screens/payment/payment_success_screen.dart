@@ -376,9 +376,10 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
             ),
             SizedBox(height: ResponsiveValues.spacingM(context)),
             _buildDetailRow(
-              icon: Icons.attach_money_rounded,
+              icon: Icons.payments_rounded,
               label: AppStrings.amount,
-              value: '${_amount.toStringAsFixed(0)} ETB',
+              value:
+                  '${_amount.toStringAsFixed(0)} ${AppStrings.currencyLabel}',
             ),
             if (_paymentMethodName.isNotEmpty) ...[
               SizedBox(height: ResponsiveValues.spacingM(context)),

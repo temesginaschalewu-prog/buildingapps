@@ -379,7 +379,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                               icon: Icons.payments_rounded,
                               label: AppStrings.price,
                               value:
-                                  '${subscription.price!.toStringAsFixed(0)} ETB',
+                                  '${subscription.price!.toStringAsFixed(0)} ${AppStrings.currencyLabel}',
                               valueColor: AppColors.telegramBlue,
                             ),
                           ],

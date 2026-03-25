@@ -766,7 +766,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                       ),
                     ),
                     Text(
-                      AppStrings.etb,
+                      AppStrings.currencyLabel,
                       style: AppTextStyles.labelMedium(context).copyWith(
                         color: AppColors.getTextSecondary(context),
                       ),

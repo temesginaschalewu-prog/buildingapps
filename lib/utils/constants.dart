@@ -1023,7 +1023,8 @@ class AppStrings {
   static const String accessOneMonth = 'You will get access for 1 month';
   static const String notAvailable = 'N/A';
   static const String unknown = 'Unknown';
-  static const String etb = 'ETB';
+  static const String currencyCode = 'ETB';
+  static const String currencyLabel = 'Birr';
   static const String uploadPaymentProof = 'Please upload payment proof';
   static const String failedToUploadProof = 'Failed to upload payment proof';
   static const String paymentSubmitted = 'Payment submitted successfully!';
