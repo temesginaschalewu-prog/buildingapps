@@ -42,8 +42,8 @@ class SubscriptionProvider extends ChangeNotifier
 
   int _apiCallCount = 0;
 
-  late StreamController<Map<int, bool>> _subscriptionUpdateController;
-  late StreamController<List<Subscription>> _subscriptionsUpdateController;
+  final StreamController<Map<int, bool>> _subscriptionUpdateController;
+  final StreamController<List<Subscription>> _subscriptionsUpdateController;
 
   final Map<int, Completer<bool>> _categoryCheckCompleters = {};
   static const Duration _categoryCheckTimeout = Duration(seconds: 10);
@@ -1268,13 +1268,6 @@ class SubscriptionProvider extends ChangeNotifier
     _categoryCheckCompleters.clear();
     _lastBackgroundRefresh = null;
     _lastBatchCheck = null;
-
-    await _subscriptionUpdateController.close();
-    await _subscriptionsUpdateController.close();
-    _subscriptionUpdateController =
-        StreamController<Map<int, bool>>.broadcast();
-    _subscriptionsUpdateController =
-        StreamController<List<Subscription>>.broadcast();
     _subscriptionUpdateController.add({});
     _subscriptionsUpdateController.add([]);
 
