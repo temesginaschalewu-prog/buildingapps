@@ -753,12 +753,37 @@ class ApiService {
           data: Map<String, dynamic>.from(data),
         );
       } else {
+        Map<String, dynamic>? errorPayload;
+        String? action;
+
+        if (response.data is Map) {
+          final normalizedResponse =
+              Map<String, dynamic>.from(response.data as Map);
+          final errors = normalizedResponse['errors'];
+
+          if (errors is Map) {
+            errorPayload = Map<String, dynamic>.from(errors);
+            action = errors['action']?.toString();
+          } else if (normalizedResponse['data'] is Map) {
+            errorPayload = Map<String, dynamic>.from(
+              normalizedResponse['data'] as Map,
+            );
+            action = normalizedResponse['action']?.toString() ??
+                errorPayload['action']?.toString();
+          } else {
+            action = normalizedResponse['action']?.toString();
+          }
+        }
+
         return ApiResponse<Map<String, dynamic>>(
           success: false,
           message: _extractApiErrorMessage(
             response.data,
             'Login failed',
           ),
+          statusCode: response.statusCode,
+          data: errorPayload,
+          error: action != null ? {'action': action} : null,
         );
       }
     } on DioException catch (e) {
@@ -783,14 +808,16 @@ class ApiService {
       final responseData = e.response?.data;
       Map<String, dynamic>? errorPayload;
       String? action;
-      if (responseData is Map<String, dynamic>) {
-        final errors = responseData['errors'];
+      if (responseData is Map) {
+        final normalizedResponse = Map<String, dynamic>.from(responseData);
+        final errors = normalizedResponse['errors'];
         if (errors is Map) {
           errorPayload = Map<String, dynamic>.from(errors);
           action = errors['action']?.toString();
-        } else if (responseData['data'] is Map) {
+        } else if (normalizedResponse['data'] is Map) {
           errorPayload = Map<String, dynamic>.from(
-              responseData['data'] as Map<String, dynamic>);
+            normalizedResponse['data'] as Map,
+          );
           action = errorPayload['action']?.toString();
         }
       }

@@ -68,6 +68,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
   bool _isOffline = false;
   bool _isRefreshing = false;
   bool _isLoading = true;
+  bool _initialLoadSettled = false;
   int _pendingCount = 0;
 
   bool _chaptersLoaded = false;
@@ -134,6 +135,12 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
       }
     } else {
       await _loadFreshData();
+    }
+
+    if (!_isDisposed && mounted) {
+      setState(() => _initialLoadSettled = true);
+    } else {
+      _initialLoadSettled = true;
     }
   }
 
@@ -1097,7 +1104,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         _course != null ? examProvider.getExamsByCourse(_course!.id) : <Exam>[];
 
     // ✅ CRITICAL: Only show shimmer if loading AND no cached data
-    if (_isLoading && !_hasCachedData) {
+    if (!_initialLoadSettled || (_isLoading && !_hasCachedData)) {
       return _buildSkeletonLoader();
     }
 

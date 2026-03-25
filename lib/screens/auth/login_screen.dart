@@ -179,7 +179,7 @@ class _LoginScreenState extends State<LoginScreen>
           'data': result['data'],
         };
 
-        await context.push('/device-change', extra: deviceChangeData);
+        context.go('/device-change', extra: deviceChangeData);
       } else {
         SnackbarService()
             .showError(context, result['message'] ?? AppStrings.loginFailed);

@@ -514,7 +514,6 @@ class CategoryProvider extends ChangeNotifier
   @override
   void dispose() {
     _categoriesUpdateController.close();
-    _categoriesBox?.close();
     disposeSubscriptions();
     super.dispose();
   }

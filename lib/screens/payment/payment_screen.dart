@@ -57,6 +57,7 @@ class _PaymentScreenState extends State<PaymentScreen>
   int _monthsToAdd = 1;
 
   bool _initialized = false;
+  bool _queuedFallbackTriggered = false;
   bool _settingsLoadAttempted = false;
   List<PaymentMethod> _cachedMethods = [];
   String? _currentUserId;
@@ -1030,6 +1031,7 @@ class _PaymentScreenState extends State<PaymentScreen>
 
     setState(() {
       _isSubmittingPayment = true;
+      _queuedFallbackTriggered = false;
       _submitStatusMessage = isOffline
           ? 'Saving your payment for sync'
           : 'Uploading your payment proof';
@@ -1087,6 +1089,7 @@ class _PaymentScreenState extends State<PaymentScreen>
           );
 
           if (isMounted) {
+            _queuedFallbackTriggered = true;
             await context.push('/payment-success', extra: {
               'category': _category,
               'category_id': _category!.id,
@@ -1122,6 +1125,7 @@ class _PaymentScreenState extends State<PaymentScreen>
         );
 
         if (isMounted) {
+          _queuedFallbackTriggered = true;
           await context.push('/payment-success', extra: {
             'category': _category,
             'category_id': _category!.id,
@@ -1209,7 +1213,22 @@ class _PaymentScreenState extends State<PaymentScreen>
             'You already have a pending payment for this category.',
           );
           if (isMounted) {
-            context.pop();
+            await context.push('/payment-success', extra: {
+              'category': _category,
+              'category_id': _category!.id,
+              'category_name': _category!.name,
+              'payment_type': _paymentType,
+              'payment_method': paymentMethod,
+              'payment_method_name': _selectedPaymentMethod!.name,
+              'amount': _amount,
+              'billing_cycle': _billingCycle,
+              'months': _monthsToAdd,
+              'duration_text': _getAccessDurationText(),
+              'username': _username,
+              'account_holder_name':
+                  accountHolderName.isNotEmpty ? accountHolderName : null,
+              'timestamp': DateTime.now().toIso8601String(),
+            });
           }
         } else {
           SnackbarService().showError(context, message);
@@ -1218,8 +1237,15 @@ class _PaymentScreenState extends State<PaymentScreen>
     } catch (e) {
       debugLog('PaymentScreen', 'Payment error: $e');
 
-      // ✅ On any error, try to queue offline as fallback
-      if (!isOffline) {
+      final errorText = e.toString().toLowerCase();
+      final shouldQueueAsOfflineFallback = !isOffline &&
+          !_queuedFallbackTriggered &&
+          (errorText.contains('timeout') ||
+              errorText.contains('socket') ||
+              errorText.contains('connection') ||
+              errorText.contains('network'));
+
+      if (shouldQueueAsOfflineFallback) {
         SnackbarService().showInfo(
           context,
           'Network issue detected. Saving payment for later sync...',
@@ -1256,8 +1282,10 @@ class _PaymentScreenState extends State<PaymentScreen>
       }
 
       if (isMounted) {
-        SnackbarService()
-            .showError(context, '${AppStrings.paymentFailed}: ${e.toString()}');
+        SnackbarService().showError(
+          context,
+          'We could not finish your payment just now. Please try again in a moment.',
+        );
       }
     } finally {
       if (isMounted) {

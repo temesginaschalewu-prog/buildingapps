@@ -1285,7 +1285,6 @@ class SubscriptionProvider extends ChangeNotifier
   void dispose() {
     _subscriptionUpdateController.close();
     _subscriptionsUpdateController.close();
-    _subscriptionsBox?.close();
     _categoryCheckCompleters.clear();
     _pendingRequests.clear();
     disposeSubscriptions();
