@@ -297,6 +297,15 @@ class NotificationService {
     }
   }
 
+  Future<void> _clearFcmTokenFromBackend() async {
+    try {
+      if (_apiService == null) return;
+      await _apiService!.updateFcmToken(null);
+    } catch (e) {
+      debugLog('NotificationService', 'Error clearing token from backend: $e');
+    }
+  }
+
   Future<Map<String, dynamic>> getDiagnostics() async {
     final prefs = await SharedPreferences.getInstance();
     final cachedToken = prefs.getString(AppConstants.fcmTokenCacheKey);
@@ -572,6 +581,56 @@ class NotificationService {
   Future<void> setNotificationsEnabled(bool enabled) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(AppConstants.notificationsEnabledKey, enabled);
+
+    if (enabled) {
+      if ((PlatformHelper.isAndroid ||
+              PlatformHelper.isIOS ||
+              PlatformHelper.isMacOS) &&
+          _firebaseMessaging != null) {
+        try {
+          await _firebaseMessaging!.setAutoInitEnabled(true);
+          _fcmToken ??= await _firebaseMessaging!.getToken();
+          if (_fcmToken != null && _fcmToken!.isNotEmpty) {
+            await _saveFCMToken(_fcmToken!);
+            await sendFcmTokenToBackendIfAuthenticated();
+          }
+        } catch (e) {
+          debugLog('NotificationService', 'Error enabling notifications: $e');
+        }
+      }
+      return;
+    }
+
+    try {
+      await _localNotifications.cancelAll();
+    } catch (e) {
+      debugLog('NotificationService', 'Error cancelling local notifications: $e');
+    }
+
+    if (PlatformHelper.isAndroid ||
+        PlatformHelper.isIOS ||
+        PlatformHelper.isMacOS) {
+      try {
+        await _firebaseMessaging?.setAutoInitEnabled(false);
+        await _firebaseMessaging?.deleteToken();
+      } catch (e) {
+        debugLog('NotificationService', 'Error deleting FCM token: $e');
+      }
+    }
+
+    _fcmToken = null;
+
+    try {
+      await prefs.remove(AppConstants.fcmTokenCacheKey);
+      await prefs.remove('pending_fcm_token');
+      if (_notificationBox != null) {
+        await _notificationBox!.delete('fcm_token');
+      }
+    } catch (e) {
+      debugLog('NotificationService', 'Error clearing cached token: $e');
+    }
+
+    await _clearFcmTokenFromBackend();
   }
 
   // Get cached notifications from Hive

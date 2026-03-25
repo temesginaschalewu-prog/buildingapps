@@ -869,7 +869,7 @@ class ApiService {
     }
   }
 
-  Future<ApiResponse<void>> updateFcmToken(String fcmToken) async {
+  Future<ApiResponse<void>> updateFcmToken(String? fcmToken) async {
     try {
       final response = await _dio
           .put('$_apiPrefix/users/fcm-token', data: {'fcm_token': fcmToken});

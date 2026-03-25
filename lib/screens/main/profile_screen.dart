@@ -218,9 +218,8 @@ class _ProfileScreenState extends State<ProfileScreen>
   // ✅ FIXED: Get storage service from AuthProvider via Provider
   Future<void> _toggleNotifications(bool value) async {
     try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final storageService = authProvider.storageService;
-      await storageService.saveNotificationPreferences(value);
+      final notificationService = NotificationService();
+      await notificationService.setNotificationsEnabled(value);
       if (!isMounted) return;
 
       setState(() => _notificationsEnabled = value);
