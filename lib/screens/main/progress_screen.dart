@@ -378,8 +378,9 @@ class _ProgressScreenState extends State<ProgressScreen>
 
   Widget _buildStatsSection({
     required int streakCount,
-    required int chaptersCompleted,
-    required double totalAccuracy,
+    required int chaptersStarted,
+    required double averageVideoProgress,
+    required double studyTimeHours,
   }) {
     if (isLoading && !hasCachedData) {
       return AppCard.stats(
@@ -387,7 +388,7 @@ class _ProgressScreenState extends State<ProgressScreen>
           alignment: WrapAlignment.spaceEvenly,
           runSpacing: ResponsiveValues.spacingL(context),
           spacing: ResponsiveValues.spacingL(context),
-          children: List.generate(3, (index) => _buildStatShimmer()),
+          children: List.generate(4, (index) => _buildStatShimmer()),
         ),
       );
     }
@@ -405,20 +406,26 @@ class _ProgressScreenState extends State<ProgressScreen>
             icon: Icons.local_fire_department_rounded,
           ),
           _buildStatCircle(
-            value: chaptersCompleted.toString(),
-            label: AppStrings.chapters,
+            value: chaptersStarted.toString(),
+            label: 'Started',
             color: AppColors.telegramGreen,
-            icon: Icons.book_rounded,
+            icon: Icons.play_circle_rounded,
           ),
           _buildStatCircle(
-            value: '${totalAccuracy.toStringAsFixed(0)}%',
-            label: AppStrings.accuracy,
-            color: totalAccuracy >= 70
+            value: '${averageVideoProgress.toStringAsFixed(0)}%',
+            label: 'Video progress',
+            color: averageVideoProgress >= 70
                 ? AppColors.telegramGreen
-                : totalAccuracy >= 40
+                : averageVideoProgress >= 40
                     ? AppColors.telegramYellow
                     : AppColors.telegramRed,
-            icon: Icons.auto_graph_rounded,
+            icon: Icons.ondemand_video_rounded,
+          ),
+          _buildStatCircle(
+            value: studyTimeHours.toStringAsFixed(1),
+            label: AppStrings.hours,
+            color: AppColors.telegramPurple,
+            icon: Icons.timer_rounded,
           ),
         ],
       ),
@@ -460,9 +467,16 @@ class _ProgressScreenState extends State<ProgressScreen>
     required int chaptersCompleted,
     required double totalAccuracy,
     required double studyTimeHours,
+    required int notesViewed,
+    required int questionsAttempted,
+    required double averageVideoProgress,
+    required int totalAvailableChapters,
   }) {
     final completedPercentage = totalChaptersAttempted > 0
         ? (chaptersCompleted / totalChaptersAttempted * 100.0).clamp(0, 100)
+        : 0.0;
+    final overallCompletion = totalAvailableChapters > 0
+        ? (chaptersCompleted / totalAvailableChapters * 100.0).clamp(0, 100)
         : 0.0;
 
     if (isLoading && !hasCachedData) {
@@ -510,17 +524,41 @@ class _ProgressScreenState extends State<ProgressScreen>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildSectionHeader(
-          title: AppStrings.progressOverview,
+          title: 'Learning Snapshot',
           description:
-              'A quick view of how steadily you are learning across chapters, questions, and study time.',
+              'This view separates work you started from work you fully finished, so partial study does not look empty.',
         ),
         AppCard.solid(
           child: Padding(
             padding: ResponsiveValues.cardPadding(context),
             child: Column(
               children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildMiniOverviewCard(
+                        title: 'Started chapters',
+                        value: '$totalChaptersAttempted',
+                        subtitle: '$chaptersCompleted completed',
+                        icon: Icons.menu_book_rounded,
+                        color: AppColors.telegramBlue,
+                      ),
+                    ),
+                    SizedBox(width: ResponsiveValues.spacingM(context)),
+                    Expanded(
+                      child: _buildMiniOverviewCard(
+                        title: 'Learning actions',
+                        value: '${notesViewed + questionsAttempted}',
+                        subtitle: '$notesViewed notes, $questionsAttempted practice',
+                        icon: Icons.auto_stories_rounded,
+                        color: AppColors.telegramGreen,
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: ResponsiveValues.spacingXL(context)),
                 _buildProgressItem(
-                  title: AppStrings.chapterCompletion,
+                  title: 'Completion inside started chapters',
                   value: '$chaptersCompleted/$totalChaptersAttempted',
                   percentage: completedPercentage.toDouble(),
                   color: completedPercentage >= 80
@@ -531,7 +569,18 @@ class _ProgressScreenState extends State<ProgressScreen>
                 ),
                 SizedBox(height: ResponsiveValues.spacingXL(context)),
                 _buildProgressItem(
-                  title: AppStrings.questionAccuracy,
+                  title: 'Overall course completion',
+                  value: '$chaptersCompleted/$totalAvailableChapters chapters completed',
+                  percentage: overallCompletion.toDouble(),
+                  color: overallCompletion >= 80
+                      ? AppColors.telegramGreen
+                      : overallCompletion >= 40
+                          ? AppColors.telegramBlue
+                          : AppColors.telegramYellow,
+                ),
+                SizedBox(height: ResponsiveValues.spacingXL(context)),
+                _buildProgressItem(
+                  title: 'Question accuracy',
                   value:
                       '${totalAccuracy.toStringAsFixed(1)}% ${AppStrings.correct}',
                   percentage: totalAccuracy.toDouble(),
@@ -545,46 +594,23 @@ class _ProgressScreenState extends State<ProgressScreen>
                 Row(
                   children: [
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            AppStrings.studyTime,
-                            style: AppTextStyles.titleSmall(context)
-                                .copyWith(fontWeight: FontWeight.w600),
-                          ),
-                          SizedBox(height: ResponsiveValues.spacingXS(context)),
-                          Text(
+                      child: _buildMiniOverviewCard(
+                        title: AppStrings.studyTime,
+                        value:
                             '${studyTimeHours.toStringAsFixed(1)} ${AppStrings.hours}',
-                            style: AppTextStyles.bodyMedium(context).copyWith(
-                              color: AppColors.getTextSecondary(context),
-                            ),
-                          ),
-                        ],
+                        subtitle: 'Estimated from your saved video progress',
+                        icon: Icons.timer_rounded,
+                        color: AppColors.telegramPurple,
                       ),
                     ),
-                    Container(
-                      width:
-                          ResponsiveValues.featureCardIconContainerSize(
-                              context),
-                      height:
-                          ResponsiveValues.featureCardIconContainerSize(
-                              context),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF2C7FB4).withValues(alpha: 0.14),
-                        border: Border.all(
-                          color:
-                              const Color(0xFF2C7FB4).withValues(alpha: 0.18),
-                        ),
-                        borderRadius: BorderRadius.circular(
-                            ResponsiveValues.radiusMedium(context)),
-                      ),
-                      child: Center(
-                        child: Icon(
-                          Icons.timer_rounded,
-                          size: ResponsiveValues.iconSizeL(context),
-                          color: Colors.white,
-                        ),
+                    SizedBox(width: ResponsiveValues.spacingM(context)),
+                    Expanded(
+                      child: _buildMiniOverviewCard(
+                        title: 'Average video progress',
+                        value: '${averageVideoProgress.toStringAsFixed(0)}%',
+                        subtitle: 'Across chapters you already opened',
+                        icon: Icons.bar_chart_rounded,
+                        color: AppColors.telegramBlue,
                       ),
                     ),
                   ],
@@ -594,6 +620,52 @@ class _ProgressScreenState extends State<ProgressScreen>
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildMiniOverviewCard({
+    required String title,
+    required String value,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: ResponsiveValues.cardPadding(context),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+        border: Border.all(color: color.withValues(alpha: 0.12)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: ResponsiveValues.iconSizeS(context), color: color),
+          SizedBox(height: ResponsiveValues.spacingS(context)),
+          Text(
+            title,
+            style: AppTextStyles.labelSmall(context).copyWith(
+              color: AppColors.getTextSecondary(context),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          SizedBox(height: ResponsiveValues.spacingXXS(context)),
+          Text(
+            value,
+            style: AppTextStyles.titleSmall(context)
+                .copyWith(fontWeight: FontWeight.w700),
+          ),
+          SizedBox(height: ResponsiveValues.spacingXXS(context)),
+          Text(
+            subtitle,
+            style: AppTextStyles.bodySmall(context).copyWith(
+              color: AppColors.getTextSecondary(context),
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -967,6 +1039,10 @@ class _ProgressScreenState extends State<ProgressScreen>
         statsData is Map ? Map<String, dynamic>.from(statsData) : {};
 
     final videosCompleted = stats['videos_completed'] ?? 0;
+    final averageVideoProgress =
+        (stats['average_video_progress'] ?? 0).toDouble();
+    final chaptersStarted = stats['total_chapters_attempted'] ?? 0;
+    final chaptersCompleted = stats['chapters_completed'] ?? 0;
     final notesViewed = stats['total_notes_viewed'] ?? 0;
     final questionsAttempted = stats['total_questions_attempted'] ?? 0;
     final examsTaken = stats['exams_taken'] ?? 0;
@@ -1019,9 +1095,9 @@ class _ProgressScreenState extends State<ProgressScreen>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildSectionHeader(
-          title: AppStrings.learningMetrics,
+          title: 'Activity Details',
           description:
-              'Your broader learning activity across videos, notes, questions, and exams.',
+              'These numbers show started work, finished work, and activity totals separately.',
         ),
         AppCard.solid(
           child: Padding(
@@ -1029,14 +1105,28 @@ class _ProgressScreenState extends State<ProgressScreen>
             child: Column(
               children: [
                 metric(
-                  AppStrings.overallCompletion,
-                  '$overallCompletion%',
-                  Icons.track_changes_rounded,
+                  'Started chapters',
+                  '$chaptersStarted',
+                  Icons.menu_book_rounded,
                   AppColors.telegramBlue,
                 ),
                 SizedBox(height: ResponsiveValues.spacingS(context)),
                 metric(
-                  AppStrings.videosCompleted,
+                  'Completed chapters',
+                  '$chaptersCompleted',
+                  Icons.task_alt_rounded,
+                  AppColors.telegramGreen,
+                ),
+                SizedBox(height: ResponsiveValues.spacingS(context)),
+                metric(
+                  'Average video progress',
+                  '${averageVideoProgress.toStringAsFixed(0)}%',
+                  Icons.bar_chart_rounded,
+                  AppColors.telegramBlue,
+                ),
+                SizedBox(height: ResponsiveValues.spacingS(context)),
+                metric(
+                  'Fully watched chapters',
                   '$videosCompleted',
                   Icons.ondemand_video_rounded,
                   AppColors.telegramPurple,
@@ -1050,10 +1140,17 @@ class _ProgressScreenState extends State<ProgressScreen>
                 ),
                 SizedBox(height: ResponsiveValues.spacingS(context)),
                 metric(
-                  AppStrings.questionsAttempted,
+                  'Practice checked',
                   '$questionsAttempted',
                   Icons.quiz_rounded,
                   AppColors.telegramYellow,
+                ),
+                SizedBox(height: ResponsiveValues.spacingS(context)),
+                metric(
+                  'Course completion',
+                  '$overallCompletion%',
+                  Icons.track_changes_rounded,
+                  AppColors.telegramBlue,
                 ),
                 SizedBox(height: ResponsiveValues.spacingS(context)),
                 metric(
@@ -1171,6 +1268,11 @@ class _ProgressScreenState extends State<ProgressScreen>
     final totalChaptersAttempted = stats['total_chapters_attempted'] ?? 0;
     final totalAccuracy = stats['accuracy_percentage']?.toDouble() ?? 0.0;
     final studyTimeHours = stats['study_time_hours']?.toDouble() ?? 0.0;
+    final notesViewed = stats['total_notes_viewed'] ?? 0;
+    final questionsAttempted = stats['total_questions_attempted'] ?? 0;
+    final averageVideoProgress =
+        stats['average_video_progress']?.toDouble() ?? 0.0;
+    final totalAvailableChapters = stats['total_available_chapters'] ?? 0;
     final streakCount = _streakProvider.streak?.currentStreak ??
         _authProvider.currentUser?.streakCount ??
         0;
@@ -1198,8 +1300,9 @@ class _ProgressScreenState extends State<ProgressScreen>
               SizedBox(height: ResponsiveValues.spacingL(context)),
               _buildStatsSection(
                 streakCount: streakCount,
-                chaptersCompleted: chaptersCompleted,
-                totalAccuracy: totalAccuracy,
+                chaptersStarted: totalChaptersAttempted,
+                averageVideoProgress: averageVideoProgress,
+                studyTimeHours: studyTimeHours,
               ),
               SizedBox(height: ResponsiveValues.spacingXL(context)),
               _buildOverviewSection(
@@ -1207,6 +1310,10 @@ class _ProgressScreenState extends State<ProgressScreen>
                 chaptersCompleted: chaptersCompleted,
                 totalAccuracy: totalAccuracy,
                 studyTimeHours: studyTimeHours,
+                notesViewed: notesViewed,
+                questionsAttempted: questionsAttempted,
+                averageVideoProgress: averageVideoProgress,
+                totalAvailableChapters: totalAvailableChapters,
               ),
               SizedBox(height: ResponsiveValues.spacingXL(context)),
               _buildExamPerformanceSection(),

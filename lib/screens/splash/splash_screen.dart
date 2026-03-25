@@ -78,8 +78,7 @@ class _SplashScreenState extends State<SplashScreen>
     // Set a timeout timer to prevent infinite waiting
     _timeoutTimer = Timer(_initTimeout, () {
       if (mounted && !_initializationComplete && !_navigated) {
-        debugLog(
-            'SplashScreen', 'Initialization timeout - proceeding anyway');
+        debugLog('SplashScreen', 'Initialization timeout - proceeding anyway');
         _proceedToNextScreen();
       }
     });
@@ -228,9 +227,8 @@ class _SplashScreenState extends State<SplashScreen>
                           child: Transform.scale(
                             scale: _logoScaleAnimation.value,
                             child: AppBrandLogo(
-                              size:
-                                  ResponsiveValues.splashLogoSize(context) *
-                                      0.82,
+                              size: ResponsiveValues.splashLogoSize(context) *
+                                  0.82,
                               borderRadius:
                                   ResponsiveValues.radiusXLarge(context),
                             ),
@@ -238,77 +236,71 @@ class _SplashScreenState extends State<SplashScreen>
                         );
                       },
                     ),
-                      SizedBox(height: ResponsiveValues.spacingSplash(context)),
-                      SlideTransition(
-                        position: _textSlideAnimation,
-                        child: FadeTransition(
-                          opacity: _textOpacityAnimation,
-                          child: Column(
-                            children: [
-                              Text(
-                                'Family Academy',
-                                style: AppTextStyles.displaySmall(context)
-                                    .copyWith(fontWeight: FontWeight.w700),
-                              ),
-                              SizedBox(
-                                  height: ResponsiveValues.spacingL(context)),
-                              Text(
-                                'Education, progress, and learning sync in one place.',
-                                style: AppTextStyles.bodyLarge(context).copyWith(
-                                  color: AppColors.getTextSecondary(context),
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      SizedBox(height: ResponsiveValues.spacingXXL(context)),
-                      if (_hasError)
-                        Column(
+                    SizedBox(height: ResponsiveValues.spacingSplash(context)),
+                    SlideTransition(
+                      position: _textSlideAnimation,
+                      child: FadeTransition(
+                        opacity: _textOpacityAnimation,
+                        child: Column(
                           children: [
                             Text(
-                              _errorMessage ?? 'Error',
-                              style: AppTextStyles.bodyMedium(context).copyWith(
-                                color: AppColors.telegramRed,
+                              'Family Academy',
+                              style: AppTextStyles.displaySmall(context)
+                                  .copyWith(fontWeight: FontWeight.w700),
+                            ),
+                            SizedBox(
+                                height: ResponsiveValues.spacingL(context)),
+                            Text(
+                              'Education, progress, and learning sync in one place.',
+                              style: AppTextStyles.bodyLarge(context).copyWith(
+                                color: AppColors.getTextSecondary(context),
                               ),
                               textAlign: TextAlign.center,
                             ),
-                            SizedBox(height: ResponsiveValues.spacingM(context)),
-                            AppButton.primary(
-                              label: 'Retry',
-                              onPressed: () {
-                                setState(() {
-                                  _hasError = false;
-                                  _navigated = false;
-                                });
-                                _initializeApp();
-                              },
-                            ),
-                          ],
-                        )
-                      else
-                        Column(
-                          children: [
-                            const SizedBox(
-                              width: 40,
-                              height: 40,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 3,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  AppColors.telegramBlue,
-                                ),
-                              ),
-                            ),
-                            SizedBox(height: ResponsiveValues.spacingL(context)),
-                            Text(
-                              'Preparing your workspace',
-                              style: AppTextStyles.bodyMedium(context).copyWith(
-                                color: AppColors.getTextSecondary(context),
-                              ),
-                            ),
                           ],
                         ),
+                      ),
+                    ),
+                    SizedBox(height: ResponsiveValues.spacingXXL(context)),
+                    if (_hasError)
+                      Column(
+                        children: [
+                          Text(
+                            _errorMessage ?? 'Error',
+                            style: AppTextStyles.bodyMedium(context).copyWith(
+                              color: AppColors.telegramRed,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          SizedBox(height: ResponsiveValues.spacingM(context)),
+                          AppButton.primary(
+                            label: 'Retry',
+                            onPressed: () {
+                              setState(() {
+                                _hasError = false;
+                                _navigated = false;
+                              });
+                              _initializeApp();
+                            },
+                          ),
+                        ],
+                      )
+                    else
+                      Column(
+                        children: [
+                          const SizedBox(
+                            width: 40,
+                            height: 40,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 3,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                AppColors.telegramBlue,
+                              ),
+                            ),
+                          ),
+                          SizedBox(height: ResponsiveValues.spacingM(context)),
+                        ],
+                      ),
                   ],
                 ),
               ),
