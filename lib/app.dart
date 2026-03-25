@@ -221,6 +221,10 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
       case AppLifecycleState.resumed:
         _isAppInForeground = true;
         ScreenProtectionService.enableOnResume();
+        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+        if (authProvider.isAuthenticated) {
+          unawaited(authProvider.checkSession());
+        }
         unawaited(_refreshAllData());
         if (_overlayReady) {
           unawaited(_syncPendingActions());
@@ -304,9 +308,12 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
         content: Text(message),
         actions: [
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.of(context).pop();
               if (mounted) {
+                final authProvider =
+                    Provider.of<AuthProvider>(context, listen: false);
+                await authProvider.logout(manual: false);
                 GoRouter.of(context).go('/auth/login');
               }
             },

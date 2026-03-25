@@ -123,6 +123,8 @@ class AuthProvider extends ChangeNotifier
     _executeLogoutCallbacks();
 
     final userId = await getCurrentUserId();
+    await UserSession().prepareForLogout();
+
     if (userId != null) {
       await hiveService.clearUserData(userId);
       await deviceService.clearUserData(userId);
@@ -131,8 +133,10 @@ class AuthProvider extends ChangeNotifier
       // await connectivityService.clearUserQueue(userId ?? '');
     }
 
+    await storageService.clearUser();
     await deviceService.clearCurrentUserId();
     await storageService.clearTokens();
+    await UserSession().completeLogout();
 
     _currentUser = null;
     _isAuthenticated = false;
