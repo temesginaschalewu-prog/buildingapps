@@ -436,11 +436,11 @@ class ProgressProvider extends ChangeNotifier
     );
   }
 
-  Future<void> _syncLocalOverallStats() async {
-    final existingStats = _convertToMapString(_overallStats['stats']);
+  Map<String, dynamic> _buildDerivedLocalStats(
+    Map<String, dynamic> existingStats,
+  ) {
     final totalAvailableChapters =
         Parsers.parseInt(existingStats['total_available_chapters']);
-    final totalStudyHours = Parsers.parseDouble(existingStats['study_time_hours']);
     final streakCount = Parsers.parseInt(existingStats['streak_count']);
     final lastStreakDate = existingStats['last_streak_date'];
     final examsTaken = Parsers.parseInt(existingStats['exams_taken']);
@@ -471,36 +471,109 @@ class ProgressProvider extends ChangeNotifier
     final accuracyPercentage = totalQuestionsAttempted > 0
         ? (totalQuestionsCorrect / totalQuestionsAttempted) * 100
         : 0.0;
+    final derivedStudyMinutes = _userProgress.fold<double>(
+      0,
+      (sum, progress) => sum + (progress.videoProgress * 0.5),
+    );
+    final existingStudyHours =
+        Parsers.parseDouble(existingStats['study_time_hours']);
+    final derivedStudyHours = derivedStudyMinutes / 60;
+
+    return {
+      ...existingStats,
+      'total_chapters_attempted': totalChaptersAttempted,
+      'chapters_completed': chaptersCompleted,
+      'completion_percentage': totalChaptersAttempted > 0
+          ? ((chaptersCompleted / totalChaptersAttempted) * 100).round()
+          : 0,
+      'total_available_chapters': totalAvailableChapters,
+      'overall_completion_percentage': totalAvailableChapters > 0
+          ? ((chaptersCompleted / totalAvailableChapters) * 100).round()
+          : 0,
+      'total_questions_attempted': totalQuestionsAttempted,
+      'total_questions_correct': totalQuestionsCorrect,
+      'accuracy_percentage': double.parse(accuracyPercentage.toStringAsFixed(2)),
+      'total_notes_viewed': totalNotesViewed,
+      'average_video_progress':
+          double.parse(averageVideoProgress.toStringAsFixed(2)),
+      'videos_completed': videosCompleted,
+      'study_time_hours': double.parse(
+        (derivedStudyHours > existingStudyHours
+                ? derivedStudyHours
+                : existingStudyHours)
+            .toStringAsFixed(1),
+      ),
+      'streak_count': streakCount,
+      'last_streak_date': lastStreakDate,
+      'exams_taken': examsTaken,
+      'exams_passed': examsPassed,
+      'average_exam_score': averageExamScore,
+      'best_exam_score': bestExamScore,
+    };
+  }
+
+  Map<String, dynamic> _mergeServerStatsWithLocalActivity(
+    Map<String, dynamic> serverStats,
+  ) {
+    if (_userProgress.isEmpty) return serverStats;
+
+    final localStats = _buildDerivedLocalStats(serverStats);
+
+    return {
+      ...serverStats,
+      'total_chapters_attempted': [
+        Parsers.parseInt(serverStats['total_chapters_attempted']),
+        Parsers.parseInt(localStats['total_chapters_attempted']),
+      ].reduce((a, b) => a > b ? a : b),
+      'chapters_completed': [
+        Parsers.parseInt(serverStats['chapters_completed']),
+        Parsers.parseInt(localStats['chapters_completed']),
+      ].reduce((a, b) => a > b ? a : b),
+      'completion_percentage': [
+        Parsers.parseInt(serverStats['completion_percentage']),
+        Parsers.parseInt(localStats['completion_percentage']),
+      ].reduce((a, b) => a > b ? a : b),
+      'overall_completion_percentage': [
+        Parsers.parseInt(serverStats['overall_completion_percentage']),
+        Parsers.parseInt(localStats['overall_completion_percentage']),
+      ].reduce((a, b) => a > b ? a : b),
+      'total_questions_attempted': [
+        Parsers.parseInt(serverStats['total_questions_attempted']),
+        Parsers.parseInt(localStats['total_questions_attempted']),
+      ].reduce((a, b) => a > b ? a : b),
+      'total_questions_correct': [
+        Parsers.parseInt(serverStats['total_questions_correct']),
+        Parsers.parseInt(localStats['total_questions_correct']),
+      ].reduce((a, b) => a > b ? a : b),
+      'accuracy_percentage': [
+        Parsers.parseDouble(serverStats['accuracy_percentage']),
+        Parsers.parseDouble(localStats['accuracy_percentage']),
+      ].reduce((a, b) => a > b ? a : b),
+      'total_notes_viewed': [
+        Parsers.parseInt(serverStats['total_notes_viewed']),
+        Parsers.parseInt(localStats['total_notes_viewed']),
+      ].reduce((a, b) => a > b ? a : b),
+      'average_video_progress': [
+        Parsers.parseDouble(serverStats['average_video_progress']),
+        Parsers.parseDouble(localStats['average_video_progress']),
+      ].reduce((a, b) => a > b ? a : b),
+      'videos_completed': [
+        Parsers.parseInt(serverStats['videos_completed']),
+        Parsers.parseInt(localStats['videos_completed']),
+      ].reduce((a, b) => a > b ? a : b),
+      'study_time_hours': [
+        Parsers.parseDouble(serverStats['study_time_hours']),
+        Parsers.parseDouble(localStats['study_time_hours']),
+      ].reduce((a, b) => a > b ? a : b),
+    };
+  }
+
+  Future<void> _syncLocalOverallStats() async {
+    final existingStats = _convertToMapString(_overallStats['stats']);
 
     _overallStats = {
       ..._overallStats,
-      'stats': {
-        ...existingStats,
-        'total_chapters_attempted': totalChaptersAttempted,
-        'chapters_completed': chaptersCompleted,
-        'completion_percentage': totalChaptersAttempted > 0
-            ? ((chaptersCompleted / totalChaptersAttempted) * 100).round()
-            : 0,
-        'total_available_chapters': totalAvailableChapters,
-        'overall_completion_percentage': totalAvailableChapters > 0
-            ? ((chaptersCompleted / totalAvailableChapters) * 100).round()
-            : 0,
-        'total_questions_attempted': totalQuestionsAttempted,
-        'total_questions_correct': totalQuestionsCorrect,
-        'accuracy_percentage':
-            double.parse(accuracyPercentage.toStringAsFixed(2)),
-        'total_notes_viewed': totalNotesViewed,
-        'average_video_progress':
-            double.parse(averageVideoProgress.toStringAsFixed(2)),
-        'videos_completed': videosCompleted,
-        'study_time_hours': totalStudyHours,
-        'streak_count': streakCount,
-        'last_streak_date': lastStreakDate,
-        'exams_taken': examsTaken,
-        'exams_passed': examsPassed,
-        'average_exam_score': averageExamScore,
-        'best_exam_score': bestExamScore,
-      },
+      'stats': _buildDerivedLocalStats(existingStats),
     };
 
     final sortedProgress = _userProgress.toList()
@@ -632,7 +705,12 @@ class ProgressProvider extends ChangeNotifier
       final response = await apiService.getOverallProgress();
 
       if (response.success && response.data != null) {
-        _overallStats = _convertToMapString(response.data);
+        final responseMap = _convertToMapString(response.data);
+        final serverStats = _convertToMapString(responseMap['stats']);
+        _overallStats = {
+          ...responseMap,
+          'stats': _mergeServerStatsWithLocalActivity(serverStats),
+        };
         _lastServerSyncAt = DateTime.now();
         _parseStatsFromMap();
         await _saveStatsToHive();
@@ -761,7 +839,12 @@ class ProgressProvider extends ChangeNotifier
       final response = await apiService.getOverallProgress();
 
       if (response.success && response.data != null) {
-        _overallStats = _convertToMapString(response.data);
+        final responseMap = _convertToMapString(response.data);
+        final serverStats = _convertToMapString(responseMap['stats']);
+        _overallStats = {
+          ...responseMap,
+          'stats': _mergeServerStatsWithLocalActivity(serverStats),
+        };
         _lastServerSyncAt = DateTime.now();
         _hasLoadedOverall = true;
         _isLoadingOverall = false;
