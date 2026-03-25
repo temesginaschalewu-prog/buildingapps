@@ -158,12 +158,12 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
 
         if (pendingCount > 0) {
           _showSafeSnackbar(
-            'You are offline. $pendingCount change${pendingCount > 1 ? 's' : ''} queued.',
+            'You are offline right now. $pendingCount change${pendingCount > 1 ? 's are' : ' is'} saved and will sync when you reconnect.',
             SnackbarType.offline,
           );
         } else {
           _showSafeSnackbar(
-            'You are offline. Showing cached content.',
+            'You are offline right now. Showing saved content while we wait for a connection.',
             SnackbarType.offline,
           );
         }

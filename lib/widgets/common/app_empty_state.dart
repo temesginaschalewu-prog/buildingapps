@@ -71,10 +71,10 @@ class AppEmptyState extends StatelessWidget {
   }) {
     final label = _formatDataType(dataType);
     final message = isOffline
-        ? 'Reconnect to load your $label and continue where you left off.'
+        ? 'Connect to the internet to load your $label and keep going.'
         : (customMessage ?? 'Your $label will appear here once it is ready.');
 
-    final title = isOffline ? 'You are offline' : 'Nothing here yet';
+    final title = isOffline ? 'You are offline right now' : 'Nothing here yet';
     final icon = isOffline ? Icons.wifi_off_rounded : Icons.inbox_rounded;
     final type = isOffline ? EmptyStateType.offline : EmptyStateType.noData;
 
@@ -102,15 +102,15 @@ class AppEmptyState extends StatelessWidget {
     final label = dataType != null ? _formatDataType(dataType) : 'content';
     final displayMessage = message ??
         (dataType != null
-            ? 'Reconnect to load your $label and keep everything up to date.'
-            : 'Reconnect to continue using the latest content and updates.');
+            ? 'Connect to the internet to load your $label and keep everything up to date.'
+            : 'Connect to the internet to continue with the latest content and updates.');
 
     return AppEmptyState(
       icon: Icons.wifi_off_rounded,
-      title: 'You are offline',
+      title: 'You are offline right now',
       message: displayMessage,
       actionText:
-          onRetry != null ? (isRefreshing ? 'Reconnecting' : 'Try again') : null,
+          onRetry != null ? (isRefreshing ? 'Trying again' : 'Try again') : null,
       onAction: onRetry,
       type: EmptyStateType.offline,
       isRefreshing: isRefreshing,
@@ -424,7 +424,7 @@ class AppEmptyState extends StatelessWidget {
         return AppColors.telegramRed;
       case EmptyStateType.noInternet:
       case EmptyStateType.offline:
-        return AppColors.warning;
+        return AppColors.telegramIndigo;
       case EmptyStateType.noResults:
       case EmptyStateType.noData:
         return AppColors.telegramBlue;

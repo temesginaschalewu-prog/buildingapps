@@ -192,8 +192,8 @@ class SnackbarService {
 
   void showOffline(BuildContext context, {String? action, String? id}) {
     final message = action != null
-        ? 'Cannot $action while offline. Your changes will sync when online.'
-        : 'You are offline. Showing cached content.';
+        ? 'You are offline right now. Connect to the internet to $action.'
+        : 'You are offline right now. Connect to the internet to load the latest updates.';
 
     show(
       context: context,
@@ -206,8 +206,8 @@ class SnackbarService {
 
   void showNoInternet(BuildContext context, {String? action, String? id}) {
     final message = action != null
-        ? 'No internet connection. Please connect to $action.'
-        : 'No internet connection. Please check your network and try again.';
+        ? 'No internet connection. Please reconnect to $action.'
+        : 'No internet connection. Please reconnect and try again.';
 
     show(
       context: context,
@@ -218,8 +218,8 @@ class SnackbarService {
 
   void showServerUnavailable(BuildContext context, {String? action, String? id}) {
     final message = action != null
-        ? 'Server unavailable right now. Please try again to $action shortly.'
-        : 'Server unavailable right now. Please try again shortly.';
+        ? 'We could not reach the server right now. Please try again to $action in a moment.'
+        : 'We could not reach the server right now. Please try again in a moment.';
 
     show(
       context: context,
@@ -280,11 +280,11 @@ class SnackbarService {
       case SnackbarType.error:
         return AppColors.pinkGradient;
       case SnackbarType.warning:
-        return [AppColors.telegramOrange, AppColors.telegramYellow];
+        return [AppColors.telegramOrange, AppColors.telegramPink];
       case SnackbarType.info:
         return AppColors.blueGradient;
       case SnackbarType.offline:
-        return [AppColors.warning, AppColors.telegramOrange];
+        return [AppColors.telegramIndigo, AppColors.telegramTeal];
       case SnackbarType.queued:
         return [AppColors.info, AppColors.telegramBlue];
       case SnackbarType.syncComplete:
