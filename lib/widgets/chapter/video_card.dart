@@ -192,32 +192,38 @@ class _VideoCardState extends State<VideoCard>
                       top: 12,
                       left: 12,
                       child: Row(
-                        children: qualities.take(3).map((q) {
+                        children: qualities.take(4).map((q) {
                           final isRecommended = q.label ==
                               widget.video.getRecommendedQuality().label;
+                          final isDownloadedQuality =
+                              _isDownloaded && downloadedQualityLabel == q.label;
                           return Container(
                             margin: const EdgeInsets.only(right: 4),
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              gradient: isRecommended
-                                  ? const LinearGradient(colors: [
-                                      Color(0xFF0088CC),
-                                      Color(0xFF0055AA)
-                                    ])
-                                  : null,
-                              color: isRecommended ? null : Colors.black54,
+                              color: isDownloadedQuality
+                                  ? AppColors.telegramGreen
+                                  : Colors.white.withValues(
+                                      alpha: isRecommended ? 0.36 : 0.22,
+                                    ),
                               borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                color: isDownloadedQuality
+                                    ? AppColors.telegramGreen.withValues(alpha: 0.9)
+                                    : Colors.white.withValues(alpha: 0.18),
+                              ),
                             ),
                             child: Text(
                               q.label,
                               style: TextStyle(
-                                color: isRecommended
+                                color: isDownloadedQuality
                                     ? Colors.white
-                                    : Colors.white70,
+                                    : Colors.white,
                                 fontSize: 10,
-                                fontWeight:
-                                    isRecommended ? FontWeight.bold : null,
+                                fontWeight: (isRecommended || isDownloadedQuality)
+                                    ? FontWeight.bold
+                                    : FontWeight.w600,
                               ),
                             ),
                           );
@@ -268,47 +274,6 @@ class _VideoCardState extends State<VideoCard>
                               ),
                             ],
                           ),
-                        ),
-                      ),
-                    ),
-
-                  // Downloaded badge
-                  if (_isDownloaded && !_isDownloading)
-                    Positioned(
-                      top: 12,
-                      right: 12,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: AppColors.telegramGreen,
-                          borderRadius: BorderRadius.circular(14),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.telegramGreen
-                                  .withValues(alpha: 0.28),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.check_circle,
-                                color: Colors.white, size: 14),
-                            const SizedBox(width: 4),
-                            Text(
-                              downloadedQualityLabel == null
-                                  ? 'Downloaded'
-                                  : 'Downloaded • $downloadedQualityLabel',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
                         ),
                       ),
                     ),

@@ -178,7 +178,7 @@ class _AppTextFieldState extends State<AppTextField> {
       children: [
         if (widget.label.isNotEmpty) ...[
           Text(
-            isOfflineDisabled ? '${widget.label} (Offline)' : widget.label,
+            widget.label,
             style: AppTextStyles.labelLarge(context).copyWith(
               color: isOfflineDisabled
                   ? AppColors.warning

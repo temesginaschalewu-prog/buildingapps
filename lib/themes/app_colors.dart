@@ -39,7 +39,7 @@ class AppColors {
 
   static const Color success = telegramGreen;
   static const Color error = telegramRed;
-  static const Color warning = telegramYellow;
+  static const Color warning = telegramOrange;
   static const Color info = telegramBlue;
   static const Color pending = telegramOrange;
   static const Color active = telegramGreen;

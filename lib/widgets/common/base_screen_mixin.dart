@@ -268,7 +268,7 @@ mixin BaseScreenMixin<T extends StatefulWidget> on State<T> {
       title: screenTitle,
       subtitle: _isRefreshing
           ? 'Updating'
-          : (_isOffline ? 'Offline' : screenSubtitle),
+          : screenSubtitle,
       leading: appBarLeading,
       actions: appBarActions,
       showThemeToggle: showThemeToggle,

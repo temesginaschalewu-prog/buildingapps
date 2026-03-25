@@ -213,7 +213,7 @@ class AppButton extends StatelessWidget {
           ],
           if (label != null)
             Text(
-              isOfflineDisabled ? 'Offline' : label!,
+              label!,
               style: _getTextStyle(context, textColor),
               textAlign: TextAlign.center,
             ),
