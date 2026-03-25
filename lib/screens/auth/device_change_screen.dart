@@ -761,31 +761,6 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            AppCard.glass(
-              child: Padding(
-                padding: ResponsiveValues.cardPadding(context),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Approve this device',
-                      style: AppTextStyles.headlineSmall(context).copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    SizedBox(height: ResponsiveValues.spacingXS(context)),
-                    Text(
-                      'Review the new device request, confirm your password, and approve the change only if this device is yours.',
-                      style: AppTextStyles.bodyMedium(context).copyWith(
-                        color: AppColors.getTextSecondary(context),
-                        height: 1.45,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            SizedBox(height: ResponsiveValues.spacingL(context)),
             _buildWarningBanner(),
             SizedBox(height: ResponsiveValues.spacingXL(context)),
             _buildDeviceInfoCard(),
