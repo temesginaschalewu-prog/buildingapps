@@ -16,6 +16,7 @@ import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/responsive_values.dart';
 import '../../utils/constants.dart';
+import '../../utils/router.dart';
 
 class PaymentSuccessScreen extends StatefulWidget {
   final Map<String, dynamic>? extra;
@@ -43,7 +44,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
   String? _accountHolderName;
   bool _animationComplete = false;
   bool _isQueued = false;
-  int _secondsRemaining = 12;
+  int _secondsRemaining = 5;
 
   late AnimationController _checkAnimationController;
   Timer? _redirectTimer;
@@ -167,6 +168,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
 
   void _redirectToHome() {
     if (!isMounted) return;
+    _redirectTimer?.cancel();
     unawaited(_syncCriticalStateAndGoHome());
   }
 
@@ -186,7 +188,8 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
     }
 
     if (isMounted) {
-      context.go('/');
+      appRouter.setNavigatingToHome(true);
+      context.go('/?from=payment-success');
     }
   }
 
@@ -500,12 +503,6 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            AppButton.glass(
-              label: AppStrings.subscriptions,
-              icon: Icons.subscriptions_rounded,
-              onPressed: () => context.push('/subscriptions'),
-            ),
-            SizedBox(width: ResponsiveValues.spacingM(context)),
             AppButton.glass(
               label: AppStrings.notifications,
               icon: Icons.notifications_rounded,
