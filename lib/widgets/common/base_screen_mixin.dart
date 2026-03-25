@@ -39,6 +39,8 @@ mixin BaseScreenMixin<T extends StatefulWidget> on State<T> {
   List<Widget>? get appBarActions => null;
   bool get showThemeToggle => true;
   bool get showNotification => true;
+  bool get blockContentWhenOffline => true;
+  bool get useFullScreenLoadingState => true;
 
   // Loading state - override per screen
   bool get isLoading => false;
@@ -243,13 +245,18 @@ mixin BaseScreenMixin<T extends StatefulWidget> on State<T> {
     String? customMessage,
     bool isOffline = false,
   }) {
+    final effectiveOffline = isOffline || _isOffline;
+    if (_isRefreshing && !hasCachedData && !effectiveOffline) {
+      return buildLoadingShimmer();
+    }
+
     return Center(
       child: AppEmptyState.noData(
         dataType: dataType,
         customMessage: customMessage,
         onRefresh: handleRefresh,
         isRefreshing: _isRefreshing,
-        isOffline: isOffline || _isOffline,
+        isOffline: effectiveOffline,
         pendingCount: _pendingCount,
       ),
     );
@@ -307,7 +314,7 @@ mixin BaseScreenMixin<T extends StatefulWidget> on State<T> {
     }
 
     // Loading state (no cached data) - ✅ ONLY show shimmer if NO cached data
-    if (isLoading && !hasCachedData) {
+    if (isLoading && !hasCachedData && useFullScreenLoadingState) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
         appBar: showAppBar ? buildAppBar() : null,
@@ -316,7 +323,7 @@ mixin BaseScreenMixin<T extends StatefulWidget> on State<T> {
     }
 
     // Offline state (no cached data)
-    if (_isOffline && !hasCachedData) {
+    if (_isOffline && !hasCachedData && blockContentWhenOffline) {
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
         appBar: showAppBar ? buildAppBar() : null,

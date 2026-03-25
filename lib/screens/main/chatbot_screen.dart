@@ -104,8 +104,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
     _provider.addListener(_onProviderDataChanged);
 
-    // Mark initial load as done after first data arrives
-    if (_provider.hasInitialData) {
+    if (_hasCompletedCurrentViewLoad()) {
       _initialLoadDone = true;
     }
   }
@@ -113,11 +112,27 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   void _onProviderDataChanged() {
     if (mounted) {
       setState(() {
-        if (_provider.hasInitialData) {
+        if (_hasCompletedCurrentViewLoad()) {
           _initialLoadDone = true;
         }
       });
     }
+  }
+
+  bool _isViewingConversationMessages() {
+    return widget.conversationId != null || _provider.currentConversation != null;
+  }
+
+  bool _hasCompletedCurrentViewLoad() {
+    if (_isViewingConversationMessages()) {
+      return _provider.hasLoadedMessages ||
+          _provider.messages.isNotEmpty ||
+          _provider.isOffline;
+    }
+
+    return _provider.hasLoadedConversations ||
+        _provider.conversations.isNotEmpty ||
+        _provider.isOffline;
   }
 
   @override

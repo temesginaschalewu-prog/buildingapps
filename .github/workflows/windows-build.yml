@@ -19,7 +19,7 @@ concurrency:
 env:
   BASE_URL: https://family-academy-backend-a12l.onrender.com
   API_VERSION: v1
-  API_BASE_URL: https://family-academy-backend-a12l.onrender.com/api/v1
+  API_BASE_URL: https://family-academy-backend-a12l.onrender.com
   APP_NAME: Family Academy
   APP_VERSION: 1.5.0
   APP_ENVIRONMENT: production
@@ -55,7 +55,7 @@ jobs:
           echo "APP_ENVIRONMENT=$env:APP_ENVIRONMENT" >> .env
 
       - name: Build Windows Release
-        run: flutter build windows --release
+        run: flutter build windows --release --dart-define=API_BASE_URL=${{ env.API_BASE_URL }}
 
       - name: Download VC++ Redistributable
         run: |

@@ -44,7 +44,7 @@ class ProgressProvider extends ChangeNotifier
   bool _isLoadingOverall = false;
 
   static const Duration _cacheDuration = AppConstants.cacheTTLUserProfile;
-  static const Duration _saveDebounceDuration = Duration(seconds: 5);
+  static const Duration _saveDebounceDuration = Duration(seconds: 1);
   @override
   Duration get refreshInterval => const Duration(minutes: 5);
 
@@ -62,6 +62,8 @@ class ProgressProvider extends ChangeNotifier
   late StreamController<Map<String, dynamic>> _overallStatsController;
 
   DateTime? _lastBackgroundRefresh;
+  DateTime? _lastLocalProgressUpdateAt;
+  DateTime? _lastServerSyncAt;
   static const Duration _minBackgroundInterval = Duration(minutes: 2);
 
   ProgressProvider({
@@ -173,6 +175,8 @@ class ProgressProvider extends ChangeNotifier
     _hasLoadedOverall = false;
     _hasLoadedProgress = false;
     _isLoadingOverall = false;
+    _lastLocalProgressUpdateAt = null;
+    _lastServerSyncAt = null;
 
     if (!_progressUpdateController.isClosed) {
       _progressUpdateController.add(_userProgress);
@@ -385,6 +389,154 @@ class ProgressProvider extends ChangeNotifier
     }
   }
 
+  UserProgress _mergeProgress(
+    UserProgress? existingProgress, {
+    required int chapterId,
+    int? videoProgress,
+    bool? notesViewed,
+    int? questionsAttempted,
+    int? questionsCorrect,
+  }) {
+    final current = existingProgress;
+    final mergedVideoProgress = videoProgress != null
+        ? current != null
+            ? (videoProgress > current.videoProgress
+                ? videoProgress
+                : current.videoProgress)
+            : videoProgress
+        : current?.videoProgress ?? 0;
+    final mergedNotesViewed =
+        (current?.notesViewed ?? false) || (notesViewed ?? false);
+    final mergedQuestionsAttempted = questionsAttempted != null
+        ? current != null
+            ? (questionsAttempted > current.questionsAttempted
+                ? questionsAttempted
+                : current.questionsAttempted)
+            : questionsAttempted
+        : current?.questionsAttempted ?? 0;
+    final mergedQuestionsCorrect = questionsCorrect != null
+        ? current != null
+            ? (questionsCorrect > current.questionsCorrect
+                ? questionsCorrect
+                : current.questionsCorrect)
+            : questionsCorrect
+        : current?.questionsCorrect ?? 0;
+
+    return UserProgress(
+      chapterId: chapterId,
+      completed: (current?.completed ?? false) ||
+          (mergedVideoProgress >= 90 &&
+              mergedNotesViewed &&
+              mergedQuestionsAttempted > 0),
+      videoProgress: mergedVideoProgress,
+      notesViewed: mergedNotesViewed,
+      questionsAttempted: mergedQuestionsAttempted,
+      questionsCorrect: mergedQuestionsCorrect,
+      lastAccessed: DateTime.now(),
+    );
+  }
+
+  Future<void> _syncLocalOverallStats() async {
+    final existingStats = _convertToMapString(_overallStats['stats']);
+    final totalAvailableChapters =
+        Parsers.parseInt(existingStats['total_available_chapters']);
+    final totalStudyHours = Parsers.parseDouble(existingStats['study_time_hours']);
+    final streakCount = Parsers.parseInt(existingStats['streak_count']);
+    final lastStreakDate = existingStats['last_streak_date'];
+    final examsTaken = Parsers.parseInt(existingStats['exams_taken']);
+    final examsPassed = Parsers.parseInt(existingStats['exams_passed']);
+    final averageExamScore =
+        Parsers.parseDouble(existingStats['average_exam_score']);
+    final bestExamScore = Parsers.parseDouble(existingStats['best_exam_score']);
+
+    final totalChaptersAttempted = _userProgress.length;
+    final chaptersCompleted = _userProgress.where((p) => p.completed).length;
+    final totalQuestionsAttempted = _userProgress.fold<int>(
+      0,
+      (sum, progress) => sum + progress.questionsAttempted,
+    );
+    final totalQuestionsCorrect = _userProgress.fold<int>(
+      0,
+      (sum, progress) => sum + progress.questionsCorrect,
+    );
+    final totalNotesViewed =
+        _userProgress.where((progress) => progress.notesViewed).length;
+    final videosCompleted =
+        _userProgress.where((progress) => progress.videoProgress >= 90).length;
+    final averageVideoProgress = _userProgress.isEmpty
+        ? 0.0
+        : _userProgress
+                .fold<int>(0, (sum, progress) => sum + progress.videoProgress) /
+            _userProgress.length;
+    final accuracyPercentage = totalQuestionsAttempted > 0
+        ? (totalQuestionsCorrect / totalQuestionsAttempted) * 100
+        : 0.0;
+
+    _overallStats = {
+      ..._overallStats,
+      'stats': {
+        ...existingStats,
+        'total_chapters_attempted': totalChaptersAttempted,
+        'chapters_completed': chaptersCompleted,
+        'completion_percentage': totalChaptersAttempted > 0
+            ? ((chaptersCompleted / totalChaptersAttempted) * 100).round()
+            : 0,
+        'total_available_chapters': totalAvailableChapters,
+        'overall_completion_percentage': totalAvailableChapters > 0
+            ? ((chaptersCompleted / totalAvailableChapters) * 100).round()
+            : 0,
+        'total_questions_attempted': totalQuestionsAttempted,
+        'total_questions_correct': totalQuestionsCorrect,
+        'accuracy_percentage':
+            double.parse(accuracyPercentage.toStringAsFixed(2)),
+        'total_notes_viewed': totalNotesViewed,
+        'average_video_progress':
+            double.parse(averageVideoProgress.toStringAsFixed(2)),
+        'videos_completed': videosCompleted,
+        'study_time_hours': totalStudyHours,
+        'streak_count': streakCount,
+        'last_streak_date': lastStreakDate,
+        'exams_taken': examsTaken,
+        'exams_passed': examsPassed,
+        'average_exam_score': averageExamScore,
+        'best_exam_score': bestExamScore,
+      },
+    };
+
+    final sortedProgress = _userProgress.toList()
+      ..sort((a, b) =>
+          (b.lastAccessed ?? DateTime.fromMillisecondsSinceEpoch(0))
+              .compareTo(
+                  a.lastAccessed ?? DateTime.fromMillisecondsSinceEpoch(0)));
+    final recentActivityMaps = sortedProgress
+        .take(10)
+        .map(
+          (progress) => {
+            'chapter_id': progress.chapterId,
+            'video_progress': progress.videoProgress,
+            'notes_viewed': progress.notesViewed ? 1 : 0,
+            'questions_attempted': progress.questionsAttempted,
+            'questions_correct': progress.questionsCorrect,
+            'completed': progress.completed ? 1 : 0,
+            'last_accessed': progress.lastAccessed?.toIso8601String(),
+          },
+        )
+        .toList();
+    _recentActivity = recentActivityMaps;
+    _overallStats['recent_activity'] = recentActivityMaps;
+
+    _hasLoadedOverall = true;
+    _parseStatsFromMap();
+    _overallStatsController.add(_overallStats);
+    await _saveStatsToHive();
+    deviceService.saveCacheItem(
+      AppConstants.overallStatsKey,
+      _overallStats,
+      ttl: _cacheDuration,
+      isUserSpecific: true,
+    );
+  }
+
   Future<void> _saveProgressToHive() async {
     try {
       final userId = await UserSession().getCurrentUserId();
@@ -421,6 +573,10 @@ class ProgressProvider extends ChangeNotifier
   bool get hasLoadedOverall => _hasLoadedOverall;
   bool get hasLoadedProgress => _hasLoadedProgress;
   bool get isLoadingOverall => _isLoadingOverall;
+  bool get hasPendingProgressSync =>
+      _pendingSaves.isNotEmpty || _saveDebounceTimers.isNotEmpty;
+  DateTime? get lastLocalProgressUpdateAt => _lastLocalProgressUpdateAt;
+  DateTime? get lastServerSyncAt => _lastServerSyncAt;
 
   Stream<List<UserProgress>> get progressUpdates =>
       _progressUpdateController.stream;
@@ -477,6 +633,7 @@ class ProgressProvider extends ChangeNotifier
 
       if (response.success && response.data != null) {
         _overallStats = _convertToMapString(response.data);
+        _lastServerSyncAt = DateTime.now();
         _parseStatsFromMap();
         await _saveStatsToHive();
         deviceService.saveCacheItem(
@@ -605,6 +762,7 @@ class ProgressProvider extends ChangeNotifier
 
       if (response.success && response.data != null) {
         _overallStats = _convertToMapString(response.data);
+        _lastServerSyncAt = DateTime.now();
         _hasLoadedOverall = true;
         _isLoadingOverall = false;
         setLoaded();
@@ -738,61 +896,46 @@ class ProgressProvider extends ChangeNotifier
     try {
       await _ensureCurrentUserScope();
       _saveDebounceTimers[chapterId]?.cancel();
-
       final completer = Completer<void>();
+
+      final mergedProgress = _mergeProgress(
+        _progressByChapter[chapterId],
+        chapterId: chapterId,
+        videoProgress: videoProgress,
+        notesViewed: notesViewed,
+        questionsAttempted: questionsAttempted,
+        questionsCorrect: questionsCorrect,
+      );
+
+      _lastLocalProgressUpdateAt = DateTime.now();
+      _progressByChapter[chapterId] = mergedProgress;
+      _userProgress = _progressByChapter.values.toList();
+      await _saveToLocalCache(chapterId, mergedProgress);
+      await _syncLocalOverallStats();
+      _progressUpdateController.add(_userProgress);
+      _chapterProgressController.add(_progressByChapter);
+      safeNotify();
 
       _saveDebounceTimers[chapterId] = Timer(_saveDebounceDuration, () async {
         _pendingSaves.add(chapterId);
 
         try {
-          final existingProgress = _progressByChapter[chapterId];
-          final now = DateTime.now();
-
-          UserProgress newProgress;
-
-          if (existingProgress != null) {
-            newProgress = UserProgress(
-              chapterId: chapterId,
-              completed:
-                  existingProgress.completed || (videoProgress ?? 0) >= 90,
-              videoProgress: videoProgress ?? existingProgress.videoProgress,
-              notesViewed: notesViewed ?? existingProgress.notesViewed,
-              questionsAttempted:
-                  questionsAttempted ?? existingProgress.questionsAttempted,
-              questionsCorrect:
-                  questionsCorrect ?? existingProgress.questionsCorrect,
-              lastAccessed: now,
-            );
-          } else {
-            newProgress = UserProgress(
-              chapterId: chapterId,
-              completed: (videoProgress ?? 0) >= 90,
-              videoProgress: videoProgress ?? 0,
-              notesViewed: notesViewed ?? false,
-              questionsAttempted: questionsAttempted ?? 0,
-              questionsCorrect: questionsCorrect ?? 0,
-              lastAccessed: now,
-            );
+          final progressToPersist = _progressByChapter[chapterId];
+          if (progressToPersist == null) {
+            completer.complete();
+            return;
           }
-
-          _progressByChapter[chapterId] = newProgress;
-          _userProgress = _progressByChapter.values.toList();
-
-          await _saveToLocalCache(chapterId, newProgress);
-
-          _progressUpdateController.add(_userProgress);
-          _chapterProgressController.add(_progressByChapter);
-          safeNotify();
 
           if (!isOffline) {
             try {
               await apiService.saveUserProgress(
                 chapterId: chapterId,
-                videoProgress: newProgress.videoProgress,
-                notesViewed: newProgress.notesViewed,
-                questionsAttempted: newProgress.questionsAttempted,
-                questionsCorrect: newProgress.questionsCorrect,
+                videoProgress: progressToPersist.videoProgress,
+                notesViewed: progressToPersist.notesViewed,
+                questionsAttempted: progressToPersist.questionsAttempted,
+                questionsCorrect: progressToPersist.questionsCorrect,
               );
+              _lastServerSyncAt = DateTime.now();
               log('✅ Progress saved to API for chapter $chapterId');
 
               if (videoProgress != null ||
@@ -805,12 +948,12 @@ class ProgressProvider extends ChangeNotifier
               completer.complete();
             } catch (apiError) {
               log('⚠️ API error, queuing for later: $apiError');
-              await _markAsPendingSync(chapterId, newProgress);
+              await _markAsPendingSync(chapterId, progressToPersist);
               completer.complete();
             }
           } else {
             log('📝 Offline, queuing progress for chapter $chapterId');
-            await _markAsPendingSync(chapterId, newProgress);
+            await _markAsPendingSync(chapterId, progressToPersist);
             completer.complete();
           }
         } catch (e) {
@@ -819,6 +962,7 @@ class ProgressProvider extends ChangeNotifier
         } finally {
           _pendingSaves.remove(chapterId);
           _saveDebounceTimers.remove(chapterId);
+          safeNotify();
         }
       });
 

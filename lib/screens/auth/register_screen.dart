@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../providers/auth_provider.dart';
+import '../../services/connectivity_service.dart';
 import '../../services/device_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/snackbar_service.dart';
@@ -54,6 +55,12 @@ class _RegisterScreenState extends State<RegisterScreen>
 
   @override
   bool get hasCachedData => false;
+
+  @override
+  bool get blockContentWhenOffline => false;
+
+  @override
+  bool get useFullScreenLoadingState => false;
 
   @override
   dynamic get errorMessage => null;
@@ -148,8 +155,15 @@ class _RegisterScreenState extends State<RegisterScreen>
     if (!_formKey.currentState!.validate()) return;
     if (!isMounted) return;
 
-    if (isOffline) {
-      SnackbarService().showOffline(context, action: 'register');
+    final connectivityService = context.read<ConnectivityService>();
+    await connectivityService.checkConnectivity();
+
+    if (!connectivityService.isOnline) {
+      if (connectivityService.hasNetworkConnection) {
+        SnackbarService().showServerUnavailable(context, action: 'register');
+      } else {
+        SnackbarService().showNoInternet(context, action: 'register');
+      }
       return;
     }
 
@@ -294,11 +308,9 @@ class _RegisterScreenState extends State<RegisterScreen>
                             AppButton.primary(
                               label: _deviceId == null
                                   ? AppStrings.loading
-                                  : (isOffline
-                                      ? AppStrings.offlineMode
-                                      : AppStrings.createAccount),
+                                  : AppStrings.createAccount,
                               onPressed:
-                                  _deviceId == null || isOffline || _isLoading
+                                  _deviceId == null || _isLoading
                                       ? null
                                       : _register,
                               isLoading: _isLoading,

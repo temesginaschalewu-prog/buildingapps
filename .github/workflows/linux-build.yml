@@ -19,7 +19,7 @@ concurrency:
 env:
   BASE_URL: https://family-academy-backend-a12l.onrender.com
   API_VERSION: v1
-  API_BASE_URL: https://family-academy-backend-a12l.onrender.com/api/v1
+  API_BASE_URL: https://family-academy-backend-a12l.onrender.com
   APP_NAME: Family Academy
   APP_VERSION: 1.5.0
   APP_ENVIRONMENT: production
@@ -62,7 +62,7 @@ jobs:
           EOF
 
       - name: Build Linux Release
-        run: flutter build linux --release
+        run: flutter build linux --release --dart-define=API_BASE_URL=${API_BASE_URL}
 
       - name: Package Linux bundle
         run: |

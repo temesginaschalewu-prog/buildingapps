@@ -81,12 +81,18 @@ class CategoryProvider extends ChangeNotifier
 
     if (shouldBackgroundRefresh) {
       log('🔄 Auto-refreshing categories in background');
-      // Small delay to not block UI
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (!_isApiCallInProgress) {
-          loadCategories(forceRefresh: true);
-        }
-      });
+      if (_hasInitialData) {
+        // Let cached content paint first, then refresh quietly.
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (!_isApiCallInProgress) {
+            unawaited(loadCategories(forceRefresh: true));
+          }
+        });
+      } else if (!_isApiCallInProgress) {
+        // No cache: start loading immediately so first-open shows shimmer,
+        // not a temporary empty state.
+        unawaited(loadCategories(forceRefresh: true));
+      }
     }
 
     log('_init() END - hasInitialData: $_hasInitialData, categories: ${_categories.length}');

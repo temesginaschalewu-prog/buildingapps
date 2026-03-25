@@ -46,6 +46,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
 
   bool _hasCachedData = false;
   bool _isLoading = true;
+  bool _showCoursesRefreshShimmer = false;
   final RefreshController _coursesRefreshController = RefreshController();
 
   late CategoryProvider _categoryProvider;
@@ -224,6 +225,14 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
       return;
     }
 
+    final hasCourses =
+        _courseProvider.getCoursesByCategory(widget.categoryId).isNotEmpty;
+    if (isMounted) {
+      setState(() {
+        _showCoursesRefreshShimmer = !hasCourses;
+      });
+    }
+
     try {
       await _categoryProvider.loadCategories(
           forceRefresh: true, isManualRefresh: true);
@@ -252,6 +261,12 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
               ? 'We could not refresh this category just now. Your saved content is still available.'
               : AppStrings.refreshFailed,
         );
+      }
+    } finally {
+      if (isMounted) {
+        setState(() {
+          _showCoursesRefreshShimmer = false;
+        });
       }
     }
   }
@@ -587,10 +602,13 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
   Widget _buildHeaderShimmer() => const AppShimmer(type: ShimmerType.rectangle);
 
   Widget _buildCoursesSection(List<dynamic> courses, bool isLoadingCourses) {
-    if ((isLoading || isLoadingCourses) &&
-        courses.isEmpty &&
-        !_hasCachedData &&
-        !isOffline) {
+    final shouldShowShimmer = courses.isEmpty &&
+        !isOffline &&
+        (_showCoursesRefreshShimmer ||
+            ((isLoading || isLoadingCourses) &&
+                !_courseProvider.hasLoadedCategory(widget.categoryId)));
+
+    if (shouldShowShimmer) {
       return ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: ResponsiveValues.screenPadding(context),

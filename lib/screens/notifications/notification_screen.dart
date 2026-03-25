@@ -180,6 +180,13 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     _providerBound = true;
 
     _handleProviderChanged();
+
+    if (!_provider.isLoaded &&
+        _provider.notifications.isEmpty &&
+        !_provider.isLoading &&
+        !isOffline) {
+      unawaited(_loadInitialNotifications());
+    }
   }
 
   void _handleProviderChanged() {
@@ -187,12 +194,30 @@ class _NotificationsScreenState extends State<NotificationsScreen>
 
     final hasNotifications = _provider.notifications.isNotEmpty;
     setState(() {
-      _isInitialLoad = false;
       _hasMore = _provider.notifications.length >= _pageSize;
       if (!hasNotifications) {
         _isLoadingMore = false;
       }
     });
+  }
+
+  Future<void> _loadInitialNotifications() async {
+    if (!isMounted) return;
+
+    setState(() {
+      _isInitialLoad = true;
+    });
+
+    try {
+      await _provider.loadNotifications();
+    } finally {
+      if (isMounted) {
+        setState(() {
+          _isInitialLoad = false;
+          _hasMore = _provider.notifications.length >= _pageSize;
+        });
+      }
+    }
   }
 
   @override
@@ -965,7 +990,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         unreadNotifications.length + readNotifications.length;
 
     // ✅ PROPER EMPTY STATE - matches HomeScreen pattern
-    final shouldShowEmpty = visibleNotifications == 0 &&
+    final shouldShowEmpty = !_isInitialLoad &&
+        visibleNotifications == 0 &&
         (_provider.isLoaded || !_provider.isLoading);
 
     if (shouldShowEmpty) {

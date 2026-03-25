@@ -74,6 +74,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
   bool _examsLoaded = false;
   bool _chaptersLoading = false;
   bool _examsLoading = false;
+  bool _showChaptersRefreshShimmer = false;
+  bool _showExamsRefreshShimmer = false;
 
   StreamSubscription? _subscriptionListener;
   StreamSubscription? _connectivitySubscription;
@@ -440,7 +442,20 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
       return;
     }
 
-    if (mounted && !_isDisposed) setState(() => _isRefreshing = true);
+    final chapterProvider = context.read<ChapterProvider>();
+    final examProvider = context.read<ExamProvider>();
+    final hasChapterData =
+        chapterProvider.getChaptersByCourse(_course?.id ?? 0).isNotEmpty;
+    final hasExamData =
+        examProvider.getExamsByCourse(_course?.id ?? 0).isNotEmpty;
+
+    if (mounted && !_isDisposed) {
+      setState(() {
+        _isRefreshing = true;
+        _showChaptersRefreshShimmer = !hasChapterData;
+        _showExamsRefreshShimmer = !hasExamData;
+      });
+    }
 
     try {
       final courseProvider = context.read<CourseProvider>();
@@ -481,7 +496,13 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         );
       }
     } finally {
-      if (mounted && !_isDisposed) setState(() => _isRefreshing = false);
+      if (mounted && !_isDisposed) {
+        setState(() {
+          _isRefreshing = false;
+          _showChaptersRefreshShimmer = false;
+          _showExamsRefreshShimmer = false;
+        });
+      }
     }
   }
 
@@ -862,11 +883,9 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         _chaptersLoaded || chapterProvider.hasLoadedForCourse(_course!.id);
 
     // ✅ FIXED: Only show shimmer if NO cached data AND loading
-    final shouldShowShimmer = isLoading &&
-        chapters.isEmpty &&
-        !hasLoaded &&
-        !_hasCachedData &&
-        !_isOffline;
+    final shouldShowShimmer = chapters.isEmpty &&
+        !_isOffline &&
+        (_showChaptersRefreshShimmer || (isLoading && !hasLoaded));
 
     if (shouldShowShimmer) {
       return ListView.builder(
@@ -930,11 +949,9 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         _examsLoaded || examProvider.hasLoadedForCourse(_course!.id);
 
     // ✅ FIXED: Only show shimmer if NO cached data AND loading
-    final shouldShowShimmer = isLoading &&
-        exams.isEmpty &&
-        !hasLoaded &&
-        !_hasCachedData &&
-        !_isOffline;
+    final shouldShowShimmer = exams.isEmpty &&
+        !_isOffline &&
+        (_showExamsRefreshShimmer || (isLoading && !hasLoaded));
 
     if (shouldShowShimmer) {
       return ListView.builder(

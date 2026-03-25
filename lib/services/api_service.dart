@@ -8,6 +8,7 @@ import 'package:flutter/widgets.dart' hide Notification;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hive/hive.dart';
+import 'package:familyacademyclient/utils/platform_helper.dart';
 
 import 'package:familyacademyclient/models/category_model.dart';
 import 'package:familyacademyclient/models/exam_model.dart';
@@ -114,6 +115,53 @@ class ApiService {
     return _prefs!;
   }
 
+  Future<String?> _readToken() async {
+    if (!PlatformHelper.isMobile) {
+      final prefs = await _ensurePrefs();
+      return prefs.getString(AppConstants.tokenKey);
+    }
+    return _secureStorage.read(key: AppConstants.tokenKey);
+  }
+
+  Future<void> _writeToken(String token) async {
+    if (!PlatformHelper.isMobile) {
+      final prefs = await _ensurePrefs();
+      await prefs.setString(AppConstants.tokenKey, token);
+      return;
+    }
+    await _secureStorage.write(key: AppConstants.tokenKey, value: token);
+  }
+
+  Future<String?> _readRefreshToken() async {
+    if (!PlatformHelper.isMobile) {
+      final prefs = await _ensurePrefs();
+      return prefs.getString(AppConstants.refreshTokenKey);
+    }
+    return _secureStorage.read(key: AppConstants.refreshTokenKey);
+  }
+
+  Future<void> _writeRefreshToken(String refreshToken) async {
+    if (!PlatformHelper.isMobile) {
+      final prefs = await _ensurePrefs();
+      await prefs.setString(AppConstants.refreshTokenKey, refreshToken);
+      return;
+    }
+    await _secureStorage.write(
+      key: AppConstants.refreshTokenKey,
+      value: refreshToken,
+    );
+  }
+
+  Future<void> _clearStoredTokens() async {
+    if (!PlatformHelper.isMobile) {
+      final prefs = await _ensurePrefs();
+      await prefs.remove(AppConstants.tokenKey);
+      await prefs.remove(AppConstants.refreshTokenKey);
+      return;
+    }
+    await _secureStorage.deleteAll();
+  }
+
   Future<String?> _getDeviceId() async {
     try {
       final prefs = await _ensurePrefs();
@@ -141,7 +189,7 @@ class ApiService {
   Future<void> _onRequest(
       RequestOptions options, RequestInterceptorHandler handler) async {
     final prefs = await _ensurePrefs();
-    final token = await _secureStorage.read(key: AppConstants.tokenKey);
+    final token = await _readToken();
 
     if (token != null) {
       options.headers['Authorization'] = 'Bearer $token';
@@ -281,8 +329,7 @@ class ApiService {
         try {
           final refreshed = await _refreshAccessToken();
           if (refreshed) {
-            final newToken =
-                await _secureStorage.read(key: AppConstants.tokenKey);
+            final newToken = await _readToken();
             final newHeaders =
                 Map<String, dynamic>.from(error.requestOptions.headers);
             newHeaders['Authorization'] = 'Bearer $newToken';
@@ -357,8 +404,7 @@ class ApiService {
     if (_offlineQueueManager == null) return;
 
     final prefs = await _ensurePrefs();
-    final userId = await _secureStorage
-        .read(key: AppConstants.tokenKey)
+    final userId = await _readToken()
         .then((_) => prefs.getString(AppConstants.currentUserIdKey));
 
     if (userId == null) return;
@@ -411,8 +457,7 @@ class ApiService {
 
   Future<bool> _refreshAccessToken() async {
     try {
-      final refreshToken =
-          await _secureStorage.read(key: AppConstants.refreshTokenKey);
+      final refreshToken = await _readRefreshToken();
       if (refreshToken == null) return false;
 
       final response = await _dio.post(
@@ -422,7 +467,7 @@ class ApiService {
 
       if (response.statusCode == 200 && response.data['success'] == true) {
         final newToken = response.data['data']['token'];
-        await _secureStorage.write(key: AppConstants.tokenKey, value: newToken);
+        await _writeToken(newToken);
         return true;
       }
       return false;
@@ -433,7 +478,7 @@ class ApiService {
 
   Future<void> _clearUserDataOnly() async {
     final prefs = await _ensurePrefs();
-    await _secureStorage.deleteAll();
+    await _clearStoredTokens();
     final keys = prefs.getKeys();
     for (final key in keys) {
       if (key.startsWith('user_') ||
@@ -476,7 +521,7 @@ class ApiService {
       'Connection': 'close',
     };
 
-    final token = await _secureStorage.read(key: AppConstants.tokenKey);
+    final token = await _readToken();
     if (token != null && token.isNotEmpty) {
       headers['Authorization'] = 'Bearer $token';
     }
@@ -697,11 +742,9 @@ class ApiService {
           );
         }
 
-        await _secureStorage.write(
-            key: AppConstants.tokenKey, value: data['token']);
+        await _writeToken(data['token']);
         if (data['deviceToken'] != null) {
-          await _secureStorage.write(
-              key: AppConstants.refreshTokenKey, value: data['deviceToken']);
+          await _writeRefreshToken(data['deviceToken']);
         }
 
         return ApiResponse<Map<String, dynamic>>(

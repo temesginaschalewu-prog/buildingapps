@@ -38,6 +38,7 @@ class _ProgressScreenState extends State<ProgressScreen>
   bool _providersBound = false;
   VoidCallback? _streakListener;
   VoidCallback? _examListener;
+  VoidCallback? _progressListener;
   StreamSubscription? _progressUpdatesSubscription;
   StreamSubscription? _overallStatsSubscription;
   String? _boundUserId;
@@ -101,6 +102,9 @@ class _ProgressScreenState extends State<ProgressScreen>
       if (_examListener != null) {
         _examProvider.removeListener(_examListener!);
       }
+      if (_progressListener != null) {
+        _progressProvider.removeListener(_progressListener!);
+      }
       _hasData = false;
       _loadingSections.updateAll((key, value) => true);
     }
@@ -113,6 +117,11 @@ class _ProgressScreenState extends State<ProgressScreen>
 
     _setupStreamListeners();
     _providersBound = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (isMounted) {
+        unawaited(_ensureInitialDataLoad());
+      }
+    });
 
     // ✅ Mark if we have data after first load - FIXED: use correct properties
     if (_progressProvider.hasLoadedOverall ||
@@ -134,6 +143,9 @@ class _ProgressScreenState extends State<ProgressScreen>
       }
       if (_examListener != null) {
         _examProvider.removeListener(_examListener!);
+      }
+      if (_progressListener != null) {
+        _progressProvider.removeListener(_progressListener!);
       }
     }
     super.dispose();
@@ -178,6 +190,13 @@ class _ProgressScreenState extends State<ProgressScreen>
       }
     };
     _examProvider.addListener(_examListener!);
+
+    _progressListener = () {
+      if (isMounted) {
+        setState(_updateLoadingStates);
+      }
+    };
+    _progressProvider.addListener(_progressListener!);
   }
 
   void _updateLoadingStates() {
@@ -213,6 +232,98 @@ class _ProgressScreenState extends State<ProgressScreen>
       _progressProvider.loadOverallProgress(forceRefresh: true),
     ]);
     _lastRefreshTime = DateTime.now();
+  }
+
+  Future<void> _ensureInitialDataLoad() async {
+    if (_progressProvider.isLoadingOverall) return;
+
+    final shouldLoad = !_progressProvider.hasLoadedOverall ||
+        !_examProvider.hasLoadedResults ||
+        _streakProvider.streak == null;
+
+    if (!shouldLoad) return;
+
+    await Future.wait([
+      _streakProvider.loadStreak(),
+      _examProvider.loadMyExamResults(),
+      _progressProvider.loadOverallProgress(),
+    ]);
+  }
+
+  String _formatSyncMessage() {
+    final hasPending = _progressProvider.hasPendingProgressSync;
+    final lastLocal = _progressProvider.lastLocalProgressUpdateAt;
+    final lastServer = _progressProvider.lastServerSyncAt;
+    final now = DateTime.now();
+
+    if (hasPending) {
+      return 'Updating your progress in the background...';
+    }
+
+    if (lastLocal != null &&
+        (lastServer == null || lastServer.isBefore(lastLocal)) &&
+        now.difference(lastLocal) < const Duration(minutes: 2)) {
+      return 'Progress recorded. Syncing the latest totals...';
+    }
+
+    if (lastServer != null) {
+      final age = now.difference(lastServer);
+      if (age.inSeconds < 60) {
+        return 'Progress is up to date.';
+      }
+      if (age.inMinutes < 60) {
+        return 'Updated ${age.inMinutes}m ago.';
+      }
+      return 'Updated ${age.inHours}h ago.';
+    }
+
+    if (_progressProvider.isLoadingOverall) {
+      return 'Loading your learning progress...';
+    }
+
+    return 'Your latest activity updates automatically.';
+  }
+
+  Widget _buildSyncStatusBanner() {
+    final hasPending = _progressProvider.hasPendingProgressSync;
+    final isSyncing =
+        hasPending || _progressProvider.isLoadingOverall || isRefreshing;
+    final accent = isSyncing
+        ? AppColors.telegramBlue
+        : AppColors.getTextSecondary(context);
+
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(
+        horizontal: ResponsiveValues.spacingM(context),
+        vertical: ResponsiveValues.spacingS(context),
+      ),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.08),
+        borderRadius:
+            BorderRadius.circular(ResponsiveValues.radiusMedium(context)),
+        border: Border.all(color: accent.withValues(alpha: 0.14)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isSyncing ? Icons.sync_rounded : Icons.check_circle_outline_rounded,
+            size: ResponsiveValues.iconSizeS(context),
+            color: accent,
+          ),
+          SizedBox(width: ResponsiveValues.spacingS(context)),
+          Expanded(
+            child: Text(
+              _formatSyncMessage(),
+              style: AppTextStyles.bodySmall(context).copyWith(
+                color: accent,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildStatShimmer() {
@@ -1083,6 +1194,8 @@ class _ProgressScreenState extends State<ProgressScreen>
           padding: EdgeInsets.all(ResponsiveValues.sectionPadding(context)),
           sliver: SliverList(
             delegate: SliverChildListDelegate([
+              _buildSyncStatusBanner(),
+              SizedBox(height: ResponsiveValues.spacingL(context)),
               _buildStatsSection(
                 streakCount: streakCount,
                 chaptersCompleted: chaptersCompleted,

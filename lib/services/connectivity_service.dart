@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/helpers.dart';
 
 enum ConnectionQuality { none, poor, fair, good, excellent }
+enum ConnectivityStatus { online, noNetwork, backendUnavailable }
 
 class ConnectivityService {
   static final ConnectivityService _instance = ConnectivityService._internal();
@@ -26,6 +27,7 @@ class ConnectivityService {
   bool _isInitialized = false;
   DateTime? _lastSyncTime;
   ConnectionQuality _connectionQuality = ConnectionQuality.good;
+  ConnectivityStatus _status = ConnectivityStatus.online;
 
   Stream<bool> get onConnectivityChanged => _connectionStatusController.stream;
   Stream<ConnectionQuality> get onConnectionQualityChanged =>
@@ -35,6 +37,10 @@ class ConnectivityService {
   bool get isInitialized => _isInitialized;
   DateTime? get lastSyncTime => _lastSyncTime;
   ConnectionQuality get connectionQuality => _connectionQuality;
+  ConnectivityStatus get status => _status;
+  bool get hasNetworkConnection => _status != ConnectivityStatus.noNetwork;
+  bool get isBackendUnavailable =>
+      _status == ConnectivityStatus.backendUnavailable;
 
   // Quality thresholds in milliseconds
   static const int _excellentThreshold = 100;
@@ -98,22 +104,26 @@ class ConnectivityService {
             await _probeUrl('${AppConstants.apiBaseUrl}${AppConstants.healthEndpoint}');
 
         if (backendReachable) {
+          _status = ConnectivityStatus.online;
           _handleConnectivityChange(true);
           unawaited(checkConnectionQuality());
         } else {
           debugLog(
             'ConnectivityService',
-            'Backend is unreachable; switching to offline mode so cached data can be used',
+            'Backend is unreachable; using offline mode so cached data can be used',
           );
+          _status = ConnectivityStatus.backendUnavailable;
           _handleConnectivityChange(false);
         }
       } else {
+        _status = ConnectivityStatus.noNetwork;
         _handleConnectivityChange(false);
       }
 
       return _isOnline;
     } catch (e) {
       debugLog('ConnectivityService', 'Connectivity check error: $e');
+      _status = ConnectivityStatus.noNetwork;
       _handleConnectivityChange(false);
       return false;
     }
@@ -229,10 +239,25 @@ class ConnectivityService {
     if (isOnline) return true;
 
     if (context.mounted) {
-      SnackbarService().showOffline(context, action: action);
+      if (_status == ConnectivityStatus.backendUnavailable) {
+        SnackbarService().showServerUnavailable(context, action: action);
+      } else {
+        SnackbarService().showNoInternet(context, action: action);
+      }
     }
 
     return false;
+  }
+
+  String getOfflineReasonText() {
+    switch (_status) {
+      case ConnectivityStatus.online:
+        return 'Online';
+      case ConnectivityStatus.noNetwork:
+        return 'No internet connection';
+      case ConnectivityStatus.backendUnavailable:
+        return 'Server unavailable';
+    }
   }
 
   String getLastSyncTimeText() {

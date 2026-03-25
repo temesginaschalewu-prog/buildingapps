@@ -179,15 +179,20 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
     } catch (e) {
       if (!isMounted) return;
 
-      if (e.toString().contains('401') ||
-          e.toString().contains('unauthorized')) {
+      final errorText = e.toString().toLowerCase();
+      if (errorText.contains('401') ||
+          errorText.contains('unauthorized') ||
+          errorText.contains('authentication required') ||
+          errorText.contains('session expired')) {
         SnackbarService().showError(context, AppStrings.sessionExpired);
         await Future.delayed(const Duration(seconds: 1));
         await _authProvider.logout();
         if (isMounted) context.go('/auth/login');
       } else {
-        SnackbarService()
-            .showError(context, '${AppStrings.failedToSelectSchool}: $e');
+        SnackbarService().showError(
+          context,
+          'We could not save your school right now. Please try again.',
+        );
       }
     }
   }
@@ -219,8 +224,21 @@ class _SchoolSelectionScreenState extends State<SchoolSelectionScreen>
       if (isMounted) context.go('/');
     } catch (e) {
       if (isMounted) {
-        SnackbarService()
-            .showError(context, '${AppStrings.failedToProceed}: $e');
+        final errorText = e.toString().toLowerCase();
+        if (errorText.contains('401') ||
+            errorText.contains('unauthorized') ||
+            errorText.contains('authentication required') ||
+            errorText.contains('session expired')) {
+          SnackbarService().showError(context, AppStrings.sessionExpired);
+          await Future.delayed(const Duration(seconds: 1));
+          await _authProvider.logout();
+          if (isMounted) context.go('/auth/login');
+          return;
+        }
+        SnackbarService().showError(
+          context,
+          'We could not continue without a school right now. Please try again.',
+        );
       }
     }
   }

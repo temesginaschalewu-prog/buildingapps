@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../providers/auth_provider.dart';
+import '../../services/connectivity_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/snackbar_service.dart';
 import '../../widgets/common/base_screen_mixin.dart';
@@ -48,6 +49,12 @@ class _LoginScreenState extends State<LoginScreen>
 
   @override
   bool get hasCachedData => false;
+
+  @override
+  bool get blockContentWhenOffline => false;
+
+  @override
+  bool get useFullScreenLoadingState => false;
 
   @override
   dynamic get errorMessage => null;
@@ -114,8 +121,15 @@ class _LoginScreenState extends State<LoginScreen>
     if (!_formKey.currentState!.validate()) return;
     if (!isMounted) return;
 
-    if (isOffline) {
-      SnackbarService().showOffline(context, action: 'login');
+    final connectivityService = context.read<ConnectivityService>();
+    await connectivityService.checkConnectivity();
+
+    if (!connectivityService.isOnline) {
+      if (connectivityService.hasNetworkConnection) {
+        SnackbarService().showServerUnavailable(context, action: 'log in');
+      } else {
+        SnackbarService().showNoInternet(context, action: 'log in');
+      }
       return;
     }
 
@@ -269,10 +283,8 @@ class _LoginScreenState extends State<LoginScreen>
                               height: ResponsiveValues.spacingXL(context),
                             ),
                             AppButton.primary(
-                              label: isOffline
-                                  ? AppStrings.offlineMode
-                                  : AppStrings.login,
-                              onPressed: isOffline ? null : _handleLogin,
+                              label: AppStrings.login,
+                              onPressed: _isLoading ? null : _handleLogin,
                               isLoading: _isLoading,
                               expanded: true,
                             ),

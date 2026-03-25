@@ -92,6 +92,9 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
   bool _hasCachedData = false;
   bool _isLoading = true;
+  bool _showVideosRefreshShimmer = false;
+  bool _showNotesRefreshShimmer = false;
+  bool _showPracticeRefreshShimmer = false;
 
   // Video players
   VideoPlayerController? _videoController;
@@ -442,6 +445,21 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       return;
     }
 
+    final hasVideos =
+        _videoProvider.getVideosByChapter(widget.chapterId).isNotEmpty;
+    final hasNotes =
+        _noteProvider.getNotesByChapter(widget.chapterId).isNotEmpty;
+    final hasQuestions =
+        _questionProvider.getQuestionsByChapter(widget.chapterId).isNotEmpty;
+
+    if (mounted) {
+      setState(() {
+        _showVideosRefreshShimmer = !hasVideos;
+        _showNotesRefreshShimmer = !hasNotes;
+        _showPracticeRefreshShimmer = !hasQuestions;
+      });
+    }
+
     try {
       await _checkAccessAndLoadData(forceRefresh: true);
     } catch (e) {
@@ -455,6 +473,14 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
               ? 'We could not refresh this chapter just now. Your saved content is still available.'
               : AppStrings.refreshFailed,
         );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _showVideosRefreshShimmer = false;
+          _showNotesRefreshShimmer = false;
+          _showPracticeRefreshShimmer = false;
+        });
       }
     }
   }
@@ -1104,7 +1130,26 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   Future<void> _onVideoClosed(Video video) async {
     _refreshVideoUi(() => _isVideoDialogOpen = false);
 
+    int progress = 0;
     try {
+      if (PlatformHelper.shouldUseMediaKit && _mediaKitPlayer != null) {
+        try {
+          final position = _mediaKitPlayer!.state.position;
+          final duration = _mediaKitPlayer!.state.duration;
+          progress = duration.inSeconds > 0
+              ? (position.inSeconds / duration.inSeconds * 100).toInt()
+              : 0;
+        } catch (e) {}
+      } else if (_videoController != null) {
+        try {
+          final position = _videoController!.value.position;
+          final duration = _videoController!.value.duration;
+          progress = duration.inSeconds > 0
+              ? (position.inSeconds / duration.inSeconds * 100).toInt()
+              : 0;
+        } catch (e) {}
+      }
+
       if (PlatformHelper.shouldUseMediaKit && _mediaKitPlayer != null) {
         unawaited(_mediaKitPlayer?.stop());
         unawaited(_mediaKitPlayer?.dispose());
@@ -1127,17 +1172,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     }
 
     try {
-      int progress = 0;
-      if (PlatformHelper.shouldUseMediaKit && _mediaKitPlayer != null) {
-        try {
-          final position = _mediaKitPlayer!.state.position;
-          final duration = _mediaKitPlayer!.state.duration;
-          progress = duration.inSeconds > 0
-              ? (position.inSeconds / duration.inSeconds * 100).toInt()
-              : 0;
-        } catch (e) {}
-      }
-
       await _progressProvider.saveChapterProgress(
         chapterId: widget.chapterId,
         videoProgress: progress,
@@ -1715,6 +1749,12 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
     AppDialog.hideLoading(context);
     await _saveQuestionProgress();
+    final answeredCount = _questionAnswered.values.where((v) => v).length;
+    await _progressProvider.saveChapterProgress(
+      chapterId: widget.chapterId,
+      questionsAttempted: answeredCount,
+      questionsCorrect: correctCount,
+    );
 
     if (isMounted) {
       SnackbarService().showSuccess(
@@ -1770,6 +1810,13 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       });
 
       await _saveQuestionProgress();
+      final answeredCount = _questionAnswered.values.where((v) => v).length;
+      final correctCount = _isQuestionCorrect.values.where((v) => v).length;
+      await _progressProvider.saveChapterProgress(
+        chapterId: widget.chapterId,
+        questionsAttempted: answeredCount,
+        questionsCorrect: correctCount,
+      );
     } catch (e) {
       if (isMounted) {
         SnackbarService().showError(context, AppStrings.failedToCheckAnswer);
@@ -1876,10 +1923,11 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   Widget _buildVideosTab() {
     final videos = _videoProvider.getVideosByChapter(widget.chapterId);
 
-    if (_videoProvider.isLoadingForChapter(widget.chapterId) &&
-        videos.isEmpty &&
-        !_hasCachedData &&
-        !isOffline) {
+    if (videos.isEmpty &&
+        !isOffline &&
+        (_showVideosRefreshShimmer ||
+            (_videoProvider.isLoadingForChapter(widget.chapterId) &&
+                !_videoProvider.hasLoadedForChapter(widget.chapterId)))) {
       return buildLoadingShimmer();
     }
 
@@ -1931,10 +1979,11 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   Widget _buildNotesTab() {
     final notes = _noteProvider.getNotesByChapter(widget.chapterId);
 
-    if (_noteProvider.isLoadingForChapter(widget.chapterId) &&
-        notes.isEmpty &&
-        !_hasCachedData &&
-        !isOffline) {
+    if (notes.isEmpty &&
+        !isOffline &&
+        (_showNotesRefreshShimmer ||
+            (_noteProvider.isLoadingForChapter(widget.chapterId) &&
+                !_noteProvider.hasLoadedForChapter(widget.chapterId)))) {
       return buildLoadingShimmer();
     }
 
@@ -2004,10 +2053,11 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   Widget _buildPracticeTab() {
     final questions = _questionProvider.getQuestionsByChapter(widget.chapterId);
 
-    if (_questionProvider.isLoadingForChapter(widget.chapterId) &&
-        questions.isEmpty &&
-        !_hasCachedData &&
-        !isOffline) {
+    if (questions.isEmpty &&
+        !isOffline &&
+        (_showPracticeRefreshShimmer ||
+            (_questionProvider.isLoadingForChapter(widget.chapterId) &&
+                !_questionProvider.hasLoadedForChapter(widget.chapterId)))) {
       return buildLoadingShimmer();
     }
 

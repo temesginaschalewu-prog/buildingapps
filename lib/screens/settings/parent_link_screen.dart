@@ -40,6 +40,8 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
   bool _dialogOpen = false;
   bool _isLoadingData = true;
   bool _didInitializeProviders = false;
+  bool _isPollingLinkStatus = false;
+  int _pollTick = 0;
 
   late AnimationController _pulseAnimationController;
   late ParentLinkProvider _parentLinkProvider;
@@ -130,7 +132,53 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
       if (isMounted) {
         setState(() {}); // Update countdown every second
       }
+
+      if (_shouldPollParentLinkStatus()) {
+        _pollTick++;
+        if (_pollTick % 3 == 0) {
+          unawaited(_pollActiveParentLinkStatus());
+        }
+      } else {
+        _pollTick = 0;
+      }
     });
+  }
+
+  bool _shouldPollParentLinkStatus() {
+    return mounted &&
+        !isOffline &&
+        !_isLoadingData &&
+        !_parentLinkProvider.isLinked &&
+        _parentLinkProvider.parentToken != null &&
+        !_parentLinkProvider.isTokenExpired;
+  }
+
+  Future<void> _pollActiveParentLinkStatus() async {
+    if (_isPollingLinkStatus || !_shouldPollParentLinkStatus()) return;
+
+    _isPollingLinkStatus = true;
+    try {
+      await _refreshData(showLoading: false);
+
+      if (!mounted) return;
+
+      if (_parentLinkProvider.isLinked) {
+        if (_dialogOpen && Navigator.of(context, rootNavigator: true).canPop()) {
+          _dialogOpen = false;
+          Navigator.of(context, rootNavigator: true).pop();
+        }
+        SnackbarService().showSuccess(context, 'Parent linked successfully');
+      } else if (_dialogOpen && _parentLinkProvider.isTokenExpired) {
+        if (Navigator.of(context, rootNavigator: true).canPop()) {
+          _dialogOpen = false;
+          Navigator.of(context, rootNavigator: true).pop();
+        }
+      }
+    } catch (_) {
+      // Keep the current state visible and retry on the next polling interval.
+    } finally {
+      _isPollingLinkStatus = false;
+    }
   }
 
   @override
@@ -166,12 +214,20 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
   Future<void> _refreshData({bool showLoading = true}) async {
     if (isRefreshing) return;
 
+    if (showLoading && mounted && !_isLoadingData) {
+      setState(() => _isLoadingData = true);
+    }
+
     try {
       await _parentLinkProvider.clearCache();
       await _parentLinkProvider.getParentLinkStatus(forceRefresh: true);
       _refreshController.refreshCompleted();
     } catch (e) {
       _refreshController.refreshFailed();
+    } finally {
+      if (showLoading && mounted) {
+        setState(() => _isLoadingData = false);
+      }
     }
   }
 
@@ -948,52 +1004,6 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
     }
   }
 
-  Widget _buildUserInfo() {
-    return AppCard.glass(
-      child: Padding(
-        padding: ResponsiveValues.cardPadding(context),
-        child: Row(
-          children: [
-            _buildStudentAvatar(),
-            SizedBox(width: ResponsiveValues.spacingL(context)),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _authProvider.currentUser!.username,
-                    style: AppTextStyles.titleSmall(
-                      context,
-                    ).copyWith(fontWeight: FontWeight.w700),
-                  ),
-                  SizedBox(height: ResponsiveValues.spacingXS(context)),
-                  Text(
-                    'Student ID: ${_authProvider.currentUser!.id}',
-                    style: AppTextStyles.bodySmall(
-                      context,
-                    ).copyWith(color: AppColors.getTextSecondary(context)),
-                  ),
-                  SizedBox(height: ResponsiveValues.spacingXS(context)),
-                  Text(
-                    _authProvider.currentUser!.hasParentLinked
-                        ? 'Parent updates are active'
-                        : 'No parent linked yet',
-                    style: AppTextStyles.labelSmall(context).copyWith(
-                      color: _authProvider.currentUser!.hasParentLinked
-                          ? AppColors.telegramGreen
-                          : AppColors.getTextSecondary(context),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    ).animate().fadeIn(duration: AppThemes.animationMedium, delay: 200.ms);
-  }
-
   @override
   Widget buildContent(BuildContext context) {
     // ✅ Show a small loading indicator while loading (not full screen shimmer)
@@ -1045,10 +1055,6 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                     _buildNotLinkedState(),
                   SizedBox(height: ResponsiveValues.spacingXL(context)),
                   _buildInfoSection(),
-                  if (_authProvider.currentUser != null) ...[
-                    SizedBox(height: ResponsiveValues.spacingL(context)),
-                    _buildUserInfo(),
-                  ],
                   SizedBox(height: ResponsiveValues.spacingXXL(context)),
                 ],
               ),

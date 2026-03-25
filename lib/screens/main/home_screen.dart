@@ -155,8 +155,9 @@ class _HomeScreenState extends State<HomeScreen>
     // ✅ Only show empty state if:
     // 1. No data AND
     // 2. Provider has finished loading OR offline
-    final shouldShowEmpty =
-        !hasData && (_categoryProvider.hasLoaded || isOffline);
+    final shouldShowEmpty = !hasData &&
+        (_categoryProvider.hasLoaded || isOffline) &&
+        !_categoryProvider.isLoading;
 
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),

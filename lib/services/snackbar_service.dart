@@ -204,6 +204,31 @@ class SnackbarService {
     );
   }
 
+  void showNoInternet(BuildContext context, {String? action, String? id}) {
+    final message = action != null
+        ? 'No internet connection. Please connect to $action.'
+        : 'No internet connection. Please check your network and try again.';
+
+    show(
+      context: context,
+      message: message,
+      id: id ?? 'no_internet',
+    );
+  }
+
+  void showServerUnavailable(BuildContext context, {String? action, String? id}) {
+    final message = action != null
+        ? 'Server unavailable right now. Please try again to $action shortly.'
+        : 'Server unavailable right now. Please try again shortly.';
+
+    show(
+      context: context,
+      message: message,
+      type: SnackbarType.warning,
+      id: id ?? 'server_unavailable',
+    );
+  }
+
   void showQueued(BuildContext context, {String? action, String? id}) {
     final message = action != null
         ? '$action saved offline. Will sync when online.'

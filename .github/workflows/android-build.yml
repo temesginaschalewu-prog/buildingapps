@@ -19,7 +19,7 @@ concurrency:
 env:
   BASE_URL: https://family-academy-backend-a12l.onrender.com
   API_VERSION: v1
-  API_BASE_URL: https://family-academy-backend-a12l.onrender.com/api/v1
+  API_BASE_URL: https://family-academy-backend-a12l.onrender.com
   APP_NAME: Family Academy
   APP_VERSION: 1.5.0
   APP_ENVIRONMENT: production
@@ -77,10 +77,10 @@ jobs:
           cp ~/.config/.android/debug.keystore ~/.android/debug.keystore
 
       - name: Build Android APKs
-        run: flutter build apk --release --split-per-abi
+        run: flutter build apk --release --split-per-abi --dart-define=API_BASE_URL=${API_BASE_URL}
 
       - name: Build Android App Bundle
-        run: flutter build appbundle --release
+        run: flutter build appbundle --release --dart-define=API_BASE_URL=${API_BASE_URL}
 
       - name: Upload Split APK Artifacts
         uses: actions/upload-artifact@v4
