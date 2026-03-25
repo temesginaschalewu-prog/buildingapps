@@ -2,7 +2,7 @@ name: familyacademyclient
 description: "Family Academy - Educational Platform with Full Offline Support"
 publish_to: 'none'
 
-version: 1.5.0+1  
+version: 1.5.2+1  
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
