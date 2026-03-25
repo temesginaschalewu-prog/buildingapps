@@ -77,6 +77,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         TickerProviderStateMixin,
         WidgetsBindingObserver {
   static const double _tabShellHeight = kTextTabBarHeight + 1;
+  static const double _practiceActionsHeight = 88;
   late TabController _tabController;
   final ScrollController _scrollController = ScrollController();
   final RefreshController _videosRefreshController = RefreshController();
@@ -1829,13 +1830,13 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     await _initializeFromCache();
 
     if (_chapter != null && _hasCachedData) {
+      if (_hasAccess || (_chapter?.isFree ?? false)) {
+        await _loadContent();
+      }
       setState(() {
         _isLoading = false;
         _isCheckingAccess = false;
       });
-      if (_hasAccess || (_chapter?.isFree ?? false)) {
-        unawaited(_loadContent());
-      }
       if (!isOffline) {
         unawaited(_refreshInBackground());
       }
@@ -2052,6 +2053,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
   Widget _buildPracticeTab() {
     final questions = _questionProvider.getQuestionsByChapter(widget.chapterId);
+    final answeredCount = _questionAnswered.values.where((v) => v).length;
+    final correctCount = _isQuestionCorrect.values.where((v) => v).length;
+    final totalCount = questions.length;
+    final progress = totalCount > 0 ? answeredCount / totalCount : 0.0;
 
     if (questions.isEmpty &&
         !isOffline &&
@@ -2079,10 +2084,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         ],
       );
     }
-
-    final answeredCount = _questionAnswered.values.where((v) => v).length;
-    final totalCount = questions.length;
-    final progress = totalCount > 0 ? answeredCount / totalCount : 0.0;
 
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -2117,7 +2118,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                                 ResponsiveValues.radiusFull(context)),
                           ),
                           child: Text(
-                            '$answeredCount/$totalCount',
+                            '$correctCount/$totalCount',
                             style: AppTextStyles.labelSmall(context).copyWith(
                               color: Colors.white,
                               fontWeight: FontWeight.w700,
@@ -2125,6 +2126,17 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                           ),
                         ),
                       ],
+                    ),
+                    SizedBox(height: ResponsiveValues.spacingXS(context)),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Answered $answeredCount of $totalCount',
+                        style: AppTextStyles.bodySmall(context).copyWith(
+                          color: AppColors.getTextSecondary(context),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
                     ),
                     SizedBox(height: ResponsiveValues.spacingL(context)),
                     Stack(
@@ -2158,34 +2170,49 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
             ),
           ),
         ),
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: ResponsiveValues.screenPadding(context),
-            child: Row(
-              children: [
-                Expanded(
-                  child: AppButton.primary(
-                    label: AppStrings.checkAll,
-                    icon: Icons.checklist_rounded,
-                    onPressed: _selectedAnswers.values
-                            .any((v) => v != null && v.isNotEmpty)
-                        ? () => _checkAllQuestions(questions)
-                        : null,
-                    expanded: true,
-                  ),
+        SliverPersistentHeader(
+          pinned: true,
+          delegate: _TabShellHeaderDelegate(
+            minExtentValue: _practiceActionsHeight,
+            maxExtentValue: _practiceActionsHeight,
+            child: Container(
+              color: AppColors.getBackground(context),
+              padding: EdgeInsets.fromLTRB(
+                ResponsiveValues.sectionPadding(context),
+                0,
+                ResponsiveValues.sectionPadding(context),
+                ResponsiveValues.spacingS(context),
+              ),
+              child: SafeArea(
+                top: false,
+                bottom: false,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: AppButton.primary(
+                        label: AppStrings.checkAll,
+                        icon: Icons.checklist_rounded,
+                        onPressed: _selectedAnswers.values
+                                .any((v) => v != null && v.isNotEmpty)
+                            ? () => _checkAllQuestions(questions)
+                            : null,
+                        expanded: true,
+                      ),
+                    ),
+                    SizedBox(width: ResponsiveValues.spacingM(context)),
+                    Expanded(
+                      child: AppButton.glass(
+                        label: answeredCount > 0
+                            ? AppStrings.resetAll
+                            : AppStrings.reset,
+                        icon: Icons.refresh_rounded,
+                        onPressed: answeredCount > 0 ? _resetAllQuestions : null,
+                        expanded: true,
+                      ),
+                    ),
+                  ],
                 ),
-                SizedBox(width: ResponsiveValues.spacingM(context)),
-                Expanded(
-                  child: AppButton.glass(
-                    label: answeredCount > 0
-                        ? AppStrings.resetAll
-                        : AppStrings.reset,
-                    icon: Icons.refresh_rounded,
-                    onPressed: answeredCount > 0 ? _resetAllQuestions : null,
-                    expanded: true,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),

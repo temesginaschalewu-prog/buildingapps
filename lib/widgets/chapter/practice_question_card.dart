@@ -167,6 +167,7 @@ class PracticeQuestionCard extends StatelessWidget {
                     option['letter'],
                     option['text'],
                     selected == option['letter'],
+                    question.correctOption == option['letter'],
                     isAnswered,
                     isCorrect,
                   )),
@@ -253,6 +254,7 @@ class PracticeQuestionCard extends StatelessWidget {
     String letter,
     String text,
     bool isSelected,
+    bool isActualCorrect,
     bool isAnswered,
     bool isCorrect,
   ) {
@@ -262,7 +264,12 @@ class PracticeQuestionCard extends StatelessWidget {
     IconData? icon;
 
     if (isAnswered) {
-      if (isSelected) {
+      if (isActualCorrect) {
+        borderColor = AppColors.telegramGreen;
+        bgColor = AppColors.telegramGreen.withValues(alpha: 0.08);
+        icon = Icons.check_circle_rounded;
+        textColor = AppColors.telegramGreen;
+      } else if (isSelected) {
         if (isCorrect) {
           borderColor = AppColors.telegramGreen;
           bgColor = AppColors.telegramGreen.withValues(alpha: 0.08);
