@@ -208,6 +208,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     try {
       final deviceService = context.read<DeviceService>();
       final subscriptionProvider = context.read<SubscriptionProvider>();
+      final chapterProvider = context.read<ChapterProvider>();
+      final examProvider = context.read<ExamProvider>();
       final cachedCourse =
           await deviceService.getCacheItem<Map<String, dynamic>>(
         'course_${widget.courseId}',
@@ -230,6 +232,11 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
             _hasAccess ? false : (cachedCourse['has_pending_payment'] ?? false);
         _rejectionReason = _hasAccess ? null : cachedCourse['rejection_reason'];
         _hasCachedData = true;
+        _chaptersLoaded =
+            chapterProvider.getChaptersByCourse(_course!.id).isNotEmpty ||
+            chapterProvider.hasLoadedForCourse(_course!.id);
+        _examsLoaded = examProvider.getExamsByCourse(_course!.id).isNotEmpty ||
+            examProvider.hasLoadedForCourse(_course!.id);
         debugLog('CourseDetailScreen', '✅ Loaded course from cache');
         return;
       }
@@ -250,6 +257,11 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         _hasPendingPayment = _hasAccess ? false : _hasPendingPayment;
         _rejectionReason = _hasAccess ? null : _rejectionReason;
         _hasCachedData = true;
+        _chaptersLoaded =
+            chapterProvider.getChaptersByCourse(_course!.id).isNotEmpty ||
+            chapterProvider.hasLoadedForCourse(_course!.id);
+        _examsLoaded = examProvider.getExamsByCourse(_course!.id).isNotEmpty ||
+            examProvider.hasLoadedForCourse(_course!.id);
         debugLog('CourseDetailScreen', '✅ Using passed course data');
       }
     } catch (e) {
@@ -313,6 +325,13 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         _rejectionReason = null;
       }
       _hasCachedData = true;
+      final chapterProvider = context.read<ChapterProvider>();
+      final examProvider = context.read<ExamProvider>();
+      _chaptersLoaded =
+          chapterProvider.getChaptersByCourse(_course!.id).isNotEmpty ||
+          chapterProvider.hasLoadedForCourse(_course!.id);
+      _examsLoaded = examProvider.getExamsByCourse(_course!.id).isNotEmpty ||
+          examProvider.hasLoadedForCourse(_course!.id);
       debugLog(
         'CourseDetailScreen',
         '✅ Restored course from saved provider caches',
@@ -1104,7 +1123,9 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         _course != null ? examProvider.getExamsByCourse(_course!.id) : <Exam>[];
 
     // ✅ CRITICAL: Only show shimmer if loading AND no cached data
-    if (!_initialLoadSettled || (_isLoading && !_hasCachedData)) {
+    final hasImmediateCourseData = _course != null && _hasCachedData;
+    if ((!_initialLoadSettled && !hasImmediateCourseData) ||
+        (_isLoading && !_hasCachedData)) {
       return _buildSkeletonLoader();
     }
 
