@@ -312,7 +312,9 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
             ),
           ),
           child: Text(
-            _isQueued ? 'Saved for sync' : 'Submitted for review',
+            _isQueued
+                ? context.read<SettingsProvider>().getPaymentSuccessSavedBadge()
+                : context.read<SettingsProvider>().getPaymentSuccessReviewBadge(),
             style: AppTextStyles.labelMedium(context).copyWith(
               color: _isQueued ? AppColors.info : AppColors.telegramGreen,
               fontWeight: FontWeight.w700,
@@ -339,8 +341,10 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
         SizedBox(height: ResponsiveValues.spacingS(context)),
         Text(
           _isQueued
-              ? 'Your payment is saved and will sync once this device is back online.'
-              : 'Your payment has been sent for review.',
+              ? context.read<SettingsProvider>().getPaymentSuccessQueuedSummary()
+              : context
+                  .read<SettingsProvider>()
+                  .getPaymentSuccessSubmittedSummary(),
           style: AppTextStyles.bodyMedium(context).copyWith(
             color: AppColors.getTextSecondary(context),
             height: 1.5,
@@ -350,8 +354,10 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
         SizedBox(height: ResponsiveValues.spacingL(context)),
         Text(
           _isQueued
-              ? 'Your payment details are safe on this device and will be sent automatically when you are back online.'
-              : 'We will review the payment and update your access as soon as it is confirmed.',
+              ? context.read<SettingsProvider>().getPaymentSuccessQueuedDetail()
+              : context
+                  .read<SettingsProvider>()
+                  .getPaymentSuccessSubmittedDetail(),
           style: AppTextStyles.bodyMedium(context).copyWith(
             color: AppColors.getTextSecondary(context),
             height: 1.45,

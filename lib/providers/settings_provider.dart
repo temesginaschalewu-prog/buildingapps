@@ -1214,6 +1214,54 @@ class SettingsProvider extends ChangeNotifier
     return 'We could not finish your payment just now. Please try again in a moment.';
   }
 
+  String getPaymentSuccessSavedBadge() {
+    final configured = getSettingValue('payment_success_saved_badge');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Saved for sync';
+  }
+
+  String getPaymentSuccessReviewBadge() {
+    final configured = getSettingValue('payment_success_review_badge');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Submitted for review';
+  }
+
+  String getPaymentSuccessQueuedSummary() {
+    final configured = getSettingValue('payment_success_queued_summary');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Your payment is saved and will sync once this device is back online.';
+  }
+
+  String getPaymentSuccessSubmittedSummary() {
+    final configured = getSettingValue('payment_success_submitted_summary');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Your payment has been sent for review.';
+  }
+
+  String getPaymentSuccessQueuedDetail() {
+    final configured = getSettingValue('payment_success_queued_detail');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Your payment details are safe on this device and will be sent automatically when you are back online.';
+  }
+
+  String getPaymentSuccessSubmittedDetail() {
+    final configured = getSettingValue('payment_success_submitted_detail');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'We will review the payment and update your access as soon as it is confirmed.';
+  }
+
   String getVideoDownloadingMessage(int percent) {
     final configured = getSettingValue('video_downloading_message');
     final template = (configured != null && configured.trim().isNotEmpty)
@@ -1904,6 +1952,47 @@ class SettingsProvider extends ChangeNotifier
     return 'Explanation';
   }
 
+  String getChapterContentSubtitle() {
+    final configured = getSettingValue('chapter_content_subtitle');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Videos, notes, and practice';
+  }
+
+  String getChapterNotesEmptyMessage() {
+    final configured = getSettingValue('chapter_notes_empty_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Notes for this chapter will appear here.';
+  }
+
+  String getChapterNotesOfflineEmptyMessage() {
+    final configured = getSettingValue('chapter_notes_offline_empty_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'No saved notes are available offline for this chapter yet.';
+  }
+
+  String getChapterPracticeEmptyMessage() {
+    final configured = getSettingValue('chapter_practice_empty_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Practice questions for this chapter will appear soon.';
+  }
+
+  String getChapterPracticeOfflineEmptyMessage() {
+    final configured =
+        getSettingValue('chapter_practice_offline_empty_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'No saved practice questions are available offline for this chapter yet.';
+  }
+
   String getChapterUnlockRenewButton() {
     final configured = getSettingValue('chapter_unlock_renew_button');
     if (configured != null && configured.trim().isNotEmpty) {
@@ -2141,6 +2230,71 @@ class SettingsProvider extends ChangeNotifier
       return configured.trim();
     }
     return 'Pick up where you left off or start a new study chat.';
+  }
+
+  String getNotificationsEmptyMessage() {
+    final configured = getSettingValue('notifications_empty_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Your notifications will appear here as new updates arrive.';
+  }
+
+  String getNotificationsOfflineEmptyMessage() {
+    final configured = getSettingValue('notifications_offline_empty_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'No saved notifications are available offline right now.';
+  }
+
+  String getNotificationsReadLabel() {
+    final configured = getSettingValue('notifications_read_label');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Read';
+  }
+
+  String getNotificationsUnreadLabel() {
+    final configured = getSettingValue('notifications_unread_label');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Unread';
+  }
+
+  String getNotificationsQueuedLabel() {
+    final configured = getSettingValue('notifications_queued_label');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Queued';
+  }
+
+  String getNotificationsFailedLabel() {
+    final configured = getSettingValue('notifications_failed_label');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Failed';
+  }
+
+  String getNotificationsDeliveredLabel() {
+    final configured = getSettingValue('notifications_delivered_label');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Delivered';
+  }
+
+  String getNotificationsCategoryFallbackLabel() {
+    final configured =
+        getSettingValue('notifications_category_fallback_label');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Notification';
   }
 
   String getParentLinkTitle() {

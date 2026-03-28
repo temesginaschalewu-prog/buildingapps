@@ -7,6 +7,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 
 import '../../models/notification_model.dart' as AppNotification;
 import '../../providers/notification_provider.dart';
+import '../../providers/settings_provider.dart';
 import '../../services/snackbar_service.dart';
 import '../../widgets/common/base_screen_mixin.dart';
 import '../../widgets/common/app_card.dart';
@@ -37,6 +38,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
 
   late AnimationController _fabAnimationController;
   late NotificationProvider _provider;
+  late SettingsProvider _settingsProvider;
   bool _providerBound = false;
 
   @override
@@ -176,6 +178,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     if (_providerBound) return;
 
     _provider = context.read<NotificationProvider>();
+    _settingsProvider = context.read<SettingsProvider>();
     _provider.addListener(_handleProviderChanged);
     _providerBound = true;
 
@@ -298,7 +301,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     if (title.contains('chapter')) return 'Chapter';
     if (title.contains('streak') || title.contains('progress')) return 'Progress';
     if (title.contains('motivation') || title.contains('reminder')) return 'Reminder';
-    return 'Notification';
+    return _settingsProvider.getNotificationsCategoryFallbackLabel();
   }
 
   Color _getNotificationColor(AppNotification.Notification notification) {
@@ -419,7 +422,9 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                     icon: notification.isRead
                         ? Icons.drafts_rounded
                         : Icons.mark_email_unread_rounded,
-                    label: notification.isRead ? 'Read' : 'Unread',
+                    label: notification.isRead
+                        ? _settingsProvider.getNotificationsReadLabel()
+                        : _settingsProvider.getNotificationsUnreadLabel(),
                     color: notification.isRead
                         ? AppColors.telegramGray
                         : AppColors.telegramBlue,
@@ -429,8 +434,11 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                         ? Icons.schedule_rounded
                         : Icons.notifications_active_rounded,
                     label: notification.isPending
-                        ? 'Queued'
-                        : (notification.isFailed ? 'Failed' : 'Delivered'),
+                        ? _settingsProvider.getNotificationsQueuedLabel()
+                        : (notification.isFailed
+                            ? _settingsProvider.getNotificationsFailedLabel()
+                            : _settingsProvider
+                                .getNotificationsDeliveredLabel()),
                     color: notification.isPending
                         ? AppColors.warning
                         : (notification.isFailed
@@ -999,8 +1007,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         child: buildEmptyWidget(
           dataType: AppStrings.notifications,
           customMessage: isOffline
-              ? AppStrings.noCachedNotificationsAvailable
-              : AppStrings.notificationsWillAppearHere,
+              ? _settingsProvider.getNotificationsOfflineEmptyMessage()
+              : _settingsProvider.getNotificationsEmptyMessage(),
           isOffline: isOffline,
         ),
       );

@@ -143,7 +143,9 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
   @override
   String? get screenSubtitle =>
-      isOffline ? AppStrings.offlineMode : 'Videos, notes, and practice';
+      isOffline
+          ? AppStrings.offlineMode
+          : context.read<SettingsProvider>().getChapterContentSubtitle();
 
   @override
   bool get isLoading => _isLoading && !_hasCachedData;
@@ -1999,8 +2001,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
             child: buildEmptyWidget(
               dataType: AppStrings.notes,
               customMessage: isOffline
-                  ? AppStrings.noCachedNotes
-                  : AppStrings.noNotesForChapter,
+                  ? context
+                      .read<SettingsProvider>()
+                      .getChapterNotesOfflineEmptyMessage()
+                  : context.read<SettingsProvider>().getChapterNotesEmptyMessage(),
               isOffline: isOffline,
             ),
           ),
@@ -2076,8 +2080,12 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
             child: buildEmptyWidget(
               dataType: AppStrings.practiceQuestions,
               customMessage: isOffline
-                  ? AppStrings.noCachedQuestions
-                  : AppStrings.practiceQuestionsComingSoon,
+                  ? context
+                      .read<SettingsProvider>()
+                      .getChapterPracticeOfflineEmptyMessage()
+                  : context
+                      .read<SettingsProvider>()
+                      .getChapterPracticeEmptyMessage(),
               isOffline: isOffline,
             ),
           ),
