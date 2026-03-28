@@ -2,7 +2,9 @@
 // COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../models/question_model.dart';
+import '../../providers/settings_provider.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/responsive_values.dart';
@@ -34,6 +36,7 @@ class PracticeQuestionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final settingsProvider = context.read<SettingsProvider>();
     final questionId = question.id;
     final selected = selectedAnswers[questionId];
     final isAnswered = questionAnswered[questionId] ?? false;
@@ -177,7 +180,7 @@ class PracticeQuestionCard extends StatelessWidget {
                   padding:
                       EdgeInsets.only(top: ResponsiveValues.spacingL(context)),
                   child: AppButton.primary(
-                    label: 'Check Answer',
+                    label: settingsProvider.getPracticeCheckAnswerLabel(),
                     onPressed: selected != null
                         ? () => onCheckAnswer(
                             question.id, selected) // ✅ FIXED: Use question.id
@@ -218,7 +221,10 @@ class PracticeQuestionCard extends StatelessWidget {
                               SizedBox(
                                   width: ResponsiveValues.spacingS(context)),
                               Text(
-                                isCorrect ? 'Correct!' : 'Explanation',
+                                isCorrect
+                                    ? settingsProvider.getPracticeCorrectLabel()
+                                    : settingsProvider
+                                        .getPracticeExplanationLabel(),
                                 style:
                                     AppTextStyles.titleSmall(context).copyWith(
                                   color: isCorrect

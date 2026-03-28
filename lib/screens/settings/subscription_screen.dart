@@ -118,7 +118,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
           setState(() => _errorMessage = null);
           SnackbarService().showInfo(
             context,
-            'We could not refresh subscriptions just now. Your saved subscriptions are still available.',
+            _settingsProvider.getSubscriptionRefreshSavedMessage(),
           );
         } else {
           setState(() => _errorMessage = getUserFriendlyErrorMessage(e));
@@ -299,7 +299,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              '${AppStrings.expiresIn} $daysRemaining ${AppStrings.days}',
+                              '${_settingsProvider.getSubscriptionExpiresInPrefix()} $daysRemaining ${AppStrings.days}',
                               style: AppTextStyles.labelSmall(context).copyWith(
                                 color: AppColors.getTextSecondary(
                                   context,
@@ -389,7 +389,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                             ),
                             _buildInfoRow(
                               icon: Icons.timer_rounded,
-                              label: AppStrings.daysRemaining,
+                              label: _settingsProvider
+                                  .getSubscriptionDaysRemainingLabel(),
                               value: '$daysRemaining ${AppStrings.days}',
                               valueColor: isExpiringSoon ? statusColor : null,
                             ),
@@ -404,7 +405,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                       width: double.infinity,
                       child: isExpired
                           ? AppButton.danger(
-                              label: AppStrings.renewNow,
+                              label:
+                                  _settingsProvider.getSubscriptionRenewNowLabel(),
                               onPressed: () {
                                 context.push(
                                   '/payment',
@@ -425,7 +427,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                               expanded: true,
                             )
                           : AppButton.primary(
-                              label: AppStrings.extendNow,
+                              label: _settingsProvider
+                                  .getSubscriptionExtendNowLabel(),
                               onPressed: () {
                                 context.push(
                                   '/payment',

@@ -8,6 +8,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../models/exam_model.dart';
 import '../../models/category_model.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/settings_provider.dart';
 import '../../providers/payment_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../providers/category_provider.dart';
@@ -195,16 +196,19 @@ class ExamCard extends StatelessWidget {
     final subscriptionProvider = context.read<SubscriptionProvider>();
     final paymentProvider = context.read<PaymentProvider>();
     final categoryProvider = context.read<CategoryProvider>();
+    final settingsProvider = context.read<SettingsProvider>();
     final connectivity = context.read<ConnectivityService>();
 
     if (!authProvider.isAuthenticated) {
-      SnackbarService().showError(context, 'Please login to access exams');
+      SnackbarService()
+          .showError(context, settingsProvider.getExamLoginRequiredMessage());
       return;
     }
 
     final category = categoryProvider.getCategoryById(exam.categoryId);
     if (category == null) {
-      SnackbarService().showError(context, 'Category not found');
+      SnackbarService()
+          .showError(context, settingsProvider.getExamCategoryMissingMessage());
       return;
     }
 
@@ -230,9 +234,8 @@ class ExamCard extends StatelessWidget {
     if (hasPendingPayment) {
       await AppDialog.info(
         context: context,
-        title: 'Payment Pending',
-        message:
-            'You have a pending payment for "${category.name}". Please wait for admin verification.',
+        title: settingsProvider.getExamPaymentPendingTitle(),
+        message: settingsProvider.getExamPaymentPendingMessage(category.name),
       );
       return;
     }
@@ -247,6 +250,7 @@ class ExamCard extends StatelessWidget {
 
   void _showPaymentDialog(BuildContext context, Category category) {
     final subscriptionProvider = context.read<SubscriptionProvider>();
+    final settingsProvider = context.read<SettingsProvider>();
     final hasExpiredSubscription = subscriptionProvider.expiredSubscriptions
         .any((sub) => sub.categoryId == category.id);
 
@@ -254,11 +258,13 @@ class ExamCard extends StatelessWidget {
 
     AppDialog.confirm(
       context: context,
-      title: 'Unlock Exam',
+      title: settingsProvider.getExamUnlockTitle(),
       message: hasExpiredSubscription
-          ? 'Your subscription for "${category.name}" has expired. Renew to access this exam.'
-          : 'This exam requires access to "${category.name}". Purchase to unlock.',
-      confirmText: hasExpiredSubscription ? 'Renew Now' : 'Purchase Access',
+          ? settingsProvider.getExamUnlockExpiredMessage(category.name)
+          : settingsProvider.getExamUnlockPurchaseMessage(category.name),
+      confirmText: hasExpiredSubscription
+          ? settingsProvider.getChapterUnlockRenewButton()
+          : settingsProvider.getChapterUnlockPurchaseButton(),
     ).then((confirmed) {
       if (confirmed == true && context.mounted) {
         context.push('/payment', extra: {

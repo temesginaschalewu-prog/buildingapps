@@ -966,7 +966,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                         child: Text(
                           _submitStatusMessage.isNotEmpty
                               ? _submitStatusMessage
-                              : 'Processing your payment. Please wait...',
+                              : _settingsProvider.getPaymentProcessingMessage(),
                           style: AppTextStyles.bodyMedium(context).copyWith(
                             color: AppColors.info,
                             fontWeight: FontWeight.w600,
@@ -982,7 +982,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                 width: double.infinity,
                 child: AppButton.primary(
                   label: _isSubmittingPayment
-                      ? 'Processing Payment...'
+                      ? _settingsProvider.getPaymentProcessingButtonLabel()
                       : (isOffline
                           ? AppStrings.queuePayment
                           : AppStrings.submitPayment),
@@ -1033,8 +1033,8 @@ class _PaymentScreenState extends State<PaymentScreen>
       _isSubmittingPayment = true;
       _queuedFallbackTriggered = false;
       _submitStatusMessage = isOffline
-          ? 'Saving your payment for sync'
-          : 'Uploading your payment proof';
+          ? _settingsProvider.getPaymentSavingForSyncMessage()
+          : _settingsProvider.getPaymentUploadingProofMessage();
     });
 
     try {
@@ -1046,7 +1046,8 @@ class _PaymentScreenState extends State<PaymentScreen>
         try {
           if (isMounted) {
             setState(() {
-              _submitStatusMessage = 'Uploading your payment proof';
+              _submitStatusMessage =
+                  _settingsProvider.getPaymentUploadingProofMessage();
             });
           }
 
@@ -1075,7 +1076,7 @@ class _PaymentScreenState extends State<PaymentScreen>
           // ✅ On upload timeout or failure, FALL BACK TO OFFLINE QUEUE
           SnackbarService().showInfo(
             context,
-            'This is taking a little longer than expected. Your payment will be saved and synced automatically.',
+            _settingsProvider.getPaymentUploadDelayMessage(),
           );
 
           // Save to offline queue
@@ -1150,7 +1151,7 @@ class _PaymentScreenState extends State<PaymentScreen>
       // ✅ Online submission with proof URL
       if (isMounted) {
         setState(() {
-          _submitStatusMessage = 'Submitting your payment';
+          _submitStatusMessage = _settingsProvider.getPaymentSubmittingMessage();
         });
       }
 
@@ -1210,7 +1211,7 @@ class _PaymentScreenState extends State<PaymentScreen>
         } else if (message.toLowerCase().contains('pending')) {
           SnackbarService().showInfo(
             context,
-            'You already have a pending payment for this category.',
+            _settingsProvider.getPaymentPendingExistsMessage(),
           );
           if (isMounted) {
             await context.push('/payment-success', extra: {
@@ -1248,7 +1249,7 @@ class _PaymentScreenState extends State<PaymentScreen>
       if (shouldQueueAsOfflineFallback) {
         SnackbarService().showInfo(
           context,
-          'Network issue detected. Saving payment for later sync...',
+          _settingsProvider.getPaymentNetworkQueueMessage(),
         );
 
         await _queuePaymentOffline(
@@ -1284,7 +1285,7 @@ class _PaymentScreenState extends State<PaymentScreen>
       if (isMounted) {
         SnackbarService().showError(
           context,
-          'We could not finish your payment just now. Please try again in a moment.',
+          _settingsProvider.getPaymentGenericFailureMessage(),
         );
       }
     } finally {

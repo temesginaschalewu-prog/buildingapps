@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/video_model.dart';
+import '../../providers/settings_provider.dart';
 import '../../providers/video_provider.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
@@ -136,6 +137,7 @@ class _VideoCardState extends State<VideoCard>
     final screenWidth = MediaQuery.of(context).size.width;
     final isTablet = screenWidth > 600;
     final downloadedQualityLabel = _downloadedQuality?.label;
+    final settingsProvider = context.read<SettingsProvider>();
 
     return AppCard.video(
       child: Column(
@@ -300,7 +302,9 @@ class _VideoCardState extends State<VideoCard>
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                'Downloading... ${(_downloadProgress * 100).toInt()}%',
+                                settingsProvider.getVideoDownloadingMessage(
+                                  (_downloadProgress * 100).toInt(),
+                                ),
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.bold,
@@ -514,11 +518,14 @@ class _VideoCardState extends State<VideoCard>
   }
 
   void _showDeleteDialog() {
+    final settingsProvider = context.read<SettingsProvider>();
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Remove Download'),
-        content: Text('Remove "${widget.video.title}" from your downloads?'),
+        title: Text(settingsProvider.getVideoRemoveDownloadTitle()),
+        content: Text(
+          settingsProvider.getVideoRemoveDownloadMessage(widget.video.title),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -528,7 +535,10 @@ class _VideoCardState extends State<VideoCard>
             onPressed: () {
               Navigator.pop(context);
               _videoProvider.removeDownloadedVideo(widget.video.id);
-              SnackbarService().showSuccess(context, 'Download removed');
+              SnackbarService().showSuccess(
+                context,
+                settingsProvider.getVideoDownloadRemovedMessage(),
+              );
             },
             style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: const Text('Remove'),
@@ -539,11 +549,14 @@ class _VideoCardState extends State<VideoCard>
   }
 
   void _showCancelDownloadDialog() {
+    final settingsProvider = context.read<SettingsProvider>();
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Cancel Download'),
-        content: Text('Cancel downloading "${widget.video.title}"?'),
+        title: Text(settingsProvider.getVideoCancelDownloadTitle()),
+        content: Text(
+          settingsProvider.getVideoCancelDownloadMessage(widget.video.title),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -553,7 +566,10 @@ class _VideoCardState extends State<VideoCard>
             onPressed: () {
               Navigator.pop(context);
               _videoProvider.cancelDownload(widget.video.id);
-              SnackbarService().showInfo(context, 'Download cancelled');
+              SnackbarService().showInfo(
+                context,
+                settingsProvider.getVideoDownloadCancelledMessage(),
+              );
             },
             style: TextButton.styleFrom(foregroundColor: Colors.orange),
             child: const Text('Yes, Cancel'),

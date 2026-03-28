@@ -1102,6 +1102,174 @@ class SettingsProvider extends ChangeNotifier
     return 'Please wait for admin verification (${getPaymentVerificationWindowText()})';
   }
 
+  String getSubscriptionRefreshSavedMessage() {
+    final configured = getSettingValue('subscription_refresh_saved_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'We could not refresh subscriptions just now. Your saved subscriptions are still available.';
+  }
+
+  String getSubscriptionExpiresInPrefix() {
+    final configured = getSettingValue('subscription_expires_in_prefix');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Expires in';
+  }
+
+  String getSubscriptionDaysRemainingLabel() {
+    final configured = getSettingValue('subscription_days_remaining_label');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Days remaining';
+  }
+
+  String getSubscriptionRenewNowLabel() {
+    final configured = getSettingValue('subscription_renew_now_label');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Renew Now';
+  }
+
+  String getSubscriptionExtendNowLabel() {
+    final configured = getSettingValue('subscription_extend_now_label');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Extend Now';
+  }
+
+  String getPaymentProcessingMessage() {
+    final configured = getSettingValue('payment_processing_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Processing your payment. Please wait...';
+  }
+
+  String getPaymentProcessingButtonLabel() {
+    final configured = getSettingValue('payment_processing_button_label');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Processing Payment...';
+  }
+
+  String getPaymentSavingForSyncMessage() {
+    final configured = getSettingValue('payment_saving_for_sync_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Saving your payment for sync';
+  }
+
+  String getPaymentUploadingProofMessage() {
+    final configured = getSettingValue('payment_uploading_proof_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Uploading your payment proof';
+  }
+
+  String getPaymentUploadDelayMessage() {
+    final configured = getSettingValue('payment_upload_delay_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'This is taking a little longer than expected. Your payment will be saved and synced automatically.';
+  }
+
+  String getPaymentSubmittingMessage() {
+    final configured = getSettingValue('payment_submitting_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Submitting your payment';
+  }
+
+  String getPaymentPendingExistsMessage() {
+    final configured = getSettingValue('payment_pending_exists_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'You already have a pending payment for this category.';
+  }
+
+  String getPaymentNetworkQueueMessage() {
+    final configured = getSettingValue('payment_network_queue_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Network issue detected. Saving payment for later sync...';
+  }
+
+  String getPaymentGenericFailureMessage() {
+    final configured = getSettingValue('payment_generic_failure_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'We could not finish your payment just now. Please try again in a moment.';
+  }
+
+  String getVideoDownloadingMessage(int percent) {
+    final configured = getSettingValue('video_downloading_message');
+    final template = (configured != null && configured.trim().isNotEmpty)
+        ? configured.trim()
+        : 'Downloading... {progress}%';
+    return template.replaceAll('{progress}', percent.toString());
+  }
+
+  String getVideoRemoveDownloadTitle() {
+    final configured = getSettingValue('video_remove_download_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Remove Download';
+  }
+
+  String getVideoRemoveDownloadMessage(String title) {
+    final configured = getSettingValue('video_remove_download_message');
+    final template = (configured != null && configured.trim().isNotEmpty)
+        ? configured.trim()
+        : 'Remove "{title}" from your downloads?';
+    return template.replaceAll('{title}', title);
+  }
+
+  String getVideoDownloadRemovedMessage() {
+    final configured = getSettingValue('video_download_removed_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Download removed';
+  }
+
+  String getVideoCancelDownloadTitle() {
+    final configured = getSettingValue('video_cancel_download_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Cancel Download';
+  }
+
+  String getVideoCancelDownloadMessage(String title) {
+    final configured = getSettingValue('video_cancel_download_message');
+    final template = (configured != null && configured.trim().isNotEmpty)
+        ? configured.trim()
+        : 'Cancel downloading "{title}"?';
+    return template.replaceAll('{title}', title);
+  }
+
+  String getVideoDownloadCancelledMessage() {
+    final configured = getSettingValue('video_download_cancelled_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Download cancelled';
+  }
+
   String getPaymentMethodsUnavailableMessage() {
     final configured = getSettingValue('payment_methods_unavailable_message');
     if (configured != null && configured.trim().isNotEmpty) {
@@ -1654,6 +1822,86 @@ class SettingsProvider extends ChangeNotifier
         ? configured.trim()
         : 'This chapter requires access to "{category}". Purchase to unlock all content.';
     return template.replaceAll('{category}', categoryName);
+  }
+
+  String getExamLoginRequiredMessage() {
+    final configured = getSettingValue('exam_login_required_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Please login to access exams';
+  }
+
+  String getExamCategoryMissingMessage() {
+    final configured = getSettingValue('exam_category_missing_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Category not found';
+  }
+
+  String getExamPaymentPendingTitle() {
+    final configured = getSettingValue('exam_payment_pending_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Payment Pending';
+  }
+
+  String getExamPaymentPendingMessage(String categoryName) {
+    final configured = getSettingValue('exam_payment_pending_message');
+    final template = (configured != null && configured.trim().isNotEmpty)
+        ? configured.trim()
+        : 'You have a pending payment for "{category}". Please wait for admin verification.';
+    return template.replaceAll('{category}', categoryName);
+  }
+
+  String getExamUnlockTitle() {
+    final configured = getSettingValue('exam_unlock_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Unlock Exam';
+  }
+
+  String getExamUnlockExpiredMessage(String categoryName) {
+    final configured = getSettingValue('exam_unlock_expired_message');
+    final template = (configured != null && configured.trim().isNotEmpty)
+        ? configured.trim()
+        : 'Your subscription for "{category}" has expired. Renew to access this exam.';
+    return template.replaceAll('{category}', categoryName);
+  }
+
+  String getExamUnlockPurchaseMessage(String categoryName) {
+    final configured = getSettingValue('exam_unlock_purchase_message');
+    final template = (configured != null && configured.trim().isNotEmpty)
+        ? configured.trim()
+        : 'This exam requires access to "{category}". Purchase to unlock.';
+    return template.replaceAll('{category}', categoryName);
+  }
+
+  String getPracticeCheckAnswerLabel() {
+    final configured = getSettingValue('practice_check_answer_label');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Check Answer';
+  }
+
+  String getPracticeCorrectLabel() {
+    final configured = getSettingValue('practice_correct_label');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Correct!';
+  }
+
+  String getPracticeExplanationLabel() {
+    final configured = getSettingValue('practice_explanation_label');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Explanation';
   }
 
   String getChapterUnlockRenewButton() {
