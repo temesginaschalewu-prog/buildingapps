@@ -11,6 +11,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../models/user_model.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/settings_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../providers/school_provider.dart';
@@ -59,6 +60,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   late AnimationController _headerAnimationController;
   late UserProvider _userProvider;
   late SchoolProvider _schoolProvider;
+  late SettingsProvider _settingsProvider;
   late ThemeProvider _themeProvider;
 
   void _syncDraftFromUser(User? user, {bool force = false}) {
@@ -75,7 +77,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   @override
   String? get screenSubtitle =>
-      isOffline ? AppStrings.offlineMode : AppStrings.manageAccount;
+      isOffline ? AppStrings.offlineMode : _settingsProvider.getProfileScreenSubtitle();
 
   @override
   bool get isLoading =>
@@ -86,7 +88,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   @override
   dynamic get errorMessage =>
-      _cachedUser == null ? 'We could not load your profile yet.' : null;
+      _cachedUser == null ? _settingsProvider.getProfileLoadErrorMessage() : null;
 
   @override
   List<Widget>? get appBarActions => [
@@ -110,6 +112,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     super.didChangeDependencies();
     _userProvider = Provider.of<UserProvider>(context);
     _schoolProvider = Provider.of<SchoolProvider>(context);
+    _settingsProvider = Provider.of<SettingsProvider>(context);
     _themeProvider = Provider.of<ThemeProvider>(context);
 
     // ✅ FIXED: Get current user from UserProvider or AuthProvider
@@ -1210,7 +1213,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     final user = _cachedUser;
     if (user == null) {
       return buildErrorWidget(
-        'We could not load your profile yet.',
+        _settingsProvider.getProfileLoadErrorMessage(),
         onRetry: onRefresh,
       );
     }

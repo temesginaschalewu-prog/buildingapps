@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../providers/category_provider.dart';
 import '../../providers/payment_provider.dart';
+import '../../providers/settings_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../widgets/common/base_screen_mixin.dart';
 import '../../widgets/category/category_card.dart';
@@ -21,6 +22,7 @@ class _HomeScreenState extends State<HomeScreen>
     with BaseScreenMixin<HomeScreen> {
   late CategoryProvider _categoryProvider;
   late PaymentProvider _paymentProvider;
+  late SettingsProvider _settingsProvider;
   late SubscriptionProvider _subscriptionProvider;
   String _greeting = '';
 
@@ -28,7 +30,7 @@ class _HomeScreenState extends State<HomeScreen>
   String get screenTitle => _greeting;
 
   @override
-  String? get screenSubtitle => 'Discover your learning path';
+  String? get screenSubtitle => _settingsProvider.getHomeScreenSubtitle();
 
   // ✅ CRITICAL: isLoading should be false if we have cached data
   @override
@@ -48,17 +50,13 @@ class _HomeScreenState extends State<HomeScreen>
   int get shimmerItemCount => 6;
 
   @override
-  void initState() {
-    super.initState();
-    _setGreeting();
-  }
-
-  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _categoryProvider = context.read<CategoryProvider>();
     _paymentProvider = context.read<PaymentProvider>();
+    _settingsProvider = Provider.of<SettingsProvider>(context);
     _subscriptionProvider = context.read<SubscriptionProvider>();
+    _setGreeting();
 
     // ✅ Listen for category changes to update UI automatically
     _categoryProvider.addListener(_onCategoryChange);
@@ -102,11 +100,11 @@ class _HomeScreenState extends State<HomeScreen>
   void _setGreeting() {
     final hour = DateTime.now().hour;
     if (hour < 12) {
-      _greeting = 'Good morning';
+      _greeting = _settingsProvider.getHomeGreetingMorning();
     } else if (hour < 17) {
-      _greeting = 'Good afternoon';
+      _greeting = _settingsProvider.getHomeGreetingAfternoon();
     } else {
-      _greeting = 'Good evening';
+      _greeting = _settingsProvider.getHomeGreetingEvening();
     }
   }
 
@@ -164,12 +162,12 @@ class _HomeScreenState extends State<HomeScreen>
       slivers: [
         if (shouldShowEmpty)
           SliverFillRemaining(
-            child: buildEmptyWidget(
-              dataType: 'categories',
-              customMessage: 'Categories will appear here when available.',
-              isOffline: isOffline,
-            ),
-          )
+              child: buildEmptyWidget(
+                dataType: 'categories',
+                customMessage: _settingsProvider.getHomeEmptyCategoriesMessage(),
+                isOffline: isOffline,
+              ),
+            )
         else ...[
           if (activeCategories.isNotEmpty) ...[
             SliverPadding(
@@ -219,7 +217,7 @@ class _HomeScreenState extends State<HomeScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Coming Soon',
+                      _settingsProvider.getHomeComingSoonTitle(),
                       style: AppTextStyles.titleMedium(context).copyWith(
                         color: AppColors.telegramOrange,
                         fontWeight: FontWeight.w700,
@@ -227,7 +225,7 @@ class _HomeScreenState extends State<HomeScreen>
                     ),
                     SizedBox(height: ResponsiveValues.spacingXS(context)),
                     Text(
-                      'A preview of categories that will open soon.',
+                      _settingsProvider.getHomeComingSoonSubtitle(),
                       style: AppTextStyles.bodySmall(context).copyWith(
                         color: AppColors.getTextSecondary(context),
                       ),

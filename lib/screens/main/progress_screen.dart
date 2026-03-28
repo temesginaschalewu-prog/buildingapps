@@ -9,6 +9,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/streak_provider.dart';
 import '../../providers/exam_provider.dart';
 import '../../providers/progress_provider.dart';
+import '../../providers/settings_provider.dart';
 import '../../widgets/common/base_screen_mixin.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_shimmer.dart';
@@ -34,6 +35,7 @@ class _ProgressScreenState extends State<ProgressScreen>
   late StreakProvider _streakProvider;
   late ExamProvider _examProvider;
   late ProgressProvider _progressProvider;
+  late SettingsProvider _settingsProvider;
   late AuthProvider _authProvider;
   bool _providersBound = false;
   VoidCallback? _streakListener;
@@ -61,7 +63,7 @@ class _ProgressScreenState extends State<ProgressScreen>
   @override
   String? get screenSubtitle => isOffline
       ? AppStrings.offlineCachedData
-      : AppStrings.trackLearningJourney;
+      : _settingsProvider.getProgressScreenSubtitle();
 
   @override
   bool get isLoading =>
@@ -112,6 +114,7 @@ class _ProgressScreenState extends State<ProgressScreen>
     _streakProvider = context.read<StreakProvider>();
     _examProvider = context.read<ExamProvider>();
     _progressProvider = context.read<ProgressProvider>();
+    _settingsProvider = Provider.of<SettingsProvider>(context);
     _authProvider = authProvider;
     _boundUserId = currentUserId;
 
@@ -257,19 +260,19 @@ class _ProgressScreenState extends State<ProgressScreen>
     final now = DateTime.now();
 
     if (hasPending) {
-      return 'Updating your progress in the background...';
+      return _settingsProvider.getProgressSyncPendingMessage();
     }
 
     if (lastLocal != null &&
         (lastServer == null || lastServer.isBefore(lastLocal)) &&
         now.difference(lastLocal) < const Duration(minutes: 2)) {
-      return 'Progress recorded. Syncing the latest totals...';
+      return _settingsProvider.getProgressSyncRecentMessage();
     }
 
     if (lastServer != null) {
       final age = now.difference(lastServer);
       if (age.inSeconds < 60) {
-        return 'Progress is up to date.';
+        return _settingsProvider.getProgressSyncUpToDateMessage();
       }
       if (age.inMinutes < 60) {
         return 'Updated ${age.inMinutes}m ago.';
@@ -278,10 +281,10 @@ class _ProgressScreenState extends State<ProgressScreen>
     }
 
     if (_progressProvider.isLoadingOverall) {
-      return 'Loading your learning progress...';
+      return _settingsProvider.getProgressSyncLoadingMessage();
     }
 
-    return 'Your latest activity updates automatically.';
+    return _settingsProvider.getProgressSyncIdleMessage();
   }
 
   Widget _buildSyncStatusBanner() {
@@ -524,9 +527,8 @@ class _ProgressScreenState extends State<ProgressScreen>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildSectionHeader(
-          title: 'Learning Snapshot',
-          description:
-              'This view separates work you started from work you fully finished, so partial study does not look empty.',
+          title: _settingsProvider.getProgressOverviewTitle(),
+          description: _settingsProvider.getProgressOverviewMessage(),
         ),
         AppCard.solid(
           child: Padding(
@@ -537,7 +539,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                   children: [
                     Expanded(
                       child: _buildMiniOverviewCard(
-                        title: 'Started chapters',
+                        title: _settingsProvider.getProgressStartedChaptersTitle(),
                         value: '$totalChaptersAttempted',
                         subtitle: '$chaptersCompleted completed',
                         icon: Icons.menu_book_rounded,
@@ -547,7 +549,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                     SizedBox(width: ResponsiveValues.spacingM(context)),
                     Expanded(
                       child: _buildMiniOverviewCard(
-                        title: 'Learning actions',
+                        title: _settingsProvider.getProgressLearningActionsTitle(),
                         value: '${notesViewed + questionsAttempted}',
                         subtitle: '$notesViewed notes, $questionsAttempted practice',
                         icon: Icons.auto_stories_rounded,
@@ -558,7 +560,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                 ),
                 SizedBox(height: ResponsiveValues.spacingXL(context)),
                 _buildProgressItem(
-                  title: 'Completion inside started chapters',
+                  title: _settingsProvider.getProgressCompletionStartedTitle(),
                   value: '$chaptersCompleted/$totalChaptersAttempted',
                   percentage: completedPercentage.toDouble(),
                   color: completedPercentage >= 80
@@ -569,7 +571,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                 ),
                 SizedBox(height: ResponsiveValues.spacingXL(context)),
                 _buildProgressItem(
-                  title: 'Overall course completion',
+                  title: _settingsProvider.getProgressOverallCompletionTitle(),
                   value: '$chaptersCompleted/$totalAvailableChapters chapters completed',
                   percentage: overallCompletion.toDouble(),
                   color: overallCompletion >= 80
@@ -580,7 +582,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                 ),
                 SizedBox(height: ResponsiveValues.spacingXL(context)),
                 _buildProgressItem(
-                  title: 'Question accuracy',
+                  title: _settingsProvider.getProgressAccuracyTitle(),
                   value:
                       '${totalAccuracy.toStringAsFixed(1)}% ${AppStrings.correct}',
                   percentage: totalAccuracy.toDouble(),
@@ -598,7 +600,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                         title: AppStrings.studyTime,
                         value:
                             '${studyTimeHours.toStringAsFixed(1)} ${AppStrings.hours}',
-                        subtitle: 'Estimated from your saved video progress',
+                        subtitle: _settingsProvider.getProgressStudyTimeSubtitle(),
                         icon: Icons.timer_rounded,
                         color: AppColors.telegramPurple,
                       ),
@@ -606,9 +608,11 @@ class _ProgressScreenState extends State<ProgressScreen>
                     SizedBox(width: ResponsiveValues.spacingM(context)),
                     Expanded(
                       child: _buildMiniOverviewCard(
-                        title: 'Average video progress',
+                        title: _settingsProvider
+                            .getProgressAverageVideoProgressTitle(),
                         value: '${averageVideoProgress.toStringAsFixed(0)}%',
-                        subtitle: 'Across chapters you already opened',
+                        subtitle: _settingsProvider
+                            .getProgressAverageVideoProgressSubtitle(),
                         icon: Icons.bar_chart_rounded,
                         color: AppColors.telegramBlue,
                       ),
@@ -1095,7 +1099,7 @@ class _ProgressScreenState extends State<ProgressScreen>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildSectionHeader(
-          title: 'Activity Details',
+          title: _settingsProvider.getProgressActivityDetailsTitle(),
           description:
               'These numbers show started work, finished work, and activity totals separately.',
         ),
@@ -1105,7 +1109,7 @@ class _ProgressScreenState extends State<ProgressScreen>
             child: Column(
               children: [
                 metric(
-                  'Started chapters',
+                  _settingsProvider.getProgressStartedChaptersTitle(),
                   '$chaptersStarted',
                   Icons.menu_book_rounded,
                   AppColors.telegramBlue,
@@ -1119,7 +1123,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                 ),
                 SizedBox(height: ResponsiveValues.spacingS(context)),
                 metric(
-                  'Average video progress',
+                  _settingsProvider.getProgressAverageVideoProgressTitle(),
                   '${averageVideoProgress.toStringAsFixed(0)}%',
                   Icons.bar_chart_rounded,
                   AppColors.telegramBlue,

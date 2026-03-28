@@ -1211,6 +1211,102 @@ class SettingsProvider extends ChangeNotifier
     return 'Support';
   }
 
+  String getHomeScreenSubtitle() {
+    final configured = getSettingValue('home_screen_subtitle');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Discover your learning path';
+  }
+
+  String getHomeGreetingMorning() {
+    final configured = getSettingValue('home_greeting_morning');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Good morning';
+  }
+
+  String getHomeGreetingAfternoon() {
+    final configured = getSettingValue('home_greeting_afternoon');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Good afternoon';
+  }
+
+  String getHomeGreetingEvening() {
+    final configured = getSettingValue('home_greeting_evening');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Good evening';
+  }
+
+  String getProfileScreenSubtitle() {
+    final configured = getSettingValue('profile_screen_subtitle');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Manage your account';
+  }
+
+  String getProfileLoadErrorMessage() {
+    final configured = getSettingValue('profile_load_error_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'We could not load your profile yet.';
+  }
+
+  String getProgressScreenSubtitle() {
+    final configured = getSettingValue('progress_screen_subtitle');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Track your learning journey';
+  }
+
+  String getProgressSyncPendingMessage() {
+    final configured = getSettingValue('progress_sync_pending_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Updating your progress in the background...';
+  }
+
+  String getProgressSyncRecentMessage() {
+    final configured = getSettingValue('progress_sync_recent_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Progress recorded. Syncing the latest totals...';
+  }
+
+  String getProgressSyncUpToDateMessage() {
+    final configured = getSettingValue('progress_sync_up_to_date_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Progress is up to date.';
+  }
+
+  String getProgressSyncLoadingMessage() {
+    final configured = getSettingValue('progress_sync_loading_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Loading your learning progress...';
+  }
+
+  String getProgressSyncIdleMessage() {
+    final configured = getSettingValue('progress_sync_idle_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Your latest activity updates automatically.';
+  }
+
   String getLoginScreenSubtitle() {
     final configured = getSettingValue('login_screen_subtitle');
     if (configured != null && configured.trim().isNotEmpty) {
@@ -1598,6 +1694,118 @@ class SettingsProvider extends ChangeNotifier
         ? configured.trim()
         : 'Your subscription for "{category}" has expired. Renew to access all content.';
     return template.replaceAll('{category}', categoryName);
+  }
+
+  String getHomeEmptyCategoriesMessage() {
+    final configured = getSettingValue('home_empty_categories_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Categories will appear here when available.';
+  }
+
+  String getHomeComingSoonTitle() {
+    final configured = getSettingValue('home_coming_soon_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Coming Soon';
+  }
+
+  String getHomeComingSoonSubtitle() {
+    final configured = getSettingValue('home_coming_soon_subtitle');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'A preview of categories that will open soon.';
+  }
+
+  String getProgressOverviewTitle() {
+    final configured = getSettingValue('progress_overview_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Learning Snapshot';
+  }
+
+  String getProgressOverviewMessage() {
+    final configured = getSettingValue('progress_overview_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'This view separates work you started from work you fully finished, so partial study does not look empty.';
+  }
+
+  String getProgressStartedChaptersTitle() {
+    final configured = getSettingValue('progress_started_chapters_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Started chapters';
+  }
+
+  String getProgressLearningActionsTitle() {
+    final configured = getSettingValue('progress_learning_actions_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Learning actions';
+  }
+
+  String getProgressCompletionStartedTitle() {
+    final configured = getSettingValue('progress_completion_started_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Completion inside started chapters';
+  }
+
+  String getProgressOverallCompletionTitle() {
+    final configured = getSettingValue('progress_overall_completion_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Overall course completion';
+  }
+
+  String getProgressAccuracyTitle() {
+    final configured = getSettingValue('progress_accuracy_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Question accuracy';
+  }
+
+  String getProgressStudyTimeSubtitle() {
+    final configured = getSettingValue('progress_study_time_subtitle');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Estimated from your saved video progress';
+  }
+
+  String getProgressAverageVideoProgressTitle() {
+    final configured = getSettingValue('progress_average_video_progress_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Average video progress';
+  }
+
+  String getProgressAverageVideoProgressSubtitle() {
+    final configured = getSettingValue('progress_average_video_progress_subtitle');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Across chapters you already opened';
+  }
+
+  String getProgressActivityDetailsTitle() {
+    final configured = getSettingValue('progress_activity_details_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Activity Details';
   }
 
   bool isChatbotEnabled() {
