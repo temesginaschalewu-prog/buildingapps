@@ -638,14 +638,14 @@ class _SupportScreenState extends State<SupportScreen>
                         ),
                         SizedBox(height: ResponsiveValues.spacingL(context)),
                         Text(
-                          AppStrings.noContactInfo,
+                          _settingsProvider.getSupportNoContactTitle(),
                           style: AppTextStyles.bodyLarge(context).copyWith(
                             color: AppColors.getTextSecondary(context),
                           ),
                         ),
                         SizedBox(height: ResponsiveValues.spacingM(context)),
                         Text(
-                          AppStrings.contactMethodsWillAppear,
+                          _settingsProvider.getSupportNoContactMessage(),
                           style: AppTextStyles.bodySmall(context).copyWith(
                             color: AppColors.getTextSecondary(context),
                           ),
@@ -711,14 +711,14 @@ class _SupportScreenState extends State<SupportScreen>
                       ),
                       SizedBox(height: ResponsiveValues.spacingL(context)),
                       Text(
-                        AppStrings.contactUsDirectly,
+                        _settingsProvider.getSupportStillNeedHelpTitle(),
                         style: AppTextStyles.titleMedium(
                           context,
                         ).copyWith(fontWeight: FontWeight.w600),
                       ),
                       SizedBox(height: ResponsiveValues.spacingS(context)),
                       Text(
-                        AppStrings.ifQuestionNotAnswered,
+                        _settingsProvider.getSupportStillNeedHelpMessage(),
                         style: AppTextStyles.bodyMedium(
                           context,
                         ).copyWith(color: AppColors.getTextSecondary(context)),

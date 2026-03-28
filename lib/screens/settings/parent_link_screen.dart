@@ -602,14 +602,14 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Parent connected',
+                        _settingsProvider.getParentLinkConnectedTitle(),
                         style: AppTextStyles.headlineSmall(
                           context,
                         ).copyWith(fontWeight: FontWeight.w700),
                       ),
                       SizedBox(height: ResponsiveValues.spacingXS(context)),
                       Text(
-                        'Your parent can now receive your learning snapshot, study milestones, exam performance, and access updates.',
+                        _settingsProvider.getParentLinkConnectedMessage(),
                         style: AppTextStyles.bodyMedium(context).copyWith(
                           color: AppColors.getTextSecondary(context),
                           height: 1.45,
@@ -649,7 +649,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                     ),
                     _buildCapabilityPill(
                       icon: Icons.check_circle_rounded,
-                      label: 'Live',
+                      label: _settingsProvider.getParentLinkLiveBadge(),
                       color: AppColors.telegramGreen,
                     ),
                   ],
@@ -1013,9 +1013,8 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
   Widget buildContent(BuildContext context) {
     if (_isLoadingData && !_parentLinkProvider.isLoaded) {
       return buildBrandedLoadingState(
-        title: 'Preparing your parent connection',
-        message:
-            'We are checking your link details and Telegram status so everything opens in one complete view.',
+        title: _settingsProvider.getParentLinkLoadingTitle(),
+        message: _settingsProvider.getParentLinkLoadingMessage(),
       );
     }
 

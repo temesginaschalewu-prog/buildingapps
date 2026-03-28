@@ -6,6 +6,7 @@ import 'package:pull_to_refresh/pull_to_refresh.dart' hide RefreshIndicator;
 
 import '../../models/chatbot_model.dart';
 import '../../providers/chatbot_provider.dart';
+import '../../providers/settings_provider.dart';
 import '../../widgets/common/app_empty_state.dart';
 import '../../widgets/common/base_screen_mixin.dart';
 import '../../widgets/common/app_dialog.dart';
@@ -43,10 +44,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   bool _initialLoadDone = false;
 
   late ChatbotProvider _provider;
+  late SettingsProvider _settingsProvider;
 
   @override
   String get screenTitle =>
-      _provider.currentConversation?.title ?? 'Learning assistant';
+      _provider.currentConversation?.title ??
+      _settingsProvider.getChatbotScreenTitle();
 
   @override
   String? get screenSubtitle => _greeting;
@@ -101,6 +104,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _provider = Provider.of<ChatbotProvider>(context);
+    _settingsProvider = Provider.of<SettingsProvider>(context);
 
     _provider.addListener(_onProviderDataChanged);
 
@@ -202,6 +206,14 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   Future<void> _sendMessage() async {
+    if (!_settingsProvider.isChatbotEnabled()) {
+      SnackbarService().showInfo(
+        context,
+        _settingsProvider.getChatbotDisabledMessage(),
+      );
+      return;
+    }
+
     final message = _messageController.text.trim();
     if (message.isEmpty || _isSending) return;
 
@@ -293,11 +305,11 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     }
 
     if (_provider.conversations.isEmpty) {
-      return const Center(
+      return Center(
         child: AppEmptyState(
           icon: Icons.chat_outlined,
-          title: 'No conversations yet',
-          message: 'Start a new chat whenever you want help studying.',
+          title: _settingsProvider.getChatbotEmptyConversationsTitle(),
+          message: _settingsProvider.getChatbotEmptyConversationsMessage(),
         ),
       );
     }
@@ -318,14 +330,14 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Conversations',
+                      _settingsProvider.getChatbotConversationsTitle(),
                       style: AppTextStyles.titleMedium(context).copyWith(
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                     SizedBox(height: ResponsiveValues.spacingXXS(context)),
                     Text(
-                      'Pick up where you left off or start a new study chat.',
+                      _settingsProvider.getChatbotConversationsSubtitle(),
                       style: AppTextStyles.bodySmall(context).copyWith(
                         color: AppColors.getTextSecondary(context),
                       ),
@@ -487,6 +499,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   Widget _buildInputArea() {
+    final chatbotEnabled = _settingsProvider.isChatbotEnabled();
+    final canType = chatbotEnabled && (isOffline || _provider.hasMessagesLeft);
+
     return Container(
       padding: ResponsiveValues.modalHeaderPadding(context),
       decoration: BoxDecoration(
@@ -504,12 +519,16 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                 child: TextField(
                   controller: _messageController,
                   focusNode: _focusNode,
+                  readOnly: !chatbotEnabled,
                   decoration: InputDecoration(
-                    hintText: isOffline
-                        ? 'Offline - messages queued'
-                        : (_provider.hasMessagesLeft
-                            ? 'Ask about any subject...'
-                            : 'Daily limit reached'),
+                    hintText: !chatbotEnabled
+                        ? _settingsProvider.getChatbotDisabledMessage()
+                        : (isOffline
+                            ? _settingsProvider.getChatbotOfflineMessage()
+                            : (_provider.hasMessagesLeft
+                                ? _settingsProvider.getChatbotWelcomeMessage()
+                                : _settingsProvider
+                                    .getChatbotLimitReachedMessage())),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(
                         ResponsiveValues.radiusLarge(context),
@@ -522,7 +541,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                   ),
                   maxLines: 3,
                   minLines: 1,
-                  onSubmitted: (_) => _sendMessage(),
+                  onSubmitted: (_) => canType ? _sendMessage() : null,
                 ),
               ),
               SizedBox(width: ResponsiveValues.spacingS(context)),
@@ -541,11 +560,16 @@ class _ChatbotScreenState extends State<ChatbotScreen>
               else
                 IconButton(
                   icon: Icon(
-                    isOffline ? Icons.schedule_rounded : Icons.send,
-                    color:
-                        isOffline ? AppColors.warning : AppColors.telegramBlue,
+                    !chatbotEnabled
+                        ? Icons.lock_clock_rounded
+                        : (isOffline ? Icons.schedule_rounded : Icons.send),
+                    color: !chatbotEnabled
+                        ? AppColors.getTextSecondary(context)
+                        : (isOffline
+                            ? AppColors.warning
+                            : AppColors.telegramBlue),
                   ),
-                  onPressed: _sendMessage,
+                  onPressed: chatbotEnabled ? _sendMessage : null,
                   iconSize: 28,
                 ),
             ],
@@ -620,6 +644,15 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
     // ✅ Only show empty state if NOT loading and no messages
     if (!_provider.isLoadingMessages && !hasMessages) {
+      final title = _settingsProvider.getChatbotScreenTitle();
+      final message = !_settingsProvider.isChatbotEnabled()
+          ? _settingsProvider.getChatbotDisabledMessage()
+          : (isOffline
+              ? _settingsProvider.getChatbotOfflineMessage()
+              : _settingsProvider.getChatbotEmptyStateMessage(
+                  _provider.remainingMessages,
+                  _provider.dailyLimit,
+                ));
       return Center(
         child: Padding(
           padding: EdgeInsets.symmetric(
@@ -627,15 +660,14 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           ),
           child: AppEmptyState(
             icon: Icons.smart_toy,
-            title: 'AI Learning Assistant',
-            message: isOffline
-                ? 'You are offline. Messages will be queued and sent when online.'
-                : 'Ask me about mathematics, sciences, Amharic, Ethiopian history, or get study tips. You have ${_provider.remainingMessages}/${_provider.dailyLimit} messages left today.',
+            title: title,
+            message: message,
           ),
         ),
       );
     }
 
+    final title = _settingsProvider.getChatbotScreenTitle();
     return Center(
       child: Padding(
         padding: EdgeInsets.symmetric(
@@ -643,10 +675,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         ),
         child: AppEmptyState(
           icon: Icons.smart_toy,
-          title: 'AI Learning Assistant',
+          title: title,
           message: isOffline
-              ? 'You are offline. Messages will be queued and sent when online.'
-              : 'Ask me about mathematics, sciences, Amharic, Ethiopian history, or get study tips.',
+              ? _settingsProvider.getChatbotOfflineMessage()
+              : _settingsProvider.getChatbotWelcomeMessage(),
         ),
       ),
     );
