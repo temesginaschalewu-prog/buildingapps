@@ -248,7 +248,84 @@ mixin BaseScreenMixin<T extends StatefulWidget> on State<T> {
   // ✅ STANDARDIZED loading widget - uses screen's shimmerType
   Widget buildLoadingShimmer() {
     if (shimmerType == ShimmerType.textLine) {
-      return buildBrandedLoadingState();
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: ResponsiveValues.screenPadding(context),
+        children: [
+          Container(
+            padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
+            decoration: BoxDecoration(
+              color: AppColors.getSurface(context),
+              borderRadius: BorderRadius.circular(
+                ResponsiveValues.radiusLarge(context),
+              ),
+              border: Border.all(
+                color: AppColors.getDivider(context).withValues(alpha: 0.35),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const AppShimmer(
+                  type: ShimmerType.textLine,
+                  customWidth: 170,
+                ),
+                SizedBox(height: ResponsiveValues.spacingM(context)),
+                const AppShimmer(type: ShimmerType.textLine),
+                SizedBox(height: ResponsiveValues.spacingS(context)),
+                const AppShimmer(
+                  type: ShimmerType.textLine,
+                  customWidth: 220,
+                ),
+              ],
+            ),
+          ),
+          SizedBox(height: ResponsiveValues.spacingL(context)),
+          ...List.generate(
+            shimmerItemCount,
+            (index) => Padding(
+              padding: EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
+              child: Container(
+                padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
+                decoration: BoxDecoration(
+                  color: AppColors.getSurface(context),
+                  borderRadius: BorderRadius.circular(
+                    ResponsiveValues.radiusLarge(context),
+                  ),
+                  border: Border.all(
+                    color:
+                        AppColors.getDivider(context).withValues(alpha: 0.25),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const AppShimmer(type: ShimmerType.circle),
+                        SizedBox(width: ResponsiveValues.spacingM(context)),
+                        const Expanded(
+                          child: AppShimmer(
+                            type: ShimmerType.textLine,
+                            customWidth: 190,
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: ResponsiveValues.spacingM(context)),
+                    const AppShimmer(type: ShimmerType.textLine),
+                    SizedBox(height: ResponsiveValues.spacingS(context)),
+                    const AppShimmer(
+                      type: ShimmerType.textLine,
+                      customWidth: 240,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
     }
 
     return ListView.builder(

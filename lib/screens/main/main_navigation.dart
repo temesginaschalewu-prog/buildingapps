@@ -43,7 +43,8 @@ class _MainNavigationState extends State<MainNavigation>
   bool _showLabels = true;
   DateTime? _lastResumeRefreshAt;
   static const Duration _minResumeRefreshInterval = Duration(minutes: 3);
-  late SettingsProvider _settingsProvider;
+  SettingsProvider? _settingsProvider;
+  bool _notificationListenerAttached = false;
 
   @override
   void initState() {
@@ -65,7 +66,9 @@ class _MainNavigationState extends State<MainNavigation>
     WidgetsBinding.instance.removeObserver(this);
     _authStateSubscription?.cancel();
     _connectivitySubscription?.cancel();
-    _notificationProvider.removeListener(_refreshUIOnNotificationChange);
+    if (_notificationListenerAttached) {
+      _notificationProvider.removeListener(_refreshUIOnNotificationChange);
+    }
     _tabAnimationController.dispose();
     _labelTimer?.cancel();
     super.dispose();
@@ -146,6 +149,7 @@ class _MainNavigationState extends State<MainNavigation>
       }
     });
     _notificationProvider.addListener(_refreshUIOnNotificationChange);
+    _notificationListenerAttached = true;
   }
 
   void _refreshUIOnNotificationChange() {
@@ -1019,6 +1023,11 @@ class _MainNavigationState extends State<MainNavigation>
   }
 
   Widget _buildStartupShell() {
+    final settingsProvider = _settingsProvider;
+    final title = settingsProvider?.getStartupShellTitle() ?? 'Preparing home';
+    final message = settingsProvider?.getStartupShellMessage() ??
+        'Loading your learning space and recent activity.';
+
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       body: SafeArea(
@@ -1036,7 +1045,7 @@ class _MainNavigationState extends State<MainNavigation>
                   ),
                   SizedBox(height: ResponsiveValues.spacingXL(context)),
                   Text(
-                    _settingsProvider.getStartupShellTitle(),
+                    title,
                     style: AppTextStyles.headlineSmall(context).copyWith(
                       fontWeight: FontWeight.w700,
                     ),
@@ -1044,7 +1053,7 @@ class _MainNavigationState extends State<MainNavigation>
                   ),
                   SizedBox(height: ResponsiveValues.spacingS(context)),
                   Text(
-                    _settingsProvider.getStartupShellMessage(),
+                    message,
                     style: AppTextStyles.bodyMedium(context).copyWith(
                       color: AppColors.getTextSecondary(context),
                       height: 1.55,

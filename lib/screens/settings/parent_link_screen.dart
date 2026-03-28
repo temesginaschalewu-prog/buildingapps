@@ -16,6 +16,7 @@ import '../../widgets/common/base_screen_mixin.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_dialog.dart';
+import '../../widgets/common/app_shimmer.dart';
 import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
@@ -1009,13 +1010,105 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
     }
   }
 
+  Widget _buildParentLinkLoadingState() {
+    return CustomScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      slivers: [
+        SliverPadding(
+          padding: ResponsiveValues.screenPadding(context),
+          sliver: SliverToBoxAdapter(
+            child: Column(
+              children: [
+                AppCard.glass(
+                  child: Padding(
+                    padding: ResponsiveValues.dialogPadding(context),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              width: ResponsiveValues.avatarSizeLarge(context),
+                              height: ResponsiveValues.avatarSizeLarge(context),
+                              decoration: BoxDecoration(
+                                color: AppColors.telegramBlue
+                                    .withValues(alpha: 0.08),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Center(
+                                child: SizedBox(
+                                  width: 28,
+                                  height: 28,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.4,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      AppColors.telegramBlue,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            SizedBox(width: ResponsiveValues.spacingL(context)),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const AppShimmer(
+                                    type: ShimmerType.textLine,
+                                    customWidth: 180,
+                                  ),
+                                  SizedBox(
+                                      height: ResponsiveValues.spacingS(context)),
+                                  const AppShimmer(type: ShimmerType.textLine),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        SizedBox(height: ResponsiveValues.spacingL(context)),
+                        const AppShimmer(type: ShimmerType.rectangle),
+                        SizedBox(height: ResponsiveValues.spacingM(context)),
+                        const AppShimmer(type: ShimmerType.rectangle),
+                      ],
+                    ),
+                  ),
+                ),
+                SizedBox(height: ResponsiveValues.spacingXL(context)),
+                AppCard.solid(
+                  child: Padding(
+                    padding: ResponsiveValues.cardPadding(context),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const AppShimmer(
+                          type: ShimmerType.textLine,
+                          customWidth: 150,
+                        ),
+                        SizedBox(height: ResponsiveValues.spacingL(context)),
+                        const AppShimmer(type: ShimmerType.textLine),
+                        SizedBox(height: ResponsiveValues.spacingS(context)),
+                        const AppShimmer(type: ShimmerType.textLine),
+                        SizedBox(height: ResponsiveValues.spacingS(context)),
+                        const AppShimmer(
+                          type: ShimmerType.textLine,
+                          customWidth: 220,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget buildContent(BuildContext context) {
     if (_isLoadingData && !_parentLinkProvider.isLoaded) {
-      return buildBrandedLoadingState(
-        title: _settingsProvider.getParentLinkLoadingTitle(),
-        message: _settingsProvider.getParentLinkLoadingMessage(),
-      );
+      return _buildParentLinkLoadingState();
     }
 
     // ✅ Show content immediately once loaded
