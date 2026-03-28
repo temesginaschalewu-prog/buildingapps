@@ -108,8 +108,8 @@ class _SplashScreenState extends State<SplashScreen>
           debugLog('SplashScreen',
               'Critical services ready after ${stopwatch.elapsed.inMilliseconds}ms');
 
-          // Give auth provider a moment to initialize (but don't wait too long)
-          await Future.delayed(const Duration(milliseconds: 500));
+          // Give auth provider a very short grace period without making splash drag on
+          await Future.delayed(const Duration(milliseconds: 120));
           return true;
         }
       } catch (e) {
@@ -143,8 +143,8 @@ class _SplashScreenState extends State<SplashScreen>
       _initializationComplete = true;
       _timeoutTimer?.cancel();
 
-      // Add a small delay for better UX
-      await Future.delayed(const Duration(milliseconds: 500));
+      // Keep a very short handoff so the transition feels deliberate, not sluggish
+      await Future.delayed(const Duration(milliseconds: 120));
 
       if (!mounted || _navigated) return;
 
@@ -251,7 +251,7 @@ class _SplashScreenState extends State<SplashScreen>
                             SizedBox(
                                 height: ResponsiveValues.spacingL(context)),
                             Text(
-                              'Education, progress, and learning sync in one place.',
+                              'Your classes, access, and updates are lining up now so you can jump in smoothly.',
                               style: AppTextStyles.bodyLarge(context).copyWith(
                                 color: AppColors.getTextSecondary(context),
                               ),
@@ -288,14 +288,52 @@ class _SplashScreenState extends State<SplashScreen>
                     else
                       Column(
                         children: [
-                          const SizedBox(
-                            width: 40,
-                            height: 40,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 3,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                AppColors.telegramBlue,
+                          Container(
+                            width: double.infinity,
+                            constraints: const BoxConstraints(maxWidth: 360),
+                            padding: EdgeInsets.all(
+                              ResponsiveValues.spacingL(context),
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.getSurface(context),
+                              borderRadius: BorderRadius.circular(
+                                ResponsiveValues.radiusLarge(context),
                               ),
+                              border: Border.all(
+                                color: AppColors.getDivider(context)
+                                    .withValues(alpha: 0.6),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: AppColors.overlayLight
+                                      .withValues(alpha: 0.05),
+                                  blurRadius: 18,
+                                  offset: const Offset(0, 8),
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                LinearProgressIndicator(
+                                  minHeight: 6,
+                                  borderRadius: BorderRadius.circular(999),
+                                  valueColor:
+                                      const AlwaysStoppedAnimation<Color>(
+                                    AppColors.telegramBlue,
+                                  ),
+                                  backgroundColor: AppColors.getDivider(context)
+                                      .withValues(alpha: 0.35),
+                                ),
+                                SizedBox(
+                                  height: ResponsiveValues.spacingL(context),
+                                ),
+                                _buildSkeletonLine(context, 0.9),
+                                SizedBox(
+                                  height: ResponsiveValues.spacingM(context),
+                                ),
+                                _buildSkeletonLine(context, 0.64),
+                              ],
                             ),
                           ),
                           SizedBox(height: ResponsiveValues.spacingM(context)),
@@ -309,5 +347,19 @@ class _SplashScreenState extends State<SplashScreen>
         ),
       ),
     ).animate().fadeIn(duration: AppThemes.animationMedium);
+  }
+
+  Widget _buildSkeletonLine(BuildContext context, double widthFactor) {
+    return FractionallySizedBox(
+      widthFactor: widthFactor,
+      alignment: Alignment.centerLeft,
+      child: Container(
+        height: 12,
+        decoration: BoxDecoration(
+          color: AppColors.getDivider(context).withValues(alpha: 0.35),
+          borderRadius: BorderRadius.circular(999),
+        ),
+      ),
+    );
   }
 }

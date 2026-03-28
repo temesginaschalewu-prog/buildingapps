@@ -145,62 +145,113 @@ mixin BaseScreenMixin<T extends StatefulWidget> on State<T> {
     }
   }
 
-  // ✅ STANDARDIZED loading widget - uses screen's shimmerType
-  Widget buildLoadingShimmer() {
-    if (shimmerType == ShimmerType.textLine) {
-      return SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: ResponsiveValues.screenPadding(context),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            minHeight: MediaQuery.of(context).size.height * 0.72,
-          ),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  AppBrandLogo(
-                    size: ResponsiveValues.splashLogoSize(context) * 0.68,
-                    borderRadius: ResponsiveValues.radiusXLarge(context),
+  Widget buildBrandedLoadingState({
+    String title = 'Getting your learning space ready',
+    String message =
+        'We are bringing in your latest lessons, access details, and updates so the screen opens fully prepared.',
+  }) {
+    final spacing = ResponsiveValues.screenPadding(context);
+
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: spacing,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          minHeight: MediaQuery.of(context).size.height * 0.72,
+        ),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 440),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                AppBrandLogo(
+                  size: ResponsiveValues.splashLogoSize(context) * 0.66,
+                  borderRadius: ResponsiveValues.radiusXLarge(context),
+                ),
+                SizedBox(height: ResponsiveValues.spacingXL(context)),
+                Text(
+                  title,
+                  style: AppTextStyles.titleLarge(context).copyWith(
+                    fontWeight: FontWeight.w700,
                   ),
-                  SizedBox(height: ResponsiveValues.spacingXL(context)),
-                  Text(
-                    'Getting everything ready',
-                    style: AppTextStyles.titleLarge(context).copyWith(
-                      fontWeight: FontWeight.w700,
+                  textAlign: TextAlign.center,
+                ),
+                SizedBox(height: ResponsiveValues.spacingS(context)),
+                Text(
+                  message,
+                  style: AppTextStyles.bodyMedium(context).copyWith(
+                    color: AppColors.getTextSecondary(context),
+                    height: 1.5,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                SizedBox(height: ResponsiveValues.spacingXL(context)),
+                Container(
+                  width: double.infinity,
+                  padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
+                  decoration: BoxDecoration(
+                    color: AppColors.getSurface(context),
+                    borderRadius:
+                        BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
+                    border: Border.all(
+                      color: AppColors.getDivider(context).withValues(alpha: 0.6),
                     ),
-                    textAlign: TextAlign.center,
-                  ),
-                  SizedBox(height: ResponsiveValues.spacingS(context)),
-                  Text(
-                    'We are preparing your latest updates so the screen opens in a clean, ready state.',
-                    style: AppTextStyles.bodyMedium(context).copyWith(
-                      color: AppColors.getTextSecondary(context),
-                      height: 1.5,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  SizedBox(height: ResponsiveValues.spacingXL(context)),
-                  SizedBox(
-                    width: 28,
-                    height: 28,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.5,
-                      valueColor: const AlwaysStoppedAnimation<Color>(
-                        AppColors.telegramBlue,
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.overlayLight.withValues(alpha: 0.08),
+                        blurRadius: 18,
+                        offset: const Offset(0, 8),
                       ),
-                      backgroundColor:
-                          AppColors.getDivider(context).withValues(alpha: 0.4),
-                    ),
+                    ],
                   ),
-                ],
-              ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      LinearProgressIndicator(
+                        minHeight: 6,
+                        borderRadius: BorderRadius.circular(999),
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                          AppColors.telegramBlue,
+                        ),
+                        backgroundColor:
+                            AppColors.getDivider(context).withValues(alpha: 0.35),
+                      ),
+                      SizedBox(height: ResponsiveValues.spacingL(context)),
+                      const AppShimmer(type: ShimmerType.textLine),
+                      SizedBox(height: ResponsiveValues.spacingM(context)),
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: AppShimmer(
+                              type: ShimmerType.statusCard,
+                              index: 1,
+                            ),
+                          ),
+                          SizedBox(width: ResponsiveValues.spacingM(context)),
+                          const Expanded(
+                            child: AppShimmer(
+                              type: ShimmerType.statusCard,
+                              index: 2,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
         ),
-      );
+      ),
+    );
+  }
+
+  // ✅ STANDARDIZED loading widget - uses screen's shimmerType
+  Widget buildLoadingShimmer() {
+    if (shimmerType == ShimmerType.textLine) {
+      return buildBrandedLoadingState();
     }
 
     return ListView.builder(

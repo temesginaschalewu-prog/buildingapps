@@ -1006,30 +1006,11 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
 
   @override
   Widget buildContent(BuildContext context) {
-    // ✅ Show a small loading indicator while loading (not full screen shimmer)
     if (_isLoadingData && !_parentLinkProvider.isLoaded) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const SizedBox(
-              width: 40,
-              height: 40,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor:
-                    AlwaysStoppedAnimation<Color>(AppColors.telegramBlue),
-              ),
-            ),
-            SizedBox(height: ResponsiveValues.spacingL(context)),
-            Text(
-              'Loading...',
-              style: AppTextStyles.bodyMedium(context).copyWith(
-                color: AppColors.getTextSecondary(context),
-              ),
-            ),
-          ],
-        ),
+      return buildBrandedLoadingState(
+        title: 'Preparing your parent connection',
+        message:
+            'We are checking your link details and Telegram status so everything opens in one complete view.',
       );
     }
 

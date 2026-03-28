@@ -1033,7 +1033,7 @@ class _MainNavigationState extends State<MainNavigation>
                   ),
                   SizedBox(height: ResponsiveValues.spacingXL(context)),
                   Text(
-                    'Preparing your home screen',
+                    'Getting your learning space ready',
                     style: AppTextStyles.headlineSmall(context).copyWith(
                       fontWeight: FontWeight.w700,
                     ),
@@ -1041,7 +1041,7 @@ class _MainNavigationState extends State<MainNavigation>
                   ),
                   SizedBox(height: ResponsiveValues.spacingS(context)),
                   Text(
-                    'We are loading your categories, notifications, and access details so everything appears correctly the first time.',
+                    'We are bringing in your categories, notifications, and access details so your first screen opens complete and ready to use.',
                     style: AppTextStyles.bodyMedium(context).copyWith(
                       color: AppColors.getTextSecondary(context),
                       height: 1.55,
@@ -1049,22 +1049,84 @@ class _MainNavigationState extends State<MainNavigation>
                     textAlign: TextAlign.center,
                   ),
                   SizedBox(height: ResponsiveValues.spacingXL(context)),
-                  SizedBox(
-                    width: 30,
-                    height: 30,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.5,
-                      valueColor: const AlwaysStoppedAnimation<Color>(
-                        AppColors.telegramBlue,
+                  Container(
+                    width: double.infinity,
+                    padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
+                    decoration: BoxDecoration(
+                      color: AppColors.getSurface(context),
+                      borderRadius: BorderRadius.circular(
+                        ResponsiveValues.radiusLarge(context),
                       ),
-                      backgroundColor:
-                          AppColors.getDivider(context).withValues(alpha: 0.45),
+                      border: Border.all(
+                        color:
+                            AppColors.getDivider(context).withValues(alpha: 0.6),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color:
+                              AppColors.overlayLight.withValues(alpha: 0.08),
+                          blurRadius: 18,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        LinearProgressIndicator(
+                          minHeight: 6,
+                          borderRadius: BorderRadius.circular(999),
+                          valueColor: const AlwaysStoppedAnimation<Color>(
+                            AppColors.telegramBlue,
+                          ),
+                          backgroundColor: AppColors.getDivider(context)
+                              .withValues(alpha: 0.35),
+                        ),
+                        SizedBox(height: ResponsiveValues.spacingL(context)),
+                        _buildShellLine(0.94),
+                        SizedBox(height: ResponsiveValues.spacingM(context)),
+                        _buildShellLine(0.72),
+                        SizedBox(height: ResponsiveValues.spacingM(context)),
+                        Row(
+                          children: [
+                            Expanded(child: _buildShellPill()),
+                            SizedBox(width: ResponsiveValues.spacingM(context)),
+                            Expanded(child: _buildShellPill()),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildShellLine(double widthFactor) {
+    return FractionallySizedBox(
+      widthFactor: widthFactor,
+      alignment: Alignment.centerLeft,
+      child: Container(
+        height: 12,
+        decoration: BoxDecoration(
+          color: AppColors.getDivider(context).withValues(alpha: 0.38),
+          borderRadius: BorderRadius.circular(999),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildShellPill() {
+    return Container(
+      height: 58,
+      decoration: BoxDecoration(
+        color: AppColors.getDivider(context).withValues(alpha: 0.22),
+        borderRadius: BorderRadius.circular(
+          ResponsiveValues.radiusMedium(context),
         ),
       ),
     );
