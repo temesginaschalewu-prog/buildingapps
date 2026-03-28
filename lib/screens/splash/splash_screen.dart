@@ -295,14 +295,12 @@ class _SplashScreenState extends State<SplashScreen>
             ),
             Center(
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 520),
+                constraints: const BoxConstraints(maxWidth: 440),
                 child: Padding(
                   padding: ResponsiveValues.screenPadding(context),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      _buildBrandChip(context),
-                      SizedBox(height: ResponsiveValues.spacingXL(context)),
                       AnimatedBuilder(
                         animation: _logoController,
                         builder: (context, child) {
@@ -331,7 +329,7 @@ class _SplashScreenState extends State<SplashScreen>
                               ),
                               SizedBox(height: ResponsiveValues.spacingS(context)),
                               Text(
-                                'A calmer launch, cleaner handoff, and your learning space ready the moment it matters.',
+                                'Learn smoothly, stay synced, and get back into class without the noise.',
                                 style: AppTextStyles.bodyLarge(context).copyWith(
                                   color: AppColors.getTextSecondary(context),
                                   height: 1.45,
@@ -352,17 +350,6 @@ class _SplashScreenState extends State<SplashScreen>
                           connectivityReady: connectivityService.isInitialized,
                           authReady: authProvider.isInitialized,
                         ),
-                      SizedBox(height: ResponsiveValues.spacingL(context)),
-                      Wrap(
-                        alignment: WrapAlignment.center,
-                        spacing: 10,
-                        runSpacing: 10,
-                        children: [
-                          _buildValuePill(context, Icons.cloud_done_rounded, 'Offline-ready'),
-                          _buildValuePill(context, Icons.shield_rounded, 'Secure access'),
-                          _buildValuePill(context, Icons.notifications_active_rounded, 'Live updates'),
-                        ],
-                      ),
                     ],
                   ),
                 ),
@@ -393,29 +380,8 @@ class _SplashScreenState extends State<SplashScreen>
     );
   }
 
-  Widget _buildBrandChip(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppColors.getSurface(context).withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: AppColors.getDivider(context).withValues(alpha: 0.7),
-        ),
-      ),
-      child: Text(
-        'SMART LEARNING PLATFORM',
-        style: AppTextStyles.overline(context).copyWith(
-          letterSpacing: 1.8,
-          color: AppColors.telegramBlue,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-    ).animate().fadeIn(delay: 120.ms, duration: 450.ms);
-  }
-
   Widget _buildHeroMark(BuildContext context, bool isDark) {
-    final size = ResponsiveValues.splashLogoSize(context) * 0.9;
+    final size = ResponsiveValues.splashLogoSize(context) * 0.88;
     return Stack(
       alignment: Alignment.center,
       children: [
@@ -471,88 +437,85 @@ class _SplashScreenState extends State<SplashScreen>
     required bool connectivityReady,
     required bool authReady,
   }) {
+    final readiness = [hiveReady, connectivityReady, authReady];
     return Container(
       width: double.infinity,
-      constraints: const BoxConstraints(maxWidth: 380),
-      padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
+      constraints: const BoxConstraints(maxWidth: 340),
+      padding: EdgeInsets.symmetric(
+        horizontal: ResponsiveValues.spacingL(context),
+        vertical: ResponsiveValues.spacingL(context),
+      ),
       decoration: BoxDecoration(
         color: AppColors.getSurface(context).withValues(alpha: 0.86),
-        borderRadius: BorderRadius.circular(
-          ResponsiveValues.radiusXLarge(context),
-        ),
+        borderRadius: BorderRadius.circular(30),
         border: Border.all(
-          color: AppColors.getDivider(context).withValues(alpha: 0.7),
+          color: AppColors.getDivider(context).withValues(alpha: 0.55),
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 24,
-            offset: const Offset(0, 14),
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: AppColors.telegramBlue.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.4,
-                    valueColor: const AlwaysStoppedAnimation<Color>(
-                      AppColors.telegramBlue,
-                    ),
-                    backgroundColor:
-                        AppColors.telegramBlue.withValues(alpha: 0.18),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  _stageTitle,
-                  style: AppTextStyles.labelLarge(context).copyWith(
-                    color: AppColors.telegramBlue,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
+          SizedBox(
+            width: 26,
+            height: 26,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.6,
+              valueColor: const AlwaysStoppedAnimation<Color>(
+                AppColors.telegramBlue,
+              ),
+              backgroundColor: AppColors.telegramBlue.withValues(alpha: 0.15),
             ),
           ),
           SizedBox(height: ResponsiveValues.spacingM(context)),
           Text(
+            _stageTitle,
+            style: AppTextStyles.titleLarge(context).copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          SizedBox(height: ResponsiveValues.spacingS(context)),
+          Text(
             _stageMessage,
             style: AppTextStyles.bodyMedium(context).copyWith(
               color: AppColors.getTextSecondary(context),
+              height: 1.45,
             ),
-          ),
-          SizedBox(height: ResponsiveValues.spacingL(context)),
-          _buildStatusRow(
-            context,
-            icon: Icons.sd_storage_rounded,
-            title: 'Offline library',
-            ready: hiveReady,
+            textAlign: TextAlign.center,
           ),
           SizedBox(height: ResponsiveValues.spacingM(context)),
-          _buildStatusRow(
-            context,
-            icon: Icons.wifi_tethering_rounded,
-            title: 'Live connection',
-            ready: connectivityReady,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: readiness
+                .map(
+                  (ready) => AnimatedContainer(
+                    duration: const Duration(milliseconds: 220),
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    width: ready ? 26 : 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: ready
+                          ? AppColors.telegramGreen
+                          : AppColors.getDivider(context),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                )
+                .toList(),
           ),
           SizedBox(height: ResponsiveValues.spacingM(context)),
-          _buildStatusRow(
-            context,
-            icon: Icons.verified_user_rounded,
-            title: 'Session restore',
-            ready: authReady,
+          Text(
+            'Warming up quietly in the background.',
+            style: AppTextStyles.labelMedium(context).copyWith(
+              color: AppColors.getTextSecondary(context),
+            ),
+            textAlign: TextAlign.center,
           ),
         ],
       ),
@@ -561,79 +524,6 @@ class _SplashScreenState extends State<SplashScreen>
           end: 0,
           duration: 500.ms,
         );
-  }
-
-  Widget _buildStatusRow(
-    BuildContext context, {
-    required IconData icon,
-    required String title,
-    required bool ready,
-  }) {
-    final color = ready ? AppColors.telegramGreen : AppColors.telegramBlue;
-    final label = ready ? 'Ready' : 'Working';
-    return Row(
-      children: [
-        Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Icon(icon, color: color, size: 20),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Text(
-            title,
-            style: AppTextStyles.titleSmall(context).copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.10),
-            borderRadius: BorderRadius.circular(999),
-          ),
-          child: Text(
-            label,
-            style: AppTextStyles.labelSmall(context).copyWith(
-              color: color,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildValuePill(BuildContext context, IconData icon, String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppColors.getSurface(context).withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: AppColors.getDivider(context).withValues(alpha: 0.65),
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: AppColors.telegramBlue),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: AppTextStyles.labelMedium(context).copyWith(
-              fontWeight: FontWeight.w700,
-              color: AppColors.getTextPrimary(context),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   Widget _buildErrorPanel(BuildContext context) {
