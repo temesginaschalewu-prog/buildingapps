@@ -38,11 +38,11 @@ class ChatbotProvider extends ChangeNotifier
 
   int _apiCallCount = 0;
 
-  static const int _clientDailyLimit = 20;
+  static const int _defaultDailyLimit = 20;
   static const Duration _usageFetchCooldown = Duration(seconds: 20);
 
-  int _remainingMessages = _clientDailyLimit;
-  int _dailyLimit = _clientDailyLimit;
+  int _remainingMessages = _defaultDailyLimit;
+  int _dailyLimit = _defaultDailyLimit;
   int _totalMessages = 0;
   int _totalConversations = 0;
   String? _usageDayKey;
@@ -237,16 +237,19 @@ class ChatbotProvider extends ChangeNotifier
           final cachedDay = usageMap['day_key']?.toString();
           final today = _todayKey();
           _usageDayKey = cachedDay;
-          _dailyLimit = _clientDailyLimit;
+          _dailyLimit = Parsers.parseInt(
+            usageMap['daily_limit'],
+            _defaultDailyLimit,
+          ).clamp(1, 500);
 
           if (cachedDay == today) {
             final cachedRemaining = Parsers.parseInt(
               usageMap['remaining'],
-              _clientDailyLimit,
+              _dailyLimit,
             );
-            _remainingMessages = cachedRemaining.clamp(0, _clientDailyLimit);
+            _remainingMessages = cachedRemaining.clamp(0, _dailyLimit);
           } else {
-            _remainingMessages = _clientDailyLimit;
+            _remainingMessages = _dailyLimit;
           }
 
           _totalMessages = Parsers.parseInt(usageMap['total_messages']);
@@ -368,16 +371,15 @@ class ChatbotProvider extends ChangeNotifier
 
         if (_usageDayKey != today) {
           _usageDayKey = today;
-          _remainingMessages = _clientDailyLimit;
+          _remainingMessages = _dailyLimit;
         }
 
-        final fetched = stats.remaining.clamp(0, _clientDailyLimit);
+        _dailyLimit = stats.limit > 0 ? stats.limit.clamp(1, 500) : _dailyLimit;
+        final fetched = stats.remaining.clamp(0, _dailyLimit);
         if (fetched < _remainingMessages) {
           log('Updating remaining messages from $_remainingMessages to $fetched via usage stats');
           _remainingMessages = fetched;
         }
-
-        _dailyLimit = _clientDailyLimit;
         _totalMessages = stats.totalMessages;
         _totalConversations = stats.totalConversations;
         _lastUsageFetchAt = DateTime.now();
@@ -831,13 +833,12 @@ class ChatbotProvider extends ChangeNotifier
         if (response.data!.containsKey('remaining')) {
           final int serverRemaining =
               Parsers.parseInt(response.data!['remaining'])
-                  .clamp(0, _clientDailyLimit);
+                  .clamp(0, _dailyLimit);
           _remainingMessages =
               serverRemaining < decremented ? serverRemaining : decremented;
         } else {
           _remainingMessages = decremented;
         }
-        _dailyLimit = _clientDailyLimit;
         _usageDayKey = _todayKey();
 
         if (conversationId == null &&
