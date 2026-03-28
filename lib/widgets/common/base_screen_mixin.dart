@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../providers/settings_provider.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/offline_queue_manager.dart';
 import '../../services/snackbar_service.dart';
@@ -146,10 +147,13 @@ mixin BaseScreenMixin<T extends StatefulWidget> on State<T> {
   }
 
   Widget buildBrandedLoadingState({
-    String title = 'Getting your learning space ready',
-    String message =
-        'We are bringing in your latest lessons, access details, and updates so the screen opens fully prepared.',
+    String? title,
+    String? message,
   }) {
+    final settingsProvider = context.read<SettingsProvider>();
+    final resolvedTitle = title ?? settingsProvider.getSharedLoadingTitle();
+    final resolvedMessage =
+        message ?? settingsProvider.getSharedLoadingMessage();
     final spacing = ResponsiveValues.screenPadding(context);
 
     return SingleChildScrollView(
@@ -171,7 +175,7 @@ mixin BaseScreenMixin<T extends StatefulWidget> on State<T> {
                 ),
                 SizedBox(height: ResponsiveValues.spacingXL(context)),
                 Text(
-                  title,
+                  resolvedTitle,
                   style: AppTextStyles.titleLarge(context).copyWith(
                     fontWeight: FontWeight.w700,
                   ),
@@ -179,7 +183,7 @@ mixin BaseScreenMixin<T extends StatefulWidget> on State<T> {
                 ),
                 SizedBox(height: ResponsiveValues.spacingS(context)),
                 Text(
-                  message,
+                  resolvedMessage,
                   style: AppTextStyles.bodyMedium(context).copyWith(
                     color: AppColors.getTextSecondary(context),
                     height: 1.5,

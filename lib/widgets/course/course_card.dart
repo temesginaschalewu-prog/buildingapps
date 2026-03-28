@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:provider/provider.dart';
 import '../../models/course_model.dart';
+import '../../providers/settings_provider.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/responsive_values.dart';
@@ -24,6 +26,7 @@ class CourseCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final settingsProvider = context.read<SettingsProvider>();
     final bool hasFullAccess = course.hasFullAccess(true);
     const bool hasPendingPayment = false; // This would come from provider
     final bool requiresPayment = course.requiresPayment;
@@ -42,6 +45,7 @@ class CourseCard extends StatelessWidget {
       hasFullAccess,
       hasPendingPayment,
       requiresPayment,
+      settingsProvider: settingsProvider,
     );
 
     return AppCard.course(

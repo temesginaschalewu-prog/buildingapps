@@ -1723,12 +1723,86 @@ class SettingsProvider extends ChangeNotifier
     return 'We are bringing in your categories, notifications, and access details so your first screen opens complete and ready to use.';
   }
 
+  String getSharedLoadingTitle() {
+    final configured = getSettingValue('shared_loading_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Getting your learning space ready';
+  }
+
+  String getSharedLoadingMessage() {
+    final configured = getSettingValue('shared_loading_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'We are bringing in your latest lessons, access details, and updates so the screen opens fully prepared.';
+  }
+
   String getRegisterDeviceNotReadyMessage() {
     final configured = getSettingValue('register_device_not_ready_message');
     if (configured != null && configured.trim().isNotEmpty) {
       return configured.trim();
     }
     return 'This device is still getting ready. Please try again in a moment.';
+  }
+
+  String getAppOfflinePendingMessage(int pendingCount) {
+    final configured = getSettingValue('app_offline_pending_message');
+    final template = (configured != null && configured.trim().isNotEmpty)
+        ? configured.trim()
+        : 'You are offline right now. {count} change{plural_suffix} saved and will sync when you reconnect.';
+    return template
+        .replaceAll('{count}', pendingCount.toString())
+        .replaceAll('{plural_suffix}', pendingCount > 1 ? 's are' : ' is');
+  }
+
+  String getAppOfflineSavedContentMessage() {
+    final configured = getSettingValue('app_offline_saved_content_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'You are offline right now. Showing saved content while we wait for a connection.';
+  }
+
+  String getCategoryAccessComingSoonLabel() {
+    return getChapterComingSoonBadge();
+  }
+
+  String getCategoryAccessFreeLabel() {
+    return getChapterFreePreviewBadge();
+  }
+
+  String getCategoryAccessFullAccessLabel() {
+    return getAccessBannerFullTitle().toUpperCase();
+  }
+
+  String getCategoryAccessPendingLabel() {
+    return getAccessBannerPaymentPendingTitle().toUpperCase();
+  }
+
+  String getCategoryAccessLimitedLabel() {
+    return getAccessBannerLimitedTitle().toUpperCase();
+  }
+
+  String getCourseAccessFullLabel() {
+    return getAccessBannerFullTitle();
+  }
+
+  String getCourseAccessPendingLabel() {
+    return getAccessBannerPaymentPendingTitle();
+  }
+
+  String getCourseAccessFreeLabel() {
+    return getAccessBannerFreeTitle();
+  }
+
+  String getCourseAccessPurchaseRequiredLabel() {
+    final configured = getSettingValue('chapter_unlock_purchase_button');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Purchase Required';
   }
 
   String getSupportScreenSubtitle() {

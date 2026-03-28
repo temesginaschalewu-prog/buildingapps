@@ -15,6 +15,7 @@ import 'providers/notification_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/subscription_provider.dart';
 import 'providers/category_provider.dart';
+import 'providers/settings_provider.dart';
 import 'utils/app_enums.dart';
 import 'utils/router.dart';
 import 'services/notification_service.dart';
@@ -154,16 +155,18 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
       } else if (!isOnline && !_wasOffline) {
         final queueManager =
             Provider.of<queue.OfflineQueueManager>(context, listen: false);
+        final settingsProvider =
+            Provider.of<SettingsProvider>(context, listen: false);
         final pendingCount = queueManager.pendingCount;
 
         if (pendingCount > 0) {
           _showSafeSnackbar(
-            'You are offline right now. $pendingCount change${pendingCount > 1 ? 's are' : ' is'} saved and will sync when you reconnect.',
+            settingsProvider.getAppOfflinePendingMessage(pendingCount),
             SnackbarType.offline,
           );
         } else {
           _showSafeSnackbar(
-            'You are offline right now. Showing saved content while we wait for a connection.',
+            settingsProvider.getAppOfflineSavedContentMessage(),
             SnackbarType.offline,
           );
         }
@@ -204,7 +207,7 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
 
     final remaining = queueManager.pendingItems.length;
     if (remaining == 0) {
-      _showSafeSnackbar('Sync complete!', SnackbarType.syncComplete);
+      _showSafeSnackbar('Sync complete.', SnackbarType.syncComplete);
     } else {
       _showSafeSnackbar(
         '$remaining change${remaining > 1 ? 's' : ''} remaining to sync',

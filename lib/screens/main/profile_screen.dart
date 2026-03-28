@@ -1098,15 +1098,15 @@ class _ProfileScreenState extends State<ProfileScreen>
 
     final notificationStatus = [
       'Platform: ${diagnostics['platform']}',
-      'Push capable: ${diagnostics['push_capable_platform'] == true ? 'Yes' : 'No'}',
-      'Notifications enabled: ${diagnostics['notifications_enabled'] == true ? 'Yes' : 'No'}',
-      'Online: ${diagnostics['is_online'] == true ? 'Yes' : 'No'}',
+      'Push available on this device: ${diagnostics['push_capable_platform'] == true ? 'Yes' : 'No'}',
+      'Notifications turned on: ${diagnostics['notifications_enabled'] == true ? 'Yes' : 'No'}',
+      'Internet connection: ${diagnostics['is_online'] == true ? 'Online' : 'Offline'}',
       'Signed in: ${diagnostics['is_authenticated'] == true ? 'Yes' : 'No'}',
-      'Service ready: ${diagnostics['service_initialized'] == true ? 'Yes' : 'No'}',
+      'Notification service ready: ${diagnostics['service_initialized'] == true ? 'Yes' : 'No'}',
       'Firebase ready: ${diagnostics['firebase_initialized'] == true ? 'Yes' : 'No'}',
-      'Token present: ${diagnostics['live_fcm_token_present'] == true || diagnostics['cached_fcm_token_present'] == true ? 'Yes' : 'No'}',
-      'Token queued: ${diagnostics['pending_fcm_token_present'] == true ? 'Yes' : 'No'}',
-      'Token: ${diagnostics['fcm_token_preview']}',
+      'Push token available: ${diagnostics['live_fcm_token_present'] == true || diagnostics['cached_fcm_token_present'] == true ? 'Yes' : 'No'}',
+      'Push token waiting to sync: ${diagnostics['pending_fcm_token_present'] == true ? 'Yes' : 'No'}',
+      'Token preview: ${diagnostics['fcm_token_preview']}',
     ].join('\n');
 
     await AppDialog.show(
@@ -1131,7 +1131,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           ),
           SizedBox(height: ResponsiveValues.spacingL(context)),
           Text(
-            'Notification Diagnostics',
+            'Notification status',
             style: AppTextStyles.titleSmall(context)
                 .copyWith(fontWeight: FontWeight.w700),
           ),

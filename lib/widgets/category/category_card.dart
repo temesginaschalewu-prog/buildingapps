@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:provider/provider.dart';
 import '../../models/category_model.dart';
+import '../../providers/settings_provider.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/responsive_values.dart';
@@ -26,6 +28,7 @@ class CategoryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final settingsProvider = context.read<SettingsProvider>();
     final isComingSoon = category.isComingSoon;
     final isFree = category.isFree;
     final borderRadius = BorderRadius.circular(
@@ -51,6 +54,7 @@ class CategoryCard extends StatelessWidget {
       isFree: isFree,
       hasActiveSubscription: hasSubscription,
       hasPendingPayment: hasPendingPayment,
+      settingsProvider: settingsProvider,
     );
 
     return Material(

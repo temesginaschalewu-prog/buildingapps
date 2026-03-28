@@ -1,5 +1,6 @@
 import 'package:familyacademyclient/utils/app_enums.dart';
 import 'package:flutter/material.dart';
+import '../providers/settings_provider.dart';
 import '../themes/app_colors.dart';
 import '../services/connectivity_service.dart';
 
@@ -33,12 +34,23 @@ class UiHelpers {
     required bool isFree,
     required bool hasActiveSubscription,
     required bool hasPendingPayment,
+    SettingsProvider? settingsProvider,
   }) {
-    if (isComingSoon) return 'COMING SOON';
-    if (isFree) return 'FREE';
-    if (hasActiveSubscription) return 'FULL ACCESS';
-    if (hasPendingPayment) return 'PENDING';
-    return 'LIMITED';
+    if (isComingSoon) {
+      return settingsProvider?.getCategoryAccessComingSoonLabel() ??
+          'COMING SOON';
+    }
+    if (isFree) {
+      return settingsProvider?.getCategoryAccessFreeLabel() ?? 'FREE';
+    }
+    if (hasActiveSubscription) {
+      return settingsProvider?.getCategoryAccessFullAccessLabel() ??
+          'FULL ACCESS';
+    }
+    if (hasPendingPayment) {
+      return settingsProvider?.getCategoryAccessPendingLabel() ?? 'PENDING';
+    }
+    return settingsProvider?.getCategoryAccessLimitedLabel() ?? 'LIMITED';
   }
 
   static IconData getCourseAccessIcon(
@@ -56,11 +68,23 @@ class UiHelpers {
   }
 
   static String getCourseAccessText(
-      bool hasFullAccess, bool hasPendingPayment, bool requiresPayment) {
-    if (hasFullAccess) return 'Full Access';
-    if (hasPendingPayment) return 'Pending Payment';
-    if (!requiresPayment) return 'Free';
-    return 'Purchase Required';
+    bool hasFullAccess,
+    bool hasPendingPayment,
+    bool requiresPayment, {
+    SettingsProvider? settingsProvider,
+  }) {
+    if (hasFullAccess) {
+      return settingsProvider?.getCourseAccessFullLabel() ?? 'Full Access';
+    }
+    if (hasPendingPayment) {
+      return settingsProvider?.getCourseAccessPendingLabel() ??
+          'Pending Payment';
+    }
+    if (!requiresPayment) {
+      return settingsProvider?.getCourseAccessFreeLabel() ?? 'Free';
+    }
+    return settingsProvider?.getCourseAccessPurchaseRequiredLabel() ??
+        'Purchase Required';
   }
 
   static Color getExamStatusColor(
