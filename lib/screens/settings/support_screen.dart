@@ -38,12 +38,17 @@ class _SupportScreenState extends State<SupportScreen>
   bool _didInitialize = false;
 
   @override
-  String get screenTitle => AppStrings.support;
+  String get screenTitle =>
+      _didInitialize ? _settingsProvider.getSupportScreenTitle() : AppStrings.support;
 
   @override
   String? get screenSubtitle => isRefreshing
       ? AppStrings.refreshing
-      : (isOffline ? AppStrings.offlineMode : AppStrings.getHelp);
+      : (isOffline
+          ? AppStrings.offlineMode
+          : (_didInitialize
+              ? _settingsProvider.getSupportScreenSubtitle()
+              : AppStrings.getHelp));
 
   @override
   bool get isLoading => false;
@@ -745,7 +750,7 @@ class _SupportScreenState extends State<SupportScreen>
               _buildSectionHeader(AppStrings.quickActions),
               _buildQuickActionGrid(),
               SizedBox(height: ResponsiveValues.spacingXL(context)),
-              _buildSectionHeader(AppStrings.supportHours),
+              _buildSectionHeader(_settingsProvider.getSupportHoursLabel()),
               _buildSupportHoursCard(),
               SizedBox(height: ResponsiveValues.spacingXL(context)),
               _buildSectionHeader(AppStrings.responseTime),
@@ -767,8 +772,8 @@ class _SupportScreenState extends State<SupportScreen>
       mainAxisSpacing: ResponsiveValues.gridRunSpacing(context),
       children: [
         _buildQuickActionCard(
-          'Message support',
-          'Open the main support contact',
+          _settingsProvider.getSupportQuickActionTitle(),
+          _settingsProvider.getSupportQuickActionDescription(),
           Icons.chat_rounded,
           _handleQuickSupportAction,
           AppColors.telegramGreen,
@@ -816,7 +821,7 @@ class _SupportScreenState extends State<SupportScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        AppStrings.quickResponse,
+                        _settingsProvider.getSupportResponseTitle(),
                         style: AppTextStyles.titleMedium(
                           context,
                         ).copyWith(fontWeight: FontWeight.w700),

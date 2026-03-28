@@ -54,7 +54,11 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
   @override
   String? get screenSubtitle => isRefreshing
       ? AppStrings.refreshing
-      : (isOffline ? AppStrings.offlineMode : AppStrings.connectWithParents);
+      : (isOffline
+          ? AppStrings.offlineMode
+          : (_didInitializeProviders
+              ? _settingsProvider.getParentLinkScreenSubtitle()
+              : AppStrings.connectWithParents));
 
   // ✅ Override isLoading to return false - we handle loading manually
   @override
@@ -360,7 +364,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                 ),
                 SizedBox(height: ResponsiveValues.spacingM(context)),
                 Text(
-                  'Ask your parent to use this code within ${_settingsProvider.getParentLinkTokenWindowText()}.',
+                  _settingsProvider.getParentLinkTokenMessageWithWindow(),
                   textAlign: TextAlign.center,
                   style: AppTextStyles.bodySmall(context).copyWith(
                     color: AppColors.getTextSecondary(context),
@@ -718,7 +722,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                       ),
                       SizedBox(height: ResponsiveValues.spacingXS(context)),
                       Text(
-                        'Your parent link is ready to use. Share the code before the timer ends.',
+                        _settingsProvider.getParentLinkTokenMessageWithWindow(),
                         style: AppTextStyles.bodyMedium(context).copyWith(
                           color: AppColors.getTextSecondary(context),
                           height: 1.45,
@@ -807,14 +811,14 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Bring a parent into the journey',
+                        _settingsProvider.getParentLinkTitle(),
                         style: AppTextStyles.headlineSmall(
                           context,
                         ).copyWith(fontWeight: FontWeight.w700),
                       ),
                       SizedBox(height: ResponsiveValues.spacingXS(context)),
                       Text(
-                        'Generate a secure code and connect your parent to a polished Telegram progress assistant.',
+                        _settingsProvider.getParentLinkDescription(),
                         style: AppTextStyles.bodyMedium(context).copyWith(
                           color: AppColors.getTextSecondary(context),
                           height: 1.45,
@@ -835,7 +839,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                 ),
               ),
               child: Text(
-                'New parent link codes stay active for ${_settingsProvider.getParentLinkTokenWindowText()}.',
+                _settingsProvider.getParentLinkActiveWindowMessage(),
                 style: AppTextStyles.bodySmall(context).copyWith(
                   color: AppColors.getTextSecondary(context),
                   height: 1.45,
@@ -892,7 +896,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                 ),
                 SizedBox(width: ResponsiveValues.spacingM(context)),
                 Text(
-                  'What parents receive',
+                  _settingsProvider.getParentLinkBenefitsTitle(),
                   style: AppTextStyles.titleMedium(
                     context,
                   ).copyWith(fontWeight: FontWeight.w700),
@@ -901,11 +905,11 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
             ),
             SizedBox(height: ResponsiveValues.spacingL(context)),
             _buildInstruction(
-              'Parents receive a richer student snapshot, including study time, chapter completion, questions, exams, and active subscriptions.',
+              _settingsProvider.getParentLinkBenefitsSummary(),
               Icons.insights_rounded,
             ),
             _buildInstruction(
-              'Important child changes such as profile updates and learning milestones can also be sent to the linked parent.',
+              _settingsProvider.getParentLinkBenefitsUpdates(),
               Icons.notifications_active_rounded,
             ),
             SizedBox(height: ResponsiveValues.spacingL(context)),
@@ -925,7 +929,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                         SizedBox(width: ResponsiveValues.spacingM(context)),
                         Expanded(
                           child: Text(
-                            'Parent Telegram assistant',
+                            _settingsProvider.getParentLinkBotTitle(),
                             style: AppTextStyles.titleSmall(
                               context,
                             ).copyWith(fontWeight: FontWeight.w700),
@@ -951,7 +955,8 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                             Expanded(
                               child: Text(
                                 telegramBotUrl ??
-                                    'Ask your administrator to configure the parent Telegram bot.',
+                                    _settingsProvider
+                                        .getParentLinkBotFallbackMessage(),
                                 style:
                                     AppTextStyles.bodySmall(context).copyWith(
                                   color: telegramBotUrl != null
@@ -976,7 +981,7 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
                     ),
                     SizedBox(height: ResponsiveValues.spacingS(context)),
                     Text(
-                      'Once linked, parents can open the bot anytime to view a polished child snapshot, recent activity, exams, and payment access updates.',
+                      _settingsProvider.getParentLinkBotDescription(),
                       style: AppTextStyles.bodySmall(context).copyWith(
                         color: AppColors.getTextSecondary(context),
                         height: 1.45,

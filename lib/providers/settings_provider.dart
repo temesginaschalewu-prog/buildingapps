@@ -1197,6 +1197,54 @@ class SettingsProvider extends ChangeNotifier
     return 'We typically respond within $hours hours during business days';
   }
 
+  String getSupportScreenTitle() {
+    final configured = getSettingValue('support_screen_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Support';
+  }
+
+  String getSupportScreenSubtitle() {
+    final configured = getSettingValue('support_screen_subtitle');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Get help when you need it';
+  }
+
+  String getSupportQuickActionTitle() {
+    final configured = getSettingValue('support_quick_action_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Message support';
+  }
+
+  String getSupportQuickActionDescription() {
+    final configured = getSettingValue('support_quick_action_description');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Open the main support contact';
+  }
+
+  String getSupportHoursLabel() {
+    final configured = getSettingValue('support_hours_label');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Support hours';
+  }
+
+  String getSupportResponseTitle() {
+    final configured = getSettingValue('support_response_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Quick response';
+  }
+
   String getRefundPolicyMessage() {
     final configured = getSettingValue('refund_policy_message');
     if (configured != null && configured.trim().isNotEmpty) {
@@ -1343,6 +1391,150 @@ class SettingsProvider extends ChangeNotifier
       return configured.trim();
     }
     return 'This chapter will be available soon. Stay tuned for updates.';
+  }
+
+  bool isChatbotEnabled() {
+    final rawValue = getSettingValue('chatbot_enabled')?.trim().toLowerCase();
+    if (rawValue == null || rawValue.isEmpty) return true;
+    return rawValue == '1' ||
+        rawValue == 'true' ||
+        rawValue == 'yes' ||
+        rawValue == 'on';
+  }
+
+  String getChatbotScreenTitle() {
+    final configured = getSettingValue('chatbot_screen_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Learning assistant';
+  }
+
+  String getChatbotWelcomeMessage() {
+    final configured = getSettingValue('chatbot_welcome_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Ask me about your lessons, revision ideas, or study help anytime.';
+  }
+
+  String getChatbotOfflineMessage() {
+    final configured = getSettingValue('chatbot_offline_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'You are offline right now. Your message will wait and send when you reconnect.';
+  }
+
+  String getChatbotDisabledMessage() {
+    final configured = getSettingValue('chatbot_disabled_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'The learning assistant is not available right now. Please check again later.';
+  }
+
+  String getChatbotEmptyStateMessage(int remainingMessages, int dailyLimit) {
+    final welcome = getChatbotWelcomeMessage();
+    if (dailyLimit <= 0) return welcome;
+    return '$welcome You have $remainingMessages/$dailyLimit messages left today.';
+  }
+
+  String getParentLinkTitle() {
+    final configured = getSettingValue('parent_link_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Bring a parent into the journey';
+  }
+
+  String getParentLinkScreenSubtitle() {
+    final configured = getSettingValue('parent_link_screen_subtitle');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Connect with parents';
+  }
+
+  String getParentLinkDescription() {
+    final configured = getSettingValue('parent_link_description');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Generate a secure code and connect your parent to a polished Telegram progress assistant.';
+  }
+
+  String getParentLinkTokenMessage() {
+    final configured = getSettingValue('parent_link_token_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Ask your parent to use this code within {window}.';
+  }
+
+  String getParentLinkTokenMessageWithWindow() {
+    return getParentLinkTokenMessage().replaceAll(
+      '{window}',
+      getParentLinkTokenWindowText(),
+    );
+  }
+
+  String getParentLinkActiveWindowMessage() {
+    final configured = getSettingValue('parent_link_active_window_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured
+          .trim()
+          .replaceAll('{window}', getParentLinkTokenWindowText());
+    }
+    return 'New parent link codes stay active for ${getParentLinkTokenWindowText()}.';
+  }
+
+  String getParentLinkBenefitsTitle() {
+    final configured = getSettingValue('parent_link_benefits_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'What parents receive';
+  }
+
+  String getParentLinkBenefitsSummary() {
+    final configured = getSettingValue('parent_link_benefits_summary');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Parents receive a richer student snapshot, including study time, chapter completion, questions, exams, and active subscriptions.';
+  }
+
+  String getParentLinkBenefitsUpdates() {
+    final configured = getSettingValue('parent_link_benefits_updates');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Important child changes such as profile updates and learning milestones can also be sent to the linked parent.';
+  }
+
+  String getParentLinkBotTitle() {
+    final configured = getSettingValue('parent_link_bot_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Parent Telegram assistant';
+  }
+
+  String getParentLinkBotFallbackMessage() {
+    final configured = getSettingValue('parent_link_bot_fallback_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Ask your administrator to configure the parent Telegram bot.';
+  }
+
+  String getParentLinkBotDescription() {
+    final configured = getSettingValue('parent_link_bot_description');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Once linked, parents can open the bot anytime to view a polished child snapshot, recent activity, exams, and payment access updates.';
   }
 
   // ===== TELEGRAM BOT URL =====
