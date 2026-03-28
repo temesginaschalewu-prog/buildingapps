@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:provider/provider.dart';
+import '../../providers/settings_provider.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/responsive_values.dart';
@@ -73,17 +75,15 @@ class AppEmptyState extends StatelessWidget {
     final message = isOffline
         ? 'Connect to the internet to load your $label and keep going.'
         : (customMessage ?? 'Your $label will appear here once it is ready.');
-
-    final title = isOffline ? 'You are offline right now' : 'Nothing here yet';
     final icon = isOffline ? Icons.wifi_off_rounded : Icons.inbox_rounded;
     final type = isOffline ? EmptyStateType.offline : EmptyStateType.noData;
 
     return AppEmptyState(
       icon: icon,
-      title: title,
+      title: '',
       message: message,
       actionText: onRefresh != null
-          ? (isRefreshing ? 'Refreshing' : 'Refresh')
+          ? (isRefreshing ? '__refreshing__' : '__refresh__')
           : null,
       onAction: onRefresh,
       type: type,
@@ -107,10 +107,12 @@ class AppEmptyState extends StatelessWidget {
 
     return AppEmptyState(
       icon: Icons.wifi_off_rounded,
-      title: 'You are offline right now',
+      title: '',
       message: displayMessage,
       actionText:
-          onRetry != null ? (isRefreshing ? 'Trying again' : 'Try again') : null,
+          onRetry != null
+              ? (isRefreshing ? '__trying_again__' : '__try_again__')
+              : null,
       onAction: onRetry,
       type: EmptyStateType.offline,
       isRefreshing: isRefreshing,
@@ -129,10 +131,10 @@ class AppEmptyState extends StatelessWidget {
 
     return AppEmptyState(
       icon: Icons.schedule_rounded,
-      title: 'Changes Queued',
+      title: '',
       message:
           '$actionText waiting to sync. $action will complete when online.',
-      actionText: isSyncing ? 'Syncing' : 'Sync now',
+      actionText: isSyncing ? '__syncing__' : '__sync_now__',
       onAction: onSync,
       type: EmptyStateType.queued,
       isRefreshing: isSyncing,
@@ -145,7 +147,7 @@ class AppEmptyState extends StatelessWidget {
   }) {
     return AppEmptyState(
       icon: Icons.sync_rounded,
-      title: 'Syncing',
+      title: '',
       message: message ?? 'Your changes are being synced.',
       type: EmptyStateType.syncing,
       isRefreshing: true,
@@ -163,7 +165,9 @@ class AppEmptyState extends StatelessWidget {
       title: title, // ✅ Using the title parameter
       message: message,
       actionText:
-          onRetry != null ? (isRefreshing ? 'Retrying' : 'Try again') : null,
+          onRetry != null
+              ? (isRefreshing ? '__trying_again__' : '__try_again__')
+              : null,
       onAction: onRetry,
       type: EmptyStateType.error,
       isRefreshing: isRefreshing,
@@ -191,9 +195,9 @@ class AppEmptyState extends StatelessWidget {
   }) {
     return AppEmptyState(
       icon: Icons.search_off_rounded,
-      title: 'No Results',
+      title: '',
       message: 'No results found for "$searchQuery". Try different keywords.',
-      actionText: onClearSearch != null ? 'Clear Search' : null,
+      actionText: onClearSearch != null ? '__clear_search__' : null,
       onAction: onClearSearch,
       type: EmptyStateType.noResults,
     );
@@ -201,6 +205,10 @@ class AppEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final settingsProvider = context.read<SettingsProvider>();
+    final resolvedTitle = _resolveTitle(settingsProvider);
+    final resolvedMessage = _resolveMessage(settingsProvider);
+    final resolvedActionText = _resolveActionText(settingsProvider);
     final content = Container(
       constraints: BoxConstraints(maxWidth: maxWidth ?? 400),
       padding: padding,
@@ -219,18 +227,18 @@ class AppEmptyState extends StatelessWidget {
                 children: [
                   if (showAnimation) _buildAnimatedIcon(context),
                   SizedBox(height: ResponsiveValues.spacingL(context)),
-                  _buildTitle(context),
+                  _buildTitle(context, resolvedTitle),
                   SizedBox(height: ResponsiveValues.spacingM(context)),
-                  _buildMessage(context),
+                  _buildMessage(context, resolvedMessage),
                   if (pendingCount != null && pendingCount! > 1)
                     Padding(
                       padding: EdgeInsets.only(
                           top: ResponsiveValues.spacingM(context)),
                       child: _buildPendingBadge(context),
                     ),
-                  if (actionText != null && onAction != null) ...[
+                  if (resolvedActionText != null && onAction != null) ...[
                     SizedBox(height: ResponsiveValues.spacingXL(context)),
-                    _buildActionButton(context),
+                    _buildActionButton(context, resolvedActionText),
                   ],
                   SizedBox(height: ResponsiveValues.spacingS(context)),
                 ],
@@ -245,6 +253,57 @@ class AppEmptyState extends StatelessWidget {
       padding: ResponsiveValues.screenPadding(context),
       child: centerContent ? Center(child: content) : content,
     ).animate().fadeIn(duration: 300.ms);
+  }
+
+  String _resolveTitle(SettingsProvider settingsProvider) {
+    if (title.isNotEmpty) return title;
+    switch (type) {
+      case EmptyStateType.offline:
+      case EmptyStateType.noInternet:
+        return settingsProvider.getEmptyStateOfflineTitle();
+      case EmptyStateType.noResults:
+        return settingsProvider.getEmptyStateNoResultsTitle();
+      case EmptyStateType.queued:
+        return settingsProvider.getEmptyStateQueuedTitle();
+      case EmptyStateType.syncing:
+        return settingsProvider.getEmptyStateSyncingTitle();
+      case EmptyStateType.noData:
+      default:
+        return settingsProvider.getEmptyStateNoDataTitle();
+    }
+  }
+
+  String _resolveMessage(SettingsProvider settingsProvider) {
+    switch (type) {
+      case EmptyStateType.syncing:
+        return message.isNotEmpty
+            ? message
+            : settingsProvider.getEmptyStateSyncingMessage();
+      default:
+        return message;
+    }
+  }
+
+  String? _resolveActionText(SettingsProvider settingsProvider) {
+    if (actionText == null) return null;
+    switch (actionText) {
+      case '__refresh__':
+        return settingsProvider.getEmptyStateRefreshLabel();
+      case '__refreshing__':
+        return settingsProvider.getEmptyStateRefreshingLabel();
+      case '__try_again__':
+        return settingsProvider.getEmptyStateTryAgainLabel();
+      case '__trying_again__':
+        return settingsProvider.getEmptyStateTryingAgainLabel();
+      case '__sync_now__':
+        return settingsProvider.getEmptyStateSyncNowLabel();
+      case '__syncing__':
+        return settingsProvider.getEmptyStateSyncingActionLabel();
+      case '__clear_search__':
+        return settingsProvider.getEmptyStateClearSearchLabel();
+      default:
+        return actionText;
+    }
   }
 
   Widget _buildAnimatedIcon(BuildContext context) {
@@ -285,12 +344,12 @@ class AppEmptyState extends StatelessWidget {
     );
   }
 
-  Widget _buildTitle(BuildContext context) {
+  Widget _buildTitle(BuildContext context, String resolvedTitle) {
     return Padding(
       padding:
           EdgeInsets.symmetric(horizontal: ResponsiveValues.spacingL(context)),
       child: Text(
-        title,
+        resolvedTitle,
         style: AppTextStyles.titleLarge(context)
             .copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.1),
         textAlign: centerContent ? TextAlign.center : TextAlign.start,
@@ -299,12 +358,12 @@ class AppEmptyState extends StatelessWidget {
     );
   }
 
-  Widget _buildMessage(BuildContext context) {
+  Widget _buildMessage(BuildContext context, String resolvedMessage) {
     return Padding(
       padding:
           EdgeInsets.symmetric(horizontal: ResponsiveValues.spacingL(context)),
       child: Text(
-        message,
+        resolvedMessage,
         style: AppTextStyles.bodyMedium(context).copyWith(
           color: AppColors.getTextSecondary(context),
           height: 1.5,
@@ -348,7 +407,7 @@ class AppEmptyState extends StatelessWidget {
     );
   }
 
-  Widget _buildActionButton(BuildContext context) {
+  Widget _buildActionButton(BuildContext context, String resolvedActionText) {
     if (isRefreshing) {
       return Container(
         width: double.infinity,
@@ -376,7 +435,7 @@ class AppEmptyState extends StatelessWidget {
               ),
               SizedBox(width: ResponsiveValues.spacingS(context)),
               Text(
-                actionText ?? 'Loading',
+                resolvedActionText,
                 style: AppTextStyles.labelLarge(context).copyWith(
                   color: AppColors.telegramBlue,
                   fontWeight: FontWeight.w600,
@@ -389,7 +448,7 @@ class AppEmptyState extends StatelessWidget {
     }
 
     return AppButton.primary(
-      label: actionText ?? 'Action',
+      label: resolvedActionText,
       icon: _getActionIcon(),
       onPressed: onAction,
       requiresOnline: type != EmptyStateType.offline,

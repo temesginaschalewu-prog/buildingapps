@@ -162,7 +162,7 @@ class _SupportScreenState extends State<SupportScreen>
       if (hasVisibleSupportData) {
         SnackbarService().showInfo(
           context,
-          'We could not refresh support details just now. Your saved contact information is still available.',
+          _settingsProvider.getSupportRefreshSavedMessage(),
         );
       } else {
         SnackbarService().showError(context, '${AppStrings.refreshFailed}: $e');

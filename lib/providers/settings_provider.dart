@@ -1571,6 +1571,142 @@ class SettingsProvider extends ChangeNotifier
     return 'Network error. Please check your connection.';
   }
 
+  String getEmptyStateNoDataTitle() {
+    final configured = getSettingValue('empty_state_no_data_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Nothing here yet';
+  }
+
+  String getEmptyStateOfflineTitle() {
+    final configured = getSettingValue('empty_state_offline_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'You are offline right now';
+  }
+
+  String getEmptyStateReadyMessage(String label) {
+    final configured = getSettingValue('empty_state_ready_message');
+    final template = (configured != null && configured.trim().isNotEmpty)
+        ? configured.trim()
+        : 'Your {label} will appear here once it is ready.';
+    return template.replaceAll('{label}', label);
+  }
+
+  String getEmptyStateOfflineMessage(String label) {
+    final configured = getSettingValue('empty_state_offline_message');
+    final template = (configured != null && configured.trim().isNotEmpty)
+        ? configured.trim()
+        : 'Connect to the internet to load your {label} and keep going.';
+    return template.replaceAll('{label}', label);
+  }
+
+  String getEmptyStateOfflineLatestMessage() {
+    final configured = getSettingValue('empty_state_offline_latest_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Connect to the internet to continue with the latest content and updates.';
+  }
+
+  String getEmptyStateRefreshLabel() {
+    final configured = getSettingValue('empty_state_refresh_label');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Refresh';
+  }
+
+  String getEmptyStateRefreshingLabel() {
+    final configured = getSettingValue('empty_state_refreshing_label');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Refreshing';
+  }
+
+  String getEmptyStateTryAgainLabel() {
+    final configured = getSettingValue('empty_state_try_again_label');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Try again';
+  }
+
+  String getEmptyStateTryingAgainLabel() {
+    final configured = getSettingValue('empty_state_trying_again_label');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Trying again';
+  }
+
+  String getEmptyStateQueuedTitle() {
+    final configured = getSettingValue('empty_state_queued_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Changes Queued';
+  }
+
+  String getEmptyStateSyncingTitle() {
+    final configured = getSettingValue('empty_state_syncing_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Syncing';
+  }
+
+  String getEmptyStateSyncingMessage() {
+    final configured = getSettingValue('empty_state_syncing_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Your changes are being synced.';
+  }
+
+  String getEmptyStateSyncNowLabel() {
+    final configured = getSettingValue('empty_state_sync_now_label');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Sync now';
+  }
+
+  String getEmptyStateSyncingActionLabel() {
+    final configured = getSettingValue('empty_state_syncing_action_label');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Syncing';
+  }
+
+  String getEmptyStateNoResultsTitle() {
+    final configured = getSettingValue('empty_state_no_results_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'No Results';
+  }
+
+  String getEmptyStateNoResultsMessage(String query) {
+    final configured = getSettingValue('empty_state_no_results_message');
+    final template = (configured != null && configured.trim().isNotEmpty)
+        ? configured.trim()
+        : 'No results found for "{query}". Try different keywords.';
+    return template.replaceAll('{query}', query);
+  }
+
+  String getEmptyStateClearSearchLabel() {
+    final configured = getSettingValue('empty_state_clear_search_label');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Clear Search';
+  }
+
   String getSupportScreenSubtitle() {
     final configured = getSettingValue('support_screen_subtitle');
     if (configured != null && configured.trim().isNotEmpty) {
@@ -1641,6 +1777,14 @@ class SettingsProvider extends ChangeNotifier
       return configured.trim();
     }
     return 'Your administrator has not configured a direct support contact yet.';
+  }
+
+  String getSupportRefreshSavedMessage() {
+    final configured = getSettingValue('support_refresh_saved_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'We could not refresh support details just now. Your saved contact information is still available.';
   }
 
   String getRefundPolicyMessage() {
