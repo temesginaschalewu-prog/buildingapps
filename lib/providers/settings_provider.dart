@@ -88,6 +88,12 @@ class SettingsProvider extends ChangeNotifier
       _hasInitialized = true;
     }
 
+    // Kick off a real settings sync early so admin-side changes propagate
+    // predictably across the app instead of only when specific screens ask.
+    if (!isOffline) {
+      unawaited(getAllSettings());
+    }
+
     log('_init() END');
   }
 
