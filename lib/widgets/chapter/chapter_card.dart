@@ -17,7 +17,6 @@ import '../../services/snackbar_service.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/responsive_values.dart';
-import '../../utils/helpers.dart';
 import '../common/app_card.dart';
 import '../common/app_dialog.dart';
 
@@ -44,6 +43,7 @@ class ChapterCard extends StatelessWidget {
     final bool canAccess = chapter.canAccessContent;
     final bool isFree = chapter.isFree;
     final bool isComingSoon = chapter.status.toLowerCase() == 'coming_soon';
+    final settingsProvider = context.read<SettingsProvider>();
 
     return AppCard.chapter(
       hasAccess: canAccess,
@@ -108,9 +108,8 @@ class ChapterCard extends StatelessWidget {
                           ),
                           SizedBox(width: ResponsiveValues.spacingXXS(context)),
                           Text(
-                            chapter.releaseDate != null
-                                ? 'Available: ${formatDate(chapter.releaseDate!)}'
-                                : 'Available now',
+                            settingsProvider
+                                .getChapterAvailableLabel(chapter.releaseDate),
                             style: AppTextStyles.caption(context).copyWith(
                                 color: AppColors.getTextSecondary(context)),
                           ),
@@ -132,7 +131,7 @@ class ChapterCard extends StatelessWidget {
                                   ResponsiveValues.radiusFull(context)),
                             ),
                             child: Text(
-                              'FREE PREVIEW',
+                              settingsProvider.getChapterFreePreviewBadge(),
                               style:
                                   AppTextStyles.statusBadge(context).copyWith(
                                 color: AppColors.telegramGreen,
@@ -160,7 +159,7 @@ class ChapterCard extends StatelessWidget {
                                   ResponsiveValues.radiusFull(context)),
                             ),
                             child: Text(
-                              'COMING SOON',
+                              settingsProvider.getChapterComingSoonBadge(),
                               style:
                                   AppTextStyles.statusBadge(context).copyWith(
                                 color: AppColors.telegramYellow,
@@ -223,13 +222,15 @@ class ChapterCard extends StatelessWidget {
     final connectivity = context.read<ConnectivityService>();
 
     if (!authProvider.isAuthenticated) {
-      SnackbarService().showError(context, 'Please login to access content');
+      SnackbarService()
+          .showError(context, settingsProvider.getChapterLoginRequiredMessage());
       return;
     }
 
     final category = categoryProvider.getCategoryById(categoryId);
     if (category == null) {
-      SnackbarService().showError(context, 'Category not found');
+      SnackbarService()
+          .showError(context, settingsProvider.getChapterCategoryMissingMessage());
       return;
     }
 
@@ -260,9 +261,8 @@ class ChapterCard extends StatelessWidget {
     if (hasPendingPayment) {
       await AppDialog.info(
         context: context,
-        title: 'Payment Pending',
-        message:
-            'You have a pending payment for "${category.name}". Please wait for admin verification.',
+        title: settingsProvider.getChapterPaymentPendingTitle(),
+        message: settingsProvider.getChapterPaymentPendingMessage(category.name),
       );
       return;
     }
@@ -289,11 +289,17 @@ class ChapterCard extends StatelessWidget {
 
     AppDialog.confirm(
       context: context,
-      title: 'Unlock Content',
+      title: context.read<SettingsProvider>().getChapterUnlockTitle(),
       message: hasExpiredSubscription
-          ? 'Your subscription for "${category.name}" has expired. Renew to access this chapter.'
-          : 'This chapter requires access to "${category.name}". Purchase to unlock all content.',
-      confirmText: hasExpiredSubscription ? 'Renew Now' : 'Purchase Access',
+          ? context
+              .read<SettingsProvider>()
+              .getChapterUnlockExpiredMessage(category.name)
+          : context
+              .read<SettingsProvider>()
+              .getChapterUnlockPurchaseMessage(category.name),
+      confirmText: hasExpiredSubscription
+          ? context.read<SettingsProvider>().getChapterUnlockRenewButton()
+          : context.read<SettingsProvider>().getChapterUnlockPurchaseButton(),
     ).then((confirmed) {
       if (confirmed == true && context.mounted) {
         context.push('/payment', extra: {

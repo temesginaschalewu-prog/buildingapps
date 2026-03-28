@@ -1211,6 +1211,54 @@ class SettingsProvider extends ChangeNotifier
     return 'Support';
   }
 
+  String getLoginScreenSubtitle() {
+    final configured = getSettingValue('login_screen_subtitle');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Sign in to continue learning.';
+  }
+
+  String getLoginIntroTitle() {
+    final configured = getSettingValue('login_intro_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Continue with Family Academy';
+  }
+
+  String getLoginIntroMessage() {
+    final configured = getSettingValue('login_intro_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Sign in to access your classes, progress, and saved activity.';
+  }
+
+  String getRegisterIntroMessage() {
+    final configured = getSettingValue('register_intro_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Set up your learning access in a few quick steps.';
+  }
+
+  String getNetworkTimeoutMessage() {
+    final configured = getSettingValue('network_timeout_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Connection timeout. Please try again.';
+  }
+
+  String getNetworkErrorMessage() {
+    final configured = getSettingValue('network_error_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Network error. Please check your connection.';
+  }
+
   String getSupportScreenSubtitle() {
     final configured = getSettingValue('support_screen_subtitle');
     if (configured != null && configured.trim().isNotEmpty) {
@@ -1429,6 +1477,127 @@ class SettingsProvider extends ChangeNotifier
       return configured.trim();
     }
     return 'This chapter will be available soon. Stay tuned for updates.';
+  }
+
+  String getChapterAvailableLabel(DateTime? releaseDate) {
+    final prefix = getSettingValue('chapter_available_prefix')?.trim();
+    final nowLabel = getSettingValue('chapter_available_now_label')?.trim();
+    if (releaseDate != null) {
+      return '${(prefix == null || prefix.isEmpty) ? 'Available:' : prefix} ${formatDate(releaseDate)}';
+    }
+    return (nowLabel == null || nowLabel.isEmpty) ? 'Available now' : nowLabel;
+  }
+
+  String getChapterFreePreviewBadge() {
+    final configured = getSettingValue('chapter_free_preview_badge');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'FREE PREVIEW';
+  }
+
+  String getChapterComingSoonBadge() {
+    final configured = getSettingValue('chapter_coming_soon_badge');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'COMING SOON';
+  }
+
+  String getChapterLoginRequiredMessage() {
+    final configured = getSettingValue('chapter_login_required_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Please login to access content';
+  }
+
+  String getChapterCategoryMissingMessage() {
+    final configured = getSettingValue('chapter_category_missing_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Category not found';
+  }
+
+  String getChapterPaymentPendingTitle() {
+    final configured = getSettingValue('chapter_payment_pending_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Payment Pending';
+  }
+
+  String getChapterPaymentPendingMessage(String categoryName) {
+    final configured = getSettingValue('chapter_payment_pending_message');
+    final template = (configured != null && configured.trim().isNotEmpty)
+        ? configured.trim()
+        : 'You have a pending payment for "{category}". Please wait for admin verification.';
+    return template.replaceAll('{category}', categoryName);
+  }
+
+  String getChapterUnlockTitle() {
+    final configured = getSettingValue('chapter_unlock_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Unlock Content';
+  }
+
+  String getChapterUnlockExpiredMessage(String categoryName) {
+    final configured = getSettingValue('chapter_unlock_expired_message');
+    final template = (configured != null && configured.trim().isNotEmpty)
+        ? configured.trim()
+        : 'Your subscription for "{category}" has expired. Renew to access this chapter.';
+    return template.replaceAll('{category}', categoryName);
+  }
+
+  String getChapterUnlockPurchaseMessage(String categoryName) {
+    final configured = getSettingValue('chapter_unlock_purchase_message');
+    final template = (configured != null && configured.trim().isNotEmpty)
+        ? configured.trim()
+        : 'This chapter requires access to "{category}". Purchase to unlock all content.';
+    return template.replaceAll('{category}', categoryName);
+  }
+
+  String getChapterUnlockRenewButton() {
+    final configured = getSettingValue('chapter_unlock_renew_button');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Renew Now';
+  }
+
+  String getChapterUnlockPurchaseButton() {
+    final configured = getSettingValue('chapter_unlock_purchase_button');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Purchase Access';
+  }
+
+  String getCourseEmptyChaptersMessage() {
+    final configured = getSettingValue('course_empty_chapters_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Chapters for this course will appear here.';
+  }
+
+  String getCourseEmptyExamsMessage() {
+    final configured = getSettingValue('course_empty_exams_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Exams for this course will appear here.';
+  }
+
+  String getCourseUnlockExpiredMessage(String categoryName) {
+    final configured = getSettingValue('course_unlock_expired_message');
+    final template = (configured != null && configured.trim().isNotEmpty)
+        ? configured.trim()
+        : 'Your subscription for "{category}" has expired. Renew to access all content.';
+    return template.replaceAll('{category}', categoryName);
   }
 
   bool isChatbotEnabled() {

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../providers/auth_provider.dart';
+import '../../providers/settings_provider.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/snackbar_service.dart';
@@ -37,12 +38,13 @@ class _LoginScreenState extends State<LoginScreen>
   bool _isLoading = false;
 
   late AuthProvider _authProvider;
+  late SettingsProvider _settingsProvider;
 
   @override
   String get screenTitle => AppStrings.login;
 
   @override
-  String? get screenSubtitle => 'Sign in to continue learning.';
+  String? get screenSubtitle => _settingsProvider.getLoginScreenSubtitle();
 
   @override
   bool get isLoading => _isLoading;
@@ -71,6 +73,7 @@ class _LoginScreenState extends State<LoginScreen>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _authProvider = Provider.of<AuthProvider>(context);
+    _settingsProvider = Provider.of<SettingsProvider>(context);
   }
 
   @override
@@ -189,9 +192,9 @@ class _LoginScreenState extends State<LoginScreen>
 
       String errorMessage = AppStrings.loginFailed;
       if (e.toString().contains('timeout')) {
-        errorMessage = 'Connection timeout. Please try again.';
+        errorMessage = _settingsProvider.getNetworkTimeoutMessage();
       } else if (isNetworkError(e)) {
-        errorMessage = 'Network error. Please check your connection.';
+        errorMessage = _settingsProvider.getNetworkErrorMessage();
       }
 
       SnackbarService().showError(context, errorMessage);
@@ -211,14 +214,14 @@ class _LoginScreenState extends State<LoginScreen>
           ),
           SizedBox(height: ResponsiveValues.spacingL(context)),
           Text(
-            'Continue with Family Academy',
+            _settingsProvider.getLoginIntroTitle(),
             style: AppTextStyles.headlineSmall(context)
                 .copyWith(fontWeight: FontWeight.w700),
             textAlign: TextAlign.center,
           ),
           SizedBox(height: ResponsiveValues.spacingXS(context)),
           Text(
-            'Sign in to access your classes, progress, and saved activity.',
+            _settingsProvider.getLoginIntroMessage(),
             style: AppTextStyles.bodyMedium(context).copyWith(
               color: AppColors.getTextSecondary(context),
               height: 1.45,

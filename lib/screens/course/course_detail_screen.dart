@@ -797,7 +797,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
       context: context,
       title: AppStrings.unlockContent,
       message: hasExpiredSubscription
-          ? 'Your subscription for "${_category!.name}" has expired. Renew to access all content.'
+          ? _settingsProvider.getCourseUnlockExpiredMessage(_category!.name)
           : '${AppStrings.purchase} "${_category!.name}" ${AppStrings.toAccessAllContent}',
       confirmText:
           hasExpiredSubscription ? 'Renew Now' : AppStrings.purchaseAccess,
@@ -937,7 +937,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
             dataType: AppStrings.chapters,
             customMessage: _isOffline
                 ? AppStrings.noCachedChapters
-                : 'Chapters for this course will appear here.',
+                : _settingsProvider.getCourseEmptyChaptersMessage(),
             onRefresh: _manualRefresh,
             isOffline: _isOffline,
             pendingCount: _pendingCount,
@@ -1003,7 +1003,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
             dataType: AppStrings.exams,
             customMessage: _isOffline
                 ? AppStrings.noCachedExams
-                : 'Exams for this course will appear here.',
+                : _settingsProvider.getCourseEmptyExamsMessage(),
             onRefresh: _manualRefresh,
             isOffline: _isOffline,
             pendingCount: _pendingCount,

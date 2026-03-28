@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../providers/auth_provider.dart';
+import '../../providers/settings_provider.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/device_service.dart';
 import '../../services/notification_service.dart';
@@ -43,6 +44,7 @@ class _RegisterScreenState extends State<RegisterScreen>
 
   late AuthProvider _authProvider;
   late DeviceService _deviceService;
+  late SettingsProvider _settingsProvider;
 
   @override
   String get screenTitle => AppStrings.createAccount;
@@ -78,6 +80,7 @@ class _RegisterScreenState extends State<RegisterScreen>
     super.didChangeDependencies();
     _authProvider = Provider.of<AuthProvider>(context);
     _deviceService = Provider.of<DeviceService>(context);
+    _settingsProvider = Provider.of<SettingsProvider>(context);
   }
 
   @override
@@ -204,9 +207,9 @@ class _RegisterScreenState extends State<RegisterScreen>
       if (isMounted) {
         String errorMessage = AppStrings.registrationFailed;
         if (e.toString().contains('timeout')) {
-          errorMessage = 'Connection timeout. Please try again.';
+          errorMessage = _settingsProvider.getNetworkTimeoutMessage();
         } else if (isNetworkError(e)) {
-          errorMessage = 'Network error. Please check your connection.';
+          errorMessage = _settingsProvider.getNetworkErrorMessage();
         }
         SnackbarService().showError(context, errorMessage);
       }
@@ -233,7 +236,7 @@ class _RegisterScreenState extends State<RegisterScreen>
           ),
           SizedBox(height: ResponsiveValues.spacingXS(context)),
           Text(
-            'Set up your learning access in a few quick steps.',
+            _settingsProvider.getRegisterIntroMessage(),
             style: AppTextStyles.bodyMedium(context).copyWith(
               color: AppColors.getTextSecondary(context),
               height: 1.45,
