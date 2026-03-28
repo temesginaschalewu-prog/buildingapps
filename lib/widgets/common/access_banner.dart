@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../providers/settings_provider.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/responsive_values.dart';
@@ -12,6 +14,8 @@ class AccessBanner extends StatelessWidget {
   final String message;
   final String? actionText;
   final VoidCallback? onAction;
+  final AccessBannerPreset? preset;
+  final String? presetReason;
 
   const AccessBanner({
     super.key,
@@ -21,14 +25,17 @@ class AccessBanner extends StatelessWidget {
     required this.message,
     this.actionText,
     this.onAction,
+    this.preset,
+    this.presetReason,
   });
 
   factory AccessBanner.fullAccess() {
     return const AccessBanner(
       icon: Icons.check_circle_rounded,
       color: AppColors.telegramGreen,
-      title: 'Full Access',
-      message: 'You have access to all content',
+      title: '',
+      message: '',
+      preset: AccessBannerPreset.fullAccess,
     );
   }
 
@@ -36,8 +43,9 @@ class AccessBanner extends StatelessWidget {
     return const AccessBanner(
       icon: Icons.lock_open_rounded,
       color: AppColors.telegramGreen,
-      title: 'Free Category',
-      message: 'All content is free and accessible',
+      title: '',
+      message: '',
+      preset: AccessBannerPreset.freeCategory,
     );
   }
 
@@ -45,9 +53,9 @@ class AccessBanner extends StatelessWidget {
     return AccessBanner(
       icon: Icons.lock_rounded,
       color: AppColors.telegramBlue,
-      title: 'Limited Access',
-      message: 'Free chapters only. Purchase to unlock all content.',
-      actionText: 'Purchase',
+      title: '',
+      message: '',
+      preset: AccessBannerPreset.limitedAccess,
       onAction: onPurchase,
     );
   }
@@ -56,8 +64,9 @@ class AccessBanner extends StatelessWidget {
     return AccessBanner(
       icon: Icons.schedule_rounded,
       color: AppColors.pending,
-      title: 'Payment Pending',
-      message: message ?? 'Please wait for admin verification',
+      title: '',
+      message: message ?? '',
+      preset: AccessBannerPreset.paymentPending,
     );
   }
 
@@ -68,15 +77,20 @@ class AccessBanner extends StatelessWidget {
     return AccessBanner(
       icon: Icons.error_outline_rounded,
       color: AppColors.telegramRed,
-      title: 'Payment Rejected',
-      message: 'Reason: $reason',
-      actionText: 'Pay Now',
+      title: '',
+      message: '',
+      preset: AccessBannerPreset.paymentRejected,
+      presetReason: reason,
       onAction: onPayNow,
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final settingsProvider = context.read<SettingsProvider>();
+    final resolvedTitle = _resolveTitle(settingsProvider);
+    final resolvedMessage = _resolveMessage(settingsProvider);
+    final resolvedActionText = _resolveActionText(settingsProvider);
     return Container(
       margin: EdgeInsets.symmetric(
         horizontal: ResponsiveValues.sectionPadding(context),
@@ -103,7 +117,7 @@ class AccessBanner extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      title,
+                      resolvedTitle,
                       style: AppTextStyles.titleSmall(context).copyWith(
                         color: color,
                         fontWeight: FontWeight.w700,
@@ -111,7 +125,7 @@ class AccessBanner extends StatelessWidget {
                     ),
                     SizedBox(height: ResponsiveValues.spacingXS(context)),
                     Text(
-                      message,
+                      resolvedMessage,
                       style: AppTextStyles.bodySmall(context).copyWith(
                         color: AppColors.getTextSecondary(context),
                       ),
@@ -119,10 +133,10 @@ class AccessBanner extends StatelessWidget {
                   ],
                 ),
               ),
-              if (actionText != null && onAction != null) ...[
+              if (resolvedActionText != null && onAction != null) ...[
                 SizedBox(width: ResponsiveValues.spacingM(context)),
                 AppButton.glass(
-                  label: actionText,
+                  label: resolvedActionText,
                   onPressed: onAction,
                 ),
               ],
@@ -132,4 +146,61 @@ class AccessBanner extends StatelessWidget {
       ),
     );
   }
+
+  String _resolveTitle(SettingsProvider settingsProvider) {
+    if (title.isNotEmpty) return title;
+    switch (preset) {
+      case AccessBannerPreset.fullAccess:
+        return settingsProvider.getAccessBannerFullTitle();
+      case AccessBannerPreset.freeCategory:
+        return settingsProvider.getAccessBannerFreeTitle();
+      case AccessBannerPreset.limitedAccess:
+        return settingsProvider.getAccessBannerLimitedTitle();
+      case AccessBannerPreset.paymentPending:
+        return settingsProvider.getAccessBannerPaymentPendingTitle();
+      case AccessBannerPreset.paymentRejected:
+        return settingsProvider.getAccessBannerPaymentRejectedTitle();
+      case null:
+        return title;
+    }
+  }
+
+  String _resolveMessage(SettingsProvider settingsProvider) {
+    if (message.isNotEmpty) return message;
+    switch (preset) {
+      case AccessBannerPreset.fullAccess:
+        return settingsProvider.getAccessBannerFullMessage();
+      case AccessBannerPreset.freeCategory:
+        return settingsProvider.getAccessBannerFreeMessage();
+      case AccessBannerPreset.limitedAccess:
+        return settingsProvider.getAccessBannerLimitedMessage();
+      case AccessBannerPreset.paymentPending:
+        return settingsProvider.getAccessBannerPaymentPendingMessage();
+      case AccessBannerPreset.paymentRejected:
+        return settingsProvider
+            .getAccessBannerPaymentRejectedMessage(presetReason ?? '');
+      case null:
+        return message;
+    }
+  }
+
+  String? _resolveActionText(SettingsProvider settingsProvider) {
+    if (actionText != null) return actionText;
+    switch (preset) {
+      case AccessBannerPreset.limitedAccess:
+        return settingsProvider.getAccessBannerLimitedAction();
+      case AccessBannerPreset.paymentRejected:
+        return settingsProvider.getAccessBannerPaymentRejectedAction();
+      default:
+        return null;
+    }
+  }
+}
+
+enum AccessBannerPreset {
+  fullAccess,
+  freeCategory,
+  limitedAccess,
+  paymentPending,
+  paymentRejected,
 }

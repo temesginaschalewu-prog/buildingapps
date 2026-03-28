@@ -1707,6 +1707,30 @@ class SettingsProvider extends ChangeNotifier
     return 'Clear Search';
   }
 
+  String getStartupShellTitle() {
+    final configured = getSettingValue('startup_shell_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Getting your learning space ready';
+  }
+
+  String getStartupShellMessage() {
+    final configured = getSettingValue('startup_shell_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'We are bringing in your categories, notifications, and access details so your first screen opens complete and ready to use.';
+  }
+
+  String getRegisterDeviceNotReadyMessage() {
+    final configured = getSettingValue('register_device_not_ready_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'This device is still getting ready. Please try again in a moment.';
+  }
+
   String getSupportScreenSubtitle() {
     final configured = getSettingValue('support_screen_subtitle');
     if (configured != null && configured.trim().isNotEmpty) {
@@ -2135,6 +2159,102 @@ class SettingsProvider extends ChangeNotifier
       return configured.trim();
     }
     return 'No saved practice questions are available offline for this chapter yet.';
+  }
+
+  String getAccessBannerFullTitle() {
+    final configured = getSettingValue('access_banner_full_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Full Access';
+  }
+
+  String getAccessBannerFullMessage() {
+    final configured = getSettingValue('access_banner_full_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'You have access to all content.';
+  }
+
+  String getAccessBannerFreeTitle() {
+    final configured = getSettingValue('access_banner_free_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Free Category';
+  }
+
+  String getAccessBannerFreeMessage() {
+    final configured = getSettingValue('access_banner_free_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'All content in this category is free and ready to use.';
+  }
+
+  String getAccessBannerLimitedTitle() {
+    final configured = getSettingValue('access_banner_limited_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Limited Access';
+  }
+
+  String getAccessBannerLimitedMessage() {
+    final configured = getSettingValue('access_banner_limited_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Free chapters are open now. Purchase access to unlock everything.';
+  }
+
+  String getAccessBannerLimitedAction() {
+    final configured = getSettingValue('access_banner_limited_action');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Purchase';
+  }
+
+  String getAccessBannerPaymentPendingTitle() {
+    final configured = getSettingValue('access_banner_payment_pending_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Payment Pending';
+  }
+
+  String getAccessBannerPaymentPendingMessage() {
+    final configured = getSettingValue('access_banner_payment_pending_message');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Please wait while your payment is reviewed.';
+  }
+
+  String getAccessBannerPaymentRejectedTitle() {
+    final configured = getSettingValue('access_banner_payment_rejected_title');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Payment Rejected';
+  }
+
+  String getAccessBannerPaymentRejectedMessage(String reason) {
+    final configured = getSettingValue('access_banner_payment_rejected_message');
+    final template = (configured != null && configured.trim().isNotEmpty)
+        ? configured.trim()
+        : 'Reason: {reason}';
+    return template.replaceAll('{reason}', reason);
+  }
+
+  String getAccessBannerPaymentRejectedAction() {
+    final configured = getSettingValue('access_banner_payment_rejected_action');
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    return 'Pay Now';
   }
 
   String getChapterUnlockRenewButton() {

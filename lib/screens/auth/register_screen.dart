@@ -171,7 +171,8 @@ class _RegisterScreenState extends State<RegisterScreen>
     }
 
     if (_deviceId == null || _deviceId!.isEmpty) {
-      SnackbarService().showError(context, 'Device not ready');
+      SnackbarService()
+          .showError(context, _settingsProvider.getRegisterDeviceNotReadyMessage());
       return;
     }
 

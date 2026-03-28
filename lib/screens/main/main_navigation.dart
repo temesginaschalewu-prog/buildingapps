@@ -13,6 +13,7 @@ import '../../providers/subscription_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/category_provider.dart';
 import '../../providers/payment_provider.dart';
+import '../../providers/settings_provider.dart';
 import '../../services/connectivity_service.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
@@ -42,6 +43,7 @@ class _MainNavigationState extends State<MainNavigation>
   bool _showLabels = true;
   DateTime? _lastResumeRefreshAt;
   static const Duration _minResumeRefreshInterval = Duration(minutes: 3);
+  late SettingsProvider _settingsProvider;
 
   @override
   void initState() {
@@ -134,6 +136,7 @@ class _MainNavigationState extends State<MainNavigation>
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     _notificationProvider =
         Provider.of<NotificationProvider>(context, listen: false);
+    _settingsProvider = Provider.of<SettingsProvider>(context);
     _authStateSubscription = authProvider.authStateChanges.listen((isAuth) {
       if (!mounted) return;
       if (isAuth) {
@@ -1033,7 +1036,7 @@ class _MainNavigationState extends State<MainNavigation>
                   ),
                   SizedBox(height: ResponsiveValues.spacingXL(context)),
                   Text(
-                    'Getting your learning space ready',
+                    _settingsProvider.getStartupShellTitle(),
                     style: AppTextStyles.headlineSmall(context).copyWith(
                       fontWeight: FontWeight.w700,
                     ),
@@ -1041,7 +1044,7 @@ class _MainNavigationState extends State<MainNavigation>
                   ),
                   SizedBox(height: ResponsiveValues.spacingS(context)),
                   Text(
-                    'We are bringing in your categories, notifications, and access details so your first screen opens complete and ready to use.',
+                    _settingsProvider.getStartupShellMessage(),
                     style: AppTextStyles.bodyMedium(context).copyWith(
                       color: AppColors.getTextSecondary(context),
                       height: 1.55,
