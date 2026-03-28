@@ -53,6 +53,13 @@ void main() async {
 
   WidgetsFlutterBinding.ensureInitialized();
 
+  try {
+    await HiveService().init();
+    debugPrint('Hive initialized successfully');
+  } catch (e) {
+    debugPrint('Hive initialization error (continuing with memory-only mode): $e');
+  }
+
   // Initialize PlatformHelper
   await PlatformHelper.initialize();
 
@@ -144,13 +151,6 @@ Future<void> _bootstrapCoreServices({
     debugPrint('MediaKit initialized successfully');
   } catch (e) {
     debugPrint('MediaKit initialization error: $e');
-  }
-
-  try {
-    await hiveService.init();
-    debugPrint('Hive initialized successfully');
-  } catch (e) {
-    debugPrint('Hive initialization error (continuing with memory-only mode): $e');
   }
 
   try {

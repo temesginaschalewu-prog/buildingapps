@@ -1130,6 +1130,10 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     }
 
     if (_course == null) {
+      if (_isLoading || !_initialLoadSettled) {
+        return _buildSkeletonLoader();
+      }
+
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
         appBar: CustomAppBar(

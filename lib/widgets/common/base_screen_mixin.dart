@@ -9,7 +9,6 @@ import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/responsive_values.dart';
 import 'app_bar.dart';
-import 'app_brand_logo.dart';
 import 'app_empty_state.dart';
 import 'app_shimmer.dart';
 
@@ -161,90 +160,84 @@ mixin BaseScreenMixin<T extends StatefulWidget> on State<T> {
       padding: spacing,
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          minHeight: MediaQuery.of(context).size.height * 0.72,
+          minHeight: MediaQuery.of(context).size.height * 0.58,
         ),
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 440),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                AppBrandLogo(
-                  size: ResponsiveValues.splashLogoSize(context) * 0.66,
-                  borderRadius: ResponsiveValues.radiusXLarge(context),
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Container(
+              width: double.infinity,
+              padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
+              decoration: BoxDecoration(
+                color: AppColors.getSurface(context),
+                borderRadius: BorderRadius.circular(
+                  ResponsiveValues.radiusXLarge(context),
                 ),
-                SizedBox(height: ResponsiveValues.spacingXL(context)),
-                Text(
-                  resolvedTitle,
-                  style: AppTextStyles.titleLarge(context).copyWith(
-                    fontWeight: FontWeight.w700,
+                border: Border.all(
+                  color: AppColors.getDivider(context).withValues(alpha: 0.55),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.overlayLight.withValues(alpha: 0.06),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
                   ),
-                  textAlign: TextAlign.center,
-                ),
-                SizedBox(height: ResponsiveValues.spacingS(context)),
-                Text(
-                  resolvedMessage,
-                  style: AppTextStyles.bodyMedium(context).copyWith(
-                    color: AppColors.getTextSecondary(context),
-                    height: 1.5,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                SizedBox(height: ResponsiveValues.spacingXL(context)),
-                Container(
-                  width: double.infinity,
-                  padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
-                  decoration: BoxDecoration(
-                    color: AppColors.getSurface(context),
-                    borderRadius:
-                        BorderRadius.circular(ResponsiveValues.radiusLarge(context)),
-                    border: Border.all(
-                      color: AppColors.getDivider(context).withValues(alpha: 0.6),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: AppColors.telegramBlue.withValues(alpha: 0.10),
+                      shape: BoxShape.circle,
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.overlayLight.withValues(alpha: 0.08),
-                        blurRadius: 18,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      LinearProgressIndicator(
-                        minHeight: 6,
-                        borderRadius: BorderRadius.circular(999),
-                        valueColor: const AlwaysStoppedAnimation<Color>(
-                          AppColors.telegramBlue,
+                    child: const Center(
+                      child: SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            AppColors.telegramBlue,
+                          ),
                         ),
-                        backgroundColor:
-                            AppColors.getDivider(context).withValues(alpha: 0.35),
                       ),
-                      SizedBox(height: ResponsiveValues.spacingL(context)),
-                      const AppShimmer(type: ShimmerType.textLine),
-                      SizedBox(height: ResponsiveValues.spacingM(context)),
-                      Row(
-                        children: [
-                          const Expanded(
-                            child: AppShimmer(
-                              type: ShimmerType.statusCard,
-                              index: 1,
-                            ),
-                          ),
-                          SizedBox(width: ResponsiveValues.spacingM(context)),
-                          const Expanded(
-                            child: AppShimmer(
-                              type: ShimmerType.statusCard,
-                              index: 2,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                    ),
                   ),
-                ),
-              ],
+                  SizedBox(height: ResponsiveValues.spacingL(context)),
+                  Text(
+                    resolvedTitle,
+                    style: AppTextStyles.titleLarge(context).copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  SizedBox(height: ResponsiveValues.spacingS(context)),
+                  Text(
+                    resolvedMessage,
+                    style: AppTextStyles.bodyMedium(context).copyWith(
+                      color: AppColors.getTextSecondary(context),
+                      height: 1.45,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  SizedBox(height: ResponsiveValues.spacingL(context)),
+                  LinearProgressIndicator(
+                    minHeight: 6,
+                    borderRadius: BorderRadius.circular(999),
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                      AppColors.telegramBlue,
+                    ),
+                    backgroundColor:
+                        AppColors.getDivider(context).withValues(alpha: 0.30),
+                  ),
+                  SizedBox(height: ResponsiveValues.spacingL(context)),
+                  const AppShimmer(type: ShimmerType.textLine),
+                ],
+              ),
             ),
           ),
         ),

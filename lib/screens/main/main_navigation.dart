@@ -136,7 +136,7 @@ class _MainNavigationState extends State<MainNavigation>
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     _notificationProvider =
         Provider.of<NotificationProvider>(context, listen: false);
-    _settingsProvider = Provider.of<SettingsProvider>(context);
+    _settingsProvider = Provider.of<SettingsProvider>(context, listen: false);
     _authStateSubscription = authProvider.authStateChanges.listen((isAuth) {
       if (!mounted) return;
       if (isAuth) {

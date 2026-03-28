@@ -2864,7 +2864,6 @@ class SettingsProvider extends ChangeNotifier
   void dispose() {
     stopBackgroundRefresh();
     _settingsUpdateController.close();
-    _settingsBox?.close();
     disposeSubscriptions();
     super.dispose();
   }

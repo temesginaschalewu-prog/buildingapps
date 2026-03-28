@@ -953,6 +953,18 @@ class _SupportScreenState extends State<SupportScreen>
 
   @override
   Widget buildContent(BuildContext context) {
+    final hasContacts = _settingsProvider.getContactInfoList().isNotEmpty;
+    final isStillPreparing = !_hasError &&
+        !hasContacts &&
+        (_settingsProvider.isLoading || !_settingsProvider.isLoaded);
+
+    if (isStillPreparing) {
+      return buildBrandedLoadingState(
+        title: _settingsProvider.getSupportScreenTitle(),
+        message: _settingsProvider.getSupportScreenSubtitle(),
+      );
+    }
+
     if (_hasError) {
       return Center(
         child: buildErrorWidget(
