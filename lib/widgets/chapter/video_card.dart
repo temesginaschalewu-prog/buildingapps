@@ -109,6 +109,26 @@ class _VideoCardState extends State<VideoCard>
     super.dispose();
   }
 
+  Widget _buildThumbnailFallback(bool isTablet) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            AppColors.telegramBlue.withValues(alpha: 0.3),
+            AppColors.telegramPurple.withValues(alpha: 0.2),
+          ],
+        ),
+      ),
+      child: Center(
+        child: Icon(
+          Icons.ondemand_video_rounded,
+          color: Colors.white.withValues(alpha: 0.9),
+          size: isTablet ? 54 : 42,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final qualities = widget.video.availableQualities;
@@ -132,34 +152,58 @@ class _VideoCardState extends State<VideoCard>
               highlightColor: Colors.transparent,
               child: Stack(
                 children: [
-                  // Thumbnail placeholder
-                  Container(
+                  SizedBox(
                     height: isTablet ? 214 : 172,
                     width: double.infinity,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          AppColors.telegramBlue.withValues(alpha: 0.3),
-                          AppColors.telegramPurple.withValues(alpha: 0.2),
-                        ],
-                      ),
+                    child: ClipRRect(
                       borderRadius: const BorderRadius.vertical(
                         top: Radius.circular(24),
                       ),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          if (widget.video.hasThumbnail)
+                            Image.network(
+                              widget.video.fullThumbnailUrl!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) =>
+                                  _buildThumbnailFallback(isTablet),
+                              loadingBuilder: (context, child, progress) {
+                                if (progress == null) return child;
+                                return _buildThumbnailFallback(isTablet);
+                              },
+                            )
+                          else
+                            _buildThumbnailFallback(isTablet),
+                          DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.black.withValues(alpha: 0.08),
+                                  Colors.black.withValues(alpha: 0.36),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                      child: Center(
-                        child: Container(
-                          width: isTablet ? 76 : 60,
-                          height: isTablet ? 76 : 60,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.3),
-                            shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          Icons.play_arrow_rounded,
-                          color: Colors.white,
-                          size: isTablet ? 48 : 40,
-                        ),
+                  ),
+
+                  Center(
+                    child: Container(
+                      width: isTablet ? 76 : 60,
+                      height: isTablet ? 76 : 60,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.3),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.play_arrow_rounded,
+                        color: Colors.white,
+                        size: isTablet ? 48 : 40,
                       ),
                     ),
                   ),
