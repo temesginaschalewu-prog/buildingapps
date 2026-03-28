@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -51,66 +53,8 @@ void main() async {
 
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize MediaKit for ALL platforms
-  try {
-    media_kit.MediaKit.ensureInitialized();
-    debugPrint('MediaKit initialized successfully');
-  } catch (e) {
-    debugPrint('MediaKit initialization error: $e');
-  }
-
-  // Initialize Hive
-  try {
-    await HiveService().init();
-    debugPrint('Hive initialized successfully');
-  } catch (e) {
-    debugPrint('Hive initialization error (continuing with memory-only mode): $e');
-  }
-
-  // Initialize Offline Queue Manager
-  try {
-    await OfflineQueueManager().initialize();
-    debugPrint('OfflineQueueManager initialized');
-  } catch (e) {
-    debugPrint('OfflineQueueManager initialization error (continuing with limited offline): $e');
-  }
-
   // Initialize PlatformHelper
   await PlatformHelper.initialize();
-
-  // Load environment variables
-  try {
-    await dotenv.load();
-    debugPrint('Environment loaded');
-  } catch (e) {
-    debugPrint('No .env file found - using defaults');
-  }
-
-  // Initialize Firebase for push-capable platforms
-  if (PlatformHelper.isAndroid ||
-      PlatformHelper.isIOS ||
-      PlatformHelper.isMacOS) {
-    try {
-      await Firebase.initializeApp();
-      debugPrint('Firebase initialized');
-      FirebaseMessaging.onBackgroundMessage(
-          _firebaseMessagingBackgroundHandler);
-    } catch (e) {
-      debugPrint('Firebase error: $e');
-    }
-  }
-
-  // Initialize screen protection for mobile
-  if (PlatformHelper.isMobile) {
-    try {
-      await ScreenProtectionService.initialize();
-      debugPrint('Screen protection initialized');
-    } catch (e) {
-      debugPrint('Screen protection error: $e');
-    }
-  }
-
-  debugPrint('Initializing core services...');
 
   // STEP 1: Create service instances
   final storageService = StorageService();
@@ -124,30 +68,6 @@ void main() async {
   // STEP 2: Connect services to each other
   offlineQueueManager.setApiService(apiService);
   apiService.setOfflineQueueManager(offlineQueueManager);
-
-  // STEP 3: Initialize ALL services in correct order
-  try {
-    await storageService.init().timeout(const Duration(seconds: 5));
-    debugPrint('✅ StorageService initialized');
-
-    await deviceService.init().timeout(const Duration(seconds: 5));
-    debugPrint('✅ DeviceService initialized');
-
-    storageService.setDeviceService(deviceService);
-    storageService.setHiveService(hiveService);
-
-    await connectivityService.initialize().timeout(const Duration(seconds: 5));
-    debugPrint('✅ ConnectivityService initialized');
-
-    notificationService.apiService = apiService;
-    notificationService.connectivityService = connectivityService;
-    await notificationService.init().timeout(const Duration(seconds: 5));
-    debugPrint('✅ NotificationService initialized');
-  } catch (e) {
-    debugPrint('⚠️ Service initialization had non-critical errors: $e');
-  }
-
-  debugPrint('🎯 All services ready - launching app');
 
   runApp(
     MultiProvider(
@@ -195,6 +115,103 @@ void main() async {
       ),
     ),
   );
+
+  debugPrint('🚀 App shell launched - warming up services in background');
+  unawaited(
+    _bootstrapCoreServices(
+      storageService: storageService,
+      deviceService: deviceService,
+      connectivityService: connectivityService,
+      notificationService: notificationService,
+      apiService: apiService,
+      hiveService: hiveService,
+      offlineQueueManager: offlineQueueManager,
+    ),
+  );
+}
+
+Future<void> _bootstrapCoreServices({
+  required StorageService storageService,
+  required DeviceService deviceService,
+  required ConnectivityService connectivityService,
+  required NotificationService notificationService,
+  required ApiService apiService,
+  required HiveService hiveService,
+  required OfflineQueueManager offlineQueueManager,
+}) async {
+  try {
+    media_kit.MediaKit.ensureInitialized();
+    debugPrint('MediaKit initialized successfully');
+  } catch (e) {
+    debugPrint('MediaKit initialization error: $e');
+  }
+
+  try {
+    await hiveService.init();
+    debugPrint('Hive initialized successfully');
+  } catch (e) {
+    debugPrint('Hive initialization error (continuing with memory-only mode): $e');
+  }
+
+  try {
+    await offlineQueueManager.initialize();
+    debugPrint('OfflineQueueManager initialized');
+  } catch (e) {
+    debugPrint('OfflineQueueManager initialization error (continuing with limited offline): $e');
+  }
+
+  try {
+    await dotenv.load();
+    debugPrint('Environment loaded');
+  } catch (e) {
+    debugPrint('No .env file found - using defaults');
+  }
+
+  if (PlatformHelper.isAndroid ||
+      PlatformHelper.isIOS ||
+      PlatformHelper.isMacOS) {
+    try {
+      await Firebase.initializeApp();
+      debugPrint('Firebase initialized');
+      FirebaseMessaging.onBackgroundMessage(
+        _firebaseMessagingBackgroundHandler,
+      );
+    } catch (e) {
+      debugPrint('Firebase error: $e');
+    }
+  }
+
+  if (PlatformHelper.isMobile) {
+    try {
+      await ScreenProtectionService.initialize();
+      debugPrint('Screen protection initialized');
+    } catch (e) {
+      debugPrint('Screen protection error: $e');
+    }
+  }
+
+  debugPrint('Initializing core services...');
+
+  try {
+    await storageService.init().timeout(const Duration(seconds: 5));
+    debugPrint('✅ StorageService initialized');
+
+    await deviceService.init().timeout(const Duration(seconds: 5));
+    debugPrint('✅ DeviceService initialized');
+
+    storageService.setDeviceService(deviceService);
+    storageService.setHiveService(hiveService);
+
+    await connectivityService.initialize().timeout(const Duration(seconds: 5));
+    debugPrint('✅ ConnectivityService initialized');
+
+    notificationService.apiService = apiService;
+    notificationService.connectivityService = connectivityService;
+    await notificationService.init().timeout(const Duration(seconds: 5));
+    debugPrint('✅ NotificationService initialized');
+  } catch (e) {
+    debugPrint('⚠️ Service initialization had non-critical errors: $e');
+  }
 
   debugPrint('✅ App launched successfully with full offline support');
 }
