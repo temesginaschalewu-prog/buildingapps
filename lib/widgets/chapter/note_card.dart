@@ -212,6 +212,7 @@ class NoteCard extends StatelessWidget {
   void _handleTap(BuildContext context) {
     final connectivity = context.read<ConnectivityService>();
     final authProvider = context.read<AuthProvider>();
+    final hasReadableOfflineContent = note.content.trim().isNotEmpty;
 
     if (!authProvider.isAuthenticated) {
       SnackbarService().showError(
@@ -231,7 +232,15 @@ class NoteCard extends StatelessWidget {
       return;
     }
 
-    // If has file but not downloaded, check connectivity
+    // If the note body itself is cached, still allow opening offline even when
+    // the attached file is not downloaded yet.
+    if (hasReadableOfflineContent) {
+      onTap();
+      return;
+    }
+
+    // If has file but no offline-readable content, require connectivity unless
+    // the attachment has already been downloaded.
     if (!connectivity.isOnline) {
       SnackbarService().showOffline(context, action: 'view this note');
       return;
