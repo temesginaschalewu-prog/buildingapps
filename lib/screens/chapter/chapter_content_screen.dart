@@ -137,15 +137,15 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   late ProgressProvider _progressProvider;
   late SettingsProvider _settingsProvider;
   bool _providersBound = false;
+  bool _didSeedImmediateState = false;
 
   @override
   String get screenTitle => _chapter?.name ?? AppStrings.chapter;
 
   @override
-  String? get screenSubtitle =>
-      isOffline
-          ? AppStrings.offlineMode
-          : context.read<SettingsProvider>().getChapterContentSubtitle();
+  String? get screenSubtitle => isOffline
+      ? AppStrings.offlineMode
+      : context.read<SettingsProvider>().getChapterContentSubtitle();
 
   @override
   bool get isLoading => _isLoading && !_hasCachedData;
@@ -217,7 +217,29 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     _settingsProvider = context.read<SettingsProvider>();
     _providersBound = true;
 
+    _seedImmediateState();
+
     unawaited(_getCurrentUserId());
+  }
+
+  void _seedImmediateState() {
+    if (_didSeedImmediateState) return;
+
+    _chapter = widget.chapter;
+    _category = widget.category;
+
+    if (_chapter == null) return;
+
+    _hasAccess = widget.hasAccess == true ||
+        _chapter!.isFree ||
+        (_category != null &&
+            _subscriptionProvider.hasActiveSubscriptionForCategory(
+              _category!.id,
+            ));
+    _hasCachedData = true;
+    _isLoading = false;
+    _isCheckingAccess = false;
+    _didSeedImmediateState = true;
   }
 
   @override
@@ -425,10 +447,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     }
 
     if (_category != null) {
-      _hasAccess =
-          _subscriptionProvider.hasActiveSubscriptionForCategory(_category!.id) ||
-              _cachedVideoPaths.isNotEmpty ||
-              _cachedNotePaths.isNotEmpty;
+      _hasAccess = _subscriptionProvider
+              .hasActiveSubscriptionForCategory(_category!.id) ||
+          _cachedVideoPaths.isNotEmpty ||
+          _cachedNotePaths.isNotEmpty;
     }
   }
 
@@ -1071,9 +1093,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                           style: TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
-                            fontSize:
-                                ResponsiveValues.mediaOverlayChipTextSize(
-                                    context),
+                            fontSize: ResponsiveValues.mediaOverlayChipTextSize(
+                                context),
                           ),
                         ),
                       ),
@@ -1093,9 +1114,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                           style: TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
-                            fontSize:
-                                ResponsiveValues.mediaOverlayChipTextSize(
-                                    context),
+                            fontSize: ResponsiveValues.mediaOverlayChipTextSize(
+                                context),
                           ),
                         ),
                       ),
@@ -1340,7 +1360,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                     SizedBox(height: ResponsiveValues.spacingXXS(context)),
                     Text(_getQualityDescription(quality)),
                     if (quality.estimatedSize > 0) ...[
-                      SizedBox(height: ResponsiveValues.spacingXXS(context) / 2),
+                      SizedBox(
+                          height: ResponsiveValues.spacingXXS(context) / 2),
                       Row(
                         children: [
                           Icon(Icons.storage_rounded,
@@ -1906,9 +1927,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                         : AppStrings.purchaseAccess,
                     onPressed: () => context.push('/payment', extra: {
                       'category': _category,
-                      'paymentType': hasExpiredSubscription
-                          ? 'repayment'
-                          : 'first_time',
+                      'paymentType':
+                          hasExpiredSubscription ? 'repayment' : 'first_time',
                     }),
                   );
                 },
@@ -2004,7 +2024,9 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   ? context
                       .read<SettingsProvider>()
                       .getChapterNotesOfflineEmptyMessage()
-                  : context.read<SettingsProvider>().getChapterNotesEmptyMessage(),
+                  : context
+                      .read<SettingsProvider>()
+                      .getChapterNotesEmptyMessage(),
               isOffline: isOffline,
             ),
           ),
@@ -2214,7 +2236,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                             ? AppStrings.resetAll
                             : AppStrings.reset,
                         icon: Icons.refresh_rounded,
-                        onPressed: answeredCount > 0 ? _resetAllQuestions : null,
+                        onPressed:
+                            answeredCount > 0 ? _resetAllQuestions : null,
                         expanded: true,
                       ),
                     ),
@@ -2330,7 +2353,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       ],
     );
   }
-
 
   Widget _buildTabShell() {
     return SizedBox(

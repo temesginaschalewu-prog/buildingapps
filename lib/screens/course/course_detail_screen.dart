@@ -83,6 +83,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
   bool _paymentListenerAttached = false;
   PaymentProvider? _paymentProviderRef;
   late SettingsProvider _settingsProvider;
+  bool _didSeedImmediateState = false;
 
   // ✅ Flag to prevent operations after dispose
   bool _isDisposed = false;
@@ -98,7 +99,46 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _settingsProvider = Provider.of<SettingsProvider>(context);
+    _seedImmediateState();
     _setupListeners();
+  }
+
+  void _seedImmediateState() {
+    if (_didSeedImmediateState) return;
+
+    final subscriptionProvider = context.read<SubscriptionProvider>();
+    final paymentProvider = context.read<PaymentProvider>();
+    final courseProvider = context.read<CourseProvider>();
+    final categoryProvider = context.read<CategoryProvider>();
+    final chapterProvider = context.read<ChapterProvider>();
+    final examProvider = context.read<ExamProvider>();
+
+    _course = widget.course ?? courseProvider.getCourseById(widget.courseId);
+    _category = widget.category ??
+        (_course != null
+            ? categoryProvider.getCategoryById(_course!.categoryId)
+            : null);
+
+    if (_course == null) return;
+
+    _hasCachedData = true;
+    _hasAccess = widget.hasAccess ??
+        (_category != null
+            ? subscriptionProvider
+                .hasActiveSubscriptionForCategory(_category!.id)
+            : false);
+    _chaptersLoaded =
+        chapterProvider.getChaptersByCourse(_course!.id).isNotEmpty ||
+            chapterProvider.hasLoadedForCourse(_course!.id);
+    _examsLoaded = examProvider.getExamsByCourse(_course!.id).isNotEmpty ||
+        examProvider.hasLoadedForCourse(_course!.id);
+    _chaptersLoading = !_chaptersLoaded;
+    _examsLoading = !_examsLoaded;
+    _isLoading = false;
+
+    _paymentProviderRef = paymentProvider;
+    _syncPaymentInfoFromProvider();
+    _didSeedImmediateState = true;
   }
 
   @override
