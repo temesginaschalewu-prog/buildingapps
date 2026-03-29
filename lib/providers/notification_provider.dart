@@ -35,12 +35,14 @@ class NotificationProvider extends ChangeNotifier
   int _unreadCount = 0;
   DateTime? _lastLoadTime;
   DateTime? _lastUnreadRefreshAt;
+  DateTime? _lastUnreadTriggeredLoadAt;
   Completer<void>? _unreadRefreshCompleter;
   Completer<void>? _loadCompleter;
 
   static const Duration _cacheDuration = AppConstants.cacheTTLNotifications;
   static const Duration _minUnreadRefreshInterval = Duration(seconds: 20);
   static const Duration _minFetchInterval = Duration(minutes: 5);
+  static const Duration _minUnreadTriggeredLoadInterval = Duration(minutes: 1);
   @override
   Duration get refreshInterval => const Duration(minutes: 5);
 
@@ -775,8 +777,15 @@ class NotificationProvider extends ChangeNotifier
           log('✅ Synced unread count with server: $_unreadCount');
 
           // If we have a server count but no local notifications, try to load them
-          if (_unreadCount > 0 && _notifications.isEmpty) {
+          final shouldTriggerLoad = _unreadCount > 0 &&
+              _notifications.isEmpty &&
+              (_lastUnreadTriggeredLoadAt == null ||
+                  DateTime.now().difference(_lastUnreadTriggeredLoadAt!) >=
+                      _minUnreadTriggeredLoadInterval);
+
+          if (shouldTriggerLoad) {
             log('Server has unread notifications but local cache is empty - triggering load');
+            _lastUnreadTriggeredLoadAt = DateTime.now();
             unawaited(loadNotifications(forceRefresh: true));
           }
         } else {
