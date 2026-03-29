@@ -621,9 +621,10 @@ class CourseProvider extends ChangeNotifier
           .delete('user_${userId}_category_${categoryId}_courses');
     }
 
-    _coursesByCategory.remove(categoryId);
-    _hasLoadedCategory.remove(categoryId);
-    _isLoadingCategory.remove(categoryId);
+    // Keep in-memory data visible while a fresh request is in flight so
+    // returning to a category screen shows cached courses instead of a reset
+    // shimmer every time.
+    _hasLoadedCategory[categoryId] = _coursesByCategory.containsKey(categoryId);
     _failedCategory.remove(categoryId);
     await loadCoursesByCategory(categoryId,
         forceRefresh: true, hasAccess: hasAccess);
