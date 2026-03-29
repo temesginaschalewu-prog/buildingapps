@@ -189,6 +189,7 @@ class _MainNavigationState extends State<MainNavigation>
           forceRefresh: forceBackendRefresh,
         );
         unawaited(notificationProvider.loadNotifications());
+        unawaited(notificationProvider.refreshUnreadCount(force: true));
         _dataLoadedInBackground = true;
       } catch (e) {
         debugLog('MainNavigation', 'Background data load error: $e');

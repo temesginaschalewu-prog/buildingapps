@@ -202,6 +202,9 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       if (!hasNotifications) {
         _isLoadingMore = false;
       }
+      if (_isInitialLoad && (_provider.isLoaded || !_provider.isLoading)) {
+        _isInitialLoad = false;
+      }
     });
   }
 
@@ -1004,15 +1007,14 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         unreadNotifications.length + readNotifications.length;
 
     final shouldShowLoading = visibleNotifications == 0 &&
-        (_isInitialLoad || _provider.isLoading || !_provider.isLoaded);
+        !_provider.isLoaded &&
+        (_isInitialLoad || _provider.isLoading);
 
     if (shouldShowLoading) {
       return buildLoadingShimmer();
     }
 
-    // ✅ PROPER EMPTY STATE - handles all loading states correctly
-    final shouldShowEmpty =
-        !_provider.isLoading && _provider.isLoaded && visibleNotifications == 0;
+    final shouldShowEmpty = _provider.isLoaded && visibleNotifications == 0;
 
     if (shouldShowEmpty) {
       return Center(
