@@ -391,7 +391,12 @@ class CourseProvider extends ChangeNotifier
 
       // STEP 4: Queue the API request
       log('STEP 4: Queuing API request for category $categoryId');
-      _queueCourseRequest(categoryId, forceRefresh, hasAccess, isManualRefresh);
+      await _queueCourseRequest(
+        categoryId,
+        forceRefresh,
+        hasAccess,
+        isManualRefresh,
+      );
     } catch (e) {
       log('❌ Error loading courses: $e');
 
@@ -416,17 +421,20 @@ class CourseProvider extends ChangeNotifier
     }
   }
 
-  void _queueCourseRequest(int categoryId, bool forceRefresh, bool? hasAccess,
-      bool isManualRefresh) {
+  Future<void> _queueCourseRequest(int categoryId, bool forceRefresh,
+      bool? hasAccess, bool isManualRefresh) {
+    final completer = Completer<void>();
     _pendingRequests.add({
       'categoryId': categoryId,
       'forceRefresh': forceRefresh,
       'hasAccess': hasAccess,
       'isManualRefresh': isManualRefresh,
+      'completer': completer,
       'timestamp': DateTime.now(),
     });
 
     _processNextCourseRequest();
+    return completer.future;
   }
 
   Future<void> _processNextCourseRequest() async {
@@ -438,6 +446,7 @@ class CourseProvider extends ChangeNotifier
     final request = _pendingRequests.removeAt(0);
     final categoryId = request['categoryId'];
     final isManualRefresh = request['isManualRefresh'];
+    final completer = request['completer'] as Completer<void>?;
 
     try {
       log('Processing queued request for category $categoryId (active: $_activeRequests)');
@@ -492,6 +501,7 @@ class CourseProvider extends ChangeNotifier
 
       _coursesUpdateController.add({categoryId: courses});
       log('✅ Success! Courses loaded for category $categoryId');
+      completer?.complete();
     } catch (e) {
       log('❌ Error loading courses for category $categoryId: $e');
 
@@ -509,7 +519,9 @@ class CourseProvider extends ChangeNotifier
           .add({categoryId: _coursesByCategory[categoryId]!});
 
       if (isManualRefresh) {
-        rethrow;
+        completer?.completeError(e);
+      } else {
+        completer?.complete();
       }
     } finally {
       _activeRequests--;
@@ -520,12 +532,14 @@ class CourseProvider extends ChangeNotifier
   void _queueBackgroundRefresh(int categoryId, bool? hasAccess) {
     if (isOffline) return;
 
+    final completer = Completer<void>();
     _pendingRequests.add({
       'categoryId': categoryId,
       'forceRefresh': true,
       'hasAccess': hasAccess,
       'isManualRefresh': false,
       'isBackground': true,
+      'completer': completer,
       'timestamp': DateTime.now(),
     });
 

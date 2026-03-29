@@ -126,7 +126,11 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         await _saveToCache();
       }
       if (mounted && !_isDisposed) {
-        setState(() => _isLoading = false);
+        setState(() {
+          _isLoading = false;
+          _chaptersLoading = !_chaptersLoaded;
+          _examsLoading = !_examsLoaded;
+        });
       }
       unawaited(_loadChapters());
       unawaited(_loadExams());
@@ -234,7 +238,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         _hasCachedData = true;
         _chaptersLoaded =
             chapterProvider.getChaptersByCourse(_course!.id).isNotEmpty ||
-            chapterProvider.hasLoadedForCourse(_course!.id);
+                chapterProvider.hasLoadedForCourse(_course!.id);
         _examsLoaded = examProvider.getExamsByCourse(_course!.id).isNotEmpty ||
             examProvider.hasLoadedForCourse(_course!.id);
         debugLog('CourseDetailScreen', '✅ Loaded course from cache');
@@ -259,7 +263,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         _hasCachedData = true;
         _chaptersLoaded =
             chapterProvider.getChaptersByCourse(_course!.id).isNotEmpty ||
-            chapterProvider.hasLoadedForCourse(_course!.id);
+                chapterProvider.hasLoadedForCourse(_course!.id);
         _examsLoaded = examProvider.getExamsByCourse(_course!.id).isNotEmpty ||
             examProvider.hasLoadedForCourse(_course!.id);
         debugLog('CourseDetailScreen', '✅ Using passed course data');
@@ -295,10 +299,11 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
             );
           }
 
-          final categoryCourses = courseProvider.getCoursesByCategory(category.id);
+          final categoryCourses =
+              courseProvider.getCoursesByCategory(category.id);
           try {
-            restoredCourse =
-                categoryCourses.firstWhere((course) => course.id == widget.courseId);
+            restoredCourse = categoryCourses
+                .firstWhere((course) => course.id == widget.courseId);
             restoredCategory = category;
             break;
           } catch (_) {
@@ -329,7 +334,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
       final examProvider = context.read<ExamProvider>();
       _chaptersLoaded =
           chapterProvider.getChaptersByCourse(_course!.id).isNotEmpty ||
-          chapterProvider.hasLoadedForCourse(_course!.id);
+              chapterProvider.hasLoadedForCourse(_course!.id);
       _examsLoaded = examProvider.getExamsByCourse(_course!.id).isNotEmpty ||
           examProvider.hasLoadedForCourse(_course!.id);
       debugLog(
@@ -716,15 +721,17 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
       );
       return cachedNotes != null && cachedNotes.isNotEmpty;
     } catch (e) {
-      debugLog('CourseDetailScreen', 'Error checking chapter offline cache: $e');
+      debugLog(
+          'CourseDetailScreen', 'Error checking chapter offline cache: $e');
       return false;
     }
   }
 
   Future<void> _handleChapterTap(Chapter chapter) async {
     if (_isOffline) {
-      final hasOfflineContent =
-          chapter.isFree || _hasAccess || await _hasOfflineChapterContent(chapter);
+      final hasOfflineContent = chapter.isFree ||
+          _hasAccess ||
+          await _hasOfflineChapterContent(chapter);
 
       if (hasOfflineContent) {
         if (!mounted || _isDisposed) return;
@@ -1122,18 +1129,11 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
     final exams =
         _course != null ? examProvider.getExamsByCourse(_course!.id) : <Exam>[];
 
-    // ✅ CRITICAL: Only show shimmer if loading AND no cached data
-    final hasImmediateCourseData = _course != null && _hasCachedData;
-    if ((!_initialLoadSettled && !hasImmediateCourseData) ||
-        (_isLoading && !_hasCachedData)) {
+    if (_course == null && (_isLoading || !_initialLoadSettled)) {
       return _buildSkeletonLoader();
     }
 
     if (_course == null) {
-      if (_isLoading || !_initialLoadSettled) {
-        return _buildSkeletonLoader();
-      }
-
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
         appBar: CustomAppBar(
@@ -1155,6 +1155,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
       );
     }
 
+    // ✅ FIXED: Always show the main UI when we have course data
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: CustomAppBar(
@@ -1166,10 +1167,10 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
         showOfflineIndicator: _isOffline,
       ),
       body: Column(
-            children: [
-              _buildAccessBanner(),
-              _buildTabs(),
-              Expanded(
+        children: [
+          _buildAccessBanner(),
+          _buildTabs(),
+          Expanded(
             child: TabBarView(
               controller: _tabController,
               children: [
