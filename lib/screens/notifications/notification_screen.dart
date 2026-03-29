@@ -45,15 +45,16 @@ class _NotificationsScreenState extends State<NotificationsScreen>
   String get screenTitle => AppStrings.notifications;
 
   @override
-  String? get screenSubtitle =>
-      isOffline ? AppStrings.offlineMode : null;
+  String? get screenSubtitle => isOffline ? AppStrings.offlineMode : null;
 
   @override
   bool get showNotification => false;
 
   @override
   bool get isLoading =>
-      _isInitialLoad && _provider.isLoading && !_provider.isLoaded;
+      (_isInitialLoad && _provider.isLoading) ||
+      (!_provider.isLoaded && _provider.isLoading) ||
+      (_provider.isLoading && !_provider.isLoaded);
 
   @override
   bool get hasCachedData =>
@@ -79,64 +80,64 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       );
 
   @override
-  List<Widget>? get appBarActions => _providerBound &&
-          _provider.notifications.isNotEmpty
-      ? [
-          PopupMenuButton<String>(
-            icon: Icon(
-              Icons.more_vert_rounded,
-              color: AppColors.getTextPrimary(context),
-            ),
-            onSelected: (value) {
-              switch (value) {
-                case 'mark_all_read':
-                  _showMarkAllAsReadDialog();
-                  break;
-                case 'delete_all':
-                  _showDeleteAllDialog();
-                  break;
-              }
-            },
-            itemBuilder: (context) => [
-              PopupMenuItem<String>(
-                value: 'mark_all_read',
-                child: Row(
-                  children: [
-                    const Icon(Icons.mark_email_read_rounded, size: 18),
-                    SizedBox(width: ResponsiveValues.spacingS(context)),
-                    Expanded(
-                      child: Text(
-                        isOffline
-                            ? AppStrings.queueAllRead
-                            : AppStrings.markAllRead,
-                      ),
-                    ),
-                  ],
+  List<Widget>? get appBarActions =>
+      _providerBound && _provider.notifications.isNotEmpty
+          ? [
+              PopupMenuButton<String>(
+                icon: Icon(
+                  Icons.more_vert_rounded,
+                  color: AppColors.getTextPrimary(context),
                 ),
-              ),
-              PopupMenuItem<String>(
-                value: 'delete_all',
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.delete_sweep_rounded,
-                      size: 18,
-                      color: AppColors.telegramRed,
+                onSelected: (value) {
+                  switch (value) {
+                    case 'mark_all_read':
+                      _showMarkAllAsReadDialog();
+                      break;
+                    case 'delete_all':
+                      _showDeleteAllDialog();
+                      break;
+                  }
+                },
+                itemBuilder: (context) => [
+                  PopupMenuItem<String>(
+                    value: 'mark_all_read',
+                    child: Row(
+                      children: [
+                        const Icon(Icons.mark_email_read_rounded, size: 18),
+                        SizedBox(width: ResponsiveValues.spacingS(context)),
+                        Expanded(
+                          child: Text(
+                            isOffline
+                                ? AppStrings.queueAllRead
+                                : AppStrings.markAllRead,
+                          ),
+                        ),
+                      ],
                     ),
-                    SizedBox(width: ResponsiveValues.spacingS(context)),
-                    const Expanded(
-                      child: Text(
-                        AppStrings.deleteAll,
-                        style: TextStyle(color: AppColors.telegramRed),
-                      ),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'delete_all',
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.delete_sweep_rounded,
+                          size: 18,
+                          color: AppColors.telegramRed,
+                        ),
+                        SizedBox(width: ResponsiveValues.spacingS(context)),
+                        const Expanded(
+                          child: Text(
+                            AppStrings.deleteAll,
+                            style: TextStyle(color: AppColors.telegramRed),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
-          ),
-        ]
-      : null;
+            ]
+          : null;
 
   @override
   void initState() {
@@ -285,7 +286,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     return notification.primaryTimestamp;
   }
 
-  String _formatNotificationTimestamp(AppNotification.Notification notification) {
+  String _formatNotificationTimestamp(
+      AppNotification.Notification notification) {
     final timestamp = _notificationMoment(notification);
     return DateFormat('MMM d, yyyy • h:mm a').format(timestamp);
   }
@@ -299,8 +301,12 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     if (title.contains('video')) return 'Video';
     if (title.contains('note')) return 'Note';
     if (title.contains('chapter')) return 'Chapter';
-    if (title.contains('streak') || title.contains('progress')) return 'Progress';
-    if (title.contains('motivation') || title.contains('reminder')) return 'Reminder';
+    if (title.contains('streak') || title.contains('progress')) {
+      return 'Progress';
+    }
+    if (title.contains('motivation') || title.contains('reminder')) {
+      return 'Reminder';
+    }
     return _settingsProvider.getNotificationsCategoryFallbackLabel();
   }
 
@@ -816,12 +822,10 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
-                      width:
-                          ResponsiveValues.featureCardIconContainerSize(
-                              context),
-                      height:
-                          ResponsiveValues.featureCardIconContainerSize(
-                              context),
+                      width: ResponsiveValues.featureCardIconContainerSize(
+                          context),
+                      height: ResponsiveValues.featureCardIconContainerSize(
+                          context),
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
@@ -876,7 +880,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                                 ),
                             ],
                           ),
-                          SizedBox(height: ResponsiveValues.spacingXXS(context)),
+                          SizedBox(
+                              height: ResponsiveValues.spacingXXS(context)),
                           Text(
                             notification.message,
                             style: AppTextStyles.bodySmall(context).copyWith(
@@ -911,7 +916,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                                   _formatNotificationTimestamp(notification),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: AppTextStyles.caption(context).copyWith(
+                                  style:
+                                      AppTextStyles.caption(context).copyWith(
                                     color: AppColors.getTextSecondary(context)
                                         .withValues(alpha: 0.45),
                                   ),
@@ -997,10 +1003,16 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     final visibleNotifications =
         unreadNotifications.length + readNotifications.length;
 
-    // ✅ PROPER EMPTY STATE - matches HomeScreen pattern
-    final shouldShowEmpty = !_isInitialLoad &&
-        visibleNotifications == 0 &&
-        (_provider.isLoaded || !_provider.isLoading);
+    final shouldShowLoading = visibleNotifications == 0 &&
+        (_isInitialLoad || _provider.isLoading || !_provider.isLoaded);
+
+    if (shouldShowLoading) {
+      return buildLoadingShimmer();
+    }
+
+    // ✅ PROPER EMPTY STATE - handles all loading states correctly
+    final shouldShowEmpty =
+        !_provider.isLoading && _provider.isLoaded && visibleNotifications == 0;
 
     if (shouldShowEmpty) {
       return Center(

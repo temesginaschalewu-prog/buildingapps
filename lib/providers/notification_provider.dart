@@ -10,6 +10,7 @@ import '../services/user_session.dart';
 import '../services/connectivity_service.dart';
 import '../services/hive_service.dart';
 import '../services/offline_queue_manager.dart';
+import '../services/notification_service.dart';
 import '../models/notification_model.dart' as notification_model;
 import '../utils/api_response.dart';
 import '../utils/constants.dart';
@@ -68,7 +69,10 @@ class NotificationProvider extends ChangeNotifier
     );
     _registerQueueProcessors();
     _init();
+    _setupFirebaseNotificationListener();
   }
+
+  StreamSubscription? _firebaseNotificationSubscription;
 
   void _registerQueueProcessors() {
     offlineQueueManager.registerProcessor(
@@ -100,6 +104,62 @@ class NotificationProvider extends ChangeNotifier
     }
 
     log('_init() END');
+  }
+
+  void _setupFirebaseNotificationListener() {
+    try {
+      final notificationService = NotificationService();
+      _firebaseNotificationSubscription =
+          notificationService.notificationStream.listen((notificationData) {
+        if (notificationData['type'] == 'general' ||
+            notificationData['type'] == 'payment_verified' ||
+            notificationData['type'] == 'payment_rejected' ||
+            notificationData['type'] == 'exam_result' ||
+            notificationData['type'] == 'chapter_complete' ||
+            notificationData['type'] == 'streak_update') {
+          final title = notificationData['title'] ??
+              notificationData['data']?['title'] ??
+              'Notification';
+          final body = notificationData['message'] ??
+              notificationData['data']?['body'] ??
+              'You have a new notification';
+          final receivedAt = notificationData['timestamp'] ?? DateTime.now();
+          final rawNotificationId = notificationData['data']
+                  ?['notification_id'] ??
+              DateTime.now().millisecondsSinceEpoch;
+          final rawLogId = notificationData['data']?['log_id'] ??
+              rawNotificationId ??
+              DateTime.now().millisecondsSinceEpoch;
+
+          final notificationId = rawNotificationId is int
+              ? rawNotificationId
+              : int.tryParse(rawNotificationId.toString()) ??
+                  DateTime.now().millisecondsSinceEpoch;
+          final logId = rawLogId is int
+              ? rawLogId
+              : int.tryParse(rawLogId.toString()) ??
+                  DateTime.now().millisecondsSinceEpoch;
+
+          final notification = notification_model.Notification(
+            logId: logId,
+            notificationId: notificationId,
+            title: title,
+            message: body,
+            deliveryStatus: 'delivered',
+            isRead: false,
+            receivedAt: receivedAt,
+            sentAt: receivedAt,
+            deliveredAt: receivedAt,
+            // System notifications don't have a specific sender ID.
+          );
+
+          addNotification(notification);
+        }
+      });
+      log('✅ Firebase notification listener setup complete');
+    } catch (e) {
+      log('Error setting up Firebase notification listener: $e');
+    }
   }
 
   Future<void> _openHiveBoxes() async {
@@ -167,7 +227,8 @@ class NotificationProvider extends ChangeNotifier
       DateTime.now().difference(_lastLoadTime!) < _minFetchInterval;
 
   void _publishNotifications({bool notify = true}) {
-    _unreadCount = _notifications.where((n) => !n.isRead && n.isDelivered).length;
+    _unreadCount =
+        _notifications.where((n) => !n.isRead && n.isDelivered).length;
     _notificationsUpdateController.add(_notifications);
     if (notify) {
       safeNotify();
@@ -705,10 +766,25 @@ class NotificationProvider extends ChangeNotifier
     try {
       final response = await apiService.getUnreadCount();
       if (response.success && response.data != null) {
-        _unreadCount = response.data!['unread_count'] ?? 0;
+        final serverUnreadCount = response.data!['unread_count'] ?? 0;
+
+        // ✅ CRITICAL: Sync local unread count with server count
+        // This ensures consistency between what we display and what we have locally
+        if (serverUnreadCount != _unreadCount) {
+          _unreadCount = serverUnreadCount;
+          log('✅ Synced unread count with server: $_unreadCount');
+
+          // If we have a server count but no local notifications, try to load them
+          if (_unreadCount > 0 && _notifications.isEmpty) {
+            log('Server has unread notifications but local cache is empty - triggering load');
+            unawaited(loadNotifications(forceRefresh: true));
+          }
+        } else {
+          log('✅ Unread count already in sync: $_unreadCount');
+        }
+
         _lastUnreadRefreshAt = DateTime.now();
         safeNotify();
-        log('✅ Refreshed unread count: $_unreadCount');
       }
     } catch (e) {
       log('Refresh unread count error: $e');
@@ -722,8 +798,39 @@ class NotificationProvider extends ChangeNotifier
   void addNotification(notification_model.Notification notification) {
     log('addNotification()');
 
-    _notifications.insert(0, notification);
-    if (!notification.isRead && notification.isDelivered) _unreadCount++;
+    final existingIndex = _notifications.indexWhere(
+      (item) =>
+          item.logId == notification.logId ||
+          (item.notificationId != null &&
+              notification.notificationId != null &&
+              item.notificationId == notification.notificationId),
+    );
+
+    if (existingIndex != -1) {
+      final existing = _notifications[existingIndex];
+      _notifications[existingIndex] = notification_model.Notification(
+        logId: notification.logId,
+        notificationId: notification.notificationId,
+        title: notification.title,
+        message: notification.message,
+        deliveryStatus: notification.deliveryStatus,
+        isRead: existing.isRead || notification.isRead,
+        receivedAt: notification.receivedAt,
+        sentAt: notification.sentAt,
+        readAt: existing.readAt ?? notification.readAt,
+        deliveredAt: notification.deliveredAt,
+        sentBy: notification.sentBy,
+      );
+    } else {
+      _notifications.insert(0, notification);
+    }
+
+    _notifications.sort(
+      (a, b) => b.primaryTimestamp.compareTo(a.primaryTimestamp),
+    );
+    _lastLoadTime ??= DateTime.now();
+    _unreadCount =
+        _notifications.where((n) => !n.isRead && n.isDelivered).length;
 
     unawaited(_saveToHive());
 
@@ -778,6 +885,7 @@ class NotificationProvider extends ChangeNotifier
   @override
   void dispose() {
     stopBackgroundRefresh();
+    _firebaseNotificationSubscription?.cancel();
     _notificationsUpdateController.close();
     _notificationsBox?.close();
     disposeSubscriptions();

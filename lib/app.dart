@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:familyacademyclient/services/connectivity_service.dart';
 import 'package:familyacademyclient/services/offline_queue_manager.dart'
@@ -400,17 +399,6 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
   }
 
   void _handlePaymentVerified(Map<String, dynamic>? data) {
-    unawaited(widget.notificationService.showLocalNotification(
-      title: 'Payment Verified!',
-      body: 'Your payment has been verified. Access is now active.',
-      payload: json.encode({
-        'type': 'payment_verified_action',
-        'action': 'refresh_subscriptions',
-        'category_id': data?['category_id'],
-        'click_action': '/notifications',
-      }),
-    ));
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_appInitialized) return;
 
