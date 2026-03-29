@@ -156,6 +156,9 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   @override
   dynamic get errorMessage => _errorMessage;
 
+  @override
+  bool get useFullScreenLoadingState => false;
+
   // ✅ Shimmer type based on current tab
   @override
   ShimmerType get shimmerType {
@@ -1943,6 +1946,15 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     );
   }
 
+  Widget _buildPageLoadingShell() {
+    return Column(
+      children: [
+        _buildTabShell(),
+        Expanded(child: buildLoadingShimmer()),
+      ],
+    );
+  }
+
   Widget _buildVideosTab() {
     final videos = _videoProvider.getVideosByChapter(widget.chapterId);
 
@@ -2302,6 +2314,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
   Widget buildContent(BuildContext context) {
     if (_errorMessage != null) {
       return buildErrorWidget(_errorMessage!, onRetry: _initialize);
+    }
+
+    if (_chapter == null && (_isLoading || _isCheckingAccess)) {
+      return _buildPageLoadingShell();
     }
 
     if (_chapter == null) {
