@@ -54,6 +54,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
   late SubscriptionProvider _subscriptionProvider;
   late PaymentProvider _paymentProvider;
   late SettingsProvider _settingsProvider;
+  bool _paymentListenerAttached = false;
+  PaymentProvider? _paymentProviderRef;
 
   @override
   String get screenTitle => _category?.name ?? AppStrings.category;
@@ -61,6 +63,9 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
   @override
   String? get screenSubtitle =>
       isOffline ? AppStrings.offlineMode : AppStrings.categoryDetails;
+
+  @override
+  bool get blockContentWhenOffline => false;
 
   // ✅ CRITICAL: Only show loading if no cached data AND loading
   @override
@@ -90,6 +95,10 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
   @override
   void initState() {
     super.initState();
+    if (widget.category != null) {
+      _category = widget.category;
+      _hasCachedData = true;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) => _initialize());
   }
 
@@ -106,6 +115,86 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
       if (isMounted && _category != null) _updateAccessStatus();
     });
 
+    _paymentProviderRef = _paymentProvider;
+    if (!_paymentListenerAttached) {
+      _paymentProvider.addListener(_handlePaymentProviderChange);
+      _paymentListenerAttached = true;
+    }
+
+    _primeCategoryFromKnownSources();
+
+  }
+
+  @override
+  void dispose() {
+    if (_paymentListenerAttached && _paymentProviderRef != null) {
+      _paymentProviderRef!.removeListener(_handlePaymentProviderChange);
+    }
+    _coursesRefreshController.dispose();
+    super.dispose();
+  }
+
+  void _primeCategoryFromKnownSources() {
+    final fallbackCategory =
+        widget.category ?? _categoryProvider.getCategoryById(widget.categoryId);
+
+    if (fallbackCategory == null) {
+      return;
+    }
+
+    final knownAccess = _subscriptionProvider
+        .hasActiveSubscriptionForCategory(widget.categoryId);
+
+    _category ??= fallbackCategory;
+    _hasAccess = knownAccess;
+    _syncPaymentInfoFromProvider();
+    _hasCachedData = true;
+  }
+
+  void _handlePaymentProviderChange() {
+    if (!isMounted || _category == null) return;
+    _syncPaymentInfoFromProvider();
+  }
+
+  void _syncPaymentInfoFromProvider() {
+    if (_category == null) return;
+
+    if (_hasAccess) {
+      final changed = _hasPendingPayment || _rejectionReason != null;
+      _hasPendingPayment = false;
+      _rejectionReason = null;
+
+      if (changed && isMounted) {
+        setState(() {});
+        unawaited(_saveToCache());
+      }
+      return;
+    }
+
+    final pendingPayments = _paymentProvider.getPendingPayments();
+    final hasPendingPayment = pendingPayments.any(_matchesPaymentToCategory);
+
+    final rejectedPayments = _paymentProvider.getRejectedPayments();
+    final recentRejected =
+        rejectedPayments.where(_matchesPaymentToCategory).fold<Payment?>(
+              null,
+              (latest, payment) =>
+                  latest == null || payment.createdAt.isAfter(latest.createdAt)
+                      ? payment
+                      : latest,
+            );
+    final rejectionReason = recentRejected?.rejectionReason;
+
+    final changed = hasPendingPayment != _hasPendingPayment ||
+        rejectionReason != _rejectionReason;
+
+    _hasPendingPayment = hasPendingPayment;
+    _rejectionReason = rejectionReason;
+
+    if (changed && isMounted) {
+      setState(() {});
+      unawaited(_saveToCache());
+    }
   }
 
   Future<void> _initialize() async {
@@ -126,6 +215,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
 
   Future<void> _loadFromCache() async {
     try {
+      _primeCategoryFromKnownSources();
+
       final deviceService = context.read<DeviceService>();
       final knownAccess = _subscriptionProvider
           .hasActiveSubscriptionForCategory(widget.categoryId);
@@ -141,17 +232,17 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
         _hasPendingPayment =
             _hasAccess ? false : (cachedCategory['has_pending_payment'] ?? false);
         _rejectionReason = _hasAccess ? null : cachedCategory['rejection_reason'];
+        _syncPaymentInfoFromProvider();
         _hasCachedData = true;
         debugLog('CategoryDetail', '✅ Loaded from cache');
       } else {
-        if (_categoryProvider.categories.isNotEmpty) {
+        if (_category == null && _categoryProvider.categories.isNotEmpty) {
           _category = _categoryProvider.getCategoryById(widget.categoryId);
-          if (_category != null) {
-            _hasAccess = knownAccess;
-            _hasPendingPayment = false;
-            _rejectionReason = null;
-            _hasCachedData = true;
-          }
+        }
+        if (_category != null) {
+          _hasAccess = knownAccess;
+          _syncPaymentInfoFromProvider();
+          _hasCachedData = true;
         }
       }
     } catch (e) {
@@ -300,29 +391,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
       await _paymentProvider.loadPayments(
           forceRefresh: forceRefresh && !isOffline,
           isManualRefresh: isManualRefresh);
-      if (_hasAccess) {
-        _hasPendingPayment = false;
-        _rejectionReason = null;
-        return;
-      }
-      final pendingPayments = _paymentProvider.getPendingPayments();
-      _hasPendingPayment = pendingPayments.any(_matchesPaymentToCategory);
-
-      final rejectedPayments = _paymentProvider.getRejectedPayments();
-      final recentRejected = rejectedPayments.firstWhere(
-        _matchesPaymentToCategory,
-        orElse: () => Payment(
-          id: 0,
-          paymentType: '',
-          amount: 0,
-          paymentMethod: '',
-          status: '',
-          createdAt: DateTime.now(),
-          categoryName: '',
-        ),
-      );
-      _rejectionReason =
-          recentRejected.id != 0 ? recentRejected.rejectionReason : null;
+      _syncPaymentInfoFromProvider();
     } catch (e) {
       debugLog('CategoryDetail', 'Error loading payment info: $e');
     }
@@ -660,12 +729,6 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
         );
       },
     );
-  }
-
-  @override
-  void dispose() {
-    _coursesRefreshController.dispose();
-    super.dispose();
   }
 
   @override
