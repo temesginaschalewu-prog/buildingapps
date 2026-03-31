@@ -522,13 +522,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                   readOnly: !chatbotEnabled,
                   decoration: InputDecoration(
                     hintText: !chatbotEnabled
-                        ? _settingsProvider.getChatbotDisabledMessage()
+                        ? 'Unavailable'
                         : (isOffline
-                            ? _settingsProvider.getChatbotOfflineMessage()
+                            ? 'Queued offline'
                             : (_provider.hasMessagesLeft
-                                ? _settingsProvider.getChatbotWelcomeMessage()
-                                : _settingsProvider
-                                    .getChatbotLimitReachedMessage())),
+                                ? 'Ask anything...'
+                                : 'Limit reached')),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(
                         ResponsiveValues.radiusLarge(context),
