@@ -281,6 +281,9 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
         unawaited(widget.notificationService.syncPendingFcmToken());
         unawaited(widget.notificationService.sendFcmTokenToBackendIfAuthenticated());
       });
+      authProvider.registerOnLogoutCallback(() {
+        unawaited(widget.notificationService.clearBackendTokenAssociation());
+      });
 
       await authProvider.initialize();
 

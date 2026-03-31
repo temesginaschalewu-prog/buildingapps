@@ -306,6 +306,10 @@ class NotificationService {
     }
   }
 
+  Future<void> clearBackendTokenAssociation() async {
+    await _clearFcmTokenFromBackend();
+  }
+
   Future<Map<String, dynamic>> getDiagnostics() async {
     final prefs = await SharedPreferences.getInstance();
     final cachedToken = prefs.getString(AppConstants.fcmTokenCacheKey);

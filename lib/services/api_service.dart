@@ -871,8 +871,14 @@ class ApiService {
 
   Future<ApiResponse<void>> updateFcmToken(String? fcmToken) async {
     try {
-      final response = await _dio
-          .put('$_apiPrefix/users/fcm-token', data: {'fcm_token': fcmToken});
+      final deviceId = await _getDeviceId();
+      final response = await _dio.put(
+        '$_apiPrefix/users/fcm-token',
+        data: {
+          'fcm_token': fcmToken,
+          if (deviceId != null && deviceId.isNotEmpty) 'device_id': deviceId,
+        },
+      );
       return ApiResponse(
         success: true,
         message: response.data['message'] ?? 'Token updated',
