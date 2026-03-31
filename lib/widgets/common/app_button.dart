@@ -212,10 +212,15 @@ class AppButton extends StatelessWidget {
             SizedBox(width: _getSpacing(context)),
           ],
           if (label != null)
-            Text(
-              label!,
-              style: _getTextStyle(context, textColor),
-              textAlign: TextAlign.center,
+            Flexible(
+              child: Text(
+                label!,
+                style: _getTextStyle(context, textColor),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                softWrap: false,
+              ),
             ),
         ],
       ],
