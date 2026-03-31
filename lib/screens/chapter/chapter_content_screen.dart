@@ -77,7 +77,6 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         TickerProviderStateMixin,
         WidgetsBindingObserver {
   static const double _tabShellHeight = kTextTabBarHeight + 1;
-  static const double _practiceActionsHeight = 88;
   late TabController _tabController;
   final ScrollController _scrollController = ScrollController();
   final RefreshController _videosRefreshController = RefreshController();
@@ -93,6 +92,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
   bool _hasCachedData = false;
   bool _isLoading = true;
+  bool _initialContentLoadSettled = false;
   bool _showVideosRefreshShimmer = false;
   bool _showNotesRefreshShimmer = false;
   bool _showPracticeRefreshShimmer = false;
@@ -158,6 +158,9 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
   @override
   bool get useFullScreenLoadingState => false;
+
+  @override
+  bool get blockContentWhenOffline => false;
 
   // ✅ Shimmer type based on current tab
   @override
@@ -242,6 +245,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     _hasCachedData = true;
     _isLoading = false;
     _isCheckingAccess = false;
+    _errorMessage = null;
     _didSeedImmediateState = true;
   }
 
@@ -1869,6 +1873,23 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     } else {
       await _checkAccessAndLoadData();
     }
+
+    _initialContentLoadSettled = true;
+  }
+
+  bool _shouldShowInitialTabShimmer({
+    required bool hasItems,
+    required bool isProviderLoading,
+    required bool hasLoadedForChapter,
+    required bool showRefreshShimmer,
+  }) {
+    if (hasItems || isOffline) return false;
+    if (showRefreshShimmer) return true;
+    if (_isLoading || _isCheckingAccess) return true;
+    if (!_initialContentLoadSettled) return true;
+    if (isProviderLoading) return true;
+    if (!hasLoadedForChapter) return true;
+    return false;
   }
 
   Widget _buildAccessDeniedScreen() {
@@ -1957,12 +1978,14 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
   Widget _buildVideosTab() {
     final videos = _videoProvider.getVideosByChapter(widget.chapterId);
+    final isWaitingForInitialContent = _shouldShowInitialTabShimmer(
+      hasItems: videos.isNotEmpty,
+      isProviderLoading: _videoProvider.isLoadingForChapter(widget.chapterId),
+      hasLoadedForChapter: _videoProvider.hasLoadedForChapter(widget.chapterId),
+      showRefreshShimmer: _showVideosRefreshShimmer,
+    );
 
-    if (videos.isEmpty &&
-        !isOffline &&
-        (_showVideosRefreshShimmer ||
-            (_videoProvider.isLoadingForChapter(widget.chapterId) &&
-                !_videoProvider.hasLoadedForChapter(widget.chapterId)))) {
+    if (isWaitingForInitialContent) {
       return buildLoadingShimmer();
     }
 
@@ -2013,12 +2036,14 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
   Widget _buildNotesTab() {
     final notes = _noteProvider.getNotesByChapter(widget.chapterId);
+    final isWaitingForInitialContent = _shouldShowInitialTabShimmer(
+      hasItems: notes.isNotEmpty,
+      isProviderLoading: _noteProvider.isLoadingForChapter(widget.chapterId),
+      hasLoadedForChapter: _noteProvider.hasLoadedForChapter(widget.chapterId),
+      showRefreshShimmer: _showNotesRefreshShimmer,
+    );
 
-    if (notes.isEmpty &&
-        !isOffline &&
-        (_showNotesRefreshShimmer ||
-            (_noteProvider.isLoadingForChapter(widget.chapterId) &&
-                !_noteProvider.hasLoadedForChapter(widget.chapterId)))) {
+    if (isWaitingForInitialContent) {
       return buildLoadingShimmer();
     }
 
@@ -2096,11 +2121,16 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     final totalCount = questions.length;
     final progress = totalCount > 0 ? answeredCount / totalCount : 0.0;
 
-    if (questions.isEmpty &&
-        !isOffline &&
-        (_showPracticeRefreshShimmer ||
-            (_questionProvider.isLoadingForChapter(widget.chapterId) &&
-                !_questionProvider.hasLoadedForChapter(widget.chapterId)))) {
+    final isWaitingForInitialContent = _shouldShowInitialTabShimmer(
+      hasItems: questions.isNotEmpty,
+      isProviderLoading:
+          _questionProvider.isLoadingForChapter(widget.chapterId),
+      hasLoadedForChapter:
+          _questionProvider.hasLoadedForChapter(widget.chapterId),
+      showRefreshShimmer: _showPracticeRefreshShimmer,
+    );
+
+    if (isWaitingForInitialContent) {
       return buildLoadingShimmer();
     }
 
@@ -2127,157 +2157,146 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       );
     }
 
-    return CustomScrollView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      slivers: [
-        SliverToBoxAdapter(
-          child: Container(
-            margin: ResponsiveValues.screenPadding(context),
-            child: AppCard.glass(
-              child: Padding(
-                padding: ResponsiveValues.cardPadding(context),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          AppStrings.practiceProgress,
-                          style: AppTextStyles.titleMedium(context).copyWith(
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: -0.5,
+    return Column(
+      children: [
+        Container(
+          margin: ResponsiveValues.screenPadding(context),
+          child: AppCard.glass(
+            child: Padding(
+              padding: ResponsiveValues.cardPadding(context),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        AppStrings.practiceProgress,
+                        style: AppTextStyles.titleMedium(context).copyWith(
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                      Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: ResponsiveValues.spacingM(context),
+                          vertical: ResponsiveValues.spacingXXS(context),
+                        ),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                              colors: AppColors.blueGradient),
+                          borderRadius: BorderRadius.circular(
+                              ResponsiveValues.radiusFull(context)),
+                        ),
+                        child: Text(
+                          '$correctCount/$totalCount',
+                          style: AppTextStyles.labelSmall(context).copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
-                        Container(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: ResponsiveValues.spacingM(context),
-                            vertical: ResponsiveValues.spacingXXS(context),
-                          ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: ResponsiveValues.spacingXS(context)),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Answered $answeredCount of $totalCount',
+                      style: AppTextStyles.bodySmall(context).copyWith(
+                        color: AppColors.getTextSecondary(context),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: ResponsiveValues.spacingL(context)),
+                  Stack(
+                    children: [
+                      Container(
+                        height: ResponsiveValues.progressBarHeight(context),
+                        decoration: BoxDecoration(
+                          color: AppColors.getSurface(context)
+                              .withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(
+                              ResponsiveValues.radiusSmall(context)),
+                        ),
+                      ),
+                      FractionallySizedBox(
+                        widthFactor: progress,
+                        child: Container(
+                          height: ResponsiveValues.progressBarHeight(context),
                           decoration: BoxDecoration(
                             gradient: const LinearGradient(
                                 colors: AppColors.blueGradient),
                             borderRadius: BorderRadius.circular(
-                                ResponsiveValues.radiusFull(context)),
-                          ),
-                          child: Text(
-                            '$correctCount/$totalCount',
-                            style: AppTextStyles.labelSmall(context).copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    SizedBox(height: ResponsiveValues.spacingXS(context)),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Answered $answeredCount of $totalCount',
-                        style: AppTextStyles.bodySmall(context).copyWith(
-                          color: AppColors.getTextSecondary(context),
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                    SizedBox(height: ResponsiveValues.spacingL(context)),
-                    Stack(
-                      children: [
-                        Container(
-                          height: ResponsiveValues.progressBarHeight(context),
-                          decoration: BoxDecoration(
-                            color: AppColors.getSurface(context)
-                                .withValues(alpha: 0.3),
-                            borderRadius: BorderRadius.circular(
                                 ResponsiveValues.radiusSmall(context)),
                           ),
                         ),
-                        FractionallySizedBox(
-                          widthFactor: progress,
-                          child: Container(
-                            height: ResponsiveValues.progressBarHeight(context),
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                  colors: AppColors.blueGradient),
-                              borderRadius: BorderRadius.circular(
-                                  ResponsiveValues.radiusSmall(context)),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
           ),
         ),
-        SliverPersistentHeader(
-          pinned: true,
-          delegate: _TabShellHeaderDelegate(
-            minExtentValue: _practiceActionsHeight,
-            maxExtentValue: _practiceActionsHeight,
-            child: Container(
-              color: AppColors.getBackground(context),
-              padding: EdgeInsets.fromLTRB(
-                ResponsiveValues.sectionPadding(context),
-                0,
-                ResponsiveValues.sectionPadding(context),
-                ResponsiveValues.spacingS(context),
-              ),
-              child: SafeArea(
-                top: false,
-                bottom: false,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: AppButton.primary(
-                        label: AppStrings.checkAll,
-                        icon: Icons.checklist_rounded,
-                        onPressed: _selectedAnswers.values
-                                .any((v) => v != null && v.isNotEmpty)
-                            ? () => _checkAllQuestions(questions)
-                            : null,
-                        expanded: true,
-                      ),
-                    ),
-                    SizedBox(width: ResponsiveValues.spacingM(context)),
-                    Expanded(
-                      child: AppButton.glass(
-                        label: answeredCount > 0
-                            ? AppStrings.resetAll
-                            : AppStrings.reset,
-                        icon: Icons.refresh_rounded,
-                        onPressed:
-                            answeredCount > 0 ? _resetAllQuestions : null,
-                        expanded: true,
-                      ),
-                    ),
-                  ],
+        Container(
+          color: AppColors.getBackground(context),
+          padding: EdgeInsets.fromLTRB(
+            ResponsiveValues.sectionPadding(context),
+            0,
+            ResponsiveValues.sectionPadding(context),
+            ResponsiveValues.spacingS(context),
+          ),
+          child: SafeArea(
+            top: false,
+            bottom: false,
+            child: Row(
+              children: [
+                Expanded(
+                  child: AppButton.primary(
+                    label: AppStrings.checkAll,
+                    icon: Icons.checklist_rounded,
+                    onPressed: _selectedAnswers.values
+                            .any((v) => v != null && v.isNotEmpty)
+                        ? () => _checkAllQuestions(questions)
+                        : null,
+                    expanded: true,
+                  ),
                 ),
-              ),
+                SizedBox(width: ResponsiveValues.spacingM(context)),
+                Expanded(
+                  child: AppButton.glass(
+                    label: answeredCount > 0
+                        ? AppStrings.resetAll
+                        : AppStrings.reset,
+                    icon: Icons.refresh_rounded,
+                    onPressed: answeredCount > 0 ? _resetAllQuestions : null,
+                    expanded: true,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
         if (answeredCount == totalCount && totalCount > 0)
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: ResponsiveValues.screenPadding(context),
-              child: AppButton.glass(
-                label: _showAllExplanations
-                    ? AppStrings.hideAllExplanations
-                    : AppStrings.showAllExplanations,
-                icon: _showAllExplanations
-                    ? Icons.visibility_off_rounded
-                    : Icons.visibility_rounded,
-                onPressed: _toggleAllExplanations,
-              ),
+          Padding(
+            padding: ResponsiveValues.screenPadding(context),
+            child: AppButton.glass(
+              label: _showAllExplanations
+                  ? AppStrings.hideAllExplanations
+                  : AppStrings.showAllExplanations,
+              icon: _showAllExplanations
+                  ? Icons.visibility_off_rounded
+                  : Icons.visibility_rounded,
+              onPressed: _toggleAllExplanations,
             ),
           ),
-        const SliverToBoxAdapter(child: SizedBox(height: 8)),
-        SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, index) {
+        Expanded(
+          child: ListView.builder(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
+            itemCount: questions.length,
+            itemBuilder: (context, index) {
               final question = questions[index];
               return Padding(
                 padding: ResponsiveValues.screenPadding(context),
@@ -2293,10 +2312,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                 ),
               );
             },
-            childCount: questions.length,
           ),
         ),
-        const SliverToBoxAdapter(child: SizedBox(height: 16)),
       ],
     );
   }
@@ -2330,6 +2347,9 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
     }
 
     if (!_hasAccess && !_isCheckingAccess) {
+      if (_chapter?.isFree == true) {
+        return _buildPageLoadingShell();
+      }
       return _buildAccessDeniedScreen();
     }
 
