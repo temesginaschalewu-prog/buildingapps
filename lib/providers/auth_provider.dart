@@ -34,7 +34,7 @@ class AuthProvider extends ChangeNotifier
   Map<String, dynamic>? _lastLoginResult;
 
   Timer? _autoLogoutTimer;
-  static const Duration _sessionDuration = Duration(days: 3);
+  static const Duration _sessionDuration = Duration(days: 4);
 
   Timer? _tokenRefreshTimer;
   static const Duration _tokenRefreshInterval = Duration(minutes: 30);
@@ -177,6 +177,14 @@ class AuthProvider extends ChangeNotifier
     try {
       await storageService.ensureInitialized();
 
+      final sessionValid =
+          await storageService.isSessionValid(_sessionDuration);
+      if (!sessionValid) {
+        log('⏰ Stored session expired - forcing fresh login');
+        await logout(manual: false);
+        return;
+      }
+
       final userId = await deviceService.getCurrentUserId();
       if (userId != null) {
         User? cachedUser;
@@ -219,6 +227,28 @@ class AuthProvider extends ChangeNotifier
           markInitialized();
           return;
         }
+      }
+
+      final storedUser = await storageService.getUser();
+      if (storedUser != null) {
+        _currentUser = storedUser;
+        _isAuthenticated = true;
+
+        await deviceService.setCurrentUserId(storedUser.id.toString());
+        await UserSession().setCurrentUser(storedUser.id.toString());
+        await deviceService.saveDeviceInfo();
+
+        _startAutoLogoutTimer();
+        _startTokenRefreshTimer();
+
+        _authStateController.add(true);
+        _userController.add(storedUser);
+        _executeLoginCallbacks();
+        setLoaded();
+
+        log('✅ Restored from persisted storage');
+        markInitialized();
+        return;
       }
     } catch (e) {
       log('⚠️ Error during initialization: $e');
