@@ -184,6 +184,19 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     });
   }
 
+  String _formatAssistantMessage(String content) {
+    final trimmed = content.trim();
+    final looksTechnical = RegExp(
+      r'(```|`|=|->|=>|/|\\|\b\d+\s*[\+\-\*\/]\s*\d+\b|\b[a-zA-Z]\s*=\s*|\b\d+\/\d+\b|\b[A-Za-z_]+\([^)]*\)|\{|\}|\[|\])',
+    ).hasMatch(trimmed);
+
+    if (looksTechnical) {
+      return content;
+    }
+
+    return content.replaceAll('*', '');
+  }
+
   // ✅ Pull-to-refresh handler
   @override
   Future<void> onRefresh() async {
@@ -617,7 +630,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    message.content.replaceAll('*', ''),
+                    isUser
+                        ? message.content
+                        : _formatAssistantMessage(message.content),
                     style: isUser ? const TextStyle(color: Colors.white) : null,
                   ),
                   SizedBox(height: ResponsiveValues.spacingXXS(context)),
