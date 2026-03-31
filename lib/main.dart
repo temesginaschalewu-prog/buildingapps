@@ -390,6 +390,7 @@ class _SessionScopedProviders extends StatelessWidget {
               connectivityService: context.read<ConnectivityService>(),
               hiveService: context.read<HiveService>(),
               offlineQueueManager: context.read<OfflineQueueManager>(),
+              settingsProvider: context.read<SettingsProvider>(),
             ),
           ),
         ],

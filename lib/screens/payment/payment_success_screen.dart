@@ -419,9 +419,9 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
             _buildDetailRow(
               icon: Icons.calendar_today_rounded,
               label: AppStrings.billingCycle,
-              value: _billingCycle == 'semester'
-                  ? AppStrings.semesterBilling
-                  : AppStrings.monthlyBilling,
+              value: context.read<SettingsProvider>().getBillingCyclePlanLabel(
+                _billingCycle,
+              ),
             ),
             SizedBox(height: ResponsiveValues.spacingM(context)),
             _buildDetailRow(

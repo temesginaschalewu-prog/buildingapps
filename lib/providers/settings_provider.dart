@@ -1896,8 +1896,6 @@ class SettingsProvider extends ChangeNotifier
   List<Map<String, String>> getSupportFaqItems() {
     final paymentMethodsAnswer =
         getSettingValue('support_faq_payment_methods_answer')?.trim();
-    final passwordAnswer =
-        getSettingValue('support_faq_password_answer')?.trim();
     final offlineAccessAnswer =
         getSettingValue('support_faq_offline_access_answer')?.trim();
 
@@ -1920,12 +1918,6 @@ class SettingsProvider extends ChangeNotifier
         : '${contactChannels.join(', ')} and the Contact tab';
 
     return [
-      {
-        'question': 'How do I reset my password?',
-        'answer': passwordAnswer != null && passwordAnswer.isNotEmpty
-            ? passwordAnswer
-            : 'Go to Profile -> Settings -> Change Password. You will need your current password to set a new one.',
-      },
       {
         'question': 'What payment methods are accepted?',
         'answer': paymentMethodsAnswer != null && paymentMethodsAnswer.isNotEmpty
@@ -2490,6 +2482,15 @@ class SettingsProvider extends ChangeNotifier
         rawValue == 'true' ||
         rawValue == 'yes' ||
         rawValue == 'on';
+  }
+
+  int getChatbotDailyLimit() {
+    final configured = getSettingValue('chatbot_daily_limit');
+    final parsed = configured != null ? int.tryParse(configured.trim()) : null;
+    if (parsed != null && parsed > 0) {
+      return parsed.clamp(1, 500);
+    }
+    return 30;
   }
 
   String getChatbotScreenTitle() {

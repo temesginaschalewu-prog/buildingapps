@@ -15,6 +15,7 @@ import '../utils/parsers.dart';
 import '../utils/api_response.dart';
 import '../utils/helpers.dart';
 import 'base_provider.dart';
+import 'settings_provider.dart';
 
 class ChatbotProvider extends ChangeNotifier
     with BaseProvider<ChatbotProvider>, OfflineAwareProvider<ChatbotProvider> {
@@ -24,6 +25,7 @@ class ChatbotProvider extends ChangeNotifier
   final ApiService apiService;
   final HiveService hiveService;
   final OfflineQueueManager offlineQueueManager;
+  final SettingsProvider settingsProvider;
 
   List<ChatbotMessage> _messages = [];
   List<ChatbotConversation> _conversations = [];
@@ -38,11 +40,11 @@ class ChatbotProvider extends ChangeNotifier
 
   int _apiCallCount = 0;
 
-  static const int _defaultDailyLimit = 20;
+  static const int _fallbackDailyLimit = 30;
   static const Duration _usageFetchCooldown = Duration(seconds: 20);
 
-  int _remainingMessages = _defaultDailyLimit;
-  int _dailyLimit = _defaultDailyLimit;
+  int _remainingMessages = _fallbackDailyLimit;
+  int _dailyLimit = _fallbackDailyLimit;
   int _totalMessages = 0;
   int _totalConversations = 0;
   String? _usageDayKey;
@@ -66,7 +68,11 @@ class ChatbotProvider extends ChangeNotifier
     required this.connectivityService,
     required this.hiveService,
     required this.offlineQueueManager,
+    required this.settingsProvider,
   }) {
+    final configuredLimit = settingsProvider.getChatbotDailyLimit();
+    _dailyLimit = configuredLimit;
+    _remainingMessages = configuredLimit;
     log('ChatbotProvider constructor called');
     initializeOfflineAware(
       connectivity: connectivityService,
@@ -239,7 +245,7 @@ class ChatbotProvider extends ChangeNotifier
           _usageDayKey = cachedDay;
           _dailyLimit = Parsers.parseInt(
             usageMap['daily_limit'],
-            _defaultDailyLimit,
+            settingsProvider.getChatbotDailyLimit(),
           ).clamp(1, 500);
 
           if (cachedDay == today) {

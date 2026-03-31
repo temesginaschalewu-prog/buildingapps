@@ -365,11 +365,9 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                           _buildInfoRow(
                             icon: Icons.repeat_rounded,
                             label: AppStrings.billingCycle,
-                            value: subscription.billingCycle == 'monthly'
-                                ? AppStrings.monthly
-                                : _settingsProvider.getBillingCycleDurationText(
-                                    subscription.billingCycle,
-                                  ),
+                            value: _settingsProvider.getBillingCyclePlanLabel(
+                              subscription.billingCycle,
+                            ),
                           ),
                           if (subscription.price != null) ...[
                             SizedBox(
