@@ -58,7 +58,7 @@ jobs:
           APP_ENVIRONMENT=${APP_ENVIRONMENT}
           EOF
 
-      - name: Create debug keystore for CI fallback signing
+      - name: Prepare Android signing
         run: |
           mkdir -p ~/.android ~/.config/.android
           if [ ! -f ~/.config/.android/debug.keystore ]; then
@@ -74,24 +74,68 @@ jobs:
               -validity 10000 \
               -dname "CN=Android Debug,O=Android,C=US"
           fi
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/keystore.jks
+            echo "Using release keystore from GitHub secrets"
+          else
+            cp ~/.config/.android/debug.keystore android/app/keystore.jks
+          fi
           cp ~/.config/.android/debug.keystore ~/.android/debug.keystore
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
       - name: Build Android APKs
         run: flutter build apk --release --split-per-abi --dart-define=API_BASE_URL=${API_BASE_URL}
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+      - name: Build Universal Android APK
+        run: flutter build apk --release --dart-define=API_BASE_URL=${API_BASE_URL}
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
       - name: Build Android App Bundle
         run: flutter build appbundle --release --dart-define=API_BASE_URL=${API_BASE_URL}
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+      - name: Arrange Android artifacts
+        run: |
+          mkdir -p artifacts/android
+          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk artifacts/android/family-academy-android-older-armeabi-v7a.apk
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk artifacts/android/family-academy-android-newer-arm64-v8a.apk
+          cp build/app/outputs/flutter-apk/app-x86_64-release.apk artifacts/android/family-academy-android-emulator-x86_64.apk
+          cp build/app/outputs/flutter-apk/app-release.apk artifacts/android/family-academy-android-universal.apk
+          cp build/app/outputs/bundle/release/app-release.aab artifacts/android/family-academy-play-store.aab
 
       - name: Upload Split APK Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: family-academy-android-apks
-          path: build/app/outputs/flutter-apk/*-release.apk
+          path: |
+            artifacts/android/family-academy-android-older-armeabi-v7a.apk
+            artifacts/android/family-academy-android-newer-arm64-v8a.apk
+            artifacts/android/family-academy-android-emulator-x86_64.apk
+          compression-level: 0
+
+      - name: Upload Universal APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: family-academy-android-universal
+          path: artifacts/android/family-academy-android-universal.apk
           compression-level: 0
 
       - name: Upload AAB Artifact
         uses: actions/upload-artifact@v4
         with:
           name: family-academy-android-aab
-          path: build/app/outputs/bundle/release/app-release.aab
+          path: artifacts/android/family-academy-play-store.aab
           compression-level: 0
