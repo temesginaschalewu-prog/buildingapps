@@ -91,24 +91,12 @@ jobs:
 
       - name: Build Android APKs
         run: flutter build apk --release --split-per-abi --dart-define=API_BASE_URL=${API_BASE_URL}
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
       - name: Build Universal Android APK
         run: flutter build apk --release --dart-define=API_BASE_URL=${API_BASE_URL}
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
       - name: Build Android App Bundle
         run: flutter build appbundle --release --dart-define=API_BASE_URL=${API_BASE_URL}
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
       - name: Arrange Android artifacts
         run: |
