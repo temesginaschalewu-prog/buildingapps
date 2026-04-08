@@ -43,6 +43,18 @@ class _HttpJsonResult {
   });
 }
 
+const bool _verboseApiTracing = false;
+
+void debugPrint(String? message, {int? wrapWidth}) {
+  if (!kDebugMode || !_verboseApiTracing || message == null || message.isEmpty) {
+    return;
+  }
+
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    debugLog('ApiService', message);
+  });
+}
+
 class ApiService {
   late Dio _dio;
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
@@ -169,14 +181,16 @@ class ApiService {
         final deviceInfoBox = Hive.box<Map<String, dynamic>>('device_info_box');
         if (deviceInfoBox.containsKey('current_device')) {
           final deviceInfo = deviceInfoBox.get('current_device');
-          return deviceInfo?['device_id'] as String?;
+          final value = deviceInfo?['device_id'];
+          return value?.toString();
         }
       } else {
         final deviceInfoBox =
             await Hive.openBox<Map<String, dynamic>>('device_info_box');
         if (deviceInfoBox.containsKey('current_device')) {
           final deviceInfo = deviceInfoBox.get('current_device');
-          return deviceInfo?['device_id'] as String?;
+          final value = deviceInfo?['device_id'];
+          return value?.toString();
         }
       }
       return prefs.getString(AppConstants.persistentDeviceIdKey);

@@ -109,19 +109,26 @@ class DeviceProvider extends ChangeNotifier
     try {
       if (_deviceBox == null) return;
 
-      final cachedTvId = _deviceBox!.get('tv_device_id');
+      final dynamic cachedTvId = _deviceBox!.get('tv_device_id');
       if (cachedTvId != null && _tvDeviceId == null) {
-        _tvDeviceId = cachedTvId['value']?.toString();
+        if (cachedTvId is Map<dynamic, dynamic>) {
+          _tvDeviceId = cachedTvId['value']?.toString();
+        } else {
+          _tvDeviceId = cachedTvId.toString();
+        }
       }
 
-      final cachedPairing = _deviceBox!.get('pairing_info');
+      final dynamic cachedPairing = _deviceBox!.get('pairing_info');
       if (cachedPairing != null && _pairingCode == null) {
-        _pairingCode = cachedPairing['code']?.toString();
-        final expiresAtStr = cachedPairing['expires_at']?.toString();
+        final pairingMap = cachedPairing is Map<dynamic, dynamic>
+            ? cachedPairing
+            : <String, dynamic>{};
+        _pairingCode = pairingMap['code']?.toString();
+        final expiresAtStr = pairingMap['expires_at']?.toString();
         if (expiresAtStr != null) {
           _pairingExpiresAt = DateTime.parse(expiresAtStr);
         }
-        _isPairing = true;
+        _isPairing = _pairingCode != null;
       }
 
       log('✅ Loaded cached data from Hive');
@@ -150,15 +157,20 @@ class DeviceProvider extends ChangeNotifier
   Future<void> _loadPairingCode() async {
     // Try Hive first
     if (_deviceBox != null) {
-      final cachedPairing = _deviceBox!.get('pairing_info');
+      final dynamic cachedPairing = _deviceBox!.get('pairing_info');
       if (cachedPairing != null) {
-        _pairingCode = cachedPairing['code']?.toString();
-        final expiresAtStr = cachedPairing['expires_at']?.toString();
+        final pairingMap = cachedPairing is Map<dynamic, dynamic>
+            ? cachedPairing
+            : <String, dynamic>{};
+        _pairingCode = pairingMap['code']?.toString();
+        final expiresAtStr = pairingMap['expires_at']?.toString();
         if (expiresAtStr != null) {
           _pairingExpiresAt = DateTime.parse(expiresAtStr);
         }
-        _isPairing = true;
-        return;
+        _isPairing = _pairingCode != null;
+        if (_isPairing) {
+          return;
+        }
       }
     }
 
@@ -255,10 +267,20 @@ class DeviceProvider extends ChangeNotifier
 
     try {
       final response = await apiService.verifyTvPairing(code);
-      final data = response.data!;
+      if (!response.success) {
+        throw Exception(response.message.isNotEmpty
+            ? response.message
+            : 'Failed to verify TV pairing');
+      }
 
-      await deviceService.saveTvDeviceId(data['tv_device_id']);
-      _tvDeviceId = data['tv_device_id'];
+      final data = response.data ?? <String, dynamic>{};
+      final tvDeviceId = data['tv_device_id']?.toString().trim();
+      if (tvDeviceId == null || tvDeviceId.isEmpty) {
+        throw Exception('TV verification did not return a valid device ID');
+      }
+
+      await deviceService.saveTvDeviceId(tvDeviceId);
+      _tvDeviceId = tvDeviceId;
 
       // Save to Hive
       if (_deviceBox != null) {
@@ -266,7 +288,7 @@ class DeviceProvider extends ChangeNotifier
       }
 
       await _clearPairingState();
-      await apiService.updateDevice('tv', data['tv_device_id']);
+      await apiService.updateDevice('tv', tvDeviceId);
 
       setLoaded();
       safeNotify();
