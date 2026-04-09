@@ -178,18 +178,17 @@ class ApiService {
     try {
       final prefs = await _ensurePrefs();
       if (Hive.isBoxOpen('device_info_box')) {
-        final deviceInfoBox = Hive.box<Map<String, dynamic>>('device_info_box');
+        final deviceInfoBox = Hive.box<dynamic>('device_info_box');
         if (deviceInfoBox.containsKey('current_device')) {
-          final deviceInfo = deviceInfoBox.get('current_device');
-          final value = deviceInfo?['device_id'];
+          final dynamic deviceInfo = deviceInfoBox.get('current_device');
+          final value = deviceInfo is Map ? deviceInfo['device_id'] : null;
           return value?.toString();
         }
       } else {
-        final deviceInfoBox =
-            await Hive.openBox<Map<String, dynamic>>('device_info_box');
+        final deviceInfoBox = await Hive.openBox<dynamic>('device_info_box');
         if (deviceInfoBox.containsKey('current_device')) {
-          final deviceInfo = deviceInfoBox.get('current_device');
-          final value = deviceInfo?['device_id'];
+          final dynamic deviceInfo = deviceInfoBox.get('current_device');
+          final value = deviceInfo is Map ? deviceInfo['device_id'] : null;
           return value?.toString();
         }
       }
