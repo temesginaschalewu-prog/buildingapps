@@ -44,7 +44,7 @@ class CategoryProvider extends ChangeNotifier
   DateTime? _lastBackgroundRefresh;
   static const Duration _minBackgroundInterval = Duration(minutes: 2);
   DateTime? _lastFetchTime;
-  static const Duration _minFetchInterval = Duration(minutes: 5);
+  static const Duration _minFetchInterval = Duration(minutes: 10);
 
   CategoryProvider({
     required this.apiService,

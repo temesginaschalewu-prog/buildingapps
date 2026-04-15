@@ -195,7 +195,10 @@ class _HomeScreenState extends State<HomeScreen>
                       hasPendingPayment: hasPendingPayment,
                       onTap: () {
                         if (category.isActive && mounted) {
-                          context.push('/category/${category.id}');
+                          context.push(
+                            '/category/${category.id}',
+                            extra: category,
+                          );
                         }
                       },
                       index: index,

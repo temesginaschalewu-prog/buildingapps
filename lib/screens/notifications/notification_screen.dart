@@ -29,12 +29,9 @@ class NotificationsScreen extends StatefulWidget {
 class _NotificationsScreenState extends State<NotificationsScreen>
     with BaseScreenMixin<NotificationsScreen>, TickerProviderStateMixin {
   bool _isInitialLoad = true;
-  bool _isLoadingMore = false;
   final ScrollController _scrollController = ScrollController();
   bool _showFAB = true;
   Timer? _scrollTimer;
-  final int _pageSize = 20;
-  bool _hasMore = true;
 
   late AnimationController _fabAnimationController;
   late NotificationProvider _provider;
@@ -164,12 +161,6 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         }
       });
 
-      if (_scrollController.position.pixels >=
-          _scrollController.position.maxScrollExtent - 200) {
-        if (!_isLoadingMore && _hasMore && !isRefreshing && !isOffline) {
-          _loadMoreNotifications();
-        }
-      }
     });
   }
 
@@ -196,12 +187,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
   void _handleProviderChanged() {
     if (!isMounted) return;
 
-    final hasNotifications = _provider.notifications.isNotEmpty;
     setState(() {
-      _hasMore = _provider.notifications.length >= _pageSize;
-      if (!hasNotifications) {
-        _isLoadingMore = false;
-      }
       if (_isInitialLoad && (_provider.isLoaded || !_provider.isLoading)) {
         _isInitialLoad = false;
       }
@@ -221,7 +207,6 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       if (isMounted) {
         setState(() {
           _isInitialLoad = false;
-          _hasMore = _provider.notifications.length >= _pageSize;
         });
       }
     }
@@ -238,26 +223,27 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     super.dispose();
   }
 
-  Future<void> _loadMoreNotifications() async {
-    if (_isLoadingMore || !_hasMore) return;
-    setState(() => _isLoadingMore = true);
-    try {
-      await Future.delayed(const Duration(milliseconds: 500));
-    } finally {
-      if (isMounted) setState(() => _isLoadingMore = false);
-    }
-  }
-
   @override
   Future<void> onRefresh() async {
-    await _provider.loadNotifications(
-      forceRefresh: true,
-      isManualRefresh: true,
-    );
-    _hasMore = _provider.notifications.length >= _pageSize;
-    setState(() {
-      _isInitialLoad = false;
-    });
+    try {
+      await _provider.loadNotifications(
+        forceRefresh: true,
+        isManualRefresh: true,
+      );
+    } catch (e) {
+      if (isMounted) {
+        SnackbarService().showError(
+          context,
+          'Could not refresh notifications right now.',
+        );
+      }
+    } finally {
+      if (isMounted) {
+        setState(() {
+          _isInitialLoad = false;
+        });
+      }
+    }
   }
 
   Future<void> _deleteNotification(
@@ -1066,24 +1052,6 @@ class _NotificationsScreenState extends State<NotificationsScreen>
             ),
           ),
         ],
-        if (_isLoadingMore)
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
-              child: Center(
-                child: SizedBox(
-                  width: ResponsiveValues.iconSizeL(context),
-                  height: ResponsiveValues.iconSizeL(context),
-                  child: const CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      AppColors.telegramBlue,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
         SliverToBoxAdapter(
           child: SizedBox(height: ResponsiveValues.spacingXXXL(context)),
         ),

@@ -189,7 +189,6 @@ class _MainNavigationState extends State<MainNavigation>
           forceRefresh: forceBackendRefresh,
         );
         unawaited(notificationProvider.loadNotifications());
-        unawaited(notificationProvider.refreshUnreadCount(force: true));
         _dataLoadedInBackground = true;
       } catch (e) {
         debugLog('MainNavigation', 'Background data load error: $e');
@@ -230,8 +229,6 @@ class _MainNavigationState extends State<MainNavigation>
   }
 
   Widget _buildMobileNavigation() {
-    final notificationProvider = Provider.of<NotificationProvider>(context);
-    final unreadCount = notificationProvider.unreadCount;
     return Scaffold(
       body: widget.child,
       bottomNavigationBar: Padding(
@@ -283,28 +280,24 @@ class _MainNavigationState extends State<MainNavigation>
                   icon: Icons.home_outlined,
                   activeIcon: Icons.home_rounded,
                   label: 'Home',
-                  unreadCount: 0,
                 ),
                 _buildMobileNavItem(
                   index: 1,
                   icon: Icons.chat_bubble_outline_rounded,
                   activeIcon: Icons.chat_bubble_rounded,
                   label: 'Chat',
-                  unreadCount: 0,
                 ),
                 _buildMobileNavItem(
                   index: 2,
                   icon: Icons.auto_graph_outlined,
                   activeIcon: Icons.auto_graph_rounded,
                   label: 'Progress',
-                  unreadCount: 0,
                 ),
                 _buildMobileNavItem(
                   index: 3,
                   icon: Icons.person_outline_rounded,
                   activeIcon: Icons.person_rounded,
                   label: 'Profile',
-                  unreadCount: unreadCount,
                 ),
               ],
             ),
@@ -319,7 +312,7 @@ class _MainNavigationState extends State<MainNavigation>
     required IconData icon,
     required IconData activeIcon,
     required String label,
-    required int unreadCount,
+    int unreadCount = 0,
   }) {
     final isSelected = _currentIndex == index;
     final navContainerSize = ScreenSize.isMobile(context) ? 36.0 : 38.0;
@@ -444,8 +437,6 @@ class _MainNavigationState extends State<MainNavigation>
   }
 
   Widget _buildTabletNavigation() {
-    final notificationProvider = Provider.of<NotificationProvider>(context);
-    final unreadCount = notificationProvider.unreadCount;
     final authProvider = Provider.of<AuthProvider>(context);
     final user = authProvider.currentUser;
     return Scaffold(
@@ -528,7 +519,6 @@ class _MainNavigationState extends State<MainNavigation>
                         icon: Icons.person_outline_rounded,
                         activeIcon: Icons.person_rounded,
                         label: 'Profile',
-                        unreadCount: unreadCount,
                       ),
                       const Spacer(),
                       if (user != null)
@@ -671,8 +661,6 @@ class _MainNavigationState extends State<MainNavigation>
   }
 
   Widget _buildDesktopNavigation() {
-    final notificationProvider = Provider.of<NotificationProvider>(context);
-    final unreadCount = notificationProvider.unreadCount;
     final authProvider = Provider.of<AuthProvider>(context);
     final user = authProvider.currentUser;
     return Scaffold(
@@ -793,7 +781,6 @@ class _MainNavigationState extends State<MainNavigation>
                                 activeIcon: Icons.person_rounded,
                                 label: 'Profile',
                                 description: 'Account and settings',
-                                unreadCount: unreadCount,
                               ),
                             ],
                           ),

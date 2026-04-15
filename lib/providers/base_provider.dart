@@ -121,6 +121,8 @@ mixin BaseProvider<T extends ChangeNotifier> on ChangeNotifier {
 mixin OfflineAwareProvider<T extends ChangeNotifier> on BaseProvider<T> {
   late final ConnectivityService _connectivityService;
   late final OfflineQueueManager _queueManager;
+  DateTime? _lastOnlineRefreshAt;
+  Duration get reconnectRefreshCooldown => const Duration(minutes: 2);
 
   ConnectivityService get connectivityService => _connectivityService;
   OfflineQueueManager get queueManager => _queueManager;
@@ -155,6 +157,14 @@ mixin OfflineAwareProvider<T extends ChangeNotifier> on BaseProvider<T> {
   }
 
   Future<void> _onOnline() async {
+    final now = DateTime.now();
+    if (_lastOnlineRefreshAt != null &&
+        now.difference(_lastOnlineRefreshAt!) < reconnectRefreshCooldown) {
+      log('Online refresh skipped - cooldown active');
+      return;
+    }
+
+    _lastOnlineRefreshAt = now;
     log('Online - processing queue and refreshing');
     await queueManager.processQueue();
     await onOnlineRefresh();
@@ -184,7 +194,7 @@ mixin OfflineAwareProvider<T extends ChangeNotifier> on BaseProvider<T> {
 
 mixin BackgroundRefreshMixin<T extends ChangeNotifier> on BaseProvider<T> {
   Timer? _refreshTimer;
-  Duration get refreshInterval => const Duration(minutes: 5);
+  Duration get refreshInterval => const Duration(minutes: 10);
   bool get enableBackgroundRefresh => true;
 
   void startBackgroundRefresh() {

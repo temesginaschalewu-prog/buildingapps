@@ -306,7 +306,7 @@ class _TvPairingScreenState extends State<TvPairingScreen>
             SizedBox(
               width: double.infinity,
               child: AppButton.danger(
-                label: 'Unpair Device',
+                label: 'Unlink TV',
                 icon: Icons.link_off_rounded,
                 onPressed: _unpairDevice,
                 expanded: true,

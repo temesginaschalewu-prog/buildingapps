@@ -41,6 +41,7 @@ mixin BaseScreenMixin<T extends StatefulWidget> on State<T> {
   bool get showNotification => true;
   bool get blockContentWhenOffline => true;
   bool get useFullScreenLoadingState => true;
+  bool get refreshOnReconnect => false;
 
   // Loading state - override per screen
   bool get isLoading => false;
@@ -90,8 +91,8 @@ mixin BaseScreenMixin<T extends StatefulWidget> on State<T> {
         _updatePendingCount();
       });
 
-      if (isOnline && !_isRefreshing) {
-        onRefresh();
+      if (isOnline && refreshOnReconnect && !_isRefreshing) {
+        unawaited(onRefresh());
       }
     });
   }
@@ -100,7 +101,9 @@ mixin BaseScreenMixin<T extends StatefulWidget> on State<T> {
     if (!_isMounted) return;
 
     final connectivityService = context.read<ConnectivityService>();
-    await connectivityService.checkConnectivity();
+    if (!connectivityService.isInitialized) {
+      await connectivityService.checkConnectivity();
+    }
     if (!_isMounted) return;
 
     setState(() {

@@ -22,10 +22,16 @@ class ConnectivityService {
       StreamController<ConnectionQuality>.broadcast();
   final List<VoidCallback> _onlineListeners = [];
   final List<VoidCallback> _offlineListeners = [];
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  Timer? _periodicCheckTimer;
 
   bool _isOnline = true;
   bool _isInitialized = false;
+  bool _isCheckingConnectivity = false;
+  bool _isCheckingQuality = false;
   DateTime? _lastSyncTime;
+  DateTime? _lastConnectivityCheckAt;
+  DateTime? _lastQualityCheckAt;
   ConnectionQuality _connectionQuality = ConnectionQuality.good;
   ConnectivityStatus _status = ConnectivityStatus.online;
 
@@ -46,6 +52,8 @@ class ConnectivityService {
   static const int _excellentThreshold = 100;
   static const int _goodThreshold = 300;
   static const int _fairThreshold = 800;
+  static const Duration _connectivityCheckInterval = Duration(minutes: 2);
+  static const Duration _qualityCheckInterval = Duration(minutes: 1);
 
   Future<void> initialize() async {
     if (_isInitialized) return;
@@ -53,19 +61,26 @@ class ConnectivityService {
     debugLog('ConnectivityService', 'Starting initialization');
 
     try {
-      await checkConnectivity();
+      await checkConnectivity(force: true);
       await _loadLastSyncTime();
 
-      _connectivity.onConnectivityChanged
-          .listen((List<ConnectivityResult> results) {
-        final isOnline =
+      _connectivitySubscription =
+          _connectivity.onConnectivityChanged.listen((results) {
+        final hasNetwork =
             results.isNotEmpty && results.first != ConnectivityResult.none;
-        _handleConnectivityChange(isOnline);
+
+        if (!hasNetwork) {
+          _status = ConnectivityStatus.noNetwork;
+          _handleConnectivityChange(false);
+          return;
+        }
+
+        unawaited(checkConnectivity(force: true));
       });
 
       // Re-check backend reachability periodically so cached/offline UI can
       // switch states even when the network link itself has not changed.
-      Timer.periodic(const Duration(seconds: 30), (_) {
+      _periodicCheckTimer = Timer.periodic(_connectivityCheckInterval, (_) {
         unawaited(checkConnectivity());
       });
 
@@ -90,7 +105,26 @@ class ConnectivityService {
     }
   }
 
-  Future<bool> checkConnectivity() async {
+  Future<bool> checkConnectivity({bool force = false}) async {
+    final now = DateTime.now();
+    if (!force &&
+        _isCheckingConnectivity &&
+        _lastConnectivityCheckAt != null &&
+        now.difference(_lastConnectivityCheckAt!) <
+            _connectivityCheckInterval) {
+      return _isOnline;
+    }
+
+    if (!force &&
+        _lastConnectivityCheckAt != null &&
+        now.difference(_lastConnectivityCheckAt!) <
+            const Duration(seconds: 20)) {
+      return _isOnline;
+    }
+
+    _isCheckingConnectivity = true;
+    _lastConnectivityCheckAt = now;
+
     try {
       final List<ConnectivityResult> results = await _connectivity
           .checkConnectivity()
@@ -100,13 +134,12 @@ class ConnectivityService {
           results.isNotEmpty && results.first != ConnectivityResult.none;
 
       if (hasNetwork) {
-        final backendReachable =
-            await _probeUrl('${AppConstants.apiBaseUrl}${AppConstants.healthEndpoint}');
+        final backendReachable = await _probeBackendReachability();
 
         if (backendReachable) {
           _status = ConnectivityStatus.online;
           _handleConnectivityChange(true);
-          unawaited(checkConnectionQuality());
+          unawaited(checkConnectionQuality(force: force));
         } else {
           debugLog(
             'ConnectivityService',
@@ -126,15 +159,28 @@ class ConnectivityService {
       _status = ConnectivityStatus.noNetwork;
       _handleConnectivityChange(false);
       return false;
+    } finally {
+      _isCheckingConnectivity = false;
     }
   }
 
-  Future<void> checkConnectionQuality() async {
+  Future<void> checkConnectionQuality({bool force = false}) async {
     if (!_isOnline) {
       _connectionQuality = ConnectionQuality.none;
       _connectionQualityController.add(_connectionQuality);
       return;
     }
+
+    final now = DateTime.now();
+    if (_isCheckingQuality) return;
+    if (!force &&
+        _lastQualityCheckAt != null &&
+        now.difference(_lastQualityCheckAt!) < _qualityCheckInterval) {
+      return;
+    }
+
+    _isCheckingQuality = true;
+    _lastQualityCheckAt = now;
 
     try {
       final stopwatch = Stopwatch()..start();
@@ -168,6 +214,8 @@ class ConnectivityService {
       _connectionQuality = ConnectionQuality.none;
       _connectionQualityController.add(_connectionQuality);
       debugLog('ConnectivityService', 'Failed to check quality: $e');
+    } finally {
+      _isCheckingQuality = false;
     }
   }
 
@@ -187,6 +235,27 @@ class ConnectivityService {
     } catch (_) {
       return false;
     }
+  }
+
+  Future<bool> _probeBackendReachability() async {
+    final healthUrl = '${AppConstants.apiBaseUrl}${AppConstants.healthEndpoint}';
+
+    if (await _probeUrl(healthUrl)) {
+      return true;
+    }
+
+    // Some deployments can temporarily fail the dedicated health route while
+    // the main app server is still reachable. Treat a normal API/root
+    // response as enough to keep the app online.
+    if (await _probeUrl(AppConstants.apiBaseUrl)) {
+      debugLog(
+        'ConnectivityService',
+        'Health endpoint failed but backend root is reachable; keeping app online',
+      );
+      return true;
+    }
+
+    return false;
   }
 
   void _handleConnectivityChange(bool isOnline) {
@@ -300,6 +369,8 @@ class ConnectivityService {
   }
 
   void dispose() {
+    _periodicCheckTimer?.cancel();
+    _connectivitySubscription?.cancel();
     _connectionStatusController.close();
     _connectionQualityController.close();
     _onlineListeners.clear();

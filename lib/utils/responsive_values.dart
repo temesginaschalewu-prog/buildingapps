@@ -580,7 +580,7 @@ class ResponsiveValues {
   static double homeCategoryGridAspectRatio(BuildContext context) {
     if (ScreenSize.isDesktop(context)) return 0.74;
     if (ScreenSize.isTablet(context)) return 0.73;
-    return 0.92;
+    return 1.78;
   }
 
   static double buttonHeightSmall(BuildContext context) {

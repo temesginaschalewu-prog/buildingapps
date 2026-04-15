@@ -37,7 +37,7 @@ class NoteProvider extends ChangeNotifier
   static const Duration cacheDuration = AppConstants.cacheTTLNotes;
   static const Duration viewedCacheDuration = Duration(days: 30);
   @override
-  Duration get refreshInterval => const Duration(minutes: 5);
+  Duration get refreshInterval => const Duration(minutes: 10);
 
   Box? _notesBox;
   Box? _viewedBox;

@@ -40,7 +40,7 @@ class UserProvider extends ChangeNotifier
   bool _isBackgroundRefreshing = false;
 
   static const Duration _cacheExpiry = AppConstants.cacheTTLUserProfile;
-  static const Duration _minFetchInterval = Duration(minutes: 5);
+  static const Duration _minFetchInterval = Duration(minutes: 10);
 
   Box? _userBox;
 

@@ -46,7 +46,7 @@ class ProgressProvider extends ChangeNotifier
   static const Duration _cacheDuration = AppConstants.cacheTTLUserProfile;
   static const Duration _saveDebounceDuration = Duration(seconds: 1);
   @override
-  Duration get refreshInterval => const Duration(minutes: 5);
+  Duration get refreshInterval => const Duration(minutes: 10);
 
   final Set<int> _pendingSaves = {};
   final Map<int, Timer> _saveDebounceTimers = {};

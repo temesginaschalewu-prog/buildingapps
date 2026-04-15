@@ -1,6 +1,3 @@
-// lib/services/hive_service.dart
-// PRODUCTION-READY FINAL VERSION
-
 import 'dart:io';
 import 'package:hive/hive.dart';
 import 'package:path_provider/path_provider.dart';
@@ -22,12 +19,10 @@ class HiveService {
     if (_isInitialized) return;
 
     try {
-      // Get application documents directory
       Directory appDir;
       try {
         appDir = await getApplicationDocumentsDirectory();
       } catch (e) {
-        // Fallback for Linux when getApplicationDocumentsDirectory fails
         if (Platform.isLinux) {
           final homeDir = Platform.environment['HOME'] ??
               Platform.environment['USERPROFILE'] ??
@@ -43,18 +38,15 @@ class HiveService {
 
       _hivePath = appDir.path;
 
-      // Initialize Hive with the path
       Hive.init(_hivePath);
       debugLog('HiveService', '✅ Hive initialized at: $_hivePath');
 
-      // Register all adapters
       _registerAdapters();
 
       _isInitialized = true;
       debugLog('HiveService', '✅ Hive service ready');
     } catch (e) {
       debugLog('HiveService', '❌ Error initializing Hive: $e');
-      // Fallback to memory-only mode
       _isInitialized = true;
     }
   }

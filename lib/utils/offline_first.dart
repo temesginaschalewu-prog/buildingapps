@@ -1,12 +1,8 @@
-// lib/utils/offline_first.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:familyacademyclient/utils/helpers.dart';
 
-/// Core offline-first utilities for instant loading
 class OfflineFirst {
   static bool _initialized = false;
   static final Map<String, dynamic> _memoryCache = {};
@@ -15,7 +11,6 @@ class OfflineFirst {
   static Future<void> initialize() async {
     if (_initialized) return;
 
-    // Pre-warm SharedPreferences
     await SharedPreferences.getInstance();
 
     _initialized = true;
@@ -29,7 +24,6 @@ class OfflineFirst {
     required Future<T?> Function() fetchFromNetwork,
     Duration? maxAge,
   }) async {
-    // Step 1: Check memory cache (instant)
     if (_memoryCache.containsKey(key)) {
       final cacheData = _memoryCache[key];
       if (maxAge != null && _cacheTimestamps.containsKey(key)) {
@@ -42,7 +36,6 @@ class OfflineFirst {
       }
     }
 
-    // Step 2: Check disk cache (fast)
     try {
       final diskData = await fetchFromDisk();
       if (diskData != null) {
@@ -54,7 +47,6 @@ class OfflineFirst {
       debugLog('OfflineFirst', 'Disk cache error: $e');
     }
 
-    // Step 3: Fetch from network (slow)
     try {
       final networkData = await fetchFromNetwork();
       if (networkData != null) {

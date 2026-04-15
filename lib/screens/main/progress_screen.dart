@@ -28,9 +28,7 @@ class ProgressScreen extends StatefulWidget {
 
 class _ProgressScreenState extends State<ProgressScreen>
     with BaseScreenMixin<ProgressScreen>, AutomaticKeepAliveClientMixin {
-  Timer? _backgroundRefreshTimer;
   Timer? _debounceTimer;
-  DateTime? _lastRefreshTime;
 
   late StreakProvider _streakProvider;
   late ExamProvider _examProvider;
@@ -75,17 +73,6 @@ class _ProgressScreenState extends State<ProgressScreen>
 
   @override
   dynamic get errorMessage => null;
-
-  @override
-  void initState() {
-    super.initState();
-
-    _backgroundRefreshTimer = Timer.periodic(const Duration(minutes: 5), (_) {
-      if (isMounted && !isRefreshing && !isOffline) {
-        _refreshDataInBackground();
-      }
-    });
-  }
 
   @override
   void didChangeDependencies() {
@@ -136,7 +123,6 @@ class _ProgressScreenState extends State<ProgressScreen>
 
   @override
   void dispose() {
-    _backgroundRefreshTimer?.cancel();
     _debounceTimer?.cancel();
     _progressUpdatesSubscription?.cancel();
     _overallStatsSubscription?.cancel();
@@ -218,23 +204,7 @@ class _ProgressScreenState extends State<ProgressScreen>
       _progressProvider.loadOverallProgress(
           forceRefresh: true, isManualRefresh: true),
     ]);
-    _lastRefreshTime = DateTime.now();
     setState(() => _hasData = true);
-  }
-
-  Future<void> _refreshDataInBackground() async {
-    if (_lastRefreshTime != null &&
-        DateTime.now().difference(_lastRefreshTime!) <
-            const Duration(seconds: 30)) {
-      return;
-    }
-
-    await Future.wait([
-      _streakProvider.loadStreak(forceRefresh: true),
-      _examProvider.loadMyExamResults(forceRefresh: true),
-      _progressProvider.loadOverallProgress(forceRefresh: true),
-    ]);
-    _lastRefreshTime = DateTime.now();
   }
 
   Future<void> _ensureInitialDataLoad() async {

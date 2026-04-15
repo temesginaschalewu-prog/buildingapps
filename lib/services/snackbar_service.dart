@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../themes/app_colors.dart';
 import '../utils/app_enums.dart';
+import '../utils/helpers.dart';
 
 class SnackbarService {
   static final SnackbarService _instance = SnackbarService._internal();
@@ -50,7 +51,7 @@ class SnackbarService {
     }
 
     if (overlayState == null) {
-      debugPrint('SnackbarService: No overlay found, queueing: $message');
+      debugLog('SnackbarService', 'Overlay not ready, queueing message');
       _queueMessage(message, type, messageId);
       return;
     }
@@ -255,8 +256,7 @@ class SnackbarService {
       overlayState = null;
     }
     if (overlayState == null) {
-      debugPrint(
-          'SnackbarService: Overlay not ready, skipping sync complete message');
+      debugLog('SnackbarService', 'Overlay not ready, skipping sync-complete');
       return;
     }
 

@@ -1,6 +1,3 @@
-// lib/utils/parsers.dart
-// COMPLETE PRODUCTION-READY FILE - REPLACE ENTIRE FILE
-
 import 'dart:convert';
 
 class Parsers {

@@ -28,7 +28,6 @@ class SubscriptionScreen extends StatefulWidget {
 
 class _SubscriptionScreenState extends State<SubscriptionScreen>
     with BaseScreenMixin<SubscriptionScreen>, TickerProviderStateMixin {
-  Timer? _refreshTimer;
   String? _errorMessage;
 
   late SubscriptionProvider _subscriptionProvider;
@@ -69,29 +68,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
       );
 
   @override
-  void initState() {
-    super.initState();
-
-    _refreshTimer = Timer.periodic(const Duration(minutes: 5), (_) {
-      if (isMounted && !isOffline) {
-        _subscriptionProvider.loadSubscriptions(forceRefresh: true);
-      }
-    });
-  }
-
-  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _subscriptionProvider = Provider.of<SubscriptionProvider>(context);
     _settingsProvider = Provider.of<SettingsProvider>(context);
   }
-
-  @override
-  void dispose() {
-    _refreshTimer?.cancel();
-    super.dispose();
-  }
-
   @override
   Future<void> onRefresh() async {
     if (isOffline) {

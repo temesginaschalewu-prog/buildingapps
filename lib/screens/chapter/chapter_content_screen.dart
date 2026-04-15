@@ -50,6 +50,7 @@ import '../../utils/responsive_values.dart';
 import '../../utils/helpers.dart';
 import '../../utils/platform_helper.dart';
 import '../../utils/constants.dart';
+import '../../utils/responsive.dart';
 
 class ChapterContentScreen extends StatefulWidget {
   final int chapterId;
@@ -1978,6 +1979,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
   Widget _buildVideosTab() {
     final videos = _videoProvider.getVideosByChapter(widget.chapterId);
+    final isDesktop = ScreenSize.isDesktop(context);
     final isWaitingForInitialContent = _shouldShowInitialTabShimmer(
       hasItems: videos.isNotEmpty,
       isProviderLoading: _videoProvider.isLoadingForChapter(widget.chapterId),
@@ -2006,6 +2008,42 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
             ),
           ),
         ],
+      );
+    }
+
+    if (isDesktop) {
+      final width = MediaQuery.of(context).size.width;
+      final crossAxisCount = width >= 1680
+          ? 4
+          : width >= 1320
+              ? 3
+              : 2;
+
+      return GridView.builder(
+        controller: _scrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: ResponsiveValues.screenPadding(context),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: crossAxisCount,
+          crossAxisSpacing: ResponsiveValues.spacingL(context),
+          mainAxisSpacing: ResponsiveValues.spacingL(context),
+          childAspectRatio: 0.92,
+        ),
+        itemCount: videos.length,
+        itemBuilder: (context, index) {
+          final video = videos[index];
+          return VideoCard(
+            video: video,
+            chapterId: widget.chapterId,
+            index: index,
+            onPlay: () => _playVideo(video),
+            onDownload: (quality) async {
+              setState(() => _downloadQuality[video.id] = quality);
+              await _downloadVideo(video);
+            },
+            onShowQualitySelector: _showQualitySelector,
+          );
+        },
       );
     }
 
@@ -2515,19 +2553,52 @@ class NoteDetailScreen extends StatelessWidget {
   Widget _buildPdfViewer(String filePath) => SfPdfViewer.file(File(filePath));
 
   Widget _buildTextContent(BuildContext context, String content) {
+    final isDesktop = ScreenSize.isDesktop(context);
+    final isTablet = ScreenSize.isTablet(context);
+    final paperWidth = isDesktop
+        ? 760.0
+        : (isTablet ? 680.0 : double.infinity);
+
     return SingleChildScrollView(
       padding: ResponsiveValues.screenPadding(context),
-      child: HtmlWidget(
-        content,
-        textStyle: AppTextStyles.bodyLarge(context).copyWith(height: 1.6),
-        onTapUrl: (url) async {
-          final uri = Uri.parse(url);
-          if (await canLaunchUrl(uri)) {
-            await launchUrl(uri, mode: LaunchMode.externalApplication);
-            return true;
-          }
-          return false;
-        },
+      child: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: paperWidth),
+          child: Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: isDesktop ? 40 : (isTablet ? 32 : 20),
+              vertical: isDesktop ? 36 : 24,
+            ),
+            decoration: BoxDecoration(
+              color: AppColors.getSurface(context),
+              borderRadius: BorderRadius.circular(
+                ResponsiveValues.radiusXLarge(context),
+              ),
+              border: Border.all(
+                color: AppColors.getDivider(context).withValues(alpha: 0.65),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.06),
+                  blurRadius: 24,
+                  offset: const Offset(0, 12),
+                ),
+              ],
+            ),
+            child: HtmlWidget(
+              content,
+              textStyle: AppTextStyles.bodyLarge(context).copyWith(height: 1.75),
+              onTapUrl: (url) async {
+                final uri = Uri.parse(url);
+                if (await canLaunchUrl(uri)) {
+                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  return true;
+                }
+                return false;
+              },
+            ),
+          ),
+        ),
       ),
     );
   }

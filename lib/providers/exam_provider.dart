@@ -42,7 +42,7 @@ class ExamProvider extends ChangeNotifier
 
   static const Duration _cacheDuration = AppConstants.cacheTTLExams;
   @override
-  Duration get refreshInterval => const Duration(minutes: 5);
+  Duration get refreshInterval => const Duration(minutes: 10);
 
   Box? _examsBox;
   Box? _resultsBox;

@@ -4,9 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
-/// PRODUCTION-READY HELPER FUNCTIONS
-
-// ===== LOGGING =====
 void debugLog(String tag, String message) {
   if (kReleaseMode) {
     return;
@@ -15,7 +12,6 @@ void debugLog(String tag, String message) {
       '[${DateTime.now().toIso8601String().substring(11, 19)}] [$tag] $message');
 }
 
-// ===== CONNECTIVITY =====
 Future<bool> hasInternetConnection() async {
   try {
     final connectivityResult = await Connectivity().checkConnectivity();
@@ -31,8 +27,6 @@ Stream<bool> connectivityStream() {
   });
 }
 
-// ===== ERROR HANDLING =====
-/// Check if error is a network error
 bool isNetworkError(dynamic error) {
   if (error == null) return false;
   final message = error.toString().toLowerCase();
@@ -44,7 +38,6 @@ bool isNetworkError(dynamic error) {
       message.contains('internet');
 }
 
-/// Get user-friendly error message
 String getUserFriendlyErrorMessage(dynamic error) {
   if (error == null) return 'An unknown error occurred';
 

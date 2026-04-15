@@ -1,7 +1,5 @@
-// lib/utils/platform_helper.dart
-// PRODUCTION-READY FINAL VERSION - FIXED DOUBLE INIT
-
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:device_info_plus/device_info_plus.dart';
@@ -22,46 +20,34 @@ enum PlatformVideoPlayer {
 class PlatformHelper {
   static DeviceType _deviceType = DeviceType.mobile;
   static bool _isInitialized = false;
-  static String _deviceModel = '';
-  static String _osVersion = '';
-  static String _deviceName = '';
   static double _screenWidth = 0;
-  static double _screenHeight = 0;
   static double _pixelRatio = 1.0;
   static bool _isLowEndDevice = false;
   static bool _hasHardwareAcceleration = true;
 
-  // ✅ FIXED: Prevent double logging
   static bool _platformInfoLogged = false;
 
   static Future<void> initialize() async {
-    if (_isInitialized) return; // ✅ CRITICAL: Prevent double initialization
+    if (_isInitialized) return;
 
     try {
-      // Get screen metrics
       final view = WidgetsBinding.instance.platformDispatcher.views.first;
       _screenWidth = view.physicalSize.width;
-      _screenHeight = view.physicalSize.height;
       _pixelRatio = view.devicePixelRatio;
 
-      // Detect device type
       if (Platform.isAndroid || Platform.isIOS) {
         final widthInDp = _screenWidth / _pixelRatio;
 
-        // Check if it's a tablet (usually width > 600dp)
         if (widthInDp >= 600) {
           _deviceType = DeviceType.tablet;
         } else {
           _deviceType = DeviceType.mobile;
         }
 
-        // Check if it might be a TV (Android TV)
         if (Platform.isAndroid) {
           try {
             final deviceInfo = await DeviceInfoPlugin().androidInfo;
-            _deviceName = deviceInfo.model;
 
-            // Android TV devices often have specific characteristics
             final isPossibleTv = deviceInfo.model.contains('TV') ||
                 deviceInfo.model.contains('tv') ||
                 deviceInfo.manufacturer.contains('Sony') ||
@@ -75,35 +61,25 @@ class PlatformHelper {
               _deviceType = DeviceType.tv;
             }
 
-            final sdkInt = deviceInfo.version.sdkInt;
-            _isLowEndDevice = sdkInt < 29; // Android 10 or older
+            _isLowEndDevice = deviceInfo.version.sdkInt < 29;
           } catch (e) {
             debugLog('PlatformHelper', 'Android info error: $e');
           }
         } else if (Platform.isIOS) {
           final deviceInfo = await DeviceInfoPlugin().iosInfo;
-          _deviceName = deviceInfo.model;
-          _isLowEndDevice =
-              deviceInfo.systemVersion.startsWith('12'); // iOS 12 or older
+          _isLowEndDevice = deviceInfo.systemVersion.startsWith('12');
         }
       } else if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
         _deviceType = DeviceType.desktop;
 
-        // Check if Linux might have hardware acceleration issues
         if (Platform.isLinux) {
-          _hasHardwareAcceleration = false; // Linux often has issues
+          _hasHardwareAcceleration = false;
         }
       }
 
-      // Get device info
       try {
-        final info = await PackageInfo.fromPlatform();
-        _deviceModel = '${info.packageName} v${info.version}';
-      } catch (e) {
-        _deviceModel = 'Unknown';
-      }
-
-      _osVersion = Platform.operatingSystemVersion;
+        await PackageInfo.fromPlatform();
+      } catch (_) {}
       _isInitialized = true;
 
       logPlatformInfo();
@@ -113,30 +89,18 @@ class PlatformHelper {
     }
   }
 
-  // Log platform info - only once
   static void logPlatformInfo() {
-    if (_platformInfoLogged) return; // ✅ FIXED: Prevent double logging
+    if (_platformInfoLogged) return;
+    if (!kDebugMode) {
+      _platformInfoLogged = true;
+      return;
+    }
 
-    debugPrint('''
-═══════════════════════════════════════
-📱 PLATFORM INFORMATION
-═══════════════════════════════════════
-🖥️ OS: ${Platform.operatingSystem}
-📱 Device Type: $_deviceType
-📏 Screen: ${(_screenWidth / _pixelRatio).toStringAsFixed(0)}x${(_screenHeight / _pixelRatio).toStringAsFixed(0)} dp
-🔍 Pixel Ratio: $_pixelRatio
-💻 Model: $_deviceModel
-🔧 OS Version: $_osVersion
-📱 Device Name: $_deviceName
-⚡ Low-end Device: $_isLowEndDevice
-🎮 Hardware Acceleration: $_hasHardwareAcceleration
-═══════════════════════════════════════
-''');
-
+    debugLog('PlatformHelper',
+        'Platform ready: ${Platform.operatingSystem}, $_deviceType');
     _platformInfoLogged = true;
   }
 
-  // Get platform name as string
   static String get platformName {
     if (isAndroid) return 'Android';
     if (isIOS) return 'iOS';
@@ -146,7 +110,6 @@ class PlatformHelper {
     return 'Unknown';
   }
 
-  // Getters
   static DeviceType get deviceType => _deviceType;
   static bool get isMobile => _deviceType == DeviceType.mobile;
   static bool get isTablet => _deviceType == DeviceType.tablet;
@@ -162,7 +125,6 @@ class PlatformHelper {
   static bool get isLowEndDevice => _isLowEndDevice;
   static bool get hasHardwareAcceleration => _hasHardwareAcceleration;
 
-  // Player selection
   static PlatformVideoPlayer get recommendedPlayer {
     if (isDesktop) return PlatformVideoPlayer.mediaKit;
     return PlatformVideoPlayer.videoPlayer;
@@ -173,7 +135,6 @@ class PlatformHelper {
   static bool get shouldUseVideoPlayer =>
       recommendedPlayer == PlatformVideoPlayer.videoPlayer;
 
-  // UI sizing based on platform
   static double get videoDialogPadding {
     if (isTv) return 40;
     if (isTablet) return 24;
@@ -199,14 +160,12 @@ class PlatformHelper {
     return 40;
   }
 
-  // Timeouts based on platform
   static Duration get videoTimeout {
     if (isTv) return const Duration(seconds: 30);
     if (isMobile) return const Duration(seconds: 15);
     return const Duration(seconds: 20);
   }
 
-  // Player configuration
   static String getVideoPlayerName() {
     switch (recommendedPlayer) {
       case PlatformVideoPlayer.mediaKit:

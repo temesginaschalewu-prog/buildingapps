@@ -1,6 +1,3 @@
-// lib/utils/screen_protection.dart
-// PRODUCTION-READY FINAL VERSION
-
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -8,14 +5,12 @@ import 'package:flutter/services.dart';
 import 'platform_helper.dart';
 import 'helpers.dart';
 
-/// PRODUCTION-READY Screen Protection Service
 class ScreenProtectionService {
   static bool _protectionEnabled = true;
   static bool _initialized = false;
   static const MethodChannel _channel =
       MethodChannel('com.familyacademy/screen_protection');
 
-  // Track current state to avoid redundant calls
   static bool _isSecureModeEnabled = false;
   static DeviceOrientation? _lastOrientation;
 
@@ -147,6 +142,12 @@ class ScreenProtectionService {
 
   static void disableOnPause() {
     if (!PlatformHelper.isMobile) return;
+    if (_protectionEnabled) {
+      _setSecureFlags(true);
+      debugLog('ScreenProtection', '🛡️ Protection kept active while paused');
+      return;
+    }
+
     _setSecureFlags(false);
     debugLog('ScreenProtection', '⚠️ Protection disabled on pause');
   }

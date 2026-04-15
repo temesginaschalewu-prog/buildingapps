@@ -1,6 +1,3 @@
-// lib/models/video_model.dart
-// PRODUCTION-READY FINAL VERSION - FIXED LOG SPAM
-
 import '../utils/parsers.dart';
 import '../utils/helpers.dart';
 import 'package:hive/hive.dart';
@@ -256,9 +253,37 @@ class Video {
 
   String get fullVideoUrl => filePath;
 
-  String? get fullThumbnailUrl => thumbnailUrl;
+  String? get fullThumbnailUrl {
+    final normalizedThumbnail = thumbnailUrl?.trim();
+    if (normalizedThumbnail != null &&
+        normalizedThumbnail.isNotEmpty &&
+        normalizedThumbnail.toLowerCase() != 'null') {
+      return normalizedThumbnail;
+    }
 
-  bool get hasThumbnail => thumbnailUrl != null && thumbnailUrl!.isNotEmpty;
+    final normalizedFilePath = filePath.trim();
+    if (!normalizedFilePath.contains('/upload/')) {
+      return null;
+    }
+
+    final uploadIndex = normalizedFilePath.indexOf('/upload/');
+    if (uploadIndex == -1) {
+      return null;
+    }
+
+    final prefix = normalizedFilePath.substring(0, uploadIndex + '/upload/'.length);
+    final suffix = normalizedFilePath.substring(uploadIndex + '/upload/'.length);
+    final withoutTransforms = suffix.replaceFirst(RegExp(r'^.*?/v\d+/'), '');
+    final publicId = withoutTransforms.replaceFirst(RegExp(r'\.[^.\/?]+(\?.*)?$'), '');
+
+    if (publicId.isEmpty) {
+      return null;
+    }
+
+    return '${prefix}so_1,w_300,c_fill,g_auto/$publicId.jpg';
+  }
+
+  bool get hasThumbnail => fullThumbnailUrl != null && fullThumbnailUrl!.isNotEmpty;
 
   List<VideoQuality> get availableQualities {
     if (qualities != null && qualities!.isNotEmpty) {

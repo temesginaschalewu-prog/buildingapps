@@ -175,6 +175,7 @@ class AuthProvider extends ChangeNotifier
     setLoading();
 
     try {
+      await UserSession().init();
       await storageService.ensureInitialized();
 
       final sessionValid =

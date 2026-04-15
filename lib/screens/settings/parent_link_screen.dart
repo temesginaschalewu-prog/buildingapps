@@ -42,7 +42,6 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
   bool _isLoadingData = true;
   bool _didInitializeProviders = false;
   bool _isPollingLinkStatus = false;
-  int _pollTick = 0;
 
   late AnimationController _pulseAnimationController;
   late ParentLinkProvider _parentLinkProvider;
@@ -133,18 +132,9 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
 
   void _setupTimers() {
     _refreshTimer?.cancel();
-    _refreshTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (isMounted) {
-        setState(() {}); // Update countdown every second
-      }
-
+    _refreshTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
       if (_shouldPollParentLinkStatus()) {
-        _pollTick++;
-        if (_pollTick % 3 == 0) {
-          unawaited(_pollActiveParentLinkStatus());
-        }
-      } else {
-        _pollTick = 0;
+        unawaited(_pollActiveParentLinkStatus());
       }
     });
   }
@@ -1107,39 +1097,42 @@ class _ParentLinkScreenState extends State<ParentLinkScreen>
 
   @override
   Widget buildContent(BuildContext context) {
-    if (_isLoadingData && !_parentLinkProvider.isLoaded) {
-      return _buildParentLinkLoadingState();
-    }
+    return Consumer<ParentLinkProvider>(
+      builder: (context, provider, _) {
+        if (_isLoadingData && !provider.isLoaded) {
+          return _buildParentLinkLoadingState();
+        }
 
-    // ✅ Show content immediately once loaded
-    return RefreshIndicator(
-      onRefresh: onRefresh,
-      color: AppColors.telegramBlue,
-      backgroundColor: AppColors.getSurface(context),
-      child: CustomScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        slivers: [
-          SliverPadding(
-            padding: ResponsiveValues.screenPadding(context),
-            sliver: SliverToBoxAdapter(
-              child: Column(
-                children: [
-                  if (_parentLinkProvider.isLinked)
-                    _buildLinkedState()
-                  else if (_parentLinkProvider.parentToken != null &&
-                      !_parentLinkProvider.isTokenExpired)
-                    _buildTokenState()
-                  else
-                    _buildNotLinkedState(),
-                  SizedBox(height: ResponsiveValues.spacingXL(context)),
-                  _buildInfoSection(),
-                  SizedBox(height: ResponsiveValues.spacingXXL(context)),
-                ],
+        return RefreshIndicator(
+          onRefresh: onRefresh,
+          color: AppColors.telegramBlue,
+          backgroundColor: AppColors.getSurface(context),
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SliverPadding(
+                padding: ResponsiveValues.screenPadding(context),
+                sliver: SliverToBoxAdapter(
+                  child: Column(
+                    children: [
+                      if (provider.isLinked)
+                        _buildLinkedState()
+                      else if (provider.parentToken != null &&
+                          !provider.isTokenExpired)
+                        _buildTokenState()
+                      else
+                        _buildNotLinkedState(),
+                      SizedBox(height: ResponsiveValues.spacingXL(context)),
+                      _buildInfoSection(),
+                      SizedBox(height: ResponsiveValues.spacingXXL(context)),
+                    ],
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 

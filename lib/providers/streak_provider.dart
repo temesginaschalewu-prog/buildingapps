@@ -36,7 +36,7 @@ class StreakProvider extends ChangeNotifier
 
   static const Duration _cacheDuration = AppConstants.cacheTTLStreak;
   @override
-  Duration get refreshInterval => const Duration(minutes: 5);
+  Duration get refreshInterval => const Duration(minutes: 10);
 
   Box? _streakBox;
 

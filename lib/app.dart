@@ -10,7 +10,6 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:familyacademyclient/utils/responsive.dart';
 import 'providers/theme_provider.dart';
-import 'providers/notification_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/subscription_provider.dart';
 import 'providers/category_provider.dart';
@@ -48,6 +47,8 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
   final List<Map<String, dynamic>> _pendingSnackbars = [];
   DateTime? _lastDataRefreshAt;
   static const Duration _minRefreshInterval = Duration(minutes: 2);
+  static const Duration _sessionCheckInterval = Duration(minutes: 30);
+  static const Duration _backgroundSyncInterval = Duration(minutes: 15);
 
   @override
   void initState() {
@@ -176,20 +177,25 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
   }
 
   void _startPeriodicSync() {
-    _syncTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+    _syncTimer = Timer.periodic(_backgroundSyncInterval, (_) {
       if (mounted && _overlayReady) {
         final connectivity = Provider.of<ConnectivityService>(
           context,
           listen: false,
         );
-        if (connectivity.isOnline) {
-          _syncPendingActions();
+        final queueManager =
+            Provider.of<queue.OfflineQueueManager>(context, listen: false);
+
+        if (_isAppInForeground &&
+            connectivity.isOnline &&
+            queueManager.pendingCount > 0) {
+          _syncPendingActions(showCompletionSnackbar: false);
         }
       }
     });
   }
 
-  Future<void> _syncPendingActions() async {
+  Future<void> _syncPendingActions({bool showCompletionSnackbar = true}) async {
     if (!mounted || !_overlayReady) return;
 
     final connectivity = Provider.of<ConnectivityService>(
@@ -202,12 +208,14 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
     final queueManager =
         Provider.of<queue.OfflineQueueManager>(context, listen: false);
 
+    if (queueManager.pendingCount == 0) return;
+
     await queueManager.processQueue();
 
     final remaining = queueManager.pendingItems.length;
-    if (remaining == 0) {
+    if (remaining == 0 && showCompletionSnackbar) {
       _showSafeSnackbar('Sync complete.', SnackbarType.syncComplete);
-    } else {
+    } else if (remaining > 0) {
       _showSafeSnackbar(
         '$remaining change${remaining > 1 ? 's' : ''} remaining to sync',
         SnackbarType.info,
@@ -229,7 +237,7 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
         }
         unawaited(_refreshAllData());
         if (_overlayReady) {
-          unawaited(_syncPendingActions());
+          unawaited(_syncPendingActions(showCompletionSnackbar: false));
         }
         break;
       case AppLifecycleState.paused:
@@ -243,8 +251,8 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
   }
 
   void _startSessionChecker() {
-    _sessionCheckTimer = Timer.periodic(const Duration(minutes: 1), (_) {
-      if (mounted && _appInitialized) {
+    _sessionCheckTimer = Timer.periodic(_sessionCheckInterval, (_) {
+      if (mounted && _appInitialized && _isAppInForeground) {
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
         if (authProvider.isAuthenticated) {
           authProvider.checkSession();
@@ -389,16 +397,9 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
     if (!mounted || !_appInitialized) return;
 
     ScreenProtectionService.enableOnResume();
-
-    final notificationProvider = context.read<NotificationProvider>();
-    notificationProvider.loadNotifications().then((_) {
-      if (!mounted) return;
-
-      final currentRoute = GoRouterState.of(context).uri.toString();
-      if (currentRoute == route) return;
-
-      GoRouter.of(context).push(route);
-    });
+    final currentRoute = GoRouterState.of(context).uri.toString();
+    if (currentRoute == route) return;
+    GoRouter.of(context).push(route);
   }
 
   void _handlePaymentVerified(Map<String, dynamic>? data) {

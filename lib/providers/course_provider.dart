@@ -44,7 +44,7 @@ class CourseProvider extends ChangeNotifier
   static const Duration _cacheDuration = AppConstants.cacheTTLCourses;
   static const Duration _retryDelay = Duration(seconds: 30);
   @override
-  Duration get refreshInterval => const Duration(minutes: 5);
+  Duration get refreshInterval => const Duration(minutes: 10);
 
   Box? _coursesBox;
   int _apiCallCount = 0;

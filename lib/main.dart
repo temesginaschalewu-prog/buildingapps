@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:familyacademyclient/app.dart';
@@ -32,6 +31,7 @@ import 'package:familyacademyclient/services/notification_service.dart';
 import 'package:familyacademyclient/services/connectivity_service.dart';
 import 'package:familyacademyclient/services/hive_service.dart';
 import 'package:familyacademyclient/services/offline_queue_manager.dart';
+import 'package:familyacademyclient/utils/helpers.dart';
 import 'package:familyacademyclient/utils/platform_helper.dart';
 import 'package:familyacademyclient/utils/screen_protection.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -40,24 +40,15 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:media_kit/media_kit.dart' as media_kit;
 
 @pragma('vm:entry-point')
-Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  debugPrint('Background message received');
-}
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {}
 
 void main() async {
-  if (kReleaseMode) {
-    debugPrint = (String? message, {int? wrapWidth}) {};
-  }
-
-  PlatformHelper.logPlatformInfo();
-
   WidgetsFlutterBinding.ensureInitialized();
 
   try {
     await HiveService().init();
-    debugPrint('Hive initialized successfully');
   } catch (e) {
-    debugPrint('Hive initialization error (continuing with memory-only mode): $e');
+    debugLog('Main', 'Hive initialization fallback: $e');
   }
 
   // Initialize PlatformHelper
@@ -123,7 +114,6 @@ void main() async {
     ),
   );
 
-  debugPrint('🚀 App shell launched - warming up services in background');
   unawaited(
     _bootstrapCoreServices(
       storageService: storageService,
@@ -148,23 +138,20 @@ Future<void> _bootstrapCoreServices({
 }) async {
   try {
     media_kit.MediaKit.ensureInitialized();
-    debugPrint('MediaKit initialized successfully');
   } catch (e) {
-    debugPrint('MediaKit initialization error: $e');
+    debugLog('Main', 'MediaKit initialization fallback: $e');
   }
 
   try {
     await offlineQueueManager.initialize();
-    debugPrint('OfflineQueueManager initialized');
   } catch (e) {
-    debugPrint('OfflineQueueManager initialization error (continuing with limited offline): $e');
+    debugLog('Main', 'Offline queue initialization fallback: $e');
   }
 
   try {
     await dotenv.load();
-    debugPrint('Environment loaded');
   } catch (e) {
-    debugPrint('No .env file found - using defaults');
+    debugLog('Main', 'Environment defaults in use');
   }
 
   if (PlatformHelper.isAndroid ||
@@ -172,48 +159,38 @@ Future<void> _bootstrapCoreServices({
       PlatformHelper.isMacOS) {
     try {
       await Firebase.initializeApp();
-      debugPrint('Firebase initialized');
       FirebaseMessaging.onBackgroundMessage(
         _firebaseMessagingBackgroundHandler,
       );
     } catch (e) {
-      debugPrint('Firebase error: $e');
+      debugLog('Main', 'Firebase initialization fallback: $e');
     }
   }
 
   if (PlatformHelper.isMobile) {
     try {
       await ScreenProtectionService.initialize();
-      debugPrint('Screen protection initialized');
     } catch (e) {
-      debugPrint('Screen protection error: $e');
+      debugLog('Main', 'Screen protection initialization fallback: $e');
     }
   }
 
-  debugPrint('Initializing core services...');
-
   try {
     await storageService.init().timeout(const Duration(seconds: 5));
-    debugPrint('✅ StorageService initialized');
 
     await deviceService.init().timeout(const Duration(seconds: 5));
-    debugPrint('✅ DeviceService initialized');
 
     storageService.setDeviceService(deviceService);
     storageService.setHiveService(hiveService);
 
     await connectivityService.initialize().timeout(const Duration(seconds: 5));
-    debugPrint('✅ ConnectivityService initialized');
 
     notificationService.apiService = apiService;
     notificationService.connectivityService = connectivityService;
     await notificationService.init().timeout(const Duration(seconds: 5));
-    debugPrint('✅ NotificationService initialized');
   } catch (e) {
-    debugPrint('⚠️ Service initialization had non-critical errors: $e');
+    debugLog('Main', 'Core service initialization fallback: $e');
   }
-
-  debugPrint('✅ App launched successfully with full offline support');
 }
 
 class _SessionScopedProviders extends StatelessWidget {

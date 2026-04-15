@@ -2,6 +2,7 @@
 // COMPLETE PRODUCTION-READY FINAL VERSION - FIXED BUTTONS & DOWNLOAD
 
 import 'dart:async';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/video_model.dart';
@@ -136,6 +137,7 @@ class _VideoCardState extends State<VideoCard>
     final hasQualities = qualities.length > 1;
     final screenWidth = MediaQuery.of(context).size.width;
     final isTablet = screenWidth > 600;
+    final isDesktop = screenWidth >= 1024;
     final downloadedQualityLabel = _downloadedQuality?.label;
     final settingsProvider = context.read<SettingsProvider>();
 
@@ -155,7 +157,9 @@ class _VideoCardState extends State<VideoCard>
               child: Stack(
                 children: [
                   SizedBox(
-                    height: isTablet ? 214 : 172,
+                    height: isDesktop
+                        ? 188
+                        : (isTablet ? 214 : 172),
                     width: double.infinity,
                     child: ClipRRect(
                       borderRadius: const BorderRadius.vertical(
@@ -164,16 +168,18 @@ class _VideoCardState extends State<VideoCard>
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
+                          Container(
+                            color: Colors.black.withValues(alpha: 0.18),
+                          ),
                           if (widget.video.hasThumbnail)
-                            Image.network(
-                              widget.video.fullThumbnailUrl!,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) =>
+                            CachedNetworkImage(
+                              imageUrl: widget.video.fullThumbnailUrl!,
+                              fit: BoxFit.contain,
+                              fadeInDuration: const Duration(milliseconds: 180),
+                              placeholder: (_, __) =>
                                   _buildThumbnailFallback(isTablet),
-                              loadingBuilder: (context, child, progress) {
-                                if (progress == null) return child;
-                                return _buildThumbnailFallback(isTablet);
-                              },
+                              errorWidget: (_, __, ___) =>
+                                  _buildThumbnailFallback(isTablet),
                             )
                           else
                             _buildThumbnailFallback(isTablet),

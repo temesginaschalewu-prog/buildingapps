@@ -46,7 +46,7 @@ class ParentLinkProvider extends ChangeNotifier
   DateTime? _lastNotifiedTokenExpiry;
 
   @override
-  Duration get refreshInterval => const Duration(minutes: 5);
+  Duration get refreshInterval => const Duration(minutes: 10);
 
   Box? _parentLinkBox;
   Box? _tokenBox;

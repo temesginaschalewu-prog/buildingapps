@@ -55,7 +55,7 @@ class VideoProvider extends ChangeNotifier
   static const Duration _downloadMetadataCache =
       AppConstants.cacheTTLDownloadMetadata;
   @override
-  Duration get refreshInterval => const Duration(minutes: 5);
+  Duration get refreshInterval => const Duration(minutes: 10);
 
   Box? _videosBox;
   Box? _downloadsBox;

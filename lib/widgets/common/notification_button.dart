@@ -1,14 +1,12 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:badges/badges.dart' as badges;
 import '../../../providers/notification_provider.dart';
-import '../../../services/connectivity_service.dart';
 import '../../../themes/app_colors.dart';
 import '../../../utils/responsive_values.dart';
 
-class NotificationButton extends StatefulWidget {
+class NotificationButton extends StatelessWidget {
   final double? size;
   final Color? iconColor;
   final VoidCallback? onTap;
@@ -21,35 +19,11 @@ class NotificationButton extends StatefulWidget {
   });
 
   @override
-  State<NotificationButton> createState() => _NotificationButtonState();
-}
-
-class _NotificationButtonState extends State<NotificationButton> {
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshUnreadCount());
-  }
-
-  Future<void> _refreshUnreadCount() async {
-    final notificationProvider =
-        Provider.of<NotificationProvider>(context, listen: false);
-    await notificationProvider.refreshUnreadCount();
-    if (!mounted) return;
-  }
-
-  @override
-  void dispose() {
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return Consumer2<NotificationProvider, ConnectivityService>(
-      builder: (context, provider, connectivity, child) {
+    return Consumer<NotificationProvider>(
+      builder: (context, provider, child) {
         final unreadCount = provider.unreadCount;
-        final buttonSize =
-            widget.size ?? ResponsiveValues.appBarButtonSize(context);
+        final buttonSize = size ?? ResponsiveValues.appBarButtonSize(context);
 
         return Container(
           width: buttonSize,
@@ -65,14 +39,7 @@ class _NotificationButtonState extends State<NotificationButton> {
             child: Material(
               color: Colors.transparent,
               child: InkWell(
-                onTap: widget.onTap ??
-                    () async {
-                      if (!mounted) return;
-                      unawaited(provider.loadNotifications());
-                      if (context.mounted) {
-                        await context.push('/notifications');
-                      }
-                    },
+                onTap: onTap ?? () => context.push('/notifications'),
                 borderRadius: BorderRadius.circular(
                     ResponsiveValues.radiusFull(context) / 2),
                 splashColor: AppColors.telegramBlue.withValues(alpha: 0.2),
@@ -101,15 +68,13 @@ class _NotificationButtonState extends State<NotificationButton> {
                           child: Icon(
                             Icons.notifications_outlined,
                             size: ResponsiveValues.appBarIconSize(context),
-                            color:
-                                widget.iconColor ?? AppColors.getTextPrimary(context),
+                            color: iconColor ?? AppColors.getTextPrimary(context),
                           ),
                         )
                       : Icon(
                           Icons.notifications_outlined,
                           size: ResponsiveValues.appBarIconSize(context),
-                          color:
-                              widget.iconColor ?? AppColors.getTextPrimary(context),
+                          color: iconColor ?? AppColors.getTextPrimary(context),
                         ),
                 ),
               ),

@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:familyacademyclient/models/exam_model.dart';
+import 'package:familyacademyclient/models/category_model.dart';
 import 'package:familyacademyclient/utils/responsive_values.dart';
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -81,10 +85,13 @@ class AppRouter {
 
         if (location.startsWith('/device-change')) return null;
 
+        // ✅ FIXED: Clear device change requirement when navigating away
         if (!location.startsWith('/device-change') &&
             _isDeviceChangeInProgress) {
           _isDeviceChangeInProgress = false;
           _pendingDeviceChangeData = null;
+          // Clear the device change requirement from auth provider
+          unawaited(authProvider.clearDeviceChangeRequirement());
         }
 
         if (location == '/splash') {
@@ -325,9 +332,13 @@ class AppRouter {
           pageBuilder: (context, state) {
             final categoryId =
                 int.tryParse(state.pathParameters['categoryId'] ?? '0') ?? 0;
+            final category = state.extra is Category ? state.extra as Category : null;
             return CustomTransitionPage(
               key: ValueKey('category-$categoryId'),
-              child: CategoryDetailScreen(categoryId: categoryId),
+              child: CategoryDetailScreen(
+                categoryId: categoryId,
+                category: category,
+              ),
               transitionsBuilder:
                   (context, animation, secondaryAnimation, child) =>
                       FadeTransition(opacity: animation, child: child),
@@ -360,9 +371,18 @@ class AppRouter {
           pageBuilder: (context, state) {
             final chapterId =
                 int.tryParse(state.pathParameters['chapterId'] ?? '0') ?? 0;
+            final extra = state.extra is Map<String, dynamic>
+                ? state.extra as Map<String, dynamic>
+                : null;
             return CustomTransitionPage(
               key: ValueKey('chapter-$chapterId'),
-              child: ChapterContentScreen(chapterId: chapterId),
+              child: ChapterContentScreen(
+                chapterId: chapterId,
+                chapter: extra?['chapter'],
+                course: extra?['course'],
+                category: extra?['category'],
+                hasAccess: extra?['hasAccess'] as bool?,
+              ),
               transitionsBuilder:
                   (context, animation, secondaryAnimation, child) =>
                       FadeTransition(opacity: animation, child: child),
@@ -452,7 +472,7 @@ class AppRouter {
           ),
         );
       },
-      debugLogDiagnostics: true,
+      debugLogDiagnostics: !kReleaseMode,
     );
   }
 

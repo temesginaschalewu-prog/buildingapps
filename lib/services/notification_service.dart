@@ -14,7 +14,6 @@ import 'package:timezone/data/latest.dart' as tz;
 import 'package:hive/hive.dart';
 import '../utils/helpers.dart';
 
-/// PRODUCTION-READY Notification Service
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
   factory NotificationService() => _instance;
@@ -40,7 +39,6 @@ class NotificationService {
   ApiService? _apiService;
   ConnectivityService? _connectivityService;
 
-  // Hive box for notification cache
   Box? _notificationBox;
 
   set apiService(ApiService service) {

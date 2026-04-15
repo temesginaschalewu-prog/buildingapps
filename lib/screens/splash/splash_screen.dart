@@ -7,9 +7,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/hive_service.dart';
 import '../../utils/helpers.dart';
-import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_brand_logo.dart';
-import '../../themes/app_themes.dart';
 import '../../themes/app_colors.dart';
 import '../../themes/app_text_styles.dart';
 import '../../utils/responsive_values.dart';
@@ -26,31 +24,26 @@ class _SplashScreenState extends State<SplashScreen>
   late AnimationController _logoController;
   late Animation<double> _logoScaleAnimation;
   late Animation<double> _logoOpacityAnimation;
-
-  late AnimationController _textController;
-  late Animation<double> _textOpacityAnimation;
-  late Animation<Offset> _textSlideAnimation;
+  late AnimationController _pulseController;
 
   bool _hasError = false;
   String? _errorMessage;
-  static const Duration _initTimeout = Duration(seconds: 10);
+  static const Duration _initTimeout = Duration(seconds: 5);
   bool _initializationComplete = false;
   Timer? _timeoutTimer;
   bool _navigated = false;
-  Timer? _statusTicker;
-  String _stageTitle = 'Opening your learning space';
-  String _stageMessage = 'Getting your lessons, access, and sync ready.';
 
   @override
   void initState() {
     super.initState();
 
+    // Logo animation - smooth scale up with subtle bounce
     _logoController = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 1500));
-    _logoScaleAnimation = Tween<double>(begin: 0.6, end: 1.0).animate(
+        vsync: this, duration: const Duration(milliseconds: 1200));
+    _logoScaleAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
       CurvedAnimation(
           parent: _logoController,
-          curve: const Interval(0.0, 0.8, curve: Curves.elasticOut)),
+          curve: const Interval(0.0, 0.8, curve: Curves.easeOutBack)),
     );
     _logoOpacityAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
@@ -58,33 +51,33 @@ class _SplashScreenState extends State<SplashScreen>
           curve: const Interval(0.0, 0.6, curve: Curves.easeInOut)),
     );
 
-    _textController = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 1000));
-    _textOpacityAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _textController, curve: Curves.easeInOut),
-    );
-    _textSlideAnimation =
-        Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero).animate(
-      CurvedAnimation(parent: _textController, curve: Curves.easeOut),
-    );
-
-    _logoController.forward();
-    Future.delayed(const Duration(milliseconds: 300), () {
-      if (mounted) _textController.forward();
+    // Subtle pulse animation for the logo
+    _pulseController = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 2000));
+    Tween<double>(begin: 1.0, end: 1.02)
+        .animate(
+      CurvedAnimation(
+          parent: _pulseController,
+          curve: const Interval(0.0, 1.0, curve: Curves.easeInOut)),
+    )
+        .addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        _pulseController.reverse();
+      } else if (status == AnimationStatus.dismissed) {
+        _pulseController.forward();
+      }
     });
 
-    // Start initialization immediately
+    // Start animations
+    _logoController.forward();
+    _pulseController.forward();
+
+    // Start initialization
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeApp();
     });
 
-    _statusTicker = Timer.periodic(const Duration(milliseconds: 220), (_) {
-      if (mounted && !_initializationComplete && !_hasError) {
-        _refreshStageCopy();
-      }
-    });
-
-    // Set a timeout timer to prevent infinite waiting
+    // Set timeout timer
     _timeoutTimer = Timer(_initTimeout, () {
       if (mounted && !_initializationComplete && !_navigated) {
         debugLog('SplashScreen', 'Initialization timeout - proceeding anyway');
@@ -93,67 +86,38 @@ class _SplashScreenState extends State<SplashScreen>
     });
   }
 
-  Future<bool> _waitForServices() async {
-    debugLog('SplashScreen', 'Waiting for all services to initialize...');
-
-    final stopwatch = Stopwatch()..start();
-    const maxWaitTime = Duration(seconds: 8);
-
-    while (stopwatch.elapsed < maxWaitTime) {
-      if (!mounted) return false;
-
-      try {
-        final connectivityService = context.read<ConnectivityService>();
-        final hiveService = context.read<HiveService>();
-
-        // Check critical services only
-        final connectivityReady = connectivityService.isInitialized;
-        final hiveReady = hiveService.isInitialized;
-
-        // Auth provider might still be loading - that's fine
-        // We just need the critical services
-
-        if (hiveReady && connectivityReady) {
-          debugLog('SplashScreen',
-              'Critical services ready after ${stopwatch.elapsed.inMilliseconds}ms');
-
-          // Give auth provider a very short grace period without making splash drag on
-          await Future.delayed(const Duration(milliseconds: 120));
-          return true;
-        }
-      } catch (e) {
-        debugLog('SplashScreen', 'Error checking services: $e');
-      }
-
-      await Future.delayed(const Duration(milliseconds: 100));
-    }
-
-    debugLog('SplashScreen',
-        'Service initialization timeout after ${stopwatch.elapsed.inSeconds}s - proceeding anyway');
-    return true;
-  }
-
   Future<void> _initializeApp() async {
     if (!mounted) return;
 
     try {
-      final servicesReady = await _waitForServices();
+      final connectivityService = context.read<ConnectivityService>();
+      final hiveService = context.read<HiveService>();
+      final authProvider = context.read<AuthProvider>();
 
-      if (!mounted) return;
+      // Wait for critical services
+      final stopwatch = Stopwatch()..start();
+      const maxWaitTime = Duration(seconds: 4);
 
-      if (!servicesReady && !_navigated) {
-        setState(() {
-          _hasError = true;
-          _errorMessage = 'Could not initialize. Please restart app.';
-        });
-        return;
+      while (stopwatch.elapsed < maxWaitTime) {
+        if (!mounted) return;
+
+        final connectivityReady = connectivityService.isInitialized;
+        final hiveReady = hiveService.isInitialized;
+
+        if (hiveReady && connectivityReady) {
+          debugLog('SplashScreen',
+              'Services ready after ${stopwatch.elapsed.inMilliseconds}ms');
+          break;
+        }
+
+        await Future.delayed(const Duration(milliseconds: 50));
       }
 
       _initializationComplete = true;
       _timeoutTimer?.cancel();
 
-      // Keep a very short handoff so the transition feels deliberate, not sluggish
-      await Future.delayed(const Duration(milliseconds: 120));
+      // Short delay for visual polish
+      await Future.delayed(const Duration(milliseconds: 300));
 
       if (!mounted || _navigated) return;
 
@@ -165,37 +129,6 @@ class _SplashScreenState extends State<SplashScreen>
           _errorMessage = 'Failed to start';
         });
       }
-    }
-  }
-
-  void _refreshStageCopy() {
-    if (!mounted) return;
-
-    String nextTitle = 'Opening your learning space';
-    String nextMessage = 'Getting your lessons, access, and sync ready.';
-
-    try {
-      final hiveService = context.read<HiveService>();
-      final connectivityService = context.read<ConnectivityService>();
-      final authProvider = context.read<AuthProvider>();
-
-      if (!hiveService.isInitialized) {
-        nextTitle = 'Building your offline library';
-        nextMessage = 'Preparing saved lessons so the app feels instant when you land.';
-      } else if (!connectivityService.isInitialized) {
-        nextTitle = 'Checking your live connection';
-        nextMessage = 'Making sure updates, notifications, and sync are ready.';
-      } else if (!authProvider.isInitialized) {
-        nextTitle = 'Restoring your session';
-        nextMessage = 'Picking up where you left off and checking access safely.';
-      }
-    } catch (_) {}
-
-    if (nextTitle != _stageTitle || nextMessage != _stageMessage) {
-      setState(() {
-        _stageTitle = nextTitle;
-        _stageMessage = nextMessage;
-      });
     }
   }
 
@@ -213,9 +146,6 @@ class _SplashScreenState extends State<SplashScreen>
       debugLog('SplashScreen',
           'Auth check complete - isAuthenticated: $isAuthenticated');
 
-      // Session check is handled by AuthProvider's _autoLogoutTimer
-      // If session expired (>3 days), isAuthenticated will be false
-
       if (isAuthenticated) {
         if (user?.schoolId == null || user?.schoolId == 0) {
           debugLog('SplashScreen', 'Navigating to school selection');
@@ -230,7 +160,6 @@ class _SplashScreenState extends State<SplashScreen>
       }
     } catch (e) {
       debugLog('SplashScreen', 'Error navigating: $e');
-      // Fallback to login
       context.go('/auth/login');
     }
   }
@@ -238,130 +167,168 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   void dispose() {
     _timeoutTimer?.cancel();
-    _statusTicker?.cancel();
     _logoController.dispose();
-    _textController.dispose();
+    _pulseController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final authProvider = context.watch<AuthProvider>();
-    final connectivityService = context.read<ConnectivityService>();
-    final hiveService = context.read<HiveService>();
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF09111F) : const Color(0xFFF4F8FF),
-      body: SafeArea(
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: isDark
-                        ? const [
-                            Color(0xFF07101D),
-                            Color(0xFF0D1D34),
-                            Color(0xFF112A46),
-                          ]
-                        : const [
-                            Color(0xFFF6F9FF),
-                            Color(0xFFEAF1FF),
-                            Color(0xFFDDE9FF),
-                          ],
-                  ),
+      backgroundColor:
+          isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFF),
+      body: Stack(
+        children: [
+          // Background gradient
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: isDark
+                      ? const [
+                          Color(0xFF0F172A),
+                          Color(0xFF1E293B),
+                        ]
+                      : const [
+                          Color(0xFFF8FAFF),
+                          Color(0xFFE2E8F0),
+                        ],
                 ),
               ),
             ),
-            Positioned(
-              top: -80,
-              right: -50,
-              child: _buildGlowOrb(
-                color: AppColors.telegramBlue.withValues(alpha: isDark ? 0.24 : 0.18),
-                size: 220,
-              ),
+          ),
+
+          // Floating orbs for depth
+          Positioned(
+            top: -60,
+            right: -40,
+            child: _buildFloatingOrb(
+              color: AppColors.telegramBlue
+                  .withValues(alpha: isDark ? 0.15 : 0.10),
+              size: 180,
+              delay: 0.ms,
             ),
-            Positioned(
-              bottom: -60,
-              left: -30,
-              child: _buildGlowOrb(
-                color: AppColors.telegramTeal.withValues(alpha: isDark ? 0.18 : 0.14),
-                size: 180,
-              ),
+          ),
+          Positioned(
+            bottom: -40,
+            left: -30,
+            child: _buildFloatingOrb(
+              color: AppColors.telegramTeal
+                  .withValues(alpha: isDark ? 0.12 : 0.08),
+              size: 140,
+              delay: 600.ms,
             ),
-            Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 440),
-                child: Padding(
-                  padding: ResponsiveValues.screenPadding(context),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      AnimatedBuilder(
-                        animation: _logoController,
-                        builder: (context, child) {
-                          return Opacity(
-                            opacity: _logoOpacityAnimation.value,
-                            child: Transform.scale(
-                              scale: _logoScaleAnimation.value,
-                              child: _buildHeroMark(context, isDark),
-                            ),
-                          );
-                        },
-                      ),
-                      SizedBox(height: ResponsiveValues.spacingXL(context)),
-                      SlideTransition(
-                        position: _textSlideAnimation,
-                        child: FadeTransition(
-                          opacity: _textOpacityAnimation,
-                          child: Column(
-                            children: [
-                              Text(
-                                'Family Academy',
-                                style: AppTextStyles.displayMedium(context).copyWith(
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: -0.8,
-                                ),
-                              ),
-                              SizedBox(height: ResponsiveValues.spacingS(context)),
-                              Text(
-                                'Learn smoothly, stay synced, and get back into class without the noise.',
-                                style: AppTextStyles.bodyLarge(context).copyWith(
-                                  color: AppColors.getTextSecondary(context),
-                                  height: 1.45,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ],
-                          ),
+          ),
+
+          // Main content
+          Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Logo with pulse animation
+                AnimatedBuilder(
+                  animation: _pulseController,
+                  builder: (context, child) {
+                    return Transform.scale(
+                      scale: _pulseController.value,
+                      child: child,
+                    );
+                  },
+                  child: AnimatedBuilder(
+                    animation: _logoController,
+                    builder: (context, child) {
+                      return Opacity(
+                        opacity: _logoOpacityAnimation.value,
+                        child: Transform.scale(
+                          scale: _logoScaleAnimation.value,
+                          child: _buildLogo(context, isDark),
                         ),
+                      );
+                    },
+                  ),
+                ),
+
+                SizedBox(height: ResponsiveValues.spacingXXL(context)),
+
+                // App name
+                Text(
+                  'Family Academy',
+                  style: AppTextStyles.displayLarge(context).copyWith(
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.5,
+                    shadows: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.15),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
                       ),
-                      SizedBox(height: ResponsiveValues.spacingXL(context)),
-                      if (_hasError)
-                        _buildErrorPanel(context)
-                      else
-                        _buildStatusPanel(
-                          context,
-                          hiveReady: hiveService.isInitialized,
-                          connectivityReady: connectivityService.isInitialized,
-                          authReady: authProvider.isInitialized,
-                        ),
                     ],
                   ),
                 ),
+
+                SizedBox(height: ResponsiveValues.spacingS(context)),
+
+                // Tagline
+                Text(
+                  'Your learning journey starts here',
+                  style: AppTextStyles.bodyLarge(context).copyWith(
+                    color: AppColors.getTextSecondary(context),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Loading indicator at bottom
+          if (!_hasError)
+            Positioned(
+              bottom: ResponsiveValues.spacingXL(context),
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppColors.getSurface(context).withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color:
+                          AppColors.getDivider(context).withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                      AppColors.telegramBlue,
+                    ),
+                    backgroundColor:
+                        AppColors.telegramBlue.withValues(alpha: 0.15),
+                  ),
+                ),
               ),
             ),
-          ],
-        ),
+
+          // Error state
+          if (_hasError)
+            Positioned(
+              bottom: ResponsiveValues.spacingXL(context),
+              left: 0,
+              right: 0,
+              child: _buildErrorPanel(context),
+            ),
+        ],
       ),
-    ).animate().fadeIn(duration: AppThemes.animationMedium);
+    ).animate().fadeIn(duration: 400.ms);
   }
 
-  Widget _buildGlowOrb({required Color color, required double size}) {
+  Widget _buildFloatingOrb(
+      {required Color color, required double size, required Duration delay}) {
     return IgnorePointer(
       child: Container(
         width: size,
@@ -371,203 +338,133 @@ class _SplashScreenState extends State<SplashScreen>
           gradient: RadialGradient(
             colors: [
               color,
-              color.withValues(alpha: 0.08),
+              color.withValues(alpha: 0.05),
               Colors.transparent,
             ],
           ),
         ),
-      ),
+      ).animate(delay: delay).fadeIn(duration: 800.ms).moveY(
+            begin: 20,
+            end: 0,
+            curve: Curves.easeOut,
+          ),
     );
   }
 
-  Widget _buildHeroMark(BuildContext context, bool isDark) {
-    final size = ResponsiveValues.splashLogoSize(context) * 0.88;
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        Container(
-          width: size + 72,
-          height: size + 72,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: RadialGradient(
-              colors: [
-                AppColors.telegramBlue.withValues(alpha: isDark ? 0.26 : 0.18),
-                AppColors.telegramTeal.withValues(alpha: isDark ? 0.14 : 0.10),
-                Colors.transparent,
-              ],
-            ),
-          ),
-        ),
-        Container(
-          width: size + 24,
-          height: size + 24,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(36),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: isDark
-                  ? const [Color(0xFF132742), Color(0xFF0B182B)]
-                  : const [Colors.white, Color(0xFFF2F6FF)],
-            ),
-            border: Border.all(
-              color: AppColors.getDivider(context).withValues(alpha: 0.65),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: isDark ? 0.24 : 0.08),
-                blurRadius: 26,
-                offset: const Offset(0, 16),
-              ),
-            ],
-          ),
-        ),
-        AppBrandLogo(
-          size: size,
-          borderRadius: 28,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStatusPanel(
-    BuildContext context, {
-    required bool hiveReady,
-    required bool connectivityReady,
-    required bool authReady,
-  }) {
-    final readiness = [hiveReady, connectivityReady, authReady];
+  Widget _buildLogo(BuildContext context, bool isDark) {
+    final size = ResponsiveValues.splashLogoSize(context);
     return Container(
-      width: double.infinity,
-      constraints: const BoxConstraints(maxWidth: 340),
-      padding: EdgeInsets.symmetric(
-        horizontal: ResponsiveValues.spacingL(context),
-        vertical: ResponsiveValues.spacingL(context),
-      ),
+      width: size + 40,
+      height: size + 40,
       decoration: BoxDecoration(
-        color: AppColors.getSurface(context).withValues(alpha: 0.86),
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(
-          color: AppColors.getDivider(context).withValues(alpha: 0.55),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isDark
+              ? const [
+                  Color(0xFF1E3A8A),
+                  Color(0xFF3B82F6),
+                  Color(0xFF2563EB),
+                ]
+              : const [
+                  Color(0xFFEFF6FF),
+                  Color(0xFFE0F2FE),
+                  Color(0xFFBFDBFE),
+                ],
         ),
+        borderRadius: BorderRadius.circular(28),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 18,
-            offset: const Offset(0, 10),
+            color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.10),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
           ),
         ],
       ),
-      child: Column(
-        children: [
-          SizedBox(
-            width: 26,
-            height: 26,
-            child: CircularProgressIndicator(
-              strokeWidth: 2.6,
-              valueColor: const AlwaysStoppedAnimation<Color>(
-                AppColors.telegramBlue,
-              ),
-              backgroundColor: AppColors.telegramBlue.withValues(alpha: 0.15),
-            ),
-          ),
-          SizedBox(height: ResponsiveValues.spacingM(context)),
-          Text(
-            _stageTitle,
-            style: AppTextStyles.titleLarge(context).copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          SizedBox(height: ResponsiveValues.spacingS(context)),
-          Text(
-            _stageMessage,
-            style: AppTextStyles.bodyMedium(context).copyWith(
-              color: AppColors.getTextSecondary(context),
-              height: 1.45,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          SizedBox(height: ResponsiveValues.spacingM(context)),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: readiness
-                .map(
-                  (ready) => AnimatedContainer(
-                    duration: const Duration(milliseconds: 220),
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                    width: ready ? 26 : 10,
-                    height: 10,
-                    decoration: BoxDecoration(
-                      color: ready
-                          ? AppColors.telegramGreen
-                          : AppColors.getDivider(context),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                  ),
-                )
-                .toList(),
-          ),
-          SizedBox(height: ResponsiveValues.spacingM(context)),
-          Text(
-            'Warming up quietly in the background.',
-            style: AppTextStyles.labelMedium(context).copyWith(
-              color: AppColors.getTextSecondary(context),
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
+      child: Padding(
+        padding: EdgeInsets.all(ResponsiveValues.spacingM(context)),
+        child: AppBrandLogo(
+          size: size,
+          borderRadius: 20,
+        ),
       ),
-    ).animate().fadeIn(delay: 260.ms, duration: 500.ms).slideY(
-          begin: 0.08,
-          end: 0,
-          duration: 500.ms,
-        );
+    );
   }
 
   Widget _buildErrorPanel(BuildContext context) {
     return Container(
-      width: double.infinity,
-      constraints: const BoxConstraints(maxWidth: 360),
-      padding: EdgeInsets.all(ResponsiveValues.spacingL(context)),
+      padding: EdgeInsets.symmetric(
+        horizontal: ResponsiveValues.spacingL(context),
+        vertical: ResponsiveValues.spacingM(context),
+      ),
       decoration: BoxDecoration(
-        color: AppColors.getSurface(context).withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(
-          ResponsiveValues.radiusXLarge(context),
-        ),
+        color: AppColors.getSurface(context).withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: AppColors.telegramRed.withValues(alpha: 0.25),
+          color: AppColors.telegramRed.withValues(alpha: 0.3),
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.15),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(
-            Icons.error_outline_rounded,
-            color: AppColors.telegramRed,
-            size: 28,
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.error_outline_rounded,
+                color: AppColors.telegramRed,
+                size: 20,
+              ),
+              SizedBox(width: ResponsiveValues.spacingS(context)),
+              Text(
+                _errorMessage ?? 'Something went wrong',
+                style: AppTextStyles.bodyMedium(context).copyWith(
+                  color: AppColors.getTextPrimary(context),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
           ),
-          SizedBox(height: ResponsiveValues.spacingM(context)),
-          Text(
-            _errorMessage ?? 'Could not start the app.',
-            style: AppTextStyles.bodyMedium(context).copyWith(
-              color: AppColors.getTextPrimary(context),
-            ),
-            textAlign: TextAlign.center,
-          ),
-          SizedBox(height: ResponsiveValues.spacingL(context)),
-          AppButton.primary(
-            label: 'Retry',
-            onPressed: () {
+          SizedBox(height: ResponsiveValues.spacingS(context)),
+          GestureDetector(
+            onTap: () {
               setState(() {
                 _hasError = false;
                 _navigated = false;
               });
               _initializeApp();
             },
+            child: Container(
+              padding: EdgeInsets.symmetric(
+                horizontal: ResponsiveValues.spacingM(context),
+                vertical: ResponsiveValues.spacingS(context),
+              ),
+              decoration: BoxDecoration(
+                color: AppColors.telegramBlue,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                'Try Again',
+                style: AppTextStyles.bodyMedium(context).copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
           ),
         ],
       ),
-    );
+    ).animate().fadeIn(duration: 400.ms).slideY(
+          begin: 0.1,
+          end: 0,
+          duration: 400.ms,
+        );
   }
 }

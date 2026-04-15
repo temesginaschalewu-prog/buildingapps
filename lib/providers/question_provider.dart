@@ -40,7 +40,7 @@ class QuestionProvider extends ChangeNotifier
   static const Duration cacheDuration = AppConstants.cacheTTLQuestions;
   static const Duration answerCacheDuration = Duration(days: 7);
   @override
-  Duration get refreshInterval => const Duration(minutes: 5);
+  Duration get refreshInterval => const Duration(minutes: 10);
 
   // ✅ FIXED: Use dynamic box as fallback
   Box? _questionsBox;

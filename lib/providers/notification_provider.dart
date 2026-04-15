@@ -41,10 +41,10 @@ class NotificationProvider extends ChangeNotifier
 
   static const Duration _cacheDuration = AppConstants.cacheTTLNotifications;
   static const Duration _minUnreadRefreshInterval = Duration(seconds: 20);
-  static const Duration _minFetchInterval = Duration(minutes: 5);
+  static const Duration _minFetchInterval = Duration(minutes: 10);
   static const Duration _minUnreadTriggeredLoadInterval = Duration(minutes: 1);
   @override
-  Duration get refreshInterval => const Duration(minutes: 5);
+  Duration get refreshInterval => const Duration(minutes: 10);
 
   Box? _notificationsBox;
 
@@ -866,7 +866,12 @@ class NotificationProvider extends ChangeNotifier
   @override
   Future<void> onOnlineRefresh() async {
     log('Online - refreshing notifications');
-    await loadNotifications(forceRefresh: true);
+    if (_notifications.isEmpty) {
+      await loadNotifications(forceRefresh: true);
+      return;
+    }
+
+    await refreshUnreadCount(force: true);
   }
 
   Future<void> clearUserData() async {

@@ -1,6 +1,3 @@
-// lib/services/storage_service.dart
-// PRODUCTION-READY FINAL VERSION
-
 import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -42,7 +39,6 @@ class StorageService {
     if (!_initialized) await init();
   }
 
-  // ===== TOKEN MANAGEMENT =====
   Future<void> saveToken(String token) async {
     await ensureInitialized();
     if (!PlatformHelper.isMobile) {

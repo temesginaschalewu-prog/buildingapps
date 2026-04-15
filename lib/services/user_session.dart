@@ -1,12 +1,8 @@
-// lib/services/user_session.dart
-// PRODUCTION-READY FINAL VERSION
-
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hive/hive.dart';
 import '../utils/constants.dart';
 import '../utils/helpers.dart';
 
-/// PRODUCTION-READY User Session Management
 class UserSession {
   static final UserSession _instance = UserSession._internal();
   factory UserSession() => _instance;
@@ -14,44 +10,52 @@ class UserSession {
 
   String? _cachedUserId;
   bool _isLoggingOut = false;
+  bool _initialized = false;
 
-  // Hive box for session data
   Box? _sessionBox;
 
   Future<void> init() async {
+    if (_initialized) return;
+
     try {
-      // Open session box
       _sessionBox = await Hive.openBox('session_box');
 
       final prefs = await SharedPreferences.getInstance();
       _cachedUserId = prefs.getString(AppConstants.currentUserIdKey);
       _isLoggingOut = prefs.getBool(AppConstants.isLoggingOutKey) ?? false;
 
-      // Sync with Hive
       if (_cachedUserId == null && _sessionBox != null) {
         _cachedUserId = _sessionBox!.get('current_user_id') as String?;
+      }
+
+      final hasActiveSession = _cachedUserId != null && _cachedUserId!.isNotEmpty;
+      if (_isLoggingOut && hasActiveSession) {
+        await _clearLogoutMarker(prefs);
+        debugLog('UserSession', 'Recovered stale logout marker for active session');
       }
 
       debugLog('UserSession', 'Initialized with user: $_cachedUserId');
     } catch (e) {
       debugLog('UserSession', 'Error initializing: $e');
+    } finally {
+      _initialized = true;
     }
   }
 
   Future<void> setCurrentUser(String userId) async {
+    await init();
     final prefs = await SharedPreferences.getInstance();
     final previousUserId = await getCurrentUserId();
 
     await prefs.setString(AppConstants.currentUserIdKey, userId);
+    await _clearLogoutMarker(prefs);
 
-    // Save to Hive
     if (_sessionBox != null) {
       await _sessionBox!.put('current_user_id', userId);
     }
 
     if (previousUserId != null && previousUserId != userId) {
       await prefs.setString(AppConstants.lastUserIdKey, previousUserId);
-      // Save last user to Hive
       if (_sessionBox != null) {
         await _sessionBox!.put('last_user_id', previousUserId);
       }
@@ -63,6 +67,7 @@ class UserSession {
   }
 
   Future<String?> getCurrentUserId() async {
+    await init();
     if (_cachedUserId != null) return _cachedUserId;
 
     final prefs = await SharedPreferences.getInstance();
@@ -77,6 +82,7 @@ class UserSession {
   }
 
   Future<String?> getLastUserId() async {
+    await init();
     final prefs = await SharedPreferences.getInstance();
     final lastUserId = prefs.getString(AppConstants.lastUserIdKey);
 
@@ -109,6 +115,7 @@ class UserSession {
   }
 
   Future<void> prepareForLogout() async {
+    await init();
     _isLoggingOut = true;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(AppConstants.isLoggingOutKey, true);
@@ -120,9 +127,10 @@ class UserSession {
   }
 
   Future<void> completeLogout() async {
+    await init();
     _isLoggingOut = false;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(AppConstants.isLoggingOutKey);
+    await _clearLogoutMarker(prefs);
     await prefs.remove(AppConstants.currentUserIdKey);
     // Don't remove lastUserId - we need it for cache cleanup
 
@@ -141,6 +149,7 @@ class UserSession {
   }
 
   Future<void> reset() async {
+    await init();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(AppConstants.currentUserIdKey);
     await prefs.remove(AppConstants.lastUserIdKey);
@@ -168,5 +177,15 @@ class UserSession {
 
   Future<void> dispose() async {
     await _sessionBox?.close();
+    _sessionBox = null;
+    _initialized = false;
+  }
+
+  Future<void> _clearLogoutMarker(SharedPreferences prefs) async {
+    _isLoggingOut = false;
+    await prefs.remove(AppConstants.isLoggingOutKey);
+    if (_sessionBox != null) {
+      await _sessionBox!.delete('is_logging_out');
+    }
   }
 }

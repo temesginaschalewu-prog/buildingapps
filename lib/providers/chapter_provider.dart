@@ -33,7 +33,7 @@ class ChapterProvider extends ChangeNotifier
 
   static const Duration cacheDuration = AppConstants.cacheTTLChapters;
   @override
-  Duration get refreshInterval => const Duration(minutes: 5);
+  Duration get refreshInterval => const Duration(minutes: 10);
 
   Box? _chaptersBox;
   int _apiCallCount = 0;

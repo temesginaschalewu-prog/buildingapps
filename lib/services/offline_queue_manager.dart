@@ -1,6 +1,3 @@
-// lib/services/offline_queue_manager.dart
-// PRODUCTION FINAL - WITH PROCESSING STATE
-
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -93,11 +90,11 @@ class OfflineQueueManager {
   int get pendingCount => pendingItems.length;
   bool _isProcessing = false;
 
-  // ✅ NEW: Public getter for processing state
   bool get isProcessing => _isProcessing;
 
   Timer? _retryTimer;
   Timer? _persistenceTimer;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   bool _useSharedPrefs = false;
 
   void setApiService(ApiService apiService) {}
@@ -231,25 +228,26 @@ class OfflineQueueManager {
   void _startPersistenceTimer() {
     _persistenceTimer?.cancel();
     _persistenceTimer =
-        Timer.periodic(const Duration(seconds: 30), (_) => _saveQueue());
+        Timer.periodic(const Duration(minutes: 1), (_) => _saveQueue());
   }
 
   void _setupConnectivityListener() {
-    Connectivity().onConnectivityChanged.listen((result) {
+    _connectivitySubscription?.cancel();
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((result) {
       if (result != ConnectivityResult.none && !_isProcessing) {
         debugLog('OfflineQueueManager', '📶 Online - processing queue');
-        processQueue();
+        unawaited(processQueue());
       }
     });
   }
 
   void _startPeriodicRetry() {
     _retryTimer?.cancel();
-    _retryTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+    _retryTimer = Timer.periodic(const Duration(minutes: 10), (_) {
       if (!_isProcessing && pendingItems.isNotEmpty) {
         debugLog('OfflineQueueManager',
             '⏰ Periodic retry - $pendingCount items pending');
-        processQueue();
+        unawaited(processQueue());
       }
     });
   }
@@ -277,7 +275,7 @@ class OfflineQueueManager {
 
     Connectivity().checkConnectivity().then((result) {
       if (result != ConnectivityResult.none && !_isProcessing) {
-        processQueue();
+        unawaited(processQueue());
       }
     });
 
@@ -445,6 +443,7 @@ class OfflineQueueManager {
   void dispose() {
     _retryTimer?.cancel();
     _persistenceTimer?.cancel();
+    _connectivitySubscription?.cancel();
     _queueStreamController.close();
   }
 }

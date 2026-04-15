@@ -107,76 +107,35 @@ class CourseCard extends StatelessWidget {
                         ),
                       ],
                       SizedBox(height: ResponsiveValues.spacingXS(context)),
-                      Wrap(
-                        spacing: ResponsiveValues.spacingS(context),
-                        runSpacing: ResponsiveValues.spacingXS(context),
-                        children: [
-                          Container(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: ResponsiveValues.spacingS(context),
-                              vertical: ResponsiveValues.spacingXXS(context),
+                      Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: ResponsiveValues.spacingS(context),
+                          vertical: ResponsiveValues.spacingXXS(context),
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.telegramBlue.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(
+                              ResponsiveValues.radiusFull(context)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.menu_book_rounded,
+                              size: ResponsiveValues.iconSizeXXS(context),
+                              color: AppColors.telegramBlue,
                             ),
-                            decoration: BoxDecoration(
-                              color: accessColor.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(
-                                  ResponsiveValues.radiusFull(context)),
+                            SizedBox(
+                                width: ResponsiveValues.spacingXXS(context)),
+                            Text(
+                              '${course.chapterCount} chapters',
+                              style: AppTextStyles.caption(context).copyWith(
+                                color: AppColors.telegramBlue,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  accessIcon,
-                                  size: ResponsiveValues.iconSizeXXS(context),
-                                  color: accessColor,
-                                ),
-                                SizedBox(
-                                    width:
-                                        ResponsiveValues.spacingXXS(context)),
-                                Text(
-                                  accessText,
-                                  style:
-                                      AppTextStyles.caption(context).copyWith(
-                                    color: accessColor,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Container(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: ResponsiveValues.spacingS(context),
-                              vertical: ResponsiveValues.spacingXXS(context),
-                            ),
-                            decoration: BoxDecoration(
-                              color:
-                                  AppColors.telegramBlue.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(
-                                  ResponsiveValues.radiusFull(context)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.menu_book_rounded,
-                                  size: ResponsiveValues.iconSizeXXS(context),
-                                  color: AppColors.telegramBlue,
-                                ),
-                                SizedBox(
-                                    width:
-                                        ResponsiveValues.spacingXXS(context)),
-                                Text(
-                                  '${course.chapterCount} chapters',
-                                  style:
-                                      AppTextStyles.caption(context).copyWith(
-                                    color: AppColors.telegramBlue,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ],
                   ),
