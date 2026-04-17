@@ -2195,99 +2195,107 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       );
     }
 
-    return Column(
-      children: [
-        Container(
-          margin: ResponsiveValues.screenPadding(context),
-          child: AppCard.glass(
-            child: Padding(
-              padding: ResponsiveValues.cardPadding(context),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        AppStrings.practiceProgress,
-                        style: AppTextStyles.titleMedium(context).copyWith(
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: -0.5,
-                        ),
-                      ),
-                      Container(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: ResponsiveValues.spacingM(context),
-                          vertical: ResponsiveValues.spacingXXS(context),
-                        ),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                              colors: AppColors.blueGradient),
-                          borderRadius: BorderRadius.circular(
-                              ResponsiveValues.radiusFull(context)),
-                        ),
-                        child: Text(
-                          '$correctCount/$totalCount',
-                          style: AppTextStyles.labelSmall(context).copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
+    return ListView.builder(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
+      itemCount: questions.length + 2 + (answeredCount == totalCount && totalCount > 0 ? 1 : 0),
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          return Container(
+            margin: ResponsiveValues.screenPadding(context),
+            child: AppCard.glass(
+              child: Padding(
+                padding: ResponsiveValues.cardPadding(context),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          AppStrings.practiceProgress,
+                          style: AppTextStyles.titleMedium(context).copyWith(
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: -0.5,
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: ResponsiveValues.spacingXS(context)),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Answered $answeredCount of $totalCount',
-                      style: AppTextStyles.bodySmall(context).copyWith(
-                        color: AppColors.getTextSecondary(context),
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: ResponsiveValues.spacingL(context)),
-                  Stack(
-                    children: [
-                      Container(
-                        height: ResponsiveValues.progressBarHeight(context),
-                        decoration: BoxDecoration(
-                          color: AppColors.getSurface(context)
-                              .withValues(alpha: 0.3),
-                          borderRadius: BorderRadius.circular(
-                              ResponsiveValues.radiusSmall(context)),
-                        ),
-                      ),
-                      FractionallySizedBox(
-                        widthFactor: progress,
-                        child: Container(
-                          height: ResponsiveValues.progressBarHeight(context),
+                        Container(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: ResponsiveValues.spacingM(context),
+                            vertical: ResponsiveValues.spacingXXS(context),
+                          ),
                           decoration: BoxDecoration(
                             gradient: const LinearGradient(
-                                colors: AppColors.blueGradient),
+                              colors: AppColors.blueGradient,
+                            ),
                             borderRadius: BorderRadius.circular(
-                                ResponsiveValues.radiusSmall(context)),
+                              ResponsiveValues.radiusFull(context),
+                            ),
+                          ),
+                          child: Text(
+                            '$correctCount/$totalCount',
+                            style: AppTextStyles.labelSmall(context).copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
+                      ],
+                    ),
+                    SizedBox(height: ResponsiveValues.spacingXS(context)),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Answered $answeredCount of $totalCount',
+                        style: AppTextStyles.bodySmall(context).copyWith(
+                          color: AppColors.getTextSecondary(context),
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
-                    ],
-                  ),
-                ],
+                    ),
+                    SizedBox(height: ResponsiveValues.spacingL(context)),
+                    Stack(
+                      children: [
+                        Container(
+                          height: ResponsiveValues.progressBarHeight(context),
+                          decoration: BoxDecoration(
+                            color: AppColors.getSurface(context)
+                                .withValues(alpha: 0.3),
+                            borderRadius: BorderRadius.circular(
+                              ResponsiveValues.radiusSmall(context),
+                            ),
+                          ),
+                        ),
+                        FractionallySizedBox(
+                          widthFactor: progress,
+                          child: Container(
+                            height: ResponsiveValues.progressBarHeight(context),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: AppColors.blueGradient,
+                              ),
+                              borderRadius: BorderRadius.circular(
+                                ResponsiveValues.radiusSmall(context),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ),
-        Container(
-          color: AppColors.getBackground(context),
-          padding: EdgeInsets.fromLTRB(
-            ResponsiveValues.sectionPadding(context),
-            0,
-            ResponsiveValues.sectionPadding(context),
-            ResponsiveValues.spacingS(context),
-          ),
-          child: SafeArea(
-            top: false,
-            bottom: false,
+          );
+        }
+
+        if (index == 1) {
+          return Padding(
+            padding: EdgeInsets.fromLTRB(
+              ResponsiveValues.sectionPadding(context),
+              0,
+              ResponsiveValues.sectionPadding(context),
+              ResponsiveValues.spacingS(context),
+            ),
             child: Row(
               children: [
                 Expanded(
@@ -2314,10 +2322,12 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                 ),
               ],
             ),
-          ),
-        ),
-        if (answeredCount == totalCount && totalCount > 0)
-          Padding(
+          );
+        }
+
+        final explanationToggleIndex = answeredCount == totalCount && totalCount > 0 ? 2 : -1;
+        if (index == explanationToggleIndex) {
+          return Padding(
             padding: ResponsiveValues.screenPadding(context),
             child: AppButton.glass(
               label: _showAllExplanations
@@ -2328,31 +2338,26 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
                   : Icons.visibility_rounded,
               onPressed: _toggleAllExplanations,
             ),
+          );
+        }
+
+        final questionIndex = index - 2 - (explanationToggleIndex == -1 ? 0 : 1);
+        final question = questions[questionIndex];
+
+        return Padding(
+          padding: ResponsiveValues.screenPadding(context),
+          child: PracticeQuestionCard(
+            question: question,
+            index: questionIndex,
+            selectedAnswers: _selectedAnswers,
+            showExplanation: _showExplanation,
+            isQuestionCorrect: _isQuestionCorrect,
+            questionAnswered: _questionAnswered,
+            onSelectAnswer: _selectAnswer,
+            onCheckAnswer: _checkAnswer,
           ),
-        Expanded(
-          child: ListView.builder(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: EdgeInsets.only(bottom: ResponsiveValues.spacingL(context)),
-            itemCount: questions.length,
-            itemBuilder: (context, index) {
-              final question = questions[index];
-              return Padding(
-                padding: ResponsiveValues.screenPadding(context),
-                child: PracticeQuestionCard(
-                  question: question,
-                  index: index,
-                  selectedAnswers: _selectedAnswers,
-                  showExplanation: _showExplanation,
-                  isQuestionCorrect: _isQuestionCorrect,
-                  questionAnswered: _questionAnswered,
-                  onSelectAnswer: _selectAnswer,
-                  onCheckAnswer: _checkAnswer,
-                ),
-              );
-            },
-          ),
-        ),
-      ],
+        );
+      },
     );
   }
 

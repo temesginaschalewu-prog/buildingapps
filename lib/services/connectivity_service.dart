@@ -54,6 +54,8 @@ class ConnectivityService {
   static const int _fairThreshold = 800;
   static const Duration _connectivityCheckInterval = Duration(minutes: 2);
   static const Duration _qualityCheckInterval = Duration(minutes: 1);
+  static const Duration _probeTimeout = Duration(seconds: 8);
+  static const Duration _warmupRetryDelay = Duration(seconds: 6);
 
   Future<void> initialize() async {
     if (_isInitialized) return;
@@ -141,6 +143,16 @@ class ConnectivityService {
           _handleConnectivityChange(true);
           unawaited(checkConnectionQuality(force: force));
         } else {
+          if (!_isInitialized && _isOnline) {
+            _status = ConnectivityStatus.backendUnavailable;
+            debugLog(
+              'ConnectivityService',
+              'Backend probe missed during startup warmup; keeping app online and retrying shortly',
+            );
+            unawaited(_scheduleWarmupRetry());
+            return _isOnline;
+          }
+
           debugLog(
             'ConnectivityService',
             'Backend is unreachable; using offline mode so cached data can be used',
@@ -188,8 +200,8 @@ class ConnectivityService {
       await dio.get(
         '${AppConstants.apiBaseUrl}${AppConstants.healthEndpoint}',
         options: Options(
-          sendTimeout: const Duration(seconds: 5),
-          receiveTimeout: const Duration(seconds: 5),
+          sendTimeout: _probeTimeout,
+          receiveTimeout: _probeTimeout,
           validateStatus: (status) => status != null && status < 500,
         ),
       );
@@ -225,8 +237,8 @@ class ConnectivityService {
       final response = await dio.get(
         url,
         options: Options(
-          sendTimeout: const Duration(seconds: 3),
-          receiveTimeout: const Duration(seconds: 3),
+          sendTimeout: _probeTimeout,
+          receiveTimeout: _probeTimeout,
           validateStatus: (status) => status != null && status < 500,
           followRedirects: true,
         ),
@@ -255,7 +267,22 @@ class ConnectivityService {
       return true;
     }
 
+    await Future<void>.delayed(_warmupRetryDelay);
+
+    if (await _probeUrl(AppConstants.apiBaseUrl)) {
+      debugLog(
+        'ConnectivityService',
+        'Backend became reachable on retry; keeping app online',
+      );
+      return true;
+    }
+
     return false;
+  }
+
+  Future<void> _scheduleWarmupRetry() async {
+    await Future<void>.delayed(_warmupRetryDelay);
+    await checkConnectivity(force: true);
   }
 
   void _handleConnectivityChange(bool isOnline) {
