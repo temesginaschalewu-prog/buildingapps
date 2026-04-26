@@ -698,6 +698,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           showOptions: false,
           playbackSpeeds: [0.5, 0.75, 1.0, 1.25, 1.5],
           deviceOrientationsOnEnterFullScreen: const [
+            DeviceOrientation.portraitUp,
+            DeviceOrientation.portraitDown,
             DeviceOrientation.landscapeLeft,
             DeviceOrientation.landscapeRight,
           ],
@@ -1025,6 +1027,8 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         autoPlay: true,
         playbackSpeeds: [0.5, 0.75, 1.0, 1.25, 1.5],
         deviceOrientationsOnEnterFullScreen: const [
+          DeviceOrientation.portraitUp,
+          DeviceOrientation.portraitDown,
           DeviceOrientation.landscapeLeft,
           DeviceOrientation.landscapeRight,
         ],
