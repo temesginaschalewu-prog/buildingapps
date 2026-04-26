@@ -4,6 +4,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:path_provider/path_provider.dart';
@@ -51,6 +52,7 @@ import '../../utils/helpers.dart';
 import '../../utils/platform_helper.dart';
 import '../../utils/constants.dart';
 import '../../utils/responsive.dart';
+import '../../utils/screen_protection.dart';
 
 class ChapterContentScreen extends StatefulWidget {
   final int chapterId;
@@ -695,6 +697,15 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
           videoPlayerController: newVideoController,
           showOptions: false,
           playbackSpeeds: [0.5, 0.75, 1.0, 1.25, 1.5],
+          deviceOrientationsOnEnterFullScreen: const [
+            DeviceOrientation.landscapeLeft,
+            DeviceOrientation.landscapeRight,
+          ],
+          deviceOrientationsAfterFullScreen: const [
+            DeviceOrientation.portraitUp,
+            DeviceOrientation.portraitDown,
+          ],
+          systemOverlaysOnEnterFullScreen: const [],
         );
 
         _videoController = newVideoController;
@@ -1005,10 +1016,23 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
       await _videoProvider.incrementViewCount(video.id);
 
+      if (PlatformHelper.isMobile) {
+        ScreenProtectionService.disable();
+      }
+
       _chewieController = ChewieController(
         videoPlayerController: controller,
         autoPlay: true,
         playbackSpeeds: [0.5, 0.75, 1.0, 1.25, 1.5],
+        deviceOrientationsOnEnterFullScreen: const [
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ],
+        deviceOrientationsAfterFullScreen: const [
+          DeviceOrientation.portraitUp,
+          DeviceOrientation.portraitDown,
+        ],
+        systemOverlaysOnEnterFullScreen: const [],
       );
 
       _refreshVideoUi(() => _isPlayerInitialized = true);
@@ -1198,6 +1222,9 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       }
 
       await WakelockPlus.disable();
+      if (PlatformHelper.isMobile) {
+        ScreenProtectionService.enable();
+      }
     } catch (e) {
       debugLog('VideoCard', 'Error disposing player: $e');
     }

@@ -443,7 +443,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
           'rejection_reason': _hasAccess ? null : _rejectionReason,
           'timestamp': DateTime.now().toIso8601String(),
         },
-        ttl: const Duration(hours: 1),
+        ttl: const Duration(days: 30),
         isUserSpecific: true,
       );
     } catch (e) {

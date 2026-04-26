@@ -16,6 +16,7 @@ import '../../providers/course_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../providers/payment_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/device_service.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/snackbar_service.dart';
@@ -733,7 +734,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
           'rejection_reason': _hasAccess ? null : _rejectionReason,
           'timestamp': DateTime.now().toIso8601String(),
         },
-        ttl: const Duration(hours: 1),
+        ttl: const Duration(days: 30),
         isUserSpecific: true,
       );
     } catch (e) {
@@ -744,10 +745,13 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
   Future<bool> _hasOfflineChapterContent(Chapter chapter) async {
     try {
       final deviceService = context.read<DeviceService>();
+      final currentUserId = context.read<AuthProvider>().currentUser?.id;
 
       final cachedVideos =
           await deviceService.getCacheItem<Map<String, dynamic>>(
-        'cached_videos_chapter_${chapter.id}',
+        currentUserId != null
+            ? 'cached_videos_chapter_${chapter.id}_$currentUserId'
+            : 'cached_videos_chapter_${chapter.id}',
         isUserSpecific: true,
       );
       if (cachedVideos != null && cachedVideos.isNotEmpty) {
@@ -756,7 +760,9 @@ class _CourseDetailScreenState extends State<CourseDetailScreen>
 
       final cachedNotes =
           await deviceService.getCacheItem<Map<String, dynamic>>(
-        'cached_notes_chapter_${chapter.id}',
+        currentUserId != null
+            ? 'cached_notes_chapter_${chapter.id}_$currentUserId'
+            : 'cached_notes_chapter_${chapter.id}',
         isUserSpecific: true,
       );
       return cachedNotes != null && cachedNotes.isNotEmpty;
