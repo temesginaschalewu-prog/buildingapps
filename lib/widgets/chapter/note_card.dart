@@ -141,7 +141,68 @@ class NoteCard extends StatelessWidget {
                                 ),
                               ),
                             ),
+                          if (isDownloaded)
+                            Container(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: ResponsiveValues.spacingS(context),
+                                vertical:
+                                    ResponsiveValues.spacingXXS(context),
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.telegramGreen
+                                    .withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(
+                                  ResponsiveValues.radiusFull(context),
+                                ),
+                              ),
+                              child: Text(
+                                'Saved offline',
+                                style:
+                                    AppTextStyles.labelSmall(context).copyWith(
+                                  color: AppColors.telegramGreen,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            )
+                          else if (hasFile)
+                            Container(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: ResponsiveValues.spacingS(context),
+                                vertical:
+                                    ResponsiveValues.spacingXXS(context),
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.telegramBlue
+                                    .withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(
+                                  ResponsiveValues.radiusFull(context),
+                                ),
+                              ),
+                              child: Text(
+                                'Download for offline',
+                                style:
+                                    AppTextStyles.labelSmall(context).copyWith(
+                                  color: AppColors.telegramBlue,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
                         ],
+                      ),
+                      SizedBox(height: ResponsiveValues.spacingS(context)),
+                      Text(
+                        isDownloaded
+                            ? 'This note is stored on this device and can be opened offline.'
+                            : hasFile
+                                ? 'Download this note to keep it available offline.'
+                                : 'This note can be opened directly from the app.',
+                        style: AppTextStyles.caption(context).copyWith(
+                          color: isDownloaded
+                              ? AppColors.telegramGreen
+                              : AppColors.getTextSecondary(context),
+                          fontWeight:
+                              isDownloaded ? FontWeight.w600 : FontWeight.w400,
+                        ),
                       ),
                     ],
                   ),

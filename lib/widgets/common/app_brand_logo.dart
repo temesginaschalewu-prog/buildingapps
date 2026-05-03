@@ -37,7 +37,7 @@ class AppBrandLogo extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(borderRadius),
         child: Image.asset(
-          'assets/images/logo_clean.png',
+          'assets/images/family_academy_brand_logo.png',
           fit: BoxFit.cover,
           errorBuilder: (context, error, stackTrace) {
             return Container(

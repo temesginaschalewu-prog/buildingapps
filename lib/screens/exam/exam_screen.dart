@@ -52,7 +52,6 @@ class _ExamScreenState extends State<ExamScreen>
   bool _showInstructions = true;
   Duration _remainingTime = Duration.zero;
   Timer? _timer;
-  Duration? _userTimeLimit;
   bool _hasAccess = false;
   bool _checkingAccess = true;
   bool _hasLoadedQuestions = false;
@@ -246,12 +245,8 @@ class _ExamScreenState extends State<ExamScreen>
   }
 
   void _initializeExamSettings() {
-    _userTimeLimit = _exam.userTimeLimit != null
-        ? Duration(minutes: _exam.userTimeLimit!)
-        : null;
-    _remainingTime = Duration(minutes: _exam.duration);
-    _hasReachedMaxAttempts = _exam.attemptsTaken >= _exam.maxAttempts &&
-        _exam.status == 'max_attempts_reached';
+    _remainingTime = Duration(minutes: _exam.actualDuration);
+    _hasReachedMaxAttempts = _exam.attemptsTaken >= _exam.maxAttempts;
 
     if (!_hasReachedMaxAttempts) {
       _loadCachedProgress();
@@ -309,12 +304,19 @@ class _ExamScreenState extends State<ExamScreen>
         _hasAccess = true;
       }
 
-      final ExamResult? existingResult =
-          _examProvider.myExamResults.firstWhereOrNull(
-        (result) => result.examId == _exam.id && result.status == 'completed',
-      );
+      final completedAttempts = _examProvider.myExamResults
+          .where((result) => result.examId == _exam.id && result.isCompleted)
+          .toList();
+      final ExamResult? existingResult = completedAttempts.lastOrNull;
+      final normalizedAttempts = completedAttempts.length > _exam.attemptsTaken
+          ? completedAttempts.length
+          : _exam.attemptsTaken;
 
-      if (_exam.attemptsTaken >= _exam.maxAttempts) {
+      if (normalizedAttempts != _exam.attemptsTaken) {
+        _exam = _exam.copyWith(attemptsTaken: normalizedAttempts);
+      }
+
+      if (normalizedAttempts >= _exam.maxAttempts) {
         _hasReachedMaxAttempts = true;
         _submittedResult = existingResult;
         if (existingResult != null && existingResult.answerDetails != null) {
@@ -461,6 +463,36 @@ class _ExamScreenState extends State<ExamScreen>
 
       final startData = startResponse.data!;
       _activeExamResultId = (startData['exam_result_id'] as num?)?.toInt();
+      final startExamData = startData['exam'];
+      if (startExamData is Map<String, dynamic>) {
+        final updatedDuration =
+            (startExamData['duration'] as num?)?.toInt() ?? _exam.duration;
+        final updatedUserTimeLimit =
+            (startExamData['user_time_limit'] as num?)?.toInt() ??
+                _exam.userTimeLimit;
+        final updatedActualDuration =
+            (startExamData['actual_duration'] as num?)?.toInt() ??
+                (updatedUserTimeLimit ?? updatedDuration);
+        final updatedAttemptsTaken =
+            (startExamData['attempts_taken'] as num?)?.toInt() ??
+                _exam.attemptsTaken;
+
+        _exam = _exam.copyWith(
+          duration: updatedDuration,
+          userTimeLimit: updatedUserTimeLimit,
+          actualDuration: updatedActualDuration,
+          passingScore:
+              (startExamData['passing_score'] as num?)?.toInt() ??
+                  _exam.passingScore,
+          maxAttempts:
+              (startExamData['max_attempts'] as num?)?.toInt() ??
+                  _exam.maxAttempts,
+          attemptsTaken: updatedAttemptsTaken,
+          timingType:
+              startExamData['timing_type']?.toString() ?? _exam.timingType,
+        );
+        _initializeExamSettings();
+      }
       final rawQuestions = startData['questions'];
       final startedQuestions =
           rawQuestions is List ? _mapStartedExamQuestions(rawQuestions) : <ExamQuestion>[];
@@ -496,7 +528,7 @@ class _ExamScreenState extends State<ExamScreen>
     if (_hasReachedMaxAttempts) return;
 
     _stopTimer();
-    _remainingTime = _userTimeLimit ?? Duration(minutes: _exam.duration);
+    _remainingTime = Duration(minutes: _exam.actualDuration);
 
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (isMounted) {
@@ -740,6 +772,23 @@ class _ExamScreenState extends State<ExamScreen>
       if (submitResponse.success) {
         if (submitResponse.data is Map<String, dynamic>) {
           final resultData = submitResponse.data as Map<String, dynamic>;
+          final updatedPassingScore =
+              (resultData['passing_score'] as num?)?.toInt() ??
+                  _exam.passingScore;
+          final updatedAttemptsTaken =
+              (resultData['attempts_taken'] as num?)?.toInt() ??
+                  (_exam.attemptsTaken + 1);
+          final updatedActualDuration =
+              (resultData['actual_duration'] as num?)?.toInt() ??
+                  _exam.actualDuration;
+          final updatedUserTimeLimit =
+              (resultData['user_time_limit'] as num?)?.toInt() ??
+                  _exam.userTimeLimit;
+          final updatedTimingType =
+              resultData['timing_type']?.toString() ?? _exam.timingType;
+          final hasUsedAllAttempts =
+              updatedAttemptsTaken >= _exam.maxAttempts;
+
           if (resultData.containsKey('details')) {
             final details = resultData['details'] as List;
             for (var detail in details) {
@@ -762,10 +811,22 @@ class _ExamScreenState extends State<ExamScreen>
             status: 'completed',
             title: _exam.title,
             examType: _exam.examType,
-            duration: _exam.duration,
-            passingScore: _exam.passingScore,
+            duration: updatedActualDuration,
+            passingScore: updatedPassingScore,
             courseName: _exam.courseName,
             answerDetails: resultData['details'],
+          );
+
+          _exam = _exam.copyWith(
+            attemptsTaken: updatedAttemptsTaken,
+            passingScore: updatedPassingScore,
+            userTimeLimit: updatedUserTimeLimit,
+            actualDuration: updatedActualDuration,
+            timingType: updatedTimingType,
+            status: hasUsedAllAttempts ? 'max_attempts_reached' : 'completed',
+            message: hasUsedAllAttempts
+                ? 'Maximum attempts reached'
+                : 'Attempt $updatedAttemptsTaken of ${_exam.maxAttempts} completed',
           );
         }
 
@@ -777,12 +838,21 @@ class _ExamScreenState extends State<ExamScreen>
         }
 
         await _examProvider.loadMyExamResults(forceRefresh: true);
+        await _examProvider.loadExamsByCourse(
+          _exam.courseId,
+          forceRefresh: true,
+        );
+
+        final refreshedExam = _examProvider.getExamById(_exam.id);
+        if (refreshedExam != null) {
+          _exam = refreshedExam;
+        }
         if (!isMounted) return;
 
         if (isMounted) {
           setState(() {
             _showResults = true;
-            _hasReachedMaxAttempts = true;
+            _hasReachedMaxAttempts = _exam.attemptsTaken >= _exam.maxAttempts;
           });
         }
       } else {
@@ -814,9 +884,11 @@ class _ExamScreenState extends State<ExamScreen>
   }
 
   String _getTimeLimitDescription() {
-    return _exam.hasUserTimeLimit
-        ? '${_exam.userTimeLimit} ${AppStrings.minutesPerAttempt}'
-        : '${_exam.duration} ${AppStrings.minutesExamWide}';
+    if (_exam.hasUserTimeLimit) {
+      return '$_exam.userTimeLimit ${AppStrings.minutesPerAttempt} '
+          '(default exam duration: ${_exam.duration} min)';
+    }
+    return '${_exam.duration} ${AppStrings.minutesExamWide}';
   }
 
   String _getAutoSubmitDescription() {

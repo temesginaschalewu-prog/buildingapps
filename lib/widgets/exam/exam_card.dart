@@ -109,7 +109,9 @@ class ExamCard extends StatelessWidget {
                           ),
                           SizedBox(width: ResponsiveValues.spacingXXS(context)),
                           Text(
-                            _formatDuration(exam.duration),
+                            exam.hasUserTimeLimit
+                                ? '${_formatDuration(exam.actualDuration)} per attempt'
+                                : _formatDuration(exam.duration),
                             style: AppTextStyles.caption(context).copyWith(
                                 color: AppColors.getTextSecondary(context)),
                           ),

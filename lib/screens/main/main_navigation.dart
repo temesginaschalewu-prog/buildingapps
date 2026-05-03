@@ -482,7 +482,7 @@ class _MainNavigationState extends State<MainNavigation>
                             borderRadius: BorderRadius.circular(
                                 ResponsiveValues.radiusMedium(context)),
                             child: Image.asset(
-                              'assets/images/logo_clean.png',
+                              'assets/images/family_academy_brand_logo.png',
                               fit: BoxFit.cover,
                               errorBuilder: (context, error, stackTrace) {
                                 return Icon(Icons.school_rounded,
@@ -712,7 +712,7 @@ class _MainNavigationState extends State<MainNavigation>
                                   borderRadius: BorderRadius.circular(
                                       ResponsiveValues.radiusSmall(context)),
                                   child: Image.asset(
-                                    'assets/images/logo_clean.png',
+                                    'assets/images/family_academy_brand_logo.png',
                                     fit: BoxFit.cover,
                                     errorBuilder: (context, error, stackTrace) {
                                       return Icon(Icons.school_rounded,

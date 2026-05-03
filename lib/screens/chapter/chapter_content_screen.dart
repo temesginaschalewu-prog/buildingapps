@@ -1696,7 +1696,10 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       await _saveCacheMetadata();
 
       if (isMounted) {
-        SnackbarService().showSuccess(context, AppStrings.noteDownloaded);
+        SnackbarService().showSuccess(
+          context,
+          '${note.title} downloaded. This note is now available offline.',
+        );
       }
     } catch (e) {
       if (isMounted) {

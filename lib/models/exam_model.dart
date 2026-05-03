@@ -184,6 +184,67 @@ class Exam {
     };
   }
 
+  Exam copyWith({
+    int? id,
+    String? title,
+    String? examType,
+    DateTime? startDate,
+    DateTime? endDate,
+    int? duration,
+    int? userTimeLimit,
+    int? passingScore,
+    int? maxAttempts,
+    bool? autoSubmit,
+    bool? showResultsImmediately,
+    String? courseName,
+    int? courseId,
+    int? categoryId,
+    String? categoryName,
+    String? categoryStatus,
+    int? attemptsTaken,
+    String? lastAttemptStatus,
+    int? questionCount,
+    String? status,
+    String? message,
+    bool? canTakeExam,
+    bool? requiresPayment,
+    bool? hasAccess,
+    int? actualDuration,
+    String? timingType,
+    bool? hasPendingPayment,
+  }) {
+    return Exam(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      examType: examType ?? this.examType,
+      startDate: startDate ?? this.startDate,
+      endDate: endDate ?? this.endDate,
+      duration: duration ?? this.duration,
+      userTimeLimit: userTimeLimit ?? this.userTimeLimit,
+      passingScore: passingScore ?? this.passingScore,
+      maxAttempts: maxAttempts ?? this.maxAttempts,
+      autoSubmit: autoSubmit ?? this.autoSubmit,
+      showResultsImmediately:
+          showResultsImmediately ?? this.showResultsImmediately,
+      courseName: courseName ?? this.courseName,
+      courseId: courseId ?? this.courseId,
+      categoryId: categoryId ?? this.categoryId,
+      categoryName: categoryName ?? this.categoryName,
+      categoryStatus: categoryStatus ?? this.categoryStatus,
+      attemptsTaken: attemptsTaken ?? this.attemptsTaken,
+      lastAttemptStatus: lastAttemptStatus ?? this.lastAttemptStatus,
+      questionCount: questionCount ?? this.questionCount,
+      status: status ?? this.status,
+      message: message ?? this.message,
+      canTakeExam: canTakeExam ?? this.canTakeExam,
+      requiresPayment: requiresPayment ?? this.requiresPayment,
+      hasAccess: hasAccess ?? this.hasAccess,
+      actualDuration: actualDuration ?? this.actualDuration,
+      timingType: timingType ?? this.timingType,
+      hasPendingPayment: hasPendingPayment ?? this.hasPendingPayment,
+    );
+  }
+
   bool get hasUserTimeLimit => userTimeLimit != null && userTimeLimit! > 0;
   bool get isUpcoming => DateTime.now().isBefore(startDate);
   bool get isEnded => DateTime.now().isAfter(endDate);

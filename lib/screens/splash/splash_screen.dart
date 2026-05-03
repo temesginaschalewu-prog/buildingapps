@@ -92,8 +92,6 @@ class _SplashScreenState extends State<SplashScreen>
     try {
       final connectivityService = context.read<ConnectivityService>();
       final hiveService = context.read<HiveService>();
-      final authProvider = context.read<AuthProvider>();
-
       // Wait for critical services
       final stopwatch = Stopwatch()..start();
       const maxWaitTime = Duration(seconds: 4);
@@ -417,7 +415,7 @@ class _SplashScreenState extends State<SplashScreen>
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
+              const Icon(
                 Icons.error_outline_rounded,
                 color: AppColors.telegramRed,
                 size: 20,
