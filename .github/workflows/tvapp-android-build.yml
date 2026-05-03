@@ -1,0 +1,120 @@
+name: Build TV App Android
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tvapp-android-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  API_BASE_URL: https://family-academy-backend-a12l.onrender.com
+  APP_VERSION: 1.0.0
+  APP_ENVIRONMENT: production
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Clean
+        run: flutter clean
+        working-directory: familyacademy_tv_app
+
+      - name: Get dependencies
+        run: flutter pub get
+        working-directory: familyacademy_tv_app
+
+      - name: Create .env file
+        run: |
+          cat > .env <<EOF
+          API_BASE_URL=${API_BASE_URL}
+          APP_VERSION=${APP_VERSION}
+          APP_ENVIRONMENT=${APP_ENVIRONMENT}
+          EOF
+        working-directory: familyacademy_tv_app
+
+      - name: Prepare Android signing
+        run: |
+          mkdir -p ~/.android ~/.config/.android
+          if [ ! -f ~/.config/.android/debug.keystore ]; then
+            keytool -genkeypair \
+              -v \
+              -storetype PKCS12 \
+              -keystore ~/.config/.android/debug.keystore \
+              -storepass android \
+              -keypass android \
+              -alias androiddebugkey \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+          cp ~/.config/.android/debug.keystore familyacademy_tv_app/android/app/keystore.jks
+          cp ~/.config/.android/debug.keystore ~/.android/debug.keystore
+
+      - name: Build Android APKs
+        run: flutter build apk --release --split-per-abi --dart-define=API_BASE_URL=${API_BASE_URL}
+        working-directory: familyacademy_tv_app
+
+      - name: Build Universal Android APK
+        run: flutter build apk --release --dart-define=API_BASE_URL=${API_BASE_URL}
+        working-directory: familyacademy_tv_app
+
+      - name: Build Android App Bundle
+        run: flutter build appbundle --release --dart-define=API_BASE_URL=${API_BASE_URL}
+        working-directory: familyacademy_tv_app
+
+      - name: Arrange Android artifacts
+        run: |
+          mkdir -p artifacts/android
+          cp familyacademy_tv_app/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk artifacts/android/tvapp-android-older-armeabi-v7a.apk
+          cp familyacademy_tv_app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk artifacts/android/tvapp-android-newer-arm64-v8a.apk
+          cp familyacademy_tv_app/build/app/outputs/flutter-apk/app-x86_64-release.apk artifacts/android/tvapp-android-emulator-x86_64.apk
+          cp familyacademy_tv_app/build/app/outputs/flutter-apk/app-release.apk artifacts/android/tvapp-android-universal.apk
+          cp familyacademy_tv_app/build/app/outputs/bundle/release/app-release.aab artifacts/android/tvapp-play-store.aab
+
+      - name: Upload Split APK Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tvapp-android-apks
+          path: |
+            artifacts/android/tvapp-android-older-armeabi-v7a.apk
+            artifacts/android/tvapp-android-newer-arm64-v8a.apk
+            artifacts/android/tvapp-android-emulator-x86_64.apk
+          compression-level: 0
+
+      - name: Upload Universal APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tvapp-android-universal
+          path: artifacts/android/tvapp-android-universal.apk
+          compression-level: 0
+
+      - name: Upload AAB Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tvapp-android-aab
+          path: artifacts/android/tvapp-play-store.aab
+          compression-level: 0

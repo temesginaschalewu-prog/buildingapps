@@ -1,0 +1,76 @@
+name: Build TV App macOS
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tvapp-macos-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  API_BASE_URL: https://family-academy-backend-a12l.onrender.com
+  APP_VERSION: 1.0.0
+  APP_ENVIRONMENT: production
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Enable macOS Desktop
+        run: flutter config --enable-macos-desktop
+        working-directory: familyacademy_tv_app
+
+      - name: Clean
+        run: flutter clean
+        working-directory: familyacademy_tv_app
+
+      - name: Get dependencies
+        run: flutter pub get
+        working-directory: familyacademy_tv_app
+
+      - name: Create .env file
+        run: |
+          cat > .env <<EOF
+          API_BASE_URL=${API_BASE_URL}
+          APP_VERSION=${APP_VERSION}
+          APP_ENVIRONMENT=${APP_ENVIRONMENT}
+          EOF
+        working-directory: familyacademy_tv_app
+
+      - name: Build macOS Release
+        run: flutter build macos --release --dart-define=API_BASE_URL=${API_BASE_URL}
+        working-directory: familyacademy_tv_app
+
+      - name: Package macOS app
+        run: |
+          mkdir -p artifacts
+          APP_PATH="$(find familyacademy_tv_app/build/macos/Build/Products/Release -maxdepth 1 -name '*.app' | head -n 1)"
+          if [ -z "$APP_PATH" ]; then
+            echo "No macOS .app bundle found in build output"
+            exit 1
+          fi
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" artifacts/tvapp-macos.zip
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tvapp-macos
+          path: artifacts/tvapp-macos.zip
+          compression-level: 0
