@@ -395,8 +395,8 @@ class _ProgressScreenState extends State<ProgressScreen>
             icon: Icons.ondemand_video_rounded,
           ),
           _buildStatCircle(
-            value: studyTimeHours.toStringAsFixed(1),
-            label: AppStrings.hours,
+            value: _formatStudyTimeValue(studyTimeHours),
+            label: _formatStudyTimeUnit(studyTimeHours),
             color: AppColors.telegramPurple,
             icon: Icons.timer_rounded,
           ),
@@ -568,8 +568,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                     Expanded(
                       child: _buildMiniOverviewCard(
                         title: AppStrings.studyTime,
-                        value:
-                            '${studyTimeHours.toStringAsFixed(1)} ${AppStrings.hours}',
+                        value: _formatStudyTimeDisplay(studyTimeHours),
                         subtitle: _settingsProvider.getProgressStudyTimeSubtitle(),
                         icon: Icons.timer_rounded,
                         color: AppColors.telegramPurple,
@@ -595,6 +594,23 @@ class _ProgressScreenState extends State<ProgressScreen>
         ),
       ],
     );
+  }
+
+  String _formatStudyTimeValue(double studyTimeHours) {
+    if (studyTimeHours >= 1) {
+      return studyTimeHours.toStringAsFixed(1);
+    }
+
+    final minutes = (studyTimeHours * 60).round();
+    return '${minutes <= 0 ? 0 : minutes}';
+  }
+
+  String _formatStudyTimeUnit(double studyTimeHours) {
+    return studyTimeHours >= 1 ? AppStrings.hours : 'min';
+  }
+
+  String _formatStudyTimeDisplay(double studyTimeHours) {
+    return '${_formatStudyTimeValue(studyTimeHours)} ${_formatStudyTimeUnit(studyTimeHours)}';
   }
 
   Widget _buildMiniOverviewCard({

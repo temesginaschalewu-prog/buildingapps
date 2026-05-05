@@ -72,7 +72,7 @@
             android:exported="true"
             android:launchMode="singleTop"
             android:resizeableActivity="false"
-            android:screenOrientation="portrait"
+            android:screenOrientation="fullUser"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/LaunchTheme"

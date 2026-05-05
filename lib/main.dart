@@ -40,7 +40,19 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:media_kit/media_kit.dart' as media_kit;
 
 @pragma('vm:entry-point')
-Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {}
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  try {
+    WidgetsFlutterBinding.ensureInitialized();
+    await HiveService().init();
+    await Firebase.initializeApp();
+  } catch (_) {}
+
+  try {
+    await NotificationService().handleBackgroundMessage(message);
+  } catch (e) {
+    debugLog('Main', 'Background notification handler error: $e');
+  }
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

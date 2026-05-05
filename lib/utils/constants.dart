@@ -18,7 +18,7 @@ class AppConstants {
 
   // App Information
   static const String appName = 'Family Academy';
-  static const String appVersion = '1.5.0+1';
+  static const String appVersion = '1.0.0+1';
 
   // API Version
   static const String apiVersion = '/api/v1';

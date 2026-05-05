@@ -19,6 +19,7 @@ class PracticeQuestionCard extends StatelessWidget {
   final Map<int, bool> showExplanation;
   final Map<int, bool> isQuestionCorrect;
   final Map<int, bool> questionAnswered;
+  final bool showAllExplanations;
   final Function(int, String) onSelectAnswer;
   final Function(int, String) onCheckAnswer;
 
@@ -30,6 +31,7 @@ class PracticeQuestionCard extends StatelessWidget {
     required this.showExplanation,
     required this.isQuestionCorrect,
     required this.questionAnswered,
+    required this.showAllExplanations,
     required this.onSelectAnswer,
     required this.onCheckAnswer,
   });
@@ -41,7 +43,8 @@ class PracticeQuestionCard extends StatelessWidget {
     final selected = selectedAnswers[questionId];
     final isAnswered = questionAnswered[questionId] ?? false;
     final isCorrect = isQuestionCorrect[questionId] ?? false;
-    final showExp = showExplanation[questionId] ?? false;
+    final showExp =
+        (showExplanation[questionId] ?? false) || (showAllExplanations && isAnswered);
 
     final List<Map<String, dynamic>> options = [
       if (question.optionA != null && question.optionA!.isNotEmpty)

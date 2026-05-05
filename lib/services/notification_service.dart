@@ -137,6 +137,24 @@ class NotificationService {
         onDidReceiveBackgroundNotificationResponse:
             _onDidReceiveNotificationResponse,
       );
+
+      final androidPlugin = _localNotifications
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+      if (androidPlugin != null) {
+        const channel = AndroidNotificationChannel(
+          AppConstants.notificationChannelId,
+          AppConstants.notificationChannelName,
+          description: AppConstants.notificationChannelDescription,
+          importance: Importance.high,
+          playSound: true,
+          enableLights: true,
+          enableVibration: true,
+          ledColor: AppColors.info,
+          showBadge: true,
+        );
+        await androidPlugin.createNotificationChannel(channel);
+      }
     } catch (e) {
       debugLog('NotificationService', 'Local notifications init error: $e');
     }
@@ -197,6 +215,13 @@ class NotificationService {
               PlatformHelper.isMacOS) &&
           _firebaseMessaging != null) {
         await _firebaseMessaging!.requestPermission();
+      }
+
+      if (PlatformHelper.isAndroid) {
+        final androidPlugin = _localNotifications
+            .resolvePlatformSpecificImplementation<
+                AndroidFlutterLocalNotificationsPlugin>();
+        await androidPlugin?.requestNotificationsPermission();
       }
     } catch (e) {
       debugLog('NotificationService', 'Permission request error: $e');
@@ -512,6 +537,13 @@ class NotificationService {
         ledOnMs: AppConstants.notificationLedOnMs,
         ledOffMs: AppConstants.notificationLedOffMs,
         enableLights: true,
+        enableVibration: true,
+        category: AndroidNotificationCategory.message,
+        visibility: NotificationVisibility.public,
+        colorized: true,
+        showWhen: true,
+        subText: AppConstants.appName,
+        ticker: title,
         styleInformation: BigTextStyleInformation(
           body,
           contentTitle: title,
@@ -549,6 +581,27 @@ class NotificationService {
       );
     } catch (e) {
       debugLog('NotificationService', 'Show local notification error: $e');
+    }
+  }
+
+  Future<void> handleBackgroundMessage(RemoteMessage message) async {
+    try {
+      await _initNotificationBox();
+      await _initLocalNotifications();
+      await _handleMessage(message);
+
+      final title = message.notification?.title ?? message.data['title'];
+      final body = message.notification?.body ?? message.data['body'];
+
+      if (title != null && body != null) {
+        await showLocalNotification(
+          title: title.toString(),
+          body: body.toString(),
+          payload: json.encode(message.data),
+        );
+      }
+    } catch (e) {
+      debugLog('NotificationService', 'Background message error: $e');
     }
   }
 

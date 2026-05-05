@@ -164,7 +164,7 @@ class NoteCard extends StatelessWidget {
                                 ),
                               ),
                             )
-                          else if (hasFile)
+                          else
                             Container(
                               padding: EdgeInsets.symmetric(
                                 horizontal: ResponsiveValues.spacingS(context),
@@ -193,9 +193,7 @@ class NoteCard extends StatelessWidget {
                       Text(
                         isDownloaded
                             ? 'This note is stored on this device and can be opened offline.'
-                            : hasFile
-                                ? 'Download this note to keep it available offline.'
-                                : 'This note can be opened directly from the app.',
+                            : 'Save this note on the device so it stays available offline.',
                         style: AppTextStyles.caption(context).copyWith(
                           color: isDownloaded
                               ? AppColors.telegramGreen
@@ -241,15 +239,10 @@ class NoteCard extends StatelessWidget {
                     icon: Icons.visibility_rounded,
                     onPressed: onTap,
                   )
-                else if (hasFile)
+                else
                   AppButton.icon(
                     icon: Icons.download_rounded,
                     onPressed: onDownload,
-                  )
-                else
-                  AppButton.icon(
-                    icon: Icons.visibility_rounded,
-                    onPressed: onTap,
                   ),
               ],
             ),
