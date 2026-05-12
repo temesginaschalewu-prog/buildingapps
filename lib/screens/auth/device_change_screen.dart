@@ -377,13 +377,10 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
         throw ApiError(message: approveResponse['message']);
       }
 
-      await Future.delayed(const Duration(seconds: 1));
-
-      final loginResult = await _authProvider.login(
-        _username,
-        password,
-        _newDeviceId ?? _deviceId,
-        null,
+      final loginResult = await _loginAfterApprovedDeviceChange(
+        username: _username,
+        password: password,
+        deviceId: _newDeviceId ?? _deviceId,
       );
 
       if (loginResult['success'] == true) {
@@ -400,6 +397,9 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
         }
 
         if (isMounted) {
+          appRouter.finishDeviceChangeFlow();
+          await _authProvider.clearDeviceChangeRequirement();
+
           SnackbarService()
               .showSuccess(context, 'Device change approved successfully!');
 
@@ -445,6 +445,49 @@ class _DeviceChangeScreenState extends State<DeviceChangeScreen>
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  Future<Map<String, dynamic>> _loginAfterApprovedDeviceChange({
+    required String username,
+    required String password,
+    required String deviceId,
+  }) async {
+    const retryDelays = <Duration>[
+      Duration(seconds: 1),
+      Duration(seconds: 2),
+      Duration(seconds: 3),
+    ];
+
+    Map<String, dynamic> result = const {'success': false};
+
+    for (var attempt = 0; attempt < retryDelays.length; attempt++) {
+      if (attempt > 0) {
+        await Future.delayed(retryDelays[attempt]);
+      } else {
+        await Future.delayed(retryDelays[attempt]);
+      }
+
+      result = await _authProvider.login(
+        username,
+        password,
+        deviceId,
+        null,
+      );
+
+      final requiresDeviceChange = result['requiresDeviceChange'] == true ||
+          result['action'] == 'device_change_required';
+
+      if (result['success'] == true || !requiresDeviceChange) {
+        return result;
+      }
+
+      debugLog(
+        'DeviceChangeScreen',
+        'Retrying post-approval login because device approval is still propagating (attempt ${attempt + 1}/${retryDelays.length})',
+      );
+    }
+
+    return result;
   }
 
   void _cancelDeviceChange() {

@@ -2448,7 +2448,7 @@ class SettingsProvider extends ChangeNotifier
     if (configured != null && configured.trim().isNotEmpty) {
       return configured.trim();
     }
-    return 'Estimated from your saved video progress';
+    return 'Tracked from your recent study activity and saved progress';
   }
 
   String getProgressAverageVideoProgressTitle() {

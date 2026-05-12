@@ -187,7 +187,18 @@ class VideoProvider extends ChangeNotifier
       _isLoadingForChapter[chapterId] ?? false;
 
   List<Video> getVideosByChapter(int chapterId) {
-    return _videosByChapter[chapterId] ?? [];
+    final videos = _videosByChapter[chapterId] ?? [];
+    return List<Video>.unmodifiable(videos);
+  }
+
+  List<Video> _sortVideosNewestFirst(List<Video> videos) {
+    final sorted = List<Video>.from(videos);
+    sorted.sort((a, b) {
+      final createdComparison = b.createdAt.compareTo(a.createdAt);
+      if (createdComparison != 0) return createdComparison;
+      return b.id.compareTo(a.id);
+    });
+    return sorted;
   }
 
   Video? getVideoById(int id) {
@@ -263,7 +274,7 @@ class VideoProvider extends ChangeNotifier
                 }
               }
               if (videos.isNotEmpty) {
-                _videosByChapter[chapterId] = videos;
+                _videosByChapter[chapterId] = _sortVideosNewestFirst(videos);
                 _hasLoadedForChapter[chapterId] = true;
                 _isLoadingForChapter[chapterId] = false;
                 _lastLoadedTime[chapterId] = DateTime.now();
@@ -311,7 +322,7 @@ class VideoProvider extends ChangeNotifier
           }
 
           if (videos.isNotEmpty) {
-            _videosByChapter[chapterId] = videos;
+            _videosByChapter[chapterId] = _sortVideosNewestFirst(videos);
             _hasLoadedForChapter[chapterId] = true;
             _isLoadingForChapter[chapterId] = false;
             _lastLoadedTime[chapterId] = DateTime.now();
@@ -377,7 +388,7 @@ class VideoProvider extends ChangeNotifier
         throw Exception(response.message);
       }
 
-      final videos = response.data ?? [];
+      final videos = _sortVideosNewestFirst(response.data ?? []);
       log('✅ Received ${videos.length} videos from API');
 
       _videosByChapter[chapterId] = videos;
@@ -461,7 +472,7 @@ class VideoProvider extends ChangeNotifier
     try {
       final response = await apiService.getVideosByChapter(chapterId);
       if (response.success && response.data != null) {
-        final videos = response.data!;
+        final videos = _sortVideosNewestFirst(response.data!);
 
         _videosByChapter[chapterId] = videos;
         _lastLoadedTime[chapterId] = DateTime.now();
@@ -516,7 +527,7 @@ class VideoProvider extends ChangeNotifier
               }
             }
             if (videos.isNotEmpty) {
-              _videosByChapter[chapterId] = videos;
+              _videosByChapter[chapterId] = _sortVideosNewestFirst(videos);
               _hasLoadedForChapter[chapterId] = true;
               _lastLoadedTime[chapterId] = DateTime.now();
               _videoUpdateController.add({
@@ -549,7 +560,7 @@ class VideoProvider extends ChangeNotifier
         }
 
         if (videos.isNotEmpty) {
-          _videosByChapter[chapterId] = videos;
+          _videosByChapter[chapterId] = _sortVideosNewestFirst(videos);
           _hasLoadedForChapter[chapterId] = true;
           _lastLoadedTime[chapterId] = DateTime.now();
           _videoUpdateController.add({

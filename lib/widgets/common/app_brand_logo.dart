@@ -36,23 +36,26 @@ class AppBrandLogo extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(borderRadius),
-        child: Image.asset(
-          'assets/images/family_academy_brand_logo.png',
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return Container(
-              decoration: BoxDecoration(
-                color: AppColors.getSurface(context),
-              ),
-              child: Center(
-                child: Icon(
-                  Icons.school_rounded,
-                  color: AppColors.getTextSecondary(context),
-                  size: 36,
+        child: Padding(
+          padding: EdgeInsets.all(size * 0.08),
+          child: Image.asset(
+            'assets/images/family_academy_brand_logo.png',
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) {
+              return Container(
+                decoration: BoxDecoration(
+                  color: AppColors.getSurface(context),
                 ),
-              ),
-            );
-          },
+                child: Center(
+                  child: Icon(
+                    Icons.school_rounded,
+                    color: AppColors.getTextSecondary(context),
+                    size: 36,
+                  ),
+                ),
+              );
+            },
+          ),
         ),
       ),
     );

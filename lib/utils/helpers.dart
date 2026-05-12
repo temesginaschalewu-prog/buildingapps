@@ -4,8 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
+const bool _appDebugLoggingEnabled =
+    bool.fromEnvironment('FA_VERBOSE_LOGS');
+
+bool get isAppDebugLoggingEnabled => kDebugMode && _appDebugLoggingEnabled;
+
 void debugLog(String tag, String message) {
-  if (kReleaseMode) {
+  if (!isAppDebugLoggingEnabled) {
     return;
   }
   debugPrint(

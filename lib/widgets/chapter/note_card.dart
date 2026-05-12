@@ -119,8 +119,7 @@ class NoteCard extends StatelessWidget {
                             Container(
                               padding: EdgeInsets.symmetric(
                                 horizontal: ResponsiveValues.spacingS(context),
-                                vertical:
-                                    ResponsiveValues.spacingXXS(context),
+                                vertical: ResponsiveValues.spacingXXS(context),
                               ),
                               decoration: BoxDecoration(
                                 color: (isPdf
@@ -133,7 +132,8 @@ class NoteCard extends StatelessWidget {
                               ),
                               child: Text(
                                 isPdf ? 'PDF' : 'Document',
-                                style: AppTextStyles.labelSmall(context).copyWith(
+                                style:
+                                    AppTextStyles.labelSmall(context).copyWith(
                                   color: isPdf
                                       ? AppColors.telegramRed
                                       : AppColors.telegramBlue,
@@ -145,8 +145,7 @@ class NoteCard extends StatelessWidget {
                             Container(
                               padding: EdgeInsets.symmetric(
                                 horizontal: ResponsiveValues.spacingS(context),
-                                vertical:
-                                    ResponsiveValues.spacingXXS(context),
+                                vertical: ResponsiveValues.spacingXXS(context),
                               ),
                               decoration: BoxDecoration(
                                 color: AppColors.telegramGreen
@@ -168,8 +167,7 @@ class NoteCard extends StatelessWidget {
                             Container(
                               padding: EdgeInsets.symmetric(
                                 horizontal: ResponsiveValues.spacingS(context),
-                                vertical:
-                                    ResponsiveValues.spacingXXS(context),
+                                vertical: ResponsiveValues.spacingXXS(context),
                               ),
                               decoration: BoxDecoration(
                                 color: AppColors.telegramBlue
@@ -188,19 +186,6 @@ class NoteCard extends StatelessWidget {
                               ),
                             ),
                         ],
-                      ),
-                      SizedBox(height: ResponsiveValues.spacingS(context)),
-                      Text(
-                        isDownloaded
-                            ? 'This note is stored on this device and can be opened offline.'
-                            : 'Save this note on the device so it stays available offline.',
-                        style: AppTextStyles.caption(context).copyWith(
-                          color: isDownloaded
-                              ? AppColors.telegramGreen
-                              : AppColors.getTextSecondary(context),
-                          fontWeight:
-                              isDownloaded ? FontWeight.w600 : FontWeight.w400,
-                        ),
                       ),
                     ],
                   ),

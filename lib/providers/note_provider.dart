@@ -215,7 +215,18 @@ class NoteProvider extends ChangeNotifier
       _isLoadingForChapter[chapterId] ?? false;
 
   List<Note> getNotesByChapter(int chapterId) {
-    return _notesByChapter[chapterId] ?? [];
+    final notes = _notesByChapter[chapterId] ?? [];
+    return List<Note>.unmodifiable(notes);
+  }
+
+  List<Note> _sortNotesNewestFirst(List<Note> notes) {
+    final sorted = List<Note>.from(notes);
+    sorted.sort((a, b) {
+      final createdComparison = b.createdAt.compareTo(a.createdAt);
+      if (createdComparison != 0) return createdComparison;
+      return b.id.compareTo(a.id);
+    });
+    return sorted;
   }
 
   Note? getNoteById(int id) {
@@ -286,7 +297,7 @@ class NoteProvider extends ChangeNotifier
                 }
               }
               if (notes.isNotEmpty) {
-                _notesByChapter[chapterId] = notes;
+                _notesByChapter[chapterId] = _sortNotesNewestFirst(notes);
                 _hasLoadedForChapter[chapterId] = true;
                 setLoaded();
                 _isLoadingForChapter[chapterId] = false;
@@ -329,7 +340,7 @@ class NoteProvider extends ChangeNotifier
           }
 
           if (notes.isNotEmpty) {
-            _notesByChapter[chapterId] = notes;
+            _notesByChapter[chapterId] = _sortNotesNewestFirst(notes);
             _hasLoadedForChapter[chapterId] = true;
             setLoaded();
             _isLoadingForChapter[chapterId] = false;
@@ -393,7 +404,7 @@ class NoteProvider extends ChangeNotifier
       final response = await apiService.getNotesByChapter(chapterId);
 
       if (response.success && response.data != null) {
-        final notes = response.data!;
+        final notes = _sortNotesNewestFirst(response.data!);
         log('✅ Received ${notes.length} notes from API');
 
         _notesByChapter[chapterId] = notes;
@@ -482,7 +493,7 @@ class NoteProvider extends ChangeNotifier
     try {
       final response = await apiService.getNotesByChapter(chapterId);
       if (response.success && response.data != null) {
-        final notes = response.data!;
+        final notes = _sortNotesNewestFirst(response.data!);
 
         _notesByChapter[chapterId] = notes;
         _lastLoadedTime[chapterId] = DateTime.now();
@@ -575,7 +586,7 @@ class NoteProvider extends ChangeNotifier
               }
             }
             if (notes.isNotEmpty) {
-              _notesByChapter[chapterId] = notes;
+              _notesByChapter[chapterId] = _sortNotesNewestFirst(notes);
               _hasLoadedForChapter[chapterId] = true;
               _lastLoadedTime[chapterId] = DateTime.now();
               _noteUpdateController.add({
@@ -608,7 +619,7 @@ class NoteProvider extends ChangeNotifier
         }
 
         if (notes.isNotEmpty) {
-          _notesByChapter[chapterId] = notes;
+          _notesByChapter[chapterId] = _sortNotesNewestFirst(notes);
           _hasLoadedForChapter[chapterId] = true;
           _lastLoadedTime[chapterId] = DateTime.now();
           _noteUpdateController.add({

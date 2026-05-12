@@ -178,14 +178,15 @@ class ApiService {
     try {
       final prefs = await _ensurePrefs();
       if (Hive.isBoxOpen('device_info_box')) {
-        final deviceInfoBox = Hive.box<dynamic>('device_info_box');
+        final deviceInfoBox = Hive.box<Map<String, dynamic>>('device_info_box');
         if (deviceInfoBox.containsKey('current_device')) {
           final dynamic deviceInfo = deviceInfoBox.get('current_device');
           final value = deviceInfo is Map ? deviceInfo['device_id'] : null;
           return value?.toString();
         }
       } else {
-        final deviceInfoBox = await Hive.openBox<dynamic>('device_info_box');
+        final deviceInfoBox =
+            await Hive.openBox<Map<String, dynamic>>('device_info_box');
         if (deviceInfoBox.containsKey('current_device')) {
           final dynamic deviceInfo = deviceInfoBox.get('current_device');
           final value = deviceInfo is Map ? deviceInfo['device_id'] : null;
@@ -2342,6 +2343,7 @@ class ApiService {
     bool? notesViewed,
     int? questionsAttempted,
     int? questionsCorrect,
+    double? studyTimeMinutes,
   }) async {
     try {
       final data = {
@@ -2351,6 +2353,10 @@ class ApiService {
         if (questionsAttempted != null)
           'questions_attempted': questionsAttempted,
         if (questionsCorrect != null) 'questions_correct': questionsCorrect,
+        if (studyTimeMinutes != null && studyTimeMinutes > 0)
+          'study_time_minutes': double.parse(
+            studyTimeMinutes.toStringAsFixed(2),
+          ),
       };
 
       final response = await _dio.post('$_apiPrefix/progress/save', data: data);

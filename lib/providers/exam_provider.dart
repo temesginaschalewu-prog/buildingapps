@@ -258,10 +258,26 @@ class ExamProvider extends ChangeNotifier
       }
       _examsByCourse[exam.courseId]!.add(exam);
     }
+    for (final entry in _examsByCourse.entries) {
+      entry.value.sort(_compareExamsNewestFirst);
+    }
+  }
+
+  int _compareExamsNewestFirst(Exam a, Exam b) {
+    final startComparison = b.startDate.compareTo(a.startDate);
+    if (startComparison != 0) return startComparison;
+    return b.id.compareTo(a.id);
+  }
+
+  List<Exam> _sortExamsNewestFirst(List<Exam> exams) {
+    final sorted = List<Exam>.from(exams);
+    sorted.sort(_compareExamsNewestFirst);
+    return sorted;
   }
 
   // ===== GETTERS =====
-  List<Exam> get availableExams => List.unmodifiable(_availableExams);
+  List<Exam> get availableExams =>
+      List.unmodifiable(_sortExamsNewestFirst(_availableExams));
   List<ExamResult> get myExamResults => List.unmodifiable(_myExamResults);
 
   bool get hasLoadedExams => _hasLoadedExams;
@@ -272,7 +288,8 @@ class ExamProvider extends ChangeNotifier
       _resultsUpdateController.stream;
 
   List<Exam> getExamsByCourse(int courseId) {
-    return _examsByCourse[courseId] ?? [];
+    final exams = _examsByCourse[courseId] ?? [];
+    return List<Exam>.unmodifiable(exams);
   }
 
   bool isLoadingForCourse(int courseId) =>
@@ -358,7 +375,7 @@ class ExamProvider extends ChangeNotifier
               }
             }
             if (exams.isNotEmpty) {
-              _availableExams = exams;
+              _availableExams = _sortExamsNewestFirst(exams);
               _rebuildExamsByCourse();
               _hasLoadedExams = true;
               _hasLoadedForCourse[courseId] = true;
@@ -393,8 +410,9 @@ class ExamProvider extends ChangeNotifier
           }
 
           if (exams.isNotEmpty) {
-            _examsByCourse[courseId] = exams;
-            _updateGlobalExams(exams);
+            final sortedExams = _sortExamsNewestFirst(exams);
+            _examsByCourse[courseId] = sortedExams;
+            _updateGlobalExams(sortedExams);
             _hasLoadedForCourse[courseId] = true;
             _hasLoadedExams = true;
             setLoaded();
@@ -466,7 +484,7 @@ class ExamProvider extends ChangeNotifier
       );
 
       if (response.success) {
-        final exams = response.data ?? [];
+        final exams = _sortExamsNewestFirst(response.data ?? []);
         log('✅ Received ${exams.length} exams from API');
 
         _examsByCourse[courseId] = exams;
@@ -833,6 +851,7 @@ class ExamProvider extends ChangeNotifier
         _availableExams[index] = exam;
       }
     }
+    _availableExams.sort(_compareExamsNewestFirst);
   }
 
   // ✅ FIXED: Background refresh with rate limiting
@@ -865,7 +884,7 @@ class ExamProvider extends ChangeNotifier
       );
 
       if (response.success && response.data != null) {
-        final exams = response.data!;
+        final exams = _sortExamsNewestFirst(response.data!);
 
         _examsByCourse[courseId] = exams;
         _updateGlobalExams(exams);
@@ -954,7 +973,7 @@ class ExamProvider extends ChangeNotifier
             }
           }
           if (exams.isNotEmpty) {
-            _availableExams = exams;
+            _availableExams = _sortExamsNewestFirst(exams);
             _rebuildExamsByCourse();
             _hasLoadedExams = true;
             _examsUpdateController.add(_availableExams);

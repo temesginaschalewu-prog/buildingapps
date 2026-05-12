@@ -481,14 +481,19 @@ class _MainNavigationState extends State<MainNavigation>
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(
                                 ResponsiveValues.radiusMedium(context)),
-                            child: Image.asset(
-                              'assets/images/family_academy_brand_logo.png',
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                return Icon(Icons.school_rounded,
-                                    size: ResponsiveValues.iconSizeL(context),
-                                    color: AppColors.getTextSecondary(context));
-                              },
+                            child: Padding(
+                              padding:
+                                  EdgeInsets.all(ResponsiveValues.spacingM(context)),
+                              child: Image.asset(
+                                'assets/images/family_academy_brand_logo.png',
+                                fit: BoxFit.contain,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return Icon(Icons.school_rounded,
+                                      size: ResponsiveValues.iconSizeL(context),
+                                      color:
+                                          AppColors.getTextSecondary(context));
+                                },
+                              ),
                             ),
                           ),
                         ),
@@ -711,16 +716,22 @@ class _MainNavigationState extends State<MainNavigation>
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(
                                       ResponsiveValues.radiusSmall(context)),
-                                  child: Image.asset(
-                                    'assets/images/family_academy_brand_logo.png',
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      return Icon(Icons.school_rounded,
-                                          size: ResponsiveValues.iconSizeS(
-                                              context),
-                                          color:
-                                              AppColors.getTextSecondary(context));
-                                    },
+                                  child: Padding(
+                                    padding: EdgeInsets.all(
+                                      ResponsiveValues.spacingS(context),
+                                    ),
+                                    child: Image.asset(
+                                      'assets/images/family_academy_brand_logo.png',
+                                      fit: BoxFit.contain,
+                                      errorBuilder:
+                                          (context, error, stackTrace) {
+                                        return Icon(Icons.school_rounded,
+                                            size: ResponsiveValues.iconSizeS(
+                                                context),
+                                            color: AppColors.getTextSecondary(
+                                                context));
+                                      },
+                                    ),
                                   ),
                                 ),
                               ),

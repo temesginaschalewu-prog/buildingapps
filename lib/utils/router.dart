@@ -481,6 +481,12 @@ class AppRouter {
       _isNavigatingToSchoolSelection = value;
   void setNavigatingFromDeviceChange(bool value) =>
       _isNavigatingFromDeviceChange = value;
+
+  void finishDeviceChangeFlow() {
+    _isDeviceChangeInProgress = false;
+    _pendingDeviceChangeData = null;
+    _isNavigatingFromDeviceChange = true;
+  }
 }
 
 final appRouter = AppRouter();
