@@ -75,6 +75,7 @@ dependencies:
   
   syncfusion_flutter_pdfviewer: ^33.1.44
   flutter_widget_from_html: ^0.17.1
+  html: ^0.15.6
 
   
   timezone: ^0.11.0

@@ -25,6 +25,7 @@ class NoteCard extends StatelessWidget {
   final double downloadProgress;
   final VoidCallback onTap;
   final VoidCallback onDownload;
+  final VoidCallback onRemove;
 
   const NoteCard({
     super.key,
@@ -36,6 +37,7 @@ class NoteCard extends StatelessWidget {
     required this.downloadProgress,
     required this.onTap,
     required this.onDownload,
+    required this.onRemove,
   });
 
   @override
@@ -141,50 +143,6 @@ class NoteCard extends StatelessWidget {
                                 ),
                               ),
                             ),
-                          if (isDownloaded)
-                            Container(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: ResponsiveValues.spacingS(context),
-                                vertical: ResponsiveValues.spacingXXS(context),
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.telegramGreen
-                                    .withValues(alpha: 0.10),
-                                borderRadius: BorderRadius.circular(
-                                  ResponsiveValues.radiusFull(context),
-                                ),
-                              ),
-                              child: Text(
-                                'Saved offline',
-                                style:
-                                    AppTextStyles.labelSmall(context).copyWith(
-                                  color: AppColors.telegramGreen,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            )
-                          else
-                            Container(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: ResponsiveValues.spacingS(context),
-                                vertical: ResponsiveValues.spacingXXS(context),
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.telegramBlue
-                                    .withValues(alpha: 0.08),
-                                borderRadius: BorderRadius.circular(
-                                  ResponsiveValues.radiusFull(context),
-                                ),
-                              ),
-                              child: Text(
-                                'Download for offline',
-                                style:
-                                    AppTextStyles.labelSmall(context).copyWith(
-                                  color: AppColors.telegramBlue,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
                         ],
                       ),
                     ],
@@ -221,8 +179,8 @@ class NoteCard extends StatelessWidget {
                   )
                 else if (isDownloaded)
                   AppButton.icon(
-                    icon: Icons.visibility_rounded,
-                    onPressed: onTap,
+                    icon: Icons.delete_outline_rounded,
+                    onPressed: onRemove,
                   )
                 else
                   AppButton.icon(

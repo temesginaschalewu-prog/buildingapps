@@ -3,8 +3,11 @@
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:html/dom.dart' as html_dom;
+import 'package:html/parser.dart' as html_parser;
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:path_provider/path_provider.dart';
@@ -825,7 +828,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
 
       VideoQuality? selectedQuality;
 
-      if (video.hasQualities) {
+      if (video.availableQualities.length > 1) {
         if (isMounted) Navigator.pop(context);
         selectedQuality = await _showQualitySelector(video, forPlayback: true);
         if (selectedQuality == null) return;
@@ -870,7 +873,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         _isPlayingVideo = true;
         _isVideoDialogOpen = true;
         _isPlayerInitialized = false;
-        _currentPlaybackQualityLabel = AppStrings.offlineQuality;
+        _currentPlaybackQualityLabel = null;
         _videoPlaybackStartedAt = DateTime.now();
       });
 
@@ -879,7 +882,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         throw Exception('Downloaded file not found');
       }
 
-      if (PlatformHelper.isLinux) {
+      if (PlatformHelper.shouldUseMediaKit) {
         await _playLocalWithMediaKit(video, localPath);
       } else {
         await _playWithVideoPlayer(video, localPath);
@@ -932,11 +935,11 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         _videoPlaybackStartedAt = DateTime.now();
       });
 
-      if (PlatformHelper.isLinux) {
+      if (PlatformHelper.shouldUseMediaKit) {
         try {
           await _playWithMediaKit(video, videoUrl);
         } catch (e) {
-          debugLog('VideoCard', 'MediaKit failed on Linux: $e');
+          debugLog('VideoCard', 'MediaKit failed on desktop playback: $e');
           SnackbarService().showError(context, AppStrings.videoPlaybackFailed);
         }
       } else {
@@ -1112,165 +1115,211 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
               bottom: false,
               child: Stack(
                 children: [
-                Positioned.fill(
-                  child: ColoredBox(
-                    color: Colors.black,
-                    child: Center(
-                      child: PlatformHelper.isLinux &&
-                              _mediaKitVideoController != null
-                          ? media_kit_video.Video(
-                              controller: _mediaKitVideoController!,
-                              fit: BoxFit.contain,
-                            )
-                          : (_chewieController != null
-                              ? Chewie(controller: _chewieController!)
-                              : const CircularProgressIndicator()),
+                  Positioned.fill(
+                    child: ColoredBox(
+                      color: Colors.black,
+                      child: Center(
+                        child: PlatformHelper.shouldUseMediaKit &&
+                                _mediaKitVideoController != null
+                            ? media_kit_video.Video(
+                                controller: _mediaKitVideoController!,
+                                fit: BoxFit.contain,
+                              )
+                            : (_chewieController != null
+                                ? Chewie(controller: _chewieController!)
+                                : const CircularProgressIndicator()),
+                      ),
                     ),
                   ),
-                ),
-                if (!_isPlayerInitialized)
-                  const Positioned.fill(
-                    child: ColoredBox(
-                      color: Color(0x66000000),
-                      child: Center(
-                        child: CircularProgressIndicator(
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                              AppColors.telegramBlue),
+                  if (!_isPlayerInitialized)
+                    const Positioned.fill(
+                      child: ColoredBox(
+                        color: Color(0x66000000),
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                                AppColors.telegramBlue),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                Positioned(
-                  top: ResponsiveValues.spacingS(context),
-                  right: ResponsiveValues.spacingS(context),
-                  child: Container(
-                    decoration: const BoxDecoration(
-                        color: Colors.black54, shape: BoxShape.circle),
-                    child: IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white),
-                      onPressed: () => _closeVideoPlayer(context, video),
+                  Positioned(
+                    top: ResponsiveValues.spacingS(context),
+                    right: ResponsiveValues.spacingS(context),
+                    child: Container(
+                      decoration: const BoxDecoration(
+                          color: Colors.black54, shape: BoxShape.circle),
+                      child: IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white),
+                        onPressed: () => _closeVideoPlayer(context, video),
+                      ),
                     ),
                   ),
-                ),
-                Positioned(
-                  top: ResponsiveValues.spacingM(context),
-                  left: ResponsiveValues.spacingM(context),
-                  child: Container(
-                    padding: ResponsiveValues.mediaOverlayChipPadding(context),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                          colors: [Color(0xFF0088CC), Color(0xFF0055AA)]),
-                      borderRadius: BorderRadius.circular(
-                        ResponsiveValues.radiusFull(context),
+                  if ((_currentPlaybackQualityLabel?.isNotEmpty ?? false) &&
+                      _currentPlaybackQualityLabel != AppStrings.offlineQuality)
+                    Positioned(
+                      top: ResponsiveValues.spacingM(context),
+                      left: ResponsiveValues.spacingM(context),
+                      child: GestureDetector(
+                        onTap: (!_cachedVideoPaths.containsKey(video.id) &&
+                                video.availableQualities.length > 1)
+                            ? () => _showStreamingQualitySelector(video)
+                            : null,
+                        child: Container(
+                          padding:
+                              ResponsiveValues.mediaOverlayChipPadding(context),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                                colors: [Color(0xFF0088CC), Color(0xFF0055AA)]),
+                            borderRadius: BorderRadius.circular(
+                              ResponsiveValues.radiusFull(context),
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.3),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                _currentPlaybackQualityLabel!,
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize:
+                                      ResponsiveValues.mediaOverlayChipTextSize(
+                                              context) +
+                                          1,
+                                ),
+                              ),
+                              if (!_cachedVideoPaths.containsKey(video.id) &&
+                                  video.availableQualities.length > 1) ...[
+                                const SizedBox(width: 6),
+                                const Icon(
+                                  Icons.keyboard_arrow_down_rounded,
+                                  color: Colors.white,
+                                  size: 18,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.3),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
+                    ),
+                  if (!_cachedVideoPaths.containsKey(video.id) &&
+                      video.availableQualities.length > 1)
+                    Positioned(
+                      left: ResponsiveValues.spacingM(context),
+                      bottom: ResponsiveValues.spacingXXL(context),
+                      child: FilledButton.icon(
+                        onPressed: () => _showStreamingQualitySelector(video),
+                        icon: const Icon(Icons.hd_rounded, size: 18),
+                        label: Text(
+                          _currentPlaybackQualityLabel ?? 'Quality',
+                        ),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.black87,
+                          foregroundColor: Colors.white,
+                          padding: EdgeInsets.symmetric(
+                            horizontal: ResponsiveValues.spacingM(context),
+                            vertical: ResponsiveValues.spacingS(context),
+                          ),
+                        ),
+                      ),
+                    ),
+                  Positioned(
+                    right: ResponsiveValues.spacingM(context),
+                    bottom: ResponsiveValues.spacingXXL(context),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.black54,
+                            borderRadius: BorderRadius.circular(
+                              ResponsiveValues.radiusLarge(context),
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              IconButton(
+                                icon: Icon(
+                                  _currentVolume <= 0
+                                      ? Icons.volume_off_rounded
+                                      : Icons.volume_up_rounded,
+                                  color: Colors.white,
+                                ),
+                                onPressed: () {
+                                  _refreshVideoUi(() {
+                                    _showVolumeSlider = !_showVolumeSlider;
+                                  });
+                                },
+                              ),
+                              if (_showVolumeSlider)
+                                SizedBox(
+                                  height: 140,
+                                  child: RotatedBox(
+                                    quarterTurns: 3,
+                                    child: Slider(
+                                      value: _currentVolume,
+                                      onChanged: _updatePlaybackVolume,
+                                      min: 0.0,
+                                      max: 1.0,
+                                      activeColor: AppColors.telegramBlue,
+                                      inactiveColor: Colors.white24,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        SizedBox(height: ResponsiveValues.spacingM(context)),
+                        Container(
+                          padding: EdgeInsets.all(
+                            ResponsiveValues.spacingXS(context),
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black54,
+                            borderRadius: BorderRadius.circular(
+                              ResponsiveValues.radiusLarge(context),
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              IconButton(
+                                tooltip: 'Portrait',
+                                icon: const Icon(
+                                    Icons.stay_current_portrait_rounded,
+                                    color: Colors.white),
+                                onPressed: () => _setPlaybackOrientation(
+                                  DeviceOrientation.portraitUp,
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: 'Landscape',
+                                icon: const Icon(
+                                    Icons.stay_current_landscape_rounded,
+                                    color: Colors.white),
+                                onPressed: () => _setPlaybackOrientation(
+                                  DeviceOrientation.landscapeLeft,
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: 'Auto rotate',
+                                icon: const Icon(Icons.screen_rotation_rounded,
+                                    color: Colors.white),
+                                onPressed: _prepareVideoPlaybackSession,
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
-                    child: Text(
-                      _currentPlaybackQualityLabel ??
-                          video.getRecommendedQuality().label,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize:
-                            ResponsiveValues.mediaOverlayChipTextSize(context) +
-                                1,
-                      ),
-                    ),
                   ),
-                ),
-                Positioned(
-                  right: ResponsiveValues.spacingM(context),
-                  bottom: ResponsiveValues.spacingXXL(context),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.black54,
-                          borderRadius: BorderRadius.circular(
-                            ResponsiveValues.radiusLarge(context),
-                          ),
-                        ),
-                        child: Column(
-                          children: [
-                            IconButton(
-                              icon: Icon(
-                                _currentVolume <= 0
-                                    ? Icons.volume_off_rounded
-                                    : Icons.volume_up_rounded,
-                                color: Colors.white,
-                              ),
-                              onPressed: () {
-                                _refreshVideoUi(() {
-                                  _showVolumeSlider = !_showVolumeSlider;
-                                });
-                              },
-                            ),
-                            if (_showVolumeSlider)
-                              SizedBox(
-                                height: 140,
-                                child: RotatedBox(
-                                  quarterTurns: 3,
-                                  child: Slider(
-                                    value: _currentVolume,
-                                    onChanged: _updatePlaybackVolume,
-                                    min: 0.0,
-                                    max: 1.0,
-                                    activeColor: AppColors.telegramBlue,
-                                    inactiveColor: Colors.white24,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      SizedBox(height: ResponsiveValues.spacingM(context)),
-                      Container(
-                        padding: EdgeInsets.all(
-                          ResponsiveValues.spacingXS(context),
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black54,
-                          borderRadius: BorderRadius.circular(
-                            ResponsiveValues.radiusLarge(context),
-                          ),
-                        ),
-                        child: Column(
-                          children: [
-                            IconButton(
-                              tooltip: 'Portrait',
-                              icon: const Icon(Icons.stay_current_portrait_rounded,
-                                  color: Colors.white),
-                              onPressed: () => _setPlaybackOrientation(
-                                DeviceOrientation.portraitUp,
-                              ),
-                            ),
-                            IconButton(
-                              tooltip: 'Landscape',
-                              icon: const Icon(Icons.stay_current_landscape_rounded,
-                                  color: Colors.white),
-                              onPressed: () => _setPlaybackOrientation(
-                                DeviceOrientation.landscapeLeft,
-                              ),
-                            ),
-                            IconButton(
-                              tooltip: 'Auto rotate',
-                              icon: const Icon(Icons.screen_rotation_rounded,
-                                  color: Colors.white),
-                              onPressed: _prepareVideoPlaybackSession,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
                 ],
               ),
             ),
@@ -1626,7 +1675,16 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
       } catch (e) {}
     }
 
-    final quality = _downloadQuality[video.id] ??
+    VideoQuality? quality = _downloadQuality[video.id];
+    if (quality == null && video.availableQualities.length > 1) {
+      quality = await _showQualitySelector(video, forPlayback: false);
+      if (quality == null) return;
+      if (isMounted) {
+        setState(() => _downloadQuality[video.id] = quality!);
+      }
+    }
+
+    quality ??=
         VideoQuality(label: '480p', url: video.fullVideoUrl, height: 480);
 
     setState(() {
@@ -1827,6 +1885,28 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
         SnackbarService()
             .showError(context, '${AppStrings.downloadFailed}: $e');
       }
+    }
+  }
+
+  Future<void> _removeDownloadedNote(Note note) async {
+    final cachedPath = _cachedNotePaths[note.id];
+    if (cachedPath == null) return;
+
+    try {
+      final file = File(cachedPath);
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (_) {}
+
+    if (!isMounted) return;
+
+    setState(() {
+      _cachedNotePaths.remove(note.id);
+    });
+    await _saveCacheMetadata();
+    if (isMounted) {
+      SnackbarService().showSuccess(context, '${note.title} removed.');
     }
   }
 
@@ -2304,6 +2384,7 @@ class _ChapterContentScreenState extends State<ChapterContentScreen>
               );
             },
             onDownload: () => _downloadNote(note),
+            onRemove: () => _removeDownloadedNote(note),
           ),
         );
       },
@@ -2702,6 +2783,25 @@ class NoteDetailScreen extends StatelessWidget {
   final Note note;
   final String? cachedPath;
 
+  static const Map<String, String> _bulletSymbols = {
+    'diamond': '❖',
+    'hand': '☞',
+    'dash': '—',
+    'hollow-circle': '○',
+    'square': '■',
+    'filled-circle': '●',
+    'double-arrow': '⇒',
+    'check': '✓',
+  };
+
+  static const Map<String, String> _orderedListStyles = {
+    '1': 'decimal',
+    'a': 'lower-alpha',
+    'A': 'upper-alpha',
+    'i': 'lower-roman',
+    'I': 'upper-roman',
+  };
+
   const NoteDetailScreen({super.key, required this.note, this.cachedPath});
 
   Future<void> _openFile(BuildContext context, String filePath) async {
@@ -2764,7 +2864,8 @@ class NoteDetailScreen extends StatelessWidget {
                       ResponsiveValues.radiusXLarge(context),
                     ),
                     border: Border.all(
-                      color: AppColors.getDivider(context).withValues(alpha: 0.65),
+                      color:
+                          AppColors.getDivider(context).withValues(alpha: 0.65),
                     ),
                     boxShadow: [
                       BoxShadow(
@@ -2775,24 +2876,469 @@ class NoteDetailScreen extends StatelessWidget {
                     ],
                   ),
             child: SelectionContainer.disabled(
-              child: HtmlWidget(
-                content,
-                textStyle:
-                    AppTextStyles.bodyLarge(context).copyWith(height: 1.75),
-                onTapUrl: (url) async {
-                  final uri = Uri.parse(url);
-                  if (await canLaunchUrl(uri)) {
-                    await launchUrl(uri, mode: LaunchMode.externalApplication);
-                    return true;
-                  }
-                  return false;
+              child: _buildNoteHtml(context, content),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNoteHtml(BuildContext context, String content) {
+    try {
+      final normalizedContent = _normalizeNoteHtml(content);
+
+      return HtmlWidget(
+        normalizedContent,
+        textStyle: AppTextStyles.bodyLarge(context).copyWith(height: 1.75),
+        customStylesBuilder: (element) {
+          switch (element.localName) {
+            case 'table':
+              return {
+                'width': '100%',
+                'border-collapse': 'collapse',
+                'table-layout': 'fixed',
+                'margin': '16px 0',
+                'border': '1px solid rgba(120,120,120,0.45)',
+              };
+            case 'th':
+              return {
+                'padding': '10px',
+                'border': '1px solid rgba(120,120,120,0.45)',
+                'background-color': '#eef5fb',
+                'vertical-align': 'top',
+                'word-break': 'break-word',
+              };
+            case 'td':
+              return {
+                'padding': '10px',
+                'border': '1px solid rgba(120,120,120,0.35)',
+                'vertical-align': 'top',
+                'word-break': 'break-word',
+              };
+            case 'tr':
+              return {'display': 'table-row'};
+            case 'span':
+              if (element.attributes['data-bullet-marker'] != null) {
+                return {
+                  'display': 'inline-block',
+                  'min-width': '1.6em',
+                  'font-weight': '700',
+                };
+              }
+              return null;
+            default:
+              return null;
+          }
+        },
+        customWidgetBuilder: (element) {
+          if (element.localName == 'img') {
+            final src = element.attributes['src']?.trim() ?? '';
+            if (src.isEmpty ||
+                src == 'null' ||
+                src.startsWith('blob:') ||
+                src.startsWith('data:')) {
+              return const SizedBox.shrink();
+            }
+          }
+          return null;
+        },
+        onTapUrl: (url) async {
+          final uri = Uri.parse(url);
+          if (await canLaunchUrl(uri)) {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+            return true;
+          }
+          return false;
+        },
+      );
+    } catch (_) {
+      return HtmlWidget(
+        content,
+        textStyle: AppTextStyles.bodyLarge(context).copyWith(height: 1.75),
+      );
+    }
+  }
+
+  Widget _buildHtmlTable(BuildContext context, dynamic tableElement) {
+    final rows = tableElement.querySelectorAll('tr');
+    if (rows.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final rowCells = rows
+        .map(
+          (row) => row.children
+              .where((cell) => cell.localName == 'th' || cell.localName == 'td')
+              .toList(),
+        )
+        .where((cells) => cells.isNotEmpty)
+        .toList();
+
+    if (rowCells.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final maxColumns = rowCells
+        .map((cells) => cells.length)
+        .fold<int>(0, (current, value) => value > current ? value : current);
+
+    final borderColor = AppColors.getDivider(context).withValues(alpha: 0.8);
+    final surfaceColor = AppColors.getSurface(context);
+    final headerColor = AppColors.telegramBlue.withValues(alpha: 0.08);
+    final cellTextStyle =
+        AppTextStyles.bodyMedium(context).copyWith(height: 1.55);
+
+    final minTableWidth = math.max<double>(
+      MediaQuery.of(context).size.width - 32.0,
+      maxColumns * 180.0,
+    );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(
+          ResponsiveValues.radiusLarge(context),
+        ),
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border.all(color: borderColor),
+            color: surfaceColor,
+          ),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minWidth: minTableWidth,
+              ),
+              child: Table(
+                defaultVerticalAlignment: TableCellVerticalAlignment.top,
+                columnWidths: {
+                  for (int i = 0; i < maxColumns; i++)
+                    i: const IntrinsicColumnWidth(),
                 },
+                border: TableBorder.symmetric(
+                  inside: BorderSide(color: borderColor),
+                  outside: BorderSide.none,
+                ),
+                children: rowCells.map((cells) {
+                  final paddedCells = List<dynamic>.from(cells);
+                  while (paddedCells.length < maxColumns) {
+                    paddedCells.add(null);
+                  }
+
+                  return TableRow(
+                    children: paddedCells.map((cell) {
+                      if (cell == null) {
+                        return const SizedBox.shrink();
+                      }
+
+                      final isHeader = cell.localName == 'th';
+                      return Container(
+                        constraints: const BoxConstraints(minWidth: 180),
+                        color: isHeader ? headerColor : surfaceColor,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        child: HtmlWidget(
+                          _normalizeNoteHtml(
+                            cell.innerHtml.trim().isEmpty
+                                ? '&nbsp;'
+                                : cell.innerHtml,
+                          ),
+                          textStyle: cellTextStyle.copyWith(
+                            fontWeight:
+                                isHeader ? FontWeight.w700 : FontWeight.w500,
+                          ),
+                          customStylesBuilder: (innerElement) {
+                            if (innerElement.localName == 'p') {
+                              return {'margin': '0'};
+                            }
+                            if (innerElement.localName == 'span' &&
+                                innerElement.attributes['data-bullet-marker'] !=
+                                    null) {
+                              return {
+                                'display': 'inline-block',
+                                'min-width': '1.6em',
+                                'font-weight': '700',
+                              };
+                            }
+                            return null;
+                          },
+                          onTapUrl: (url) async {
+                            final uri = Uri.parse(url);
+                            if (await canLaunchUrl(uri)) {
+                              await launchUrl(
+                                uri,
+                                mode: LaunchMode.externalApplication,
+                              );
+                              return true;
+                            }
+                            return false;
+                          },
+                        ),
+                      );
+                    }).toList(),
+                  );
+                }).toList(),
               ),
             ),
           ),
         ),
       ),
     );
+  }
+
+  String _normalizeNoteHtml(String content) {
+    if (content.trim().isEmpty) return content;
+
+    final document = html_parser.parse(content);
+
+    for (final image in document.querySelectorAll('img')) {
+      final src = image.attributes['src']?.trim() ?? '';
+      if (src.isEmpty ||
+          src == 'null' ||
+          src.startsWith('blob:') ||
+          src.startsWith('data:')) {
+        image.remove();
+      }
+    }
+
+    for (final list in document.querySelectorAll('ul[data-list-type]')) {
+      final listType = list.attributes['data-list-type'] ?? 'filled-circle';
+      final symbol = _bulletSymbols[listType] ?? '●';
+      final replacementNodes = <html_dom.Node>[];
+      for (final item
+          in list.children.where((element) => element.localName == 'li')) {
+        final paragraph = html_dom.Element.tag('p')
+          ..attributes['style'] = 'margin:0 0 0.85rem 0;';
+        final prefix = html_dom.Element.tag('span')
+          ..attributes['data-bullet-marker'] = symbol
+          ..attributes['style'] =
+              'display:inline-block;min-width:1.6em;font-weight:700;';
+        prefix.nodes.add(html_dom.Text('$symbol '));
+        paragraph.nodes.add(prefix);
+        paragraph.nodes.addAll(_flattenListItemNodes(item));
+        replacementNodes.add(paragraph);
+      }
+      list.replaceWith(html_dom.DocumentFragment()..nodes.addAll(replacementNodes));
+    }
+
+    for (final list in document.querySelectorAll('ol')) {
+      final listType = list.attributes['data-list-type'] ?? '1';
+      final replacementNodes = <html_dom.Node>[];
+      var index = 1;
+      for (final item
+          in list.children.where((element) => element.localName == 'li')) {
+        final paragraph = html_dom.Element.tag('p')
+          ..attributes['style'] = 'margin:0 0 0.85rem 0;';
+        final prefix = html_dom.Element.tag('span')
+          ..attributes['data-bullet-marker'] = '$listType-$index'
+          ..attributes['style'] =
+              'display:inline-block;min-width:2em;font-weight:700;';
+        prefix.nodes.add(html_dom.Text('${_orderedListLabel(index, listType)} '));
+        paragraph.nodes.add(prefix);
+        paragraph.nodes.addAll(_flattenListItemNodes(item));
+        replacementNodes.add(paragraph);
+        index += 1;
+      }
+      list.replaceWith(html_dom.DocumentFragment()..nodes.addAll(replacementNodes));
+    }
+
+    return document.body?.innerHtml
+            .replaceAll('<tbody>', '')
+            .replaceAll('</tbody>', '')
+            .replaceAll('<thead>', '')
+            .replaceAll('</thead>', '') ??
+        content;
+  }
+
+  List<html_dom.Node> _flattenListItemNodes(html_dom.Element item) {
+    final flattened = <html_dom.Node>[];
+
+    void appendBreakIfNeeded() {
+      if (flattened.isEmpty) return;
+      final last = flattened.last;
+      if (last is html_dom.Element && last.localName == 'br') return;
+      flattened.add(html_dom.Element.tag('br'));
+    }
+
+    for (final node in item.nodes) {
+      if (node is html_dom.Text) {
+        if (node.text.trim().isEmpty) continue;
+        flattened.add(node.clone(true));
+        continue;
+      }
+
+      if (node is! html_dom.Element) {
+        flattened.add(node.clone(true));
+        continue;
+      }
+
+      if (node.localName == 'p' || node.localName == 'div') {
+        final inlineNodes = _flattenListItemNodes(node);
+        if (inlineNodes.isEmpty) continue;
+        if (flattened.isNotEmpty) appendBreakIfNeeded();
+        flattened.addAll(inlineNodes);
+        continue;
+      }
+
+      flattened.add(node.clone(true));
+    }
+
+    return flattened;
+  }
+
+  String _orderedListLabel(int index, String type) {
+    switch (type) {
+      case 'a':
+        return '${String.fromCharCode(96 + index)}.';
+      case 'A':
+        return '${String.fromCharCode(64 + index)}.';
+      case 'i':
+        return '${_toRoman(index).toLowerCase()}.';
+      case 'I':
+        return '${_toRoman(index)}.';
+      default:
+        return '$index.';
+    }
+  }
+
+  String _toRoman(int value) {
+    final numerals = <MapEntry<int, String>>[
+      const MapEntry(1000, 'M'),
+      const MapEntry(900, 'CM'),
+      const MapEntry(500, 'D'),
+      const MapEntry(400, 'CD'),
+      const MapEntry(100, 'C'),
+      const MapEntry(90, 'XC'),
+      const MapEntry(50, 'L'),
+      const MapEntry(40, 'XL'),
+      const MapEntry(10, 'X'),
+      const MapEntry(9, 'IX'),
+      const MapEntry(5, 'V'),
+      const MapEntry(4, 'IV'),
+      const MapEntry(1, 'I'),
+    ];
+    var remaining = value;
+    final buffer = StringBuffer();
+    for (final numeral in numerals) {
+      while (remaining >= numeral.key) {
+        buffer.write(numeral.value);
+        remaining -= numeral.key;
+      }
+    }
+    return buffer.toString();
+  }
+
+  bool _isTableWrapper(dynamic element) {
+    if (element == null) return false;
+    final localName = element.localName?.toString() ?? '';
+    if (localName != 'div' && localName != 'figure') return false;
+
+    final className = element.attributes['class']?.toString() ?? '';
+    return className.contains('table') || className.contains('tableWrapper');
+  }
+
+  List<Widget?> _buildStructuredNoteWidgets(
+      BuildContext context, List<html_dom.Node> nodes) {
+    final widgets = <Widget?>[];
+
+    for (final node in nodes) {
+      if (node is html_dom.Text) {
+        final text = node.text.trim();
+        if (text.isEmpty) continue;
+        widgets.add(
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(
+              text,
+              style: AppTextStyles.bodyLarge(context).copyWith(height: 1.75),
+            ),
+          ),
+        );
+        continue;
+      }
+
+      if (node is! html_dom.Element) continue;
+
+      if (node.localName == 'table') {
+        widgets.add(_buildHtmlTable(context, node));
+        continue;
+      }
+
+      if (_isTableWrapper(node)) {
+        final wrappedTable = node.querySelector('table');
+        if (wrappedTable != null) {
+          widgets.add(_buildHtmlTable(context, wrappedTable));
+          continue;
+        }
+      }
+
+      if (node.localName == 'img') {
+        final src = node.attributes['src']?.trim() ?? '';
+        if (src.isEmpty ||
+            src == 'null' ||
+            src.startsWith('blob:') ||
+            src.startsWith('data:')) {
+          continue;
+        }
+      }
+
+      if (node.querySelector('table') != null) {
+        widgets.addAll(
+          _buildStructuredNoteWidgets(context, node.nodes).whereType<Widget>(),
+        );
+        continue;
+      }
+
+      final html = node.outerHtml.trim();
+      if (html.isEmpty) continue;
+
+      widgets.add(
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: HtmlWidget(
+            html,
+            textStyle: AppTextStyles.bodyLarge(context).copyWith(height: 1.75),
+            customStylesBuilder: (element) {
+              if (element.localName == 'p') {
+                return {'margin': '0'};
+              }
+              if (element.localName == 'span' &&
+                  element.attributes['data-bullet-marker'] != null) {
+                return {
+                  'display': 'inline-block',
+                  'min-width': '1.6em',
+                  'font-weight': '700',
+                };
+              }
+              if (element.localName == 'img') {
+                final src = element.attributes['src']?.trim() ?? '';
+                if (src.isEmpty ||
+                    src == 'null' ||
+                    src.startsWith('blob:') ||
+                    src.startsWith('data:')) {
+                  return {'display': 'none'};
+                }
+              }
+              return null;
+            },
+            onTapUrl: (url) async {
+              final uri = Uri.parse(url);
+              if (await canLaunchUrl(uri)) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+                return true;
+              }
+              return false;
+            },
+          ),
+        ),
+      );
+    }
+
+    return widgets;
   }
 
   @override
