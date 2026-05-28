@@ -36,8 +36,11 @@ class _TvFocusCardState extends State<TvFocusCard> {
       autofocus: widget.autofocus,
       onShowFocusHighlight: (value) => setState(() => _focused = value),
       shortcuts: <ShortcutActivator, Intent>{
-        const SingleActivator(LogicalKeyboardKey.select): const ActivateIntent(),
+        const SingleActivator(LogicalKeyboardKey.select):
+            const ActivateIntent(),
         const SingleActivator(LogicalKeyboardKey.enter): const ActivateIntent(),
+        const SingleActivator(LogicalKeyboardKey.numpadEnter):
+            const ActivateIntent(),
         const SingleActivator(LogicalKeyboardKey.space): const ActivateIntent(),
       },
       actions: <Type, Action<Intent>>{
@@ -48,34 +51,38 @@ class _TvFocusCardState extends State<TvFocusCard> {
           },
         ),
       },
-      child: GestureDetector(
-        onTap: widget.onPressed,
-        child: AnimatedScale(
-          scale: _focused ? 1.04 : 1,
-          duration: const Duration(milliseconds: 150),
-          child: AnimatedContainer(
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onPressed,
+          child: AnimatedScale(
+            scale: _focused ? 1.04 : 1,
             duration: const Duration(milliseconds: 150),
-            padding: widget.padding,
-            decoration: BoxDecoration(
-              color: widget.backgroundColor,
-              borderRadius: BorderRadius.circular(widget.borderRadius),
-              border: Border.all(
-                color: _focused
-                    ? widget.focusedBorderColor
-                    : widget.unfocusedBorderColor,
-                width: _focused ? 2.5 : 1,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              padding: widget.padding,
+              decoration: BoxDecoration(
+                color: widget.backgroundColor,
+                borderRadius: BorderRadius.circular(widget.borderRadius),
+                border: Border.all(
+                  color: _focused
+                      ? widget.focusedBorderColor
+                      : widget.unfocusedBorderColor,
+                  width: _focused ? 2.5 : 1,
+                ),
+                boxShadow: _focused
+                    ? const [
+                        BoxShadow(
+                          color: Color(0x553F8CFF),
+                          blurRadius: 22,
+                          offset: Offset(0, 10),
+                        ),
+                      ]
+                    : const [],
               ),
-              boxShadow: _focused
-                  ? const [
-                      BoxShadow(
-                        color: Color(0x553F8CFF),
-                        blurRadius: 22,
-                        offset: Offset(0, 10),
-                      ),
-                    ]
-                  : const [],
+              child: widget.child,
             ),
-            child: widget.child,
           ),
         ),
       ),

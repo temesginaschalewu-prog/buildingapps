@@ -19,6 +19,7 @@ import 'utils/router.dart';
 import 'services/notification_service.dart';
 import 'services/api_service.dart';
 import 'utils/helpers.dart';
+import 'widgets/common/desktop_input_shell.dart';
 
 class FamilyAcademyApp extends StatefulWidget {
   final ApiService apiService;
@@ -287,7 +288,8 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
       });
       authProvider.registerOnLoginCallback(() {
         unawaited(widget.notificationService.syncPendingFcmToken());
-        unawaited(widget.notificationService.sendFcmTokenToBackendIfAuthenticated());
+        unawaited(
+            widget.notificationService.sendFcmTokenToBackendIfAuthenticated());
       });
       authProvider.registerOnLogoutCallback(() {
         unawaited(widget.notificationService.clearBackendTokenAssociation());
@@ -431,22 +433,27 @@ class _FamilyAcademyAppState extends State<FamilyAcademyApp>
           themeMode: themeProvider.themeMode,
           routerConfig: appRouter.router,
           debugShowCheckedModeBanner: false,
+          scrollBehavior: const DesktopScrollBehavior(),
           builder: (context, child) {
             return MediaQuery(
               data: MediaQuery.of(context).copyWith(
-                textScaler: TextScaler.linear(ScreenSize.isDesktop(context)
-                    ? 1.1
-                    : ScreenSize.isTablet(context)
-                        ? 1.05
-                        : 1.0),
+                textScaler: TextScaler.linear(
+                  ScreenSize.isDesktop(context)
+                      ? 1.1
+                      : ScreenSize.isTablet(context)
+                          ? 1.05
+                          : 1.0,
+                ),
               ),
-              child: PopScope(
-                onPopInvokedWithResult: (didPop, result) {
-                  if (didPop && _isAppInForeground) {
-                    ScreenProtectionService.enableOnResume();
-                  }
-                },
-                child: child ?? const SizedBox(),
+              child: DesktopInputShell(
+                child: PopScope(
+                  onPopInvokedWithResult: (didPop, result) {
+                    if (didPop && _isAppInForeground) {
+                      ScreenProtectionService.enableOnResume();
+                    }
+                  },
+                  child: child ?? const SizedBox(),
+                ),
               ),
             );
           },

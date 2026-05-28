@@ -77,7 +77,8 @@ class _TvShellScreenState extends State<TvShellScreen> {
                               item: item,
                               selected: _section == item.section,
                               autofocus: item.section == _section,
-                              onPressed: () => setState(() => _section = item.section),
+                              onPressed: () =>
+                                  setState(() => _section = item.section),
                             ),
                           ),
                       ],
@@ -85,7 +86,8 @@ class _TvShellScreenState extends State<TvShellScreen> {
                   ),
                   TvFocusCard(
                     onPressed: () => session.resetPairing(unpairServer: true),
-                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 18, vertical: 16),
                     child: const Row(
                       children: [
                         Icon(Icons.link_off_rounded, color: Color(0xFFFFB4B4)),
@@ -156,11 +158,14 @@ class _NavEntry {
 
 const List<_NavEntry> _navItems = [
   _NavEntry(TvShellSection.library, Icons.dashboard_rounded, 'Library'),
-  _NavEntry(TvShellSection.notifications, Icons.notifications_rounded, 'Notifications'),
+  _NavEntry(TvShellSection.notifications, Icons.notifications_rounded,
+      'Notifications'),
   _NavEntry(TvShellSection.chatbot, Icons.smart_toy_rounded, 'Chatbot'),
   _NavEntry(TvShellSection.progress, Icons.trending_up_rounded, 'Progress'),
-  _NavEntry(TvShellSection.subscriptions, Icons.workspace_premium_rounded, 'Subscriptions'),
-  _NavEntry(TvShellSection.parentLink, Icons.family_restroom_rounded, 'Parent Link'),
+  _NavEntry(TvShellSection.subscriptions, Icons.workspace_premium_rounded,
+      'Subscriptions'),
+  _NavEntry(
+      TvShellSection.parentLink, Icons.family_restroom_rounded, 'Parent Link'),
   _NavEntry(TvShellSection.support, Icons.support_agent_rounded, 'Support'),
   _NavEntry(TvShellSection.profile, Icons.person_rounded, 'Profile'),
 ];
@@ -311,7 +316,8 @@ class _LibrarySectionState extends State<_LibrarySection> {
   Widget build(BuildContext context) {
     return _SectionPane(
       title: 'Library',
-      subtitle: 'Browse your categories, courses, chapters, videos, notes, and practice content with the TV remote.',
+      subtitle:
+          'Browse your categories, courses, chapters, videos, notes, and practice content with the TV remote.',
       child: FutureBuilder<_LibraryPayload>(
         future: _future,
         builder: (context, snapshot) {
@@ -319,21 +325,24 @@ class _LibrarySectionState extends State<_LibrarySection> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            return _ErrorState(message: 'Could not load categories.\n${snapshot.error}');
+            return _ErrorState(
+                message: 'Could not load categories.\n${snapshot.error}');
           }
           final payload = snapshot.data;
           final categories = (payload?.categories ?? const <CategoryItem>[])
               .where((item) => !item.isComingSoon)
               .toList();
-          final activeCategoryIds = (payload?.subscriptions ?? const <SubscriptionItem>[])
-              .where((item) => item.isActive)
-              .map((item) => item.categoryId)
-              .whereType<int>()
-              .toSet();
+          final activeCategoryIds =
+              (payload?.subscriptions ?? const <SubscriptionItem>[])
+                  .where((item) => item.isActive)
+                  .map((item) => item.categoryId)
+                  .whereType<int>()
+                  .toSet();
           if (categories.isEmpty) {
             return const _EmptyState(
               title: 'No categories yet',
-              message: 'Your categories will appear here once content is ready.',
+              message:
+                  'Your categories will appear here once content is ready.',
             );
           }
           return GridView.builder(
@@ -347,12 +356,14 @@ class _LibrarySectionState extends State<_LibrarySection> {
             itemCount: categories.length,
             itemBuilder: (context, index) {
               final item = categories[index];
-              final hasFullAccess = item.hasAccess == true || activeCategoryIds.contains(item.id);
+              final hasFullAccess =
+                  item.hasAccess == true || activeCategoryIds.contains(item.id);
               return TvFocusCard(
                 autofocus: index == 0,
                 onPressed: () {
                   Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => CourseScreen(category: item)),
+                    MaterialPageRoute(
+                        builder: (_) => CourseScreen(category: item)),
                   );
                 },
                 padding: EdgeInsets.zero,
@@ -365,7 +376,8 @@ class _LibrarySectionState extends State<_LibrarySection> {
                           ? CachedNetworkImage(
                               imageUrl: item.imageUrl!,
                               fit: BoxFit.cover,
-                              errorWidget: (context, url, error) => _LetterFallback(text: item.name),
+                              errorWidget: (context, url, error) =>
+                                  _LetterFallback(text: item.name),
                             )
                           : _LetterFallback(text: item.name),
                     ),
@@ -545,7 +557,8 @@ class _TvNotificationsScreenState extends State<TvNotificationsScreen> {
   Widget build(BuildContext context) {
     return _SectionPane(
       title: 'Notifications',
-      subtitle: 'See your latest Family Academy updates on the TV and clear unread items without reaching for the phone.',
+      subtitle:
+          'See your latest Family Academy updates on the TV and clear unread items without reaching for the phone.',
       actions: _Badge(label: 'Unread $_unreadCount'),
       child: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -595,18 +608,21 @@ class _TvNotificationsScreenState extends State<TvNotificationsScreen> {
                       child: _items.isEmpty
                           ? const _EmptyState(
                               title: 'No notifications yet',
-                              message: 'When new updates arrive, they will appear here.',
+                              message:
+                                  'When new updates arrive, they will appear here.',
                             )
                           : ListView.separated(
                               itemCount: _items.length,
-                              separatorBuilder: (context, index) => const SizedBox(height: 16),
+                              separatorBuilder: (context, index) =>
+                                  const SizedBox(height: 16),
                               itemBuilder: (context, index) {
                                 final item = _items[index];
                                 return TvFocusCard(
                                   autofocus: index == 0,
                                   onPressed: () => _markOneRead(item),
                                   child: Row(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Container(
                                         width: 14,
@@ -627,7 +643,8 @@ class _TvNotificationsScreenState extends State<TvNotificationsScreen> {
                                       const SizedBox(width: 16),
                                       Expanded(
                                         child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
                                             Text(
                                               item.title,
@@ -653,9 +670,13 @@ class _TvNotificationsScreenState extends State<TvNotificationsScreen> {
                                       ),
                                       const SizedBox(width: 16),
                                       Column(
-                                        crossAxisAlignment: CrossAxisAlignment.end,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.end,
                                         children: [
-                                          _Badge(label: item.isRead ? 'Read' : 'Unread'),
+                                          _Badge(
+                                              label: item.isRead
+                                                  ? 'Read'
+                                                  : 'Unread'),
                                           if (item.createdAt != null) ...[
                                             const SizedBox(height: 10),
                                             Text(
@@ -700,7 +721,8 @@ class _TvExamsScreenState extends State<TvExamsScreen> {
   Widget build(BuildContext context) {
     return _SectionPane(
       title: 'Exams',
-      subtitle: 'See every available exam from your active learning path and open the related course content from the TV.',
+      subtitle:
+          'See every available exam from your active learning path and open the related course content from the TV.',
       child: FutureBuilder<List<ExamItem>>(
         future: _future,
         builder: (context, snapshot) {
@@ -708,13 +730,15 @@ class _TvExamsScreenState extends State<TvExamsScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            return _ErrorState(message: 'Could not load exams.\n${snapshot.error}');
+            return _ErrorState(
+                message: 'Could not load exams.\n${snapshot.error}');
           }
           final exams = snapshot.data ?? const <ExamItem>[];
           if (exams.isEmpty) {
             return const _EmptyState(
               title: 'No exams available',
-              message: 'When exams are released for your courses, they will appear here.',
+              message:
+                  'When exams are released for your courses, they will appear here.',
             );
           }
           return ListView.separated(
@@ -741,7 +765,8 @@ class _TvExamsScreenState extends State<TvExamsScreen> {
                         borderRadius: BorderRadius.circular(20),
                       ),
                       alignment: Alignment.center,
-                      child: const Icon(Icons.quiz_rounded, color: Colors.white, size: 34),
+                      child: const Icon(Icons.quiz_rounded,
+                          color: Colors.white, size: 34),
                     ),
                     const SizedBox(width: 18),
                     Expanded(
@@ -759,8 +784,10 @@ class _TvExamsScreenState extends State<TvExamsScreen> {
                           const SizedBox(height: 8),
                           Text(
                             [
-                              if (exam.courseName?.isNotEmpty == true) exam.courseName!,
-                              if (exam.categoryName?.isNotEmpty == true) exam.categoryName!,
+                              if (exam.courseName?.isNotEmpty == true)
+                                exam.courseName!,
+                              if (exam.categoryName?.isNotEmpty == true)
+                                exam.categoryName!,
                             ].join(' • '),
                             style: const TextStyle(
                               color: Color(0xFFB7C6E3),
@@ -862,7 +889,9 @@ class _TvChatbotScreenState extends State<TvChatbotScreen> {
       _loading = true;
     });
     try {
-      final messages = await context.read<TvApiService>().getChatbotConversationMessages(conversationId);
+      final messages = await context
+          .read<TvApiService>()
+          .getChatbotConversationMessages(conversationId);
       if (!mounted) return;
       setState(() {
         _messages = messages;
@@ -896,9 +925,9 @@ class _TvChatbotScreenState extends State<TvChatbotScreen> {
     try {
       final api = context.read<TvApiService>();
       final data = await api.sendChatbotMessage(
-            text,
-            conversationId: _selectedConversationId,
-          );
+        text,
+        conversationId: _selectedConversationId,
+      );
       _controller.clear();
       final conversationId = (data['conversation_id'] as num?)?.toInt() ??
           (data['conversation']?['id'] as num?)?.toInt();
@@ -947,12 +976,13 @@ class _TvChatbotScreenState extends State<TvChatbotScreen> {
   Widget build(BuildContext context) {
     return _SectionPane(
       title: 'Family Academy AI',
-      subtitle: 'Ask quick learning questions, revise topics, and continue your saved conversations from the TV.',
+      subtitle:
+          'Ask quick learning questions, revise topics, and continue your saved conversations from the TV.',
       actions: _usage.isEmpty
           ? null
           : _Badge(
               label:
-                  'Used ${( _usage['used_today'] ?? _usage['messages_used'] ?? 0).toString()} / ${( _usage['daily_limit'] ?? 0).toString()} today',
+                  'Used ${(_usage['used_today'] ?? _usage['messages_used'] ?? 0).toString()} / ${(_usage['daily_limit'] ?? 0).toString()} today',
             ),
       child: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -978,19 +1008,23 @@ class _TvChatbotScreenState extends State<TvChatbotScreen> {
                             child: _conversations.isEmpty
                                 ? const _EmptyState(
                                     title: 'No conversations yet',
-                                    message: 'Start a new message on the right and the chat will be saved here.',
+                                    message:
+                                        'Start a new message on the right and the chat will be saved here.',
                                   )
                                 : ListView.separated(
                                     itemCount: _conversations.length,
-                                    separatorBuilder: (context, index) => const SizedBox(height: 8),
+                                    separatorBuilder: (context, index) =>
+                                        const SizedBox(height: 8),
                                     itemBuilder: (context, index) {
                                       final item = _conversations[index];
                                       return TvFocusCard(
                                         autofocus: index == 0,
-                                        onPressed: () => _openConversation(item.id),
+                                        onPressed: () =>
+                                            _openConversation(item.id),
                                         padding: const EdgeInsets.all(12),
                                         child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
                                             Text(
                                               item.title,
@@ -999,15 +1033,18 @@ class _TvChatbotScreenState extends State<TvChatbotScreen> {
                                               style: TextStyle(
                                                 color: Colors.white,
                                                 fontSize: 14,
-                                                fontWeight: _selectedConversationId == item.id
-                                                    ? FontWeight.w800
-                                                    : FontWeight.w600,
+                                                fontWeight:
+                                                    _selectedConversationId ==
+                                                            item.id
+                                                        ? FontWeight.w800
+                                                        : FontWeight.w600,
                                               ),
                                             ),
                                             if (item.updatedAt != null) ...[
                                               const SizedBox(height: 8),
                                               Text(
-                                                _formatDateTime(item.updatedAt!),
+                                                _formatDateTime(
+                                                    item.updatedAt!),
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
                                                 style: const TextStyle(
@@ -1039,12 +1076,14 @@ class _TvChatbotScreenState extends State<TvChatbotScreen> {
                               child: _messages.isEmpty
                                   ? const _EmptyState(
                                       title: 'Start asking',
-                                      message: 'Use the message field below to ask Family Academy AI something useful.',
+                                      message:
+                                          'Use the message field below to ask Family Academy AI something useful.',
                                     )
                                   : ListView.separated(
                                       padding: const EdgeInsets.all(20),
                                       itemCount: _messages.length,
-                                      separatorBuilder: (context, index) => const SizedBox(height: 12),
+                                      separatorBuilder: (context, index) =>
+                                          const SizedBox(height: 12),
                                       itemBuilder: (context, index) {
                                         final message = _messages[index];
                                         final align = message.isUser
@@ -1057,11 +1096,16 @@ class _TvChatbotScreenState extends State<TvChatbotScreen> {
                                           crossAxisAlignment: align,
                                           children: [
                                             Container(
-                                              constraints: const BoxConstraints(maxWidth: 860),
-                                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                                              constraints: const BoxConstraints(
+                                                  maxWidth: 860),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 18,
+                                                      vertical: 16),
                                               decoration: BoxDecoration(
                                                 color: bubbleColor,
-                                                borderRadius: BorderRadius.circular(20),
+                                                borderRadius:
+                                                    BorderRadius.circular(20),
                                               ),
                                               child: Text(
                                                 message.content,
@@ -1086,12 +1130,17 @@ class _TvChatbotScreenState extends State<TvChatbotScreen> {
                                   controller: _controller,
                                   focusNode: _inputFocusNode,
                                   onSubmitted: (_) => _sendMessage(),
-                                  style: const TextStyle(color: Colors.white, fontSize: 17, height: 1.45),
-                                  minLines: 2,
-                                  maxLines: 4,
+                                  textInputAction: TextInputAction.send,
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 17,
+                                      height: 1.45),
+                                  minLines: 1,
+                                  maxLines: 2,
                                   decoration: InputDecoration(
                                     hintText: 'Ask anything...',
-                                    hintStyle: const TextStyle(color: Color(0xFF8EA3C7)),
+                                    hintStyle: const TextStyle(
+                                        color: Color(0xFF8EA3C7)),
                                     filled: true,
                                     fillColor: const Color(0xFF101C34),
                                     border: OutlineInputBorder(
@@ -1103,15 +1152,17 @@ class _TvChatbotScreenState extends State<TvChatbotScreen> {
                               ),
                               const SizedBox(width: 12),
                               SizedBox(
-                                width: 150,
+                                width: 118,
                                 child: TvFocusCard(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 12),
                                   onPressed: _sendMessage,
                                   child: Center(
                                     child: Text(
                                       _sending ? 'Sending...' : 'Send',
                                       style: const TextStyle(
                                         color: Colors.white,
-                                        fontSize: 18,
+                                        fontSize: 15,
                                         fontWeight: FontWeight.w800,
                                       ),
                                     ),
@@ -1126,7 +1177,8 @@ class _TvChatbotScreenState extends State<TvChatbotScreen> {
                               alignment: Alignment.centerLeft,
                               child: Text(
                                 _error!,
-                                style: const TextStyle(color: Color(0xFFFFB8B8)),
+                                style:
+                                    const TextStyle(color: Color(0xFFFFB8B8)),
                               ),
                             ),
                           ],
@@ -1159,7 +1211,8 @@ class _TvProgressScreenState extends State<TvProgressScreen> {
   Widget build(BuildContext context) {
     return _SectionPane(
       title: 'Progress',
-      subtitle: 'Keep an eye on chapters, questions, study time, and overall learning momentum.',
+      subtitle:
+          'Keep an eye on chapters, questions, study time, and overall learning momentum.',
       child: FutureBuilder<Map<String, dynamic>>(
         future: _future,
         builder: (context, snapshot) {
@@ -1167,11 +1220,13 @@ class _TvProgressScreenState extends State<TvProgressScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            return _ErrorState(message: 'Could not load progress.\n${snapshot.error}');
+            return _ErrorState(
+                message: 'Could not load progress.\n${snapshot.error}');
           }
           final data = snapshot.data ?? const <String, dynamic>{};
           final statsData = Map<String, dynamic>.from(
-            (data['stats'] as Map?)?.cast<dynamic, dynamic>() ?? const <dynamic, dynamic>{},
+            (data['stats'] as Map?)?.cast<dynamic, dynamic>() ??
+                const <dynamic, dynamic>{},
           );
           final stats = <_StatItem>[
             _StatItem(
@@ -1182,11 +1237,16 @@ class _TvProgressScreenState extends State<TvProgressScreen> {
                     data['overall_completion_percentage'],
               ),
             ),
-            _StatItem('Chapters done', '${_asInt(statsData['chapters_completed'])}'),
-            _StatItem('Videos watched', '${_asInt(statsData['videos_completed'])}'),
-            _StatItem('Notes viewed', '${_asInt(statsData['total_notes_viewed'])}'),
-            _StatItem('Questions attempted', '${_asInt(statsData['total_questions_attempted'])}'),
-            _StatItem('Study time', _formatHours(statsData['study_time_hours'])),
+            _StatItem(
+                'Chapters done', '${_asInt(statsData['chapters_completed'])}'),
+            _StatItem(
+                'Videos watched', '${_asInt(statsData['videos_completed'])}'),
+            _StatItem(
+                'Notes viewed', '${_asInt(statsData['total_notes_viewed'])}'),
+            _StatItem('Questions attempted',
+                '${_asInt(statsData['total_questions_attempted'])}'),
+            _StatItem(
+                'Study time', _formatHours(statsData['study_time_hours'])),
           ];
           return LayoutBuilder(
             builder: (context, constraints) {
@@ -1290,7 +1350,8 @@ class _TvSubscriptionsScreenState extends State<TvSubscriptionsScreen> {
   Widget build(BuildContext context) {
     return _SectionPane(
       title: 'Subscriptions',
-      subtitle: 'Review active and expired access on the TV without going back to the phone.',
+      subtitle:
+          'Review active and expired access on the TV without going back to the phone.',
       child: FutureBuilder<List<SubscriptionItem>>(
         future: _future,
         builder: (context, snapshot) {
@@ -1298,13 +1359,15 @@ class _TvSubscriptionsScreenState extends State<TvSubscriptionsScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            return _ErrorState(message: 'Could not load subscriptions.\n${snapshot.error}');
+            return _ErrorState(
+                message: 'Could not load subscriptions.\n${snapshot.error}');
           }
           final items = snapshot.data ?? const <SubscriptionItem>[];
           if (items.isEmpty) {
             return const _EmptyState(
               title: 'No subscriptions yet',
-              message: 'Your category access and renewal status will appear here.',
+              message:
+                  'Your category access and renewal status will appear here.',
             );
           }
           return ListView.separated(
@@ -1325,12 +1388,16 @@ class _TvSubscriptionsScreenState extends State<TvSubscriptionsScreen> {
                       width: 70,
                       height: 70,
                       decoration: BoxDecoration(
-                        color: item.isActive ? const Color(0xFF184B35) : const Color(0xFF4A2727),
+                        color: item.isActive
+                            ? const Color(0xFF184B35)
+                            : const Color(0xFF4A2727),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       alignment: Alignment.center,
                       child: Icon(
-                        item.isActive ? Icons.verified_rounded : Icons.history_toggle_off_rounded,
+                        item.isActive
+                            ? Icons.verified_rounded
+                            : Icons.history_toggle_off_rounded,
                         color: Colors.white,
                         size: 32,
                       ),
@@ -1352,10 +1419,13 @@ class _TvSubscriptionsScreenState extends State<TvSubscriptionsScreen> {
                           Text(
                             [
                               item.billingCycle ?? '',
-                              if (item.startDate != null) 'Started ${_formatDate(item.startDate!)}',
-                              if (item.endDate != null) 'Ends ${_formatDate(item.endDate!)}',
+                              if (item.startDate != null)
+                                'Started ${_formatDate(item.startDate!)}',
+                              if (item.endDate != null)
+                                'Ends ${_formatDate(item.endDate!)}',
                             ].where((part) => part.isNotEmpty).join(' • '),
-                            style: const TextStyle(color: Color(0xFFABC0E4), fontSize: 15),
+                            style: const TextStyle(
+                                color: Color(0xFFABC0E4), fontSize: 15),
                           ),
                         ],
                       ),
@@ -1423,7 +1493,8 @@ class _TvParentLinkScreenState extends State<TvParentLinkScreen> {
       final data = await context.read<TvApiService>().generateParentToken();
       if (!mounted) return;
       setState(() {
-        _generatedToken = data['token']?.toString() ?? data['parent_token']?.toString();
+        _generatedToken =
+            data['token']?.toString() ?? data['parent_token']?.toString();
         _busy = false;
       });
       await _load();
@@ -1459,7 +1530,8 @@ class _TvParentLinkScreenState extends State<TvParentLinkScreen> {
   Widget build(BuildContext context) {
     return _SectionPane(
       title: 'Parent Link',
-      subtitle: 'Generate and manage the parent connection from the TV without opening the TV pairing flow.',
+      subtitle:
+          'Generate and manage the parent connection from the TV without opening the TV pairing flow.',
       child: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
@@ -1477,7 +1549,8 @@ class _TvParentLinkScreenState extends State<TvParentLinkScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            _settings['parent_link_title'] ?? 'Bring a parent into the journey',
+                            _settings['parent_link_title'] ??
+                                'Bring a parent into the journey',
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 24,
@@ -1488,21 +1561,30 @@ class _TvParentLinkScreenState extends State<TvParentLinkScreen> {
                           Text(
                             _settings['parent_link_description'] ??
                                 'Generate a secure code and connect your parent to the Family Academy Telegram assistant.',
-                            style: const TextStyle(color: Color(0xFFD4DEF3), fontSize: 16, height: 1.5),
+                            style: const TextStyle(
+                                color: Color(0xFFD4DEF3),
+                                fontSize: 16,
+                                height: 1.5),
                           ),
                           const SizedBox(height: 16),
                           if (_status?.isLinked == true)
-                            _Badge(label: _settings['parent_link_live_badge'] ?? 'Live')
+                            _Badge(
+                                label: _settings['parent_link_live_badge'] ??
+                                    'Live')
                           else
                             const _Badge(label: 'Not linked'),
                           if (_status?.isLinked == true &&
                               (_status?.parentName?.isNotEmpty == true ||
-                                  _status?.parentTelegramUsername?.isNotEmpty == true)) ...[
+                                  _status?.parentTelegramUsername?.isNotEmpty ==
+                                      true)) ...[
                             const SizedBox(height: 14),
                             Text(
                               [
-                                if (_status?.parentName?.isNotEmpty == true) _status!.parentName!,
-                                if (_status?.parentTelegramUsername?.isNotEmpty == true)
+                                if (_status?.parentName?.isNotEmpty == true)
+                                  _status!.parentName!,
+                                if (_status
+                                        ?.parentTelegramUsername?.isNotEmpty ==
+                                    true)
                                   '@${_status!.parentTelegramUsername!}',
                               ].join(' • '),
                               style: const TextStyle(
@@ -1523,7 +1605,8 @@ class _TvParentLinkScreenState extends State<TvParentLinkScreen> {
                               ),
                             ),
                           ],
-                          if (_status?.token?.isNotEmpty == true && _generatedToken == null) ...[
+                          if (_status?.token?.isNotEmpty == true &&
+                              _generatedToken == null) ...[
                             const SizedBox(height: 16),
                             SelectableText(
                               _status!.token!,
@@ -1560,7 +1643,10 @@ class _TvParentLinkScreenState extends State<TvParentLinkScreen> {
                             child: Center(
                               child: Text(
                                 _busy ? 'Working...' : 'Generate Code',
-                                style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800),
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800),
                               ),
                             ),
                           ),
@@ -1569,7 +1655,9 @@ class _TvParentLinkScreenState extends State<TvParentLinkScreen> {
                         SizedBox(
                           width: 220,
                           child: TvFocusCard(
-                            onPressed: _busy || _status?.isLinked != true ? () {} : _unlink,
+                            onPressed: _busy || _status?.isLinked != true
+                                ? () {}
+                                : _unlink,
                             backgroundColor: _status?.isLinked == true
                                 ? const Color(0xFF142039)
                                 : const Color(0xFF0C1424),
@@ -1601,21 +1689,29 @@ class _TvParentLinkScreenState extends State<TvParentLinkScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            _settings['parent_link_bot_title'] ?? 'Parent Telegram assistant',
-                            style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800),
+                            _settings['parent_link_bot_title'] ??
+                                'Parent Telegram assistant',
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800),
                           ),
                           const SizedBox(height: 12),
                           Text(
                             _settings['parent_link_bot_description'] ??
                                 'Once linked, parents can open the bot anytime to view a polished child snapshot, recent activity, exams, and payment access updates.',
-                            style: const TextStyle(color: Color(0xFFD4DEF3), fontSize: 15, height: 1.5),
+                            style: const TextStyle(
+                                color: Color(0xFFD4DEF3),
+                                fontSize: 15,
+                                height: 1.5),
                           ),
                           const SizedBox(height: 12),
                           SelectableText(
                             _settings['parent_telegram_bot_url'] ??
                                 _settings['support_telegram_url'] ??
                                 'https://t.me/FamilyAcademy_notify_Bot',
-                            style: const TextStyle(color: Color(0xFF8FC8FF), fontSize: 16),
+                            style: const TextStyle(
+                                color: Color(0xFF8FC8FF), fontSize: 16),
                           ),
                         ],
                       ),
@@ -1646,7 +1742,8 @@ class _TvSupportScreenState extends State<TvSupportScreen> {
   Widget build(BuildContext context) {
     return _SectionPane(
       title: 'Support',
-      subtitle: 'TV-friendly support details and FAQ pulled from your live settings.',
+      subtitle:
+          'TV-friendly support details and FAQ pulled from your live settings.',
       child: FutureBuilder<Map<String, String>>(
         future: _future,
         builder: (context, snapshot) {
@@ -1654,7 +1751,8 @@ class _TvSupportScreenState extends State<TvSupportScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            return _ErrorState(message: 'Could not load support info.\n${snapshot.error}');
+            return _ErrorState(
+                message: 'Could not load support info.\n${snapshot.error}');
           }
           final settings = snapshot.data ?? const <String, String>{};
           final faqs = <MapEntry<String, String>>[
@@ -1688,18 +1786,24 @@ class _TvSupportScreenState extends State<TvSupportScreen> {
                   children: [
                     Text(
                       settings['support_screen_title'] ?? 'Support',
-                      style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900),
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.w900),
                     ),
                     const SizedBox(height: 10),
                     Text(
                       settings['support_screen_subtitle'] ??
                           'Reach support and browse common answers without leaving the TV.',
-                      style: const TextStyle(color: Color(0xFFD4DEF3), fontSize: 16, height: 1.5),
+                      style: const TextStyle(
+                          color: Color(0xFFD4DEF3), fontSize: 16, height: 1.5),
                     ),
                     const SizedBox(height: 14),
                     SelectableText(
-                      settings['support_telegram_url'] ?? 'https://t.me/FamilyAcademySupport',
-                      style: const TextStyle(color: Color(0xFF8FC8FF), fontSize: 17),
+                      settings['support_telegram_url'] ??
+                          'https://t.me/FamilyAcademySupport',
+                      style: const TextStyle(
+                          color: Color(0xFF8FC8FF), fontSize: 17),
                     ),
                   ],
                 ),
@@ -1720,12 +1824,18 @@ class _TvSupportScreenState extends State<TvSupportScreen> {
                       children: [
                         Text(
                           faq.key,
-                          style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800),
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800),
                         ),
                         const SizedBox(height: 8),
                         Text(
                           faq.value,
-                          style: const TextStyle(color: Color(0xFFD4DEF3), fontSize: 15, height: 1.5),
+                          style: const TextStyle(
+                              color: Color(0xFFD4DEF3),
+                              fontSize: 15,
+                              height: 1.5),
                         ),
                       ],
                     ),
@@ -1760,7 +1870,8 @@ class _TvProfileScreenState extends State<TvProfileScreen> {
   Widget build(BuildContext context) {
     return _SectionPane(
       title: 'Profile',
-      subtitle: 'Your current student profile, available on the TV without editing account auth screens.',
+      subtitle:
+          'Your current student profile, available on the TV without editing account auth screens.',
       child: FutureBuilder<TvUser>(
         future: _future,
         builder: (context, snapshot) {
@@ -1768,7 +1879,8 @@ class _TvProfileScreenState extends State<TvProfileScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            return _ErrorState(message: 'Could not load profile.\n${snapshot.error}');
+            return _ErrorState(
+                message: 'Could not load profile.\n${snapshot.error}');
           }
           final user = snapshot.data;
           if (user == null) {
@@ -1798,15 +1910,23 @@ class _TvProfileScreenState extends State<TvProfileScreen> {
                       child: user.profileImage?.isNotEmpty == true
                           ? null
                           : Text(
-                              user.username.isNotEmpty ? user.username[0].toUpperCase() : '?',
-                              style: const TextStyle(color: Colors.white, fontSize: 34, fontWeight: FontWeight.w900),
+                              user.username.isNotEmpty
+                                  ? user.username[0].toUpperCase()
+                                  : '?',
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 34,
+                                  fontWeight: FontWeight.w900),
                             ),
                     ),
                     const SizedBox(height: 18),
                     Text(
                       user.username,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900),
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.w900),
                     ),
                   ],
                 ),
@@ -1817,11 +1937,18 @@ class _TvProfileScreenState extends State<TvProfileScreen> {
                   children: [
                     _ProfileInfoCard(label: 'Username', value: user.username),
                     const SizedBox(height: 14),
-                    _ProfileInfoCard(label: 'Email', value: user.email?.isNotEmpty == true ? user.email! : 'Not set'),
+                    _ProfileInfoCard(
+                        label: 'Email',
+                        value: user.email?.isNotEmpty == true
+                            ? user.email!
+                            : 'Not set'),
                     const SizedBox(height: 14),
-                    _ProfileInfoCard(label: 'Account status', value: user.accountStatus),
+                    _ProfileInfoCard(
+                        label: 'Account status', value: user.accountStatus),
                     const SizedBox(height: 14),
-                    _ProfileInfoCard(label: 'School ID', value: user.schoolId?.toString() ?? 'Not set'),
+                    _ProfileInfoCard(
+                        label: 'School ID',
+                        value: user.schoolId?.toString() ?? 'Not set'),
                   ],
                 ),
               ),
@@ -1860,7 +1987,10 @@ class _ProfileInfoCard extends StatelessWidget {
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700),
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700),
             ),
           ),
         ],
@@ -1922,13 +2052,17 @@ class _EmptyState extends StatelessWidget {
             Text(
               title,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900),
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 10),
             Text(
               message,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Color(0xFFB7C8E5), fontSize: 16, height: 1.5),
+              style: const TextStyle(
+                  color: Color(0xFFB7C8E5), fontSize: 16, height: 1.5),
             ),
           ],
         ),
@@ -1950,7 +2084,8 @@ class _ErrorState extends StatelessWidget {
         child: Text(
           message,
           textAlign: TextAlign.center,
-          style: const TextStyle(color: Colors.white70, fontSize: 18, height: 1.5),
+          style:
+              const TextStyle(color: Colors.white70, fontSize: 18, height: 1.5),
         ),
       ),
     );
@@ -1987,7 +2122,8 @@ class _StatItem {
 }
 
 String _formatPercent(dynamic value) {
-  final number = value is num ? value.toDouble() : double.tryParse(value.toString()) ?? 0;
+  final number =
+      value is num ? value.toDouble() : double.tryParse(value.toString()) ?? 0;
   if (number <= 1) {
     return '${(number * 100).toStringAsFixed(0)}%';
   }
