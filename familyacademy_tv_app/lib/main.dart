@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'app_config.dart';
 import 'controllers/tv_session_controller.dart';
@@ -9,7 +10,11 @@ import 'services/tv_api_service.dart';
 import 'widgets/tv_input_shell.dart';
 import 'widgets/tv_focus_card.dart';
 
-void main() {
+Future<void> main() async {
+  try {
+    await dotenv.load(fileName: '.env');
+  } catch (_) {}
+
   final api = TvApiService();
   runApp(FamilyAcademyTvApp(apiService: api));
 }

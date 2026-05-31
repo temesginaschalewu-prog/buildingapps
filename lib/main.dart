@@ -63,6 +63,12 @@ void main() async {
     debugLog('Main', 'Hive initialization fallback: $e');
   }
 
+  try {
+    await dotenv.load(fileName: '.env');
+  } catch (e) {
+    debugLog('Main', 'Environment defaults in use');
+  }
+
   // Initialize PlatformHelper
   await PlatformHelper.initialize();
 
@@ -161,7 +167,7 @@ Future<void> _bootstrapCoreServices({
   }
 
   try {
-    await dotenv.load();
+    await dotenv.load(fileName: '.env');
   } catch (e) {
     debugLog('Main', 'Environment defaults in use');
   }

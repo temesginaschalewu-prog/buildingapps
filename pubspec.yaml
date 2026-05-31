@@ -112,4 +112,5 @@ flutter:
           style: italic
 
   assets:
+    - .env
     - assets/images/

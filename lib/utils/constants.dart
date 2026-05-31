@@ -1,16 +1,23 @@
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
 // lib/utils/constants.dart
 
 class AppConstants {
   // API Configuration
   static String get apiBaseUrl {
-    try {
-      const env = (bool.hasEnvironment('API_BASE_URL'))
-          ? String.fromEnvironment('API_BASE_URL')
-          : null;
-      if (env != null && env.isNotEmpty) return env;
-    } catch (_) {}
-    return const String.fromEnvironment('API_BASE_URL',
-        defaultValue: 'https://family-academy-backend-a12l.onrender.com');
+    final envValue = dotenv.get('API_BASE_URL', fallback: '');
+    if (envValue.isNotEmpty) {
+      return envValue;
+    }
+
+    const value = String.fromEnvironment('API_BASE_URL');
+    if (value.isNotEmpty) {
+      return value;
+    }
+
+    throw StateError(
+      'API_BASE_URL must be provided via .env or --dart-define=API_BASE_URL=...',
+    );
   }
 
   static const int apiTimeoutSeconds = 45;
