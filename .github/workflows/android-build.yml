@@ -17,9 +17,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  BASE_URL: https://family-academy-backend-a12l.onrender.com
+  BASE_URL: https://api.familyacademy.et
   API_VERSION: v1
-  API_BASE_URL: https://family-academy-backend-a12l.onrender.com
+  API_BASE_URL: https://api.familyacademy.et
   APP_NAME: Family Academy
   APP_VERSION: 1.0.0
   APP_ENVIRONMENT: production
